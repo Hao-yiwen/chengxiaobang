@@ -133,6 +133,12 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
         );
         return jsonResponse({ provider });
       }
+      const providerMatch = url.pathname.match(/^\/api\/settings\/providers\/([^/]+)$/);
+      if (providerMatch && request.method === "DELETE") {
+        return jsonResponse({
+          deleted: await options.providerService.deleteProvider(providerMatch[1])
+        });
+      }
       const testProviderMatch = url.pathname.match(
         /^\/api\/settings\/providers\/([^/]+)\/test$/
       );

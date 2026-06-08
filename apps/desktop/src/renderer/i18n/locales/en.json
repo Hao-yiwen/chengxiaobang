@@ -41,6 +41,16 @@
     "fullAccess": "Full access",
     "approval": "Approve actions"
   },
+  "onboarding": {
+    "title": "Add a model to get started",
+    "desc": "Enter an API key for any model to start using 程小帮. You can also open Settings for full configuration.",
+    "type": "Type",
+    "model": "Model",
+    "getApiKey": "Get API key",
+    "save": "Save & start",
+    "saving": "Saving…",
+    "toSettings": "Open full settings"
+  },
   "chat": {
     "thinking": "Thinking",
     "run": "Run",
@@ -48,13 +58,19 @@
     "roleUser": "You",
     "roleAssistant": "程小帮",
     "roleTool": "Tool",
-    "roleSystem": "System"
+    "roleSystem": "System",
+    "tokenUsage": "{{total}} tokens this run (in {{prompt}} · out {{completion}})",
+    "tokenCached": " · cache hit {{cached}}"
   },
   "home": {
     "heading": "What should we work on in {{name}}?",
     "headingNoProject": "What should we work on today?",
     "subtitle": "Your desktop AI coding companion, ready when you are.",
     "starters": {
+      "pptTitle": "Make a deck",
+      "pptPrompt": "Help me build a presentation about \"\", plan the structure and key points for each slide, and generate the PPT file.",
+      "docTitle": "Write a doc",
+      "docPrompt": "Help me write a document about \"\" and save it as a Word file.",
       "explainTitle": "Explain code",
       "explainPrompt": "Explain what this code does and point out any issues:\n",
       "testTitle": "Write tests",
@@ -80,7 +96,18 @@
     "nav": {
       "appearance": "Appearance",
       "general": "General",
-      "providers": "Providers"
+      "providers": "Providers",
+      "skills": "Skills & Commands"
+    },
+    "skills": {
+      "title": "Skills & Commands",
+      "listTitle": "Available slash commands",
+      "listDesc": "Type / in the composer to quickly invoke these built-in tools and skills.",
+      "empty": "No commands available",
+      "manageTitle": "Custom skills",
+      "manageDesc": "Create your own skill as <name>/SKILL.md (with name and description frontmatter) in the skills folder; it appears here after a restart.",
+      "openDir": "Open skills folder",
+      "desktopOnly": "This feature is only available in the desktop app"
     },
     "appearance": {
       "title": "Appearance",
@@ -124,7 +151,10 @@
       "test": "Test connection",
       "new": "New",
       "saved": "Saved",
-      "connectionOk": "Connection OK"
+      "connectionOk": "Connection OK",
+      "delete": "Delete",
+      "deleteConfirm": "Delete this model configuration?",
+      "deleted": "Deleted"
     }
   },
   "notice": {

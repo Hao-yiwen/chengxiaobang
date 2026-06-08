@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
-import { readFile, stat } from "node:fs/promises";
-import { basename } from "node:path";
+import { mkdir, readFile, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
 import { startBackendProcess, type BackendProcess } from "./backend-process";
 import { defaultDataDir, preloadPath, rendererIndexPath } from "./paths";
 
@@ -31,6 +32,13 @@ async function createWindow(): Promise<void> {
   });
 
   ipcMain.handle("backend-info", () => backend?.info);
+
+  ipcMain.handle("open-skills-dir", async () => {
+    const dir = join(homedir(), ".chengxiaobang", "skills");
+    await mkdir(dir, { recursive: true });
+    await shell.openPath(dir);
+    return { ok: true, path: dir };
+  });
 
   ipcMain.handle("set-theme-source", (_event, source: unknown) => {
     if (source === "light" || source === "dark" || source === "system") {

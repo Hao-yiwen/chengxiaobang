@@ -105,9 +105,33 @@ export const toolNameSchema = z.enum([
   "list_directory",
   "shell",
   "git_status",
-  "git_diff"
+  "git_diff",
+  "glob",
+  "search",
+  "make_directory",
+  "fetch_url",
+  "create_pptx",
+  "create_docx",
+  "create_xlsx"
 ]);
 export type ToolName = z.infer<typeof toolNameSchema>;
+
+/** A tool invocation requested by the model during a run. */
+export interface AssistantToolCall {
+  id: string;
+  name: string;
+  /** Raw JSON string of the arguments as emitted by the model. */
+  arguments: string;
+}
+
+/** Token accounting for a single run, when the provider reports it. */
+export const tokenUsageSchema = z.object({
+  promptTokens: z.number().int().nonnegative(),
+  completionTokens: z.number().int().nonnegative(),
+  totalTokens: z.number().int().nonnegative(),
+  cachedPromptTokens: z.number().int().nonnegative().optional()
+});
+export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 
 export const toolCallSchema = z.object({
   id: z.string().min(1),
@@ -168,6 +192,7 @@ export type StreamEvent =
   | { type: "tool_call_started"; runId: string; toolCall: ToolCall }
   | { type: "tool_result"; runId: string; toolCall: ToolCall }
   | { type: "assistant_done"; runId: string; message: Message }
+  | { type: "run_completed"; runId: string; usage?: TokenUsage }
   | { type: "run_error"; runId: string; error: string }
   | { type: "run_aborted"; runId: string };
 

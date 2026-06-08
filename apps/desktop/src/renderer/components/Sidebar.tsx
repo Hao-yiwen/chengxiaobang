@@ -86,7 +86,9 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-full min-h-0 flex-col gap-0.5 overflow-hidden bg-surface px-2.5 pb-3 max-[840px]:hidden">
-      <div className="flex h-12 flex-none items-center gap-2 px-2 [-webkit-app-region:drag]">
+      {/* Drag strip reserving space for the macOS traffic-light buttons. */}
+      <div className="h-10 flex-none [-webkit-app-region:drag]" />
+      <div className="flex h-9 flex-none items-center gap-2 px-2.5 [-webkit-app-region:drag]">
         <Logo className="size-[22px]" />
         <span className="text-[13.5px] font-semibold tracking-tight">程小帮</span>
       </div>

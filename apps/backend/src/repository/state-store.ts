@@ -60,6 +60,7 @@ export interface StateStore {
   listProviders(): Promise<ProviderConfig[]>;
   getProvider(id: string): Promise<ProviderConfig | undefined>;
   upsertProvider(provider: ProviderConfig): Promise<ProviderConfig>;
+  deleteProvider(id: string): Promise<boolean>;
   insertToolCall(toolCall: ToolCall): Promise<ToolCall>;
   updateToolCall(toolCall: ToolCall): Promise<ToolCall>;
 }

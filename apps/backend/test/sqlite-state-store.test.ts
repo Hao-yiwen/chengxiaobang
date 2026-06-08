@@ -131,6 +131,26 @@ describe("SqliteStateStore", () => {
     await store.close();
   });
 
+  it("deletes a provider and nulls references from sessions", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    await seedProviders(store);
+    const session = await store.createSession({
+      projectId: null,
+      title: "用 deepseek",
+      providerId: "deepseek",
+      accessMode: "approval"
+    });
+
+    expect(await store.deleteProvider("deepseek")).toBe(true);
+    expect(await store.getProvider("deepseek")).toBeUndefined();
+    expect(await store.deleteProvider("deepseek")).toBe(false);
+    const reloaded = await store.getSession(session.id);
+    expect(reloaded?.providerId).toBeUndefined();
+
+    await store.close();
+  });
+
   it("starts without implicit providers", async () => {
     const store = new SqliteStateStore(join(dir, "state.sqlite"));
     await store.initialize();

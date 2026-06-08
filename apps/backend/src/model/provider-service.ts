@@ -42,6 +42,10 @@ export class ProviderService {
     });
   }
 
+  async deleteProvider(id: string): Promise<boolean> {
+    return this.store.deleteProvider(id);
+  }
+
   async testProvider(id: string): Promise<void> {
     const provider = await this.store.getProvider(id);
     if (!provider) {

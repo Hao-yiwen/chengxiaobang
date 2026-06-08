@@ -365,6 +365,19 @@ export class SqliteStateStore implements StateStore {
     return provider;
   }
 
+  async deleteProvider(id: string): Promise<boolean> {
+    const existing = await this.getProvider(id);
+    if (!existing) {
+      return false;
+    }
+    // sql.js does not enforce ON DELETE SET NULL by default, so detach
+    // referencing sessions explicitly before removing the provider.
+    this.run("update sessions set provider_id = null where provider_id = ?", [id]);
+    this.run("delete from providers where id = ?", [id]);
+    await this.flush();
+    return true;
+  }
+
   private async migrateProviderPresets(): Promise<void> {
     const timestamp = nowIso();
     this.run(

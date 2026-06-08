@@ -11,6 +11,7 @@ declare global {
       pickDirectory(): Promise<string | undefined>;
       pickFiles(): Promise<string[]>;
       readFileText(filePath: string): Promise<ReadFileResult>;
+      openSkillsDir?(): Promise<{ ok: boolean; path: string }>;
       setThemeSource?(source: "light" | "dark" | "system"): Promise<void>;
     };
     webkitSpeechRecognition?: SpeechRecognitionConstructor;

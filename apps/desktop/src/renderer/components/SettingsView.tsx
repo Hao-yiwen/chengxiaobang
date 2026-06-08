@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   Boxes,
   ExternalLink,
+  FolderOpen,
   Globe,
   Languages,
   Laptop,
@@ -10,8 +11,10 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   Sun,
-  SunMoon
+  SunMoon,
+  Trash2
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -32,11 +35,15 @@ import { OptionCard } from "@/components/settings/OptionCard";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
-type SectionId = "appearance" | "general" | "providers";
+type SectionId = "appearance" | "general" | "providers" | "skills";
 
 interface NavDef {
   id: SectionId;
-  labelKey: "settings.nav.appearance" | "settings.nav.general" | "settings.nav.providers";
+  labelKey:
+    | "settings.nav.appearance"
+    | "settings.nav.general"
+    | "settings.nav.providers"
+    | "settings.nav.skills";
   icon: typeof Sun;
   groupKey: "settings.groupPersonal" | "settings.groupModel";
 }
@@ -51,7 +58,8 @@ interface NavItem {
 const NAV_DEFS: NavDef[] = [
   { id: "appearance", labelKey: "settings.nav.appearance", icon: SunMoon, groupKey: "settings.groupPersonal" },
   { id: "general", labelKey: "settings.nav.general", icon: SlidersHorizontal, groupKey: "settings.groupPersonal" },
-  { id: "providers", labelKey: "settings.nav.providers", icon: Boxes, groupKey: "settings.groupModel" }
+  { id: "providers", labelKey: "settings.nav.providers", icon: Boxes, groupKey: "settings.groupModel" },
+  { id: "skills", labelKey: "settings.nav.skills", icon: Sparkles, groupKey: "settings.groupModel" }
 ];
 
 export function SettingsView() {
@@ -105,9 +113,9 @@ export function SettingsView() {
   }, [filtered]);
 
   return (
-    <div className="m-2 ml-0 grid h-[calc(100vh-1rem)] min-h-0 grid-cols-[248px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden rounded-xl border bg-background shadow-soft max-[840px]:m-0 max-[840px]:h-screen max-[840px]:rounded-none max-[840px]:border-0">
-      {/* Settings nav */}
-      <aside className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto rounded-l-xl border-r bg-surface px-3 pb-4">
+    <>
+      {/* Settings nav — occupies the left column, replacing the main sidebar */}
+      <aside className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto bg-surface px-2.5 pb-4 max-[840px]:hidden">
         <div className="h-10 flex-none [-webkit-app-region:drag]" />
         <Button
           variant="ghost"
@@ -163,15 +171,16 @@ export function SettingsView() {
         ) : null}
       </aside>
 
-      {/* Content */}
-      <div className="h-full min-h-0 overflow-y-auto px-12 pb-16 pt-16">
+      {/* Content — occupies the main column, styled like the chat surface card */}
+      <div className="m-2 ml-0 h-[calc(100vh-1rem)] min-h-0 overflow-y-auto rounded-xl border bg-background px-12 pb-16 pt-16 shadow-soft max-[840px]:m-0 max-[840px]:h-screen max-[840px]:rounded-none max-[840px]:border-0">
         <div className="mx-auto max-w-[760px]">
           {section === "appearance" ? <AppearanceSection /> : null}
           {section === "general" ? <GeneralSection /> : null}
           {section === "providers" ? <ProvidersSection /> : null}
+          {section === "skills" ? <SkillsSection /> : null}
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -342,6 +351,7 @@ function ProvidersSection() {
   const { t } = useTranslation();
   const providers = useAppStore(useShallow((state) => state.providers));
   const saveProvider = useAppStore((state) => state.saveProvider);
+  const deleteProvider = useAppStore((state) => state.deleteProvider);
   const testProvider = useAppStore((state) => state.testProvider);
 
   const [draft, setDraft] = useState<ProviderInput>(EMPTY_DRAFT);
@@ -486,10 +496,97 @@ function ProvidersSection() {
                   {t("settings.providers.new")}
                 </Button>
               ) : null}
+              {draft.id ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={async () => {
+                    if (!window.confirm(t("settings.providers.deleteConfirm"))) {
+                      return;
+                    }
+                    await deleteProvider(draft.id!);
+                    setDraft(EMPTY_DRAFT);
+                    setStatus(t("settings.providers.deleted"));
+                  }}
+                >
+                  <Trash2 className="size-4" />
+                  {t("settings.providers.delete")}
+                </Button>
+              ) : null}
               <span className="text-sm text-muted-foreground">{status}</span>
             </div>
           </form>
         </Card>
+      </SettingBlock>
+    </SectionShell>
+  );
+}
+
+function SkillsSection() {
+  const { t } = useTranslation();
+  const slashCommands = useAppStore(useShallow((state) => state.slashCommands));
+  const refreshSlashCommands = useAppStore((state) => state.refreshSlashCommands);
+  const setNotice = useAppStore((state) => state.setNotice);
+
+  useEffect(() => {
+    void refreshSlashCommands();
+  }, [refreshSlashCommands]);
+
+  const sourceLabel: Record<string, string> = {
+    builtin: t("composer.slashSource.builtin"),
+    global: t("composer.slashSource.global"),
+    project: t("composer.slashSource.project")
+  };
+
+  return (
+    <SectionShell title={t("settings.skills.title")}>
+      <SettingBlock
+        title={t("settings.skills.listTitle")}
+        description={t("settings.skills.listDesc")}
+      >
+        <Card className="divide-y p-1.5">
+          {slashCommands.length === 0 ? (
+            <div className="px-3 py-4 text-sm text-muted-foreground">
+              {t("settings.skills.empty")}
+            </div>
+          ) : (
+            slashCommands.map((command) => (
+              <div key={command.id} className="flex items-start gap-3 px-3 py-2.5">
+                <span className="mt-0.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[12px] text-foreground">
+                  {command.name}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] text-muted-foreground">
+                    {command.description || t("composer.slashNoDescription")}
+                  </div>
+                </div>
+                <span className="flex-none text-[11px] text-muted-foreground/70">
+                  {sourceLabel[command.source] ?? command.source}
+                </span>
+              </div>
+            ))
+          )}
+        </Card>
+      </SettingBlock>
+
+      <SettingBlock
+        title={t("settings.skills.manageTitle")}
+        description={t("settings.skills.manageDesc")}
+      >
+        <Button
+          variant="outline"
+          onClick={async () => {
+            if (!window.chengxiaobang?.openSkillsDir) {
+              setNotice(t("settings.skills.desktopOnly"));
+              return;
+            }
+            await window.chengxiaobang.openSkillsDir();
+          }}
+        >
+          <FolderOpen className="size-4" />
+          {t("settings.skills.openDir")}
+        </Button>
       </SettingBlock>
     </SectionShell>
   );

@@ -9,6 +9,7 @@ import type {
   Session,
   SlashCommand,
   StreamEvent,
+  TokenUsage,
   ToolCall
 } from "@chengxiaobang/shared";
 import { createApiClient, type ApiClient } from "../lib/api";
@@ -43,6 +44,7 @@ interface AppState {
   // ui
   view: View;
   paletteOpen: boolean;
+  onboardingOpen: boolean;
   notice?: string;
   // run (transient)
   input: string;
@@ -53,6 +55,7 @@ interface AppState {
   pendingTool?: ToolCall;
   isRunning: boolean;
   activeRunId?: string;
+  lastUsage?: TokenUsage;
   // theme (persisted)
   theme: Theme;
   // language (persisted)
@@ -64,6 +67,7 @@ interface AppState {
   setView(view: View): void;
   setInput(input: string): void;
   setPaletteOpen(open: boolean): void;
+  setOnboardingOpen(open: boolean): void;
   setNotice(notice: string | undefined): void;
   setProviderId(id: string | undefined): void;
   setAccessMode(mode: AccessMode): void;
@@ -91,6 +95,7 @@ interface AppState {
   abortRun(): Promise<void>;
   approve(toolCallId: string, approved: boolean): void;
   saveProvider(input: ProviderInput): Promise<void>;
+  deleteProvider(id: string): Promise<void>;
   testProvider(id: string): Promise<void>;
   clearRunState(): void;
 }
@@ -108,6 +113,7 @@ const initialState = {
   accessMode: "approval" as AccessMode,
   view: "home" as View,
   paletteOpen: false,
+  onboardingOpen: false,
   notice: undefined as string | undefined,
   input: "",
   attachments: [] as Attachment[],
@@ -117,6 +123,7 @@ const initialState = {
   pendingTool: undefined as ToolCall | undefined,
   isRunning: false,
   activeRunId: undefined as string | undefined,
+  lastUsage: undefined as TokenUsage | undefined,
   theme: "system" as Theme,
   locale: DEFAULT_LOCALE as Locale,
   clientReady: false
@@ -149,15 +156,10 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       ...initialState,
 
-      setView: (view) => {
-        if (view !== "settings" && !firstConfiguredProvider(get().providers)) {
-          set({ view: "settings", notice: i18n.t("notice.providerRequired") });
-          return;
-        }
-        set({ view });
-      },
+      setView: (view) => set({ view }),
       setInput: (input) => set({ input }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+      setOnboardingOpen: (onboardingOpen) => set({ onboardingOpen }),
       setNotice: (notice) => set({ notice }),
       setProviderId: (providerId) => set({ providerId }),
       setAccessMode: (accessMode) => set({ accessMode }),
@@ -239,13 +241,15 @@ export const useAppStore = create<AppState>()(
         }
         const configuredProvider = firstConfiguredProvider(data.providers);
         if (!configuredProvider) {
+          // Land on the home/input page and invite a quick API-key setup via a
+          // lightweight modal instead of forcing the user into full settings.
           set({
             activeSessionId: undefined,
             providerId: undefined,
             messages: [],
             toolHistory: [],
-            view: "settings",
-            notice: i18n.t("notice.providerRequired")
+            view: "home",
+            onboardingOpen: true
           });
           return;
         }
@@ -335,10 +339,6 @@ export const useAppStore = create<AppState>()(
       },
 
       newChat() {
-        if (!firstConfiguredProvider(get().providers)) {
-          set({ view: "settings", notice: i18n.t("notice.providerRequired") });
-          return;
-        }
         get().clearRunState();
         set({
           activeProjectId: undefined,
@@ -411,14 +411,21 @@ export const useAppStore = create<AppState>()(
         if (!apiClient || state.input.trim().length === 0) {
           return;
         }
-        const selectedProvider = state.providers.find((provider) => provider.id === state.providerId);
+        const selectedProvider =
+          state.providers.find((provider) => provider.id === state.providerId) ??
+          firstConfiguredProvider(state.providers);
         if (!isConfiguredProvider(selectedProvider)) {
-          set({ view: "settings", notice: i18n.t("notice.providerRequired") });
+          // No model configured yet — prompt a quick setup instead of navigating away.
+          set({ onboardingOpen: true });
           return;
+        }
+        if (selectedProvider.id !== state.providerId) {
+          set({ providerId: selectedProvider.id });
         }
         set({ isRunning: true });
         get().clearRunState();
-        const { attachments, input, activeSessionId, providerId, accessMode } = state;
+        const { attachments, input, activeSessionId, accessMode } = state;
+        const providerId = selectedProvider.id;
         const contextBlock =
           attachments.length > 0
             ? attachments
@@ -472,15 +479,29 @@ export const useAppStore = create<AppState>()(
                 }));
               }
               if (event.type === "assistant_done") {
+                // A run may emit several assistant_done events (interim narration
+                // between tool calls). Flush the streaming buffers but keep the
+                // run active until run_completed/aborted/error arrives.
                 set((current) => ({
                   messages: appendMessage(current.messages, event.message),
                   streamText: "",
-                  thinking: "",
-                  activeRunId: undefined
+                  thinking: ""
                 }));
               }
+              if (event.type === "run_completed") {
+                set({
+                  activeRunId: undefined,
+                  pendingTool: undefined,
+                  lastUsage: event.usage
+                });
+              }
               if (event.type === "run_aborted" || event.type === "run_error") {
-                set({ activeRunId: undefined, pendingTool: undefined });
+                set({
+                  activeRunId: undefined,
+                  pendingTool: undefined,
+                  streamText: "",
+                  thinking: ""
+                });
               }
             }
           );
@@ -523,8 +544,24 @@ export const useAppStore = create<AppState>()(
         const saved = await apiClient.saveProvider(input);
         await get().refresh();
         if (isConfiguredProvider(saved)) {
-          set({ providerId: saved.id, notice: undefined });
+          set({ providerId: saved.id, notice: undefined, onboardingOpen: false });
         }
+      },
+
+      async deleteProvider(id) {
+        if (!apiClient) {
+          return;
+        }
+        const ok = await apiClient.deleteProvider(id);
+        if (!ok) {
+          return;
+        }
+        await get().refresh();
+        const stillConfigured = firstConfiguredProvider(get().providers);
+        set((state) => ({
+          providerId:
+            state.providerId === id ? stillConfigured?.id : state.providerId
+        }));
       },
 
       async testProvider(id) {

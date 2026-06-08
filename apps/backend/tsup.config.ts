@@ -9,6 +9,9 @@ export default defineConfig({
   noExternal: [
     "sql.js",
     "@earendil-works/pi-ai",
-    "@earendil-works/pi-agent-core"
+    "@earendil-works/pi-agent-core",
+    "pptxgenjs",
+    "docx",
+    "exceljs"
   ]
 });

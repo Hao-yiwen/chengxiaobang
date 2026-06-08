@@ -16,6 +16,7 @@ import type {
   SlashCommandDiagnostic,
   SlashCommandSource
 } from "@chengxiaobang/shared";
+import { builtinResourceRoot } from "../paths";
 
 export interface SlashCommandLookup {
   prompt: string;
@@ -24,7 +25,7 @@ export interface SlashCommandLookup {
 
 interface LoadedResource {
   kind: "prompt_template" | "skill";
-  source: Extract<SlashCommandSource, "global" | "project">;
+  source: SlashCommandSource;
   template?: PromptTemplate;
   skill?: Skill;
 }
@@ -81,7 +82,10 @@ export const builtinSlashCommands: SlashCommand[] = [
 ];
 
 export class SlashCommandService {
-  constructor(private readonly globalRoot = join(homedir(), ".chengxiaobang")) {}
+  constructor(
+    private readonly globalRoot = join(homedir(), ".chengxiaobang"),
+    private readonly builtinRoot = builtinResourceRoot()
+  ) {}
 
   async list(project?: Project): Promise<{
     commands: SlashCommand[];
@@ -129,7 +133,7 @@ export class SlashCommandService {
     diagnostics: SlashCommandDiagnostic[]
   ): Promise<LoadedResource[]> {
     const resources: LoadedResource[] = [];
-    for (const source of resourceSources(this.globalRoot, project)) {
+    for (const source of resourceSources(this.globalRoot, this.builtinRoot, project)) {
       const env = new NodeExecutionEnv({ cwd: source.root });
       const promptResult = await loadPromptTemplates(env, [join(source.root, "prompts")]);
       resources.push(
@@ -170,14 +174,15 @@ export class SlashCommandService {
   }
 }
 
-function resourceSources(globalRoot: string, project: Project | undefined): Array<{
-  name: Extract<SlashCommandSource, "global" | "project">;
-  root: string;
-}> {
-  const sources: Array<{
-    name: Extract<SlashCommandSource, "global" | "project">;
-    root: string;
-  }> = [{ name: "global", root: globalRoot }];
+function resourceSources(
+  globalRoot: string,
+  builtinRoot: string,
+  project: Project | undefined
+): Array<{ name: SlashCommandSource; root: string }> {
+  const sources: Array<{ name: SlashCommandSource; root: string }> = [
+    { name: "builtin", root: builtinRoot },
+    { name: "global", root: globalRoot }
+  ];
   if (project) {
     sources.push({ name: "project", root: join(project.path, ".chengxiaobang") });
   }

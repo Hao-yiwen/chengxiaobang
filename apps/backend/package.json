@@ -7,13 +7,16 @@
   "types": "./dist/main.d.ts",
   "scripts": {
     "dev": "tsx src/main.ts",
-    "build": "tsup --config tsup.config.ts && node scripts/copy-sql-wasm.mjs",
+    "build": "tsup --config tsup.config.ts && node scripts/copy-sql-wasm.mjs && node scripts/copy-skills.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@chengxiaobang/shared": "workspace:*",
     "@earendil-works/pi-agent-core": "0.78.1",
     "@earendil-works/pi-ai": "0.78.1",
+    "docx": "^9.7.1",
+    "exceljs": "^4.4.0",
+    "pptxgenjs": "^4.0.1",
     "sql.js": "1.13.0",
     "zod": "4.2.0"
   },

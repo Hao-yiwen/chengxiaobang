@@ -1,4 +1,12 @@
-import { Bug, FileCode2, FlaskConical, Wand2, type LucideIcon } from "lucide-react";
+import {
+  Bug,
+  FileCode2,
+  FileText,
+  FlaskConical,
+  Presentation,
+  Wand2,
+  type LucideIcon
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/store";
 
@@ -7,7 +15,12 @@ import { useAppStore } from "@/store";
  * the composer with a starter prompt and focuses it, so the welcome view feels
  * inviting instead of blank. Purely a launcher — the user edits before sending.
  */
-const STARTERS: { key: "explain" | "test" | "refactor" | "debug"; icon: LucideIcon }[] = [
+const STARTERS: {
+  key: "ppt" | "doc" | "explain" | "test" | "refactor" | "debug";
+  icon: LucideIcon;
+}[] = [
+  { key: "ppt", icon: Presentation },
+  { key: "doc", icon: FileText },
   { key: "explain", icon: FileCode2 },
   { key: "test", icon: FlaskConical },
   { key: "refactor", icon: Wand2 },

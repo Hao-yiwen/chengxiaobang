@@ -5,6 +5,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { HomeStarters } from "./components/HomeStarters";
 import { Logo } from "./components/Logo";
+import { ProviderSetupDialog } from "./components/ProviderSetupDialog";
 import { SettingsView } from "./components/SettingsView";
 import { Sidebar } from "./components/Sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -44,12 +45,14 @@ export function App(props: { client?: ApiClient }) {
     <TooltipProvider delayDuration={300}>
       <div className="grid h-screen overflow-hidden grid-cols-[252px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] bg-surface max-[840px]:grid-cols-1">
         <div className="titlebar-drag" />
-        <Sidebar />
         <CommandPalette />
+        <ProviderSetupDialog />
         {view === "settings" ? (
           <SettingsView />
         ) : (
-          <main
+          <>
+            <Sidebar />
+            <main
             className={cn(
               "relative m-2 ml-0 flex h-[calc(100vh-1rem)] min-h-0 flex-col items-center overflow-hidden rounded-xl border bg-background px-10 pb-7 pt-16 shadow-soft max-[840px]:m-0 max-[840px]:h-screen max-[840px]:rounded-none max-[840px]:border-0",
               view === "home" ? "home-aura justify-center" : "justify-end"
@@ -82,7 +85,8 @@ export function App(props: { client?: ApiClient }) {
             {view === "chat" ? <ChatView /> : null}
             <Composer />
             {view === "home" ? <HomeStarters /> : null}
-          </main>
+            </main>
+          </>
         )}
       </div>
     </TooltipProvider>

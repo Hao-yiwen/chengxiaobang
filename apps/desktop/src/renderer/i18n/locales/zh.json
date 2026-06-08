@@ -41,6 +41,16 @@
     "fullAccess": "完全访问",
     "approval": "审批执行"
   },
+  "onboarding": {
+    "title": "配置一个模型即可开始",
+    "desc": "填入任意一个模型的 API Key，就能开始使用程小帮。也可以前往设置进行更完整的配置。",
+    "type": "类型",
+    "model": "模型",
+    "getApiKey": "获取 API Key",
+    "save": "保存并开始",
+    "saving": "保存中…",
+    "toSettings": "前往完整设置"
+  },
   "chat": {
     "thinking": "思考",
     "run": "执行",
@@ -48,13 +58,19 @@
     "roleUser": "你",
     "roleAssistant": "程小帮",
     "roleTool": "工具",
-    "roleSystem": "系统"
+    "roleSystem": "系统",
+    "tokenUsage": "本次用量 {{total}} tokens（输入 {{prompt}} · 输出 {{completion}}）",
+    "tokenCached": " · 命中缓存 {{cached}}"
   },
   "home": {
     "heading": "我们应该在 {{name}} 中做些什么？",
     "headingNoProject": "今天想做点什么？",
     "subtitle": "你的桌面 AI 编码助手，随时待命。",
     "starters": {
+      "pptTitle": "做一份 PPT",
+      "pptPrompt": "帮我制作一份关于「」的演示文稿，规划好结构和每页要点，并生成 PPT 文件。",
+      "docTitle": "写文档",
+      "docPrompt": "帮我写一份关于「」的文档，并保存为 Word 文件。",
       "explainTitle": "解释代码",
       "explainPrompt": "解释一下这段代码的作用，并指出可能的问题：\n",
       "testTitle": "写单元测试",
@@ -80,7 +96,18 @@
     "nav": {
       "appearance": "外观",
       "general": "常规",
-      "providers": "供应商"
+      "providers": "供应商",
+      "skills": "技能与命令"
+    },
+    "skills": {
+      "title": "技能与命令",
+      "listTitle": "可用的斜杠命令",
+      "listDesc": "在输入框中输入 / 可快速调用这些内置工具与技能。",
+      "empty": "暂无可用命令",
+      "manageTitle": "自定义技能",
+      "manageDesc": "在技能目录中按 <名称>/SKILL.md 创建你自己的技能（含 name 与 description 的 frontmatter），重启后即可在此出现。",
+      "openDir": "打开技能目录",
+      "desktopOnly": "该功能仅在桌面应用中可用"
     },
     "appearance": {
       "title": "外观",
@@ -124,7 +151,10 @@
       "test": "测试连接",
       "new": "新建",
       "saved": "已保存",
-      "connectionOk": "连接正常"
+      "connectionOk": "连接正常",
+      "delete": "删除",
+      "deleteConfirm": "确定删除该模型配置？",
+      "deleted": "已删除"
     }
   },
   "notice": {

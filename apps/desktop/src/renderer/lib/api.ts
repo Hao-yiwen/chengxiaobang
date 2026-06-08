@@ -26,6 +26,7 @@ export interface ApiClient {
   }>;
   listProviders(): Promise<ProviderConfig[]>;
   saveProvider(input: ProviderInput): Promise<ProviderConfig>;
+  deleteProvider(id: string): Promise<boolean>;
   testProvider(id: string): Promise<void>;
   approve(toolCallId: string, approved: boolean): Promise<void>;
   abort(runId: string): Promise<void>;
@@ -115,6 +116,13 @@ export async function createApiClient(): Promise<ApiClient> {
           body: JSON.stringify(input)
         })
       ).provider;
+    },
+    async deleteProvider(id) {
+      return (
+        await request<{ deleted: boolean }>(`/api/settings/providers/${id}`, {
+          method: "DELETE"
+        })
+      ).deleted;
     },
     async testProvider(id) {
       await request(`/api/settings/providers/${id}/test`, { method: "POST" });

@@ -11,16 +11,19 @@ import { useAppStore } from "@/store";
 
 export function ChatView() {
   const { t } = useTranslation();
-  const { messages, toolHistory, streamText, thinking, pendingTool, events } = useAppStore(
-    useShallow((state) => ({
-      messages: state.messages,
-      toolHistory: state.toolHistory,
-      streamText: state.streamText,
-      thinking: state.thinking,
-      pendingTool: state.pendingTool,
-      events: state.events
-    }))
-  );
+  const { messages, toolHistory, streamText, thinking, pendingTool, events, lastUsage, isRunning } =
+    useAppStore(
+      useShallow((state) => ({
+        messages: state.messages,
+        toolHistory: state.toolHistory,
+        streamText: state.streamText,
+        thinking: state.thinking,
+        pendingTool: state.pendingTool,
+        events: state.events,
+        lastUsage: state.lastUsage,
+        isRunning: state.isRunning
+      }))
+    );
   const approve = useAppStore((state) => state.approve);
 
   return (
@@ -92,6 +95,19 @@ export function ChatView() {
             <span className="min-w-0 break-words">{event.error}</span>
           </div>
         ))}
+
+      {!isRunning && lastUsage ? (
+        <div className="mb-2 self-start text-[11px] text-muted-foreground/70">
+          {t("chat.tokenUsage", {
+            total: lastUsage.totalTokens,
+            prompt: lastUsage.promptTokens,
+            completion: lastUsage.completionTokens
+          })}
+          {lastUsage.cachedPromptTokens
+            ? t("chat.tokenCached", { cached: lastUsage.cachedPromptTokens })
+            : ""}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -215,11 +231,14 @@ type TimelineItem =
 
 function timelineItems(messages: Message[], toolCalls: ToolCall[]): TimelineItem[] {
   return [
-    ...messages.map((message) => ({
-      kind: "message" as const,
-      at: message.createdAt,
-      message
-    })),
+    // Tool-role messages are rendered as tool-call rows, not chat bubbles.
+    ...messages
+      .filter((message) => message.role !== "tool")
+      .map((message) => ({
+        kind: "message" as const,
+        at: message.createdAt,
+        message
+      })),
     ...toolCalls.map((toolCall) => ({
       kind: "tool" as const,
       at: toolCall.updatedAt,

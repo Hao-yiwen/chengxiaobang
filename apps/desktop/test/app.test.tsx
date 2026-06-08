@@ -43,6 +43,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     })),
     listProviders: vi.fn(async () => [provider]),
     saveProvider: vi.fn() as never,
+    deleteProvider: vi.fn(async () => true),
     testProvider: vi.fn() as never,
     approve: vi.fn() as never,
     abort: vi.fn() as never,
@@ -68,7 +69,7 @@ describe("App", () => {
     expect(await screen.findByText(/DeepSeek/)).toBeInTheDocument();
   });
 
-  it("opens model settings first when no provider has an API key", async () => {
+  it("stays on home and opens the quick setup dialog when no provider has an API key", async () => {
     const client = createClient({
       listProviders: vi.fn(async () => [
         {
@@ -80,10 +81,11 @@ describe("App", () => {
 
     render(<App client={client} />);
 
-    expect(
-      await screen.findByText("请先配置至少一个带 API Key 的模型，保存后就可以开始使用。")
-    ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "供应商" })).toBeInTheDocument();
+    // The home/input page remains visible (no forced jump to full settings)...
+    expect(await screen.findByText("今天想做点什么？")).toBeInTheDocument();
+    // ...and a lightweight setup dialog invites configuring an API key.
+    expect(await screen.findByText("配置一个模型即可开始")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "供应商" })).not.toBeInTheDocument();
   });
 
   it("switches UI language to English when the locale changes", async () => {
