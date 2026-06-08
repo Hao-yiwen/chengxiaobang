@@ -1,0 +1,10 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  '@google/genai': true
+  bun: true
+  electron: true
+  esbuild: true
+  protobufjs: true
+  sharp: true

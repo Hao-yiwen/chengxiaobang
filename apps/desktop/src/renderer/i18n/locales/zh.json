@@ -1,0 +1,137 @@
+{
+  "sidebar": {
+    "newChat": "新对话",
+    "search": "搜索",
+    "conversations": "对话",
+    "projects": "项目",
+    "openFolder": "打开文件夹",
+    "standalone": "独立对话",
+    "noChats": "还没有对话",
+    "noProjects": "还没有项目",
+    "settings": "设置",
+    "deleteConfirm": "确定删除该对话？",
+    "sessionTitle": "会话标题",
+    "saveTitle": "保存标题",
+    "cancelRename": "取消重命名",
+    "rename": "重命名",
+    "deleteSession": "删除会话"
+  },
+  "composer": {
+    "messageLabel": "输入消息",
+    "placeholder": "随心输入",
+    "addContext": "添加上下文",
+    "selectModel": "选择模型",
+    "voiceUnsupported": "当前环境不支持语音输入",
+    "voiceStop": "停止语音输入",
+    "voiceStart": "语音输入",
+    "stop": "停止",
+    "send": "发送",
+    "selectProject": "选择项目",
+    "conversationMode": "对话",
+    "openFolderEllipsis": "打开文件夹…",
+    "removeAttachment": "移除 {{name}}",
+    "slashNoDescription": "没有说明",
+    "slashSource": {
+      "builtin": "内置",
+      "global": "全局",
+      "project": "项目"
+    }
+  },
+  "permission": {
+    "fullAccess": "完全访问",
+    "approval": "审批执行"
+  },
+  "chat": {
+    "thinking": "思考",
+    "run": "执行",
+    "reject": "拒绝",
+    "roleUser": "你",
+    "roleAssistant": "程小帮",
+    "roleTool": "工具",
+    "roleSystem": "系统"
+  },
+  "home": {
+    "heading": "我们应该在 {{name}} 中做些什么？",
+    "headingNoProject": "今天想做点什么？",
+    "subtitle": "你的桌面 AI 编码助手，随时待命。",
+    "starters": {
+      "explainTitle": "解释代码",
+      "explainPrompt": "解释一下这段代码的作用，并指出可能的问题：\n",
+      "testTitle": "写单元测试",
+      "testPrompt": "为下面这段代码写一份单元测试：\n",
+      "refactorTitle": "重构优化",
+      "refactorPrompt": "帮我重构这段代码，让它更清晰、更易维护：\n",
+      "debugTitle": "排查报错",
+      "debugPrompt": "我遇到了下面这个报错，帮我分析原因并给出修复方案：\n"
+    }
+  },
+  "palette": {
+    "title": "搜索对话",
+    "placeholder": "搜索对话标题…",
+    "empty": "没有匹配的对话",
+    "group": "对话"
+  },
+  "settings": {
+    "back": "返回应用",
+    "searchPlaceholder": "搜索设置…",
+    "noResults": "没有匹配的设置",
+    "groupPersonal": "个人",
+    "groupModel": "模型",
+    "nav": {
+      "appearance": "外观",
+      "general": "常规",
+      "providers": "供应商"
+    },
+    "appearance": {
+      "title": "外观",
+      "themeTitle": "主题",
+      "themeDesc": "选择应用的明暗外观，跟随系统会自动匹配 macOS 的浅色/深色。",
+      "light": "浅色",
+      "lightDesc": "始终使用浅色界面",
+      "dark": "深色",
+      "darkDesc": "始终使用深色界面",
+      "system": "跟随系统",
+      "systemDesc": "随系统外观自动切换"
+    },
+    "general": {
+      "title": "常规",
+      "permTitle": "默认权限",
+      "permDesc": "新对话默认采用的工具执行权限，可在输入框随时切换。",
+      "approval": "审批执行",
+      "approvalDesc": "执行写文件、命令等操作前需要你确认",
+      "full": "完全访问",
+      "fullDesc": "自动执行所有工具，无需逐个确认（风险更高）",
+      "langTitle": "语言",
+      "langDesc": "界面显示语言。",
+      "langZh": "简体中文",
+      "langZhDesc": "使用简体中文界面",
+      "langEn": "English",
+      "langEnDesc": "Use the English interface"
+    },
+    "providers": {
+      "title": "供应商",
+      "configuredTitle": "已配置的模型",
+      "configuredDesc": "选择一项进行编辑，或在下方新增。",
+      "empty": "还没有配置任何供应商",
+      "required": "请先配置至少一个带 API Key 的模型，保存后就可以开始使用。",
+      "edit": "编辑供应商",
+      "create": "新增供应商",
+      "type": "类型",
+      "name": "名称",
+      "model": "模型",
+      "getApiKey": "获取 API Key",
+      "save": "保存",
+      "test": "测试连接",
+      "new": "新建",
+      "saved": "已保存",
+      "connectionOk": "连接正常"
+    }
+  },
+  "notice": {
+    "providerRequired": "请先配置至少一个带 API Key 的模型。",
+    "openFolderDesktopOnly": "打开文件夹需要在桌面端里使用，浏览器预览没有系统文件选择权限。",
+    "addContextDesktopOnly": "添加文件上下文需要在桌面端里使用，浏览器预览没有系统文件读取权限。",
+    "skipFile": "跳过 {{name}}：{{error}}",
+    "attachmentBlock": "以下是文件 {{name}} 的内容：\n```\n{{text}}\n```\n"
+  }
+}

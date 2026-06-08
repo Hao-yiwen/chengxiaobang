@@ -1,0 +1,65 @@
+import type {
+  AccessMode,
+  Message,
+  Project,
+  ProviderConfig,
+  RunRecord,
+  Session,
+  ToolCall
+} from "@chengxiaobang/shared";
+
+export interface CreateProjectInput {
+  name: string;
+  path: string;
+}
+
+export interface CreateSessionInput {
+  projectId: string | null;
+  title: string;
+  providerId?: string;
+  accessMode: AccessMode;
+}
+
+export interface CreateMessageInput {
+  sessionId: string;
+  role: Message["role"];
+  content: string;
+}
+
+export interface CreateRunInput {
+  id: string;
+  sessionId: string;
+  status: "running" | "completed" | "aborted" | "failed";
+}
+
+export interface UpdateSessionInput {
+  title?: string;
+  providerId?: string | null;
+  accessMode?: AccessMode;
+}
+
+export interface StateStore {
+  initialize(): Promise<void>;
+  close(): Promise<void>;
+  listProjects(): Promise<Project[]>;
+  getProject(id: string): Promise<Project | undefined>;
+  getProjectByPath(path: string): Promise<Project | undefined>;
+  createProject(input: CreateProjectInput): Promise<Project>;
+  listSessions(projectId?: string | null): Promise<Session[]>;
+  getSession(id: string): Promise<Session | undefined>;
+  createSession(input: CreateSessionInput): Promise<Session>;
+  updateSession(id: string, input: UpdateSessionInput): Promise<Session>;
+  deleteSession(id: string): Promise<boolean>;
+  touchSession(id: string, title?: string): Promise<void>;
+  addMessage(input: CreateMessageInput): Promise<Message>;
+  listMessages(sessionId: string): Promise<Message[]>;
+  createRun(input: CreateRunInput): Promise<void>;
+  updateRunStatus(id: string, status: CreateRunInput["status"]): Promise<void>;
+  listRuns(sessionId: string): Promise<RunRecord[]>;
+  listToolCallsForSession(sessionId: string): Promise<ToolCall[]>;
+  listProviders(): Promise<ProviderConfig[]>;
+  getProvider(id: string): Promise<ProviderConfig | undefined>;
+  upsertProvider(provider: ProviderConfig): Promise<ProviderConfig>;
+  insertToolCall(toolCall: ToolCall): Promise<ToolCall>;
+  updateToolCall(toolCall: ToolCall): Promise<ToolCall>;
+}

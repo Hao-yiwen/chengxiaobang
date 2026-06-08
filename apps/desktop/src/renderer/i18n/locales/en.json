@@ -1,0 +1,137 @@
+{
+  "sidebar": {
+    "newChat": "New chat",
+    "search": "Search",
+    "conversations": "Chats",
+    "projects": "Projects",
+    "openFolder": "Open folder",
+    "standalone": "Standalone chats",
+    "noChats": "No conversations yet",
+    "noProjects": "No projects yet",
+    "settings": "Settings",
+    "deleteConfirm": "Delete this conversation?",
+    "sessionTitle": "Conversation title",
+    "saveTitle": "Save title",
+    "cancelRename": "Cancel rename",
+    "rename": "Rename",
+    "deleteSession": "Delete conversation"
+  },
+  "composer": {
+    "messageLabel": "Message input",
+    "placeholder": "Type anything",
+    "addContext": "Add context",
+    "selectModel": "Select model",
+    "voiceUnsupported": "Voice input isn't supported here",
+    "voiceStop": "Stop voice input",
+    "voiceStart": "Voice input",
+    "stop": "Stop",
+    "send": "Send",
+    "selectProject": "Select project",
+    "conversationMode": "Chat",
+    "openFolderEllipsis": "Open folder…",
+    "removeAttachment": "Remove {{name}}",
+    "slashNoDescription": "No description",
+    "slashSource": {
+      "builtin": "Built-in",
+      "global": "Global",
+      "project": "Project"
+    }
+  },
+  "permission": {
+    "fullAccess": "Full access",
+    "approval": "Approve actions"
+  },
+  "chat": {
+    "thinking": "Thinking",
+    "run": "Run",
+    "reject": "Reject",
+    "roleUser": "You",
+    "roleAssistant": "程小帮",
+    "roleTool": "Tool",
+    "roleSystem": "System"
+  },
+  "home": {
+    "heading": "What should we work on in {{name}}?",
+    "headingNoProject": "What should we work on today?",
+    "subtitle": "Your desktop AI coding companion, ready when you are.",
+    "starters": {
+      "explainTitle": "Explain code",
+      "explainPrompt": "Explain what this code does and point out any issues:\n",
+      "testTitle": "Write tests",
+      "testPrompt": "Write unit tests for the following code:\n",
+      "refactorTitle": "Refactor",
+      "refactorPrompt": "Refactor this code to make it cleaner and easier to maintain:\n",
+      "debugTitle": "Debug error",
+      "debugPrompt": "I ran into this error — help me find the cause and fix it:\n"
+    }
+  },
+  "palette": {
+    "title": "Search chats",
+    "placeholder": "Search chat titles…",
+    "empty": "No matching chats",
+    "group": "Chats"
+  },
+  "settings": {
+    "back": "Back to app",
+    "searchPlaceholder": "Search settings…",
+    "noResults": "No matching settings",
+    "groupPersonal": "Personal",
+    "groupModel": "Models",
+    "nav": {
+      "appearance": "Appearance",
+      "general": "General",
+      "providers": "Providers"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "themeTitle": "Theme",
+      "themeDesc": "Choose the app's light/dark appearance. \"System\" follows macOS automatically.",
+      "light": "Light",
+      "lightDesc": "Always use the light interface",
+      "dark": "Dark",
+      "darkDesc": "Always use the dark interface",
+      "system": "System",
+      "systemDesc": "Switch automatically with the system"
+    },
+    "general": {
+      "title": "General",
+      "permTitle": "Default permission",
+      "permDesc": "The tool-execution permission new chats start with. You can switch it anytime from the composer.",
+      "approval": "Approve actions",
+      "approvalDesc": "Ask for your confirmation before writing files, running commands, etc.",
+      "full": "Full access",
+      "fullDesc": "Run every tool automatically without confirmation (higher risk)",
+      "langTitle": "Language",
+      "langDesc": "Interface display language.",
+      "langZh": "简体中文",
+      "langZhDesc": "使用简体中文界面",
+      "langEn": "English",
+      "langEnDesc": "Use the English interface"
+    },
+    "providers": {
+      "title": "Providers",
+      "configuredTitle": "Configured models",
+      "configuredDesc": "Pick one to edit, or add a new one below.",
+      "empty": "No providers configured yet",
+      "required": "Configure at least one model with an API Key before using the app.",
+      "edit": "Edit provider",
+      "create": "Add provider",
+      "type": "Type",
+      "name": "Name",
+      "model": "Model",
+      "getApiKey": "Get API Key",
+      "save": "Save",
+      "test": "Test connection",
+      "new": "New",
+      "saved": "Saved",
+      "connectionOk": "Connection OK"
+    }
+  },
+  "notice": {
+    "providerRequired": "Configure at least one model with an API Key first.",
+    "openFolderDesktopOnly": "Opening a folder requires the desktop app — the browser preview has no system file-picker access.",
+    "addContextDesktopOnly": "Adding file context requires the desktop app — the browser preview has no system file-read access.",
+    "skipFile": "Skipped {{name}}: {{error}}",
+    "attachmentBlock": "Here is the content of file {{name}}:\n```\n{{text}}\n```\n"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "desktop (full dev: Vite + tsup + Electron + backend)",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 5173
+    },
+    {
+      "name": "renderer (Vite HMR only)",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@chengxiaobang/desktop", "run", "dev:vite"],
+      "port": 5173
+    },
+    {
+      "name": "backend (standalone HTTP API)",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@chengxiaobang/backend", "run", "dev", "--port", "3000"],
+      "port": 3000
+    }
+  ]
+}

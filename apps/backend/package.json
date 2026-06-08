@@ -1,0 +1,23 @@
+{
+  "name": "@chengxiaobang/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "types": "./dist/main.d.ts",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "build": "tsup --config tsup.config.ts && node scripts/copy-sql-wasm.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@chengxiaobang/shared": "workspace:*",
+    "@earendil-works/pi-agent-core": "0.78.1",
+    "@earendil-works/pi-ai": "0.78.1",
+    "sql.js": "1.13.0",
+    "zod": "4.2.0"
+  },
+  "devDependencies": {
+    "@types/sql.js": "1.4.9"
+  }
+}
