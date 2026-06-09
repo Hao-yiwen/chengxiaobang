@@ -24,6 +24,8 @@ export interface CreateMessageInput {
   sessionId: string;
   role: Message["role"];
   content: string;
+  reasoning?: string;
+  reasoningMs?: number;
 }
 
 export interface CreateRunInput {

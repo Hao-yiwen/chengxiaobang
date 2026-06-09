@@ -51,6 +51,9 @@ interface AppState {
   attachments: Attachment[];
   streamText: string;
   thinking: string;
+  // When the current turn's reasoning stream began (epoch ms), for the live timer.
+  // Completed reasoning is persisted on the message (message.reasoning) instead.
+  thinkingStartedAt?: number;
   events: StreamEvent[];
   pendingTool?: ToolCall;
   isRunning: boolean;
@@ -119,6 +122,7 @@ const initialState = {
   attachments: [] as Attachment[],
   streamText: "",
   thinking: "",
+  thinkingStartedAt: undefined as number | undefined,
   events: [] as StreamEvent[],
   pendingTool: undefined as ToolCall | undefined,
   isRunning: false,
@@ -171,6 +175,7 @@ export const useAppStore = create<AppState>()(
           toolHistory: [],
           streamText: "",
           thinking: "",
+          thinkingStartedAt: undefined,
           events: [],
           pendingTool: undefined,
           activeRunId: undefined,
@@ -464,7 +469,10 @@ export const useAppStore = create<AppState>()(
                 set((current) => ({ streamText: current.streamText + event.delta }));
               }
               if (event.type === "thinking_delta") {
-                set((current) => ({ thinking: current.thinking + event.delta }));
+                set((current) => ({
+                  thinking: current.thinking + event.delta,
+                  thinkingStartedAt: current.thinkingStartedAt ?? Date.now()
+                }));
               }
               if (event.type === "tool_call_pending") {
                 set({ pendingTool: event.toolCall });
@@ -480,12 +488,14 @@ export const useAppStore = create<AppState>()(
               }
               if (event.type === "assistant_done") {
                 // A run may emit several assistant_done events (interim narration
-                // between tool calls). Flush the streaming buffers but keep the
-                // run active until run_completed/aborted/error arrives.
+                // between tool calls). The streamed reasoning is persisted on the
+                // message itself (event.message.reasoning), so just flush the live
+                // buffers — keep the run active until completion/abort/error.
                 set((current) => ({
                   messages: appendMessage(current.messages, event.message),
                   streamText: "",
-                  thinking: ""
+                  thinking: "",
+                  thinkingStartedAt: undefined
                 }));
               }
               if (event.type === "run_completed") {
@@ -500,7 +510,8 @@ export const useAppStore = create<AppState>()(
                   activeRunId: undefined,
                   pendingTool: undefined,
                   streamText: "",
-                  thinking: ""
+                  thinking: "",
+                  thinkingStartedAt: undefined
                 });
               }
             }
@@ -572,6 +583,7 @@ export const useAppStore = create<AppState>()(
         set({
           streamText: "",
           thinking: "",
+          thinkingStartedAt: undefined,
           events: [],
           pendingTool: undefined,
           activeRunId: undefined

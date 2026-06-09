@@ -135,6 +135,37 @@ describe("AgentRunner", () => {
     }
   });
 
+  it("persists the model's streamed reasoning on the assistant message", async () => {
+    const reasoningModel: ModelClient = {
+      async *streamCompletion() {
+        yield { type: "thinking", delta: "先想想" };
+        yield { type: "thinking", delta: "再回答" };
+        yield { type: "text", delta: "答案" };
+      },
+      async testProvider() {}
+    };
+    const runner = new AgentRunner(store, secrets, reasoningModel);
+    let sessionId: string | undefined;
+
+    for await (const event of runner.stream({
+      prompt: "你好",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      if (event.type === "run_started") {
+        sessionId = event.sessionId;
+      }
+    }
+
+    expect(sessionId).toBeDefined();
+    const assistant = (await store.listMessages(sessionId!)).find(
+      (message) => message.role === "assistant"
+    );
+    expect(assistant?.content).toBe("答案");
+    expect(assistant?.reasoning).toBe("先想想再回答");
+    expect(assistant?.reasoningMs).toBeGreaterThanOrEqual(0);
+  });
+
   it("persists failed tool calls before reporting run errors", async () => {
     const runner = new AgentRunner(store, secrets, modelClient);
     const events = [];

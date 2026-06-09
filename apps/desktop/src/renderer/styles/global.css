@@ -5,8 +5,8 @@
 @layer base {
   :root {
     /* Cards sit on a faintly cool, recessed canvas so they read as elevated.
-       Neutrals carry a subtle cool cast that ties to the teal brand and reads
-       more designed than sterile pure-grey. */
+       Neutrals carry a subtle cool cast that reads more designed than sterile
+       pure-grey, while the brand stays strictly monochrome (black/white). */
     --background: 0 0% 100%;
     --foreground: 220 16% 13%;
     /* Recessed canvas behind elevated cards (sidebar, panels, app shell) */
@@ -27,13 +27,14 @@
     --destructive-foreground: 0 0% 98%;
     --border: 214 22% 88%;
     --input: 214 20% 85%;
-    /* Brand-tinted focus ring reads more intentional than neutral grey */
-    --ring: 173 52% 40%;
-    /* Brand accent — derived from the app icon (teal + amber). Used sparingly. */
-    --brand: 173 56% 35%;
+    /* Neutral focus ring — keeps the monochrome identity */
+    --ring: 220 13% 38%;
+    /* Brand accent — monochrome near-black. Used sparingly for emphasis. */
+    --brand: 220 18% 16%;
     --brand-foreground: 0 0% 100%;
-    --brand-soft: 173 44% 93%;
-    --accent-amber: 38 92% 58%;
+    --brand-soft: 220 16% 93%;
+    /* "Caution" accent (approvals, warnings) — neutral grey, not coloured. */
+    --accent-amber: 220 9% 43%;
     --radius: 0.75rem;
     /* Cool-tinted shadow — softer and more premium than flat black */
     --shadow-color: 220 42% 22%;
@@ -61,11 +62,11 @@
     --destructive-foreground: 0 0% 98%;
     --border: 220 12% 19%;
     --input: 220 12% 23%;
-    --ring: 172 48% 52%;
-    --brand: 172 52% 53%;
-    --brand-foreground: 220 18% 8%;
-    --brand-soft: 173 30% 17%;
-    --accent-amber: 41 90% 64%;
+    --ring: 215 14% 68%;
+    --brand: 210 16% 92%;
+    --brand-foreground: 220 18% 10%;
+    --brand-soft: 220 14% 20%;
+    --accent-amber: 215 12% 62%;
     --shadow-color: 220 50% 3%;
   }
 }

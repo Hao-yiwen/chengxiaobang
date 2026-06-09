@@ -1,33 +1,63 @@
 import { Check, ChevronRight, Loader2, Terminal, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Message, ToolCall } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
-import { Logo } from "@/components/Logo";
 import { Markdown } from "@/components/Markdown";
+import { ReasoningPanel } from "@/components/ReasoningPanel";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
 export function ChatView() {
   const { t } = useTranslation();
-  const { messages, toolHistory, streamText, thinking, pendingTool, events, lastUsage, isRunning } =
-    useAppStore(
-      useShallow((state) => ({
-        messages: state.messages,
-        toolHistory: state.toolHistory,
-        streamText: state.streamText,
-        thinking: state.thinking,
-        pendingTool: state.pendingTool,
-        events: state.events,
-        lastUsage: state.lastUsage,
-        isRunning: state.isRunning
-      }))
-    );
+  const {
+    messages,
+    toolHistory,
+    streamText,
+    thinking,
+    thinkingStartedAt,
+    pendingTool,
+    events,
+    lastUsage,
+    isRunning
+  } = useAppStore(
+    useShallow((state) => ({
+      messages: state.messages,
+      toolHistory: state.toolHistory,
+      streamText: state.streamText,
+      thinking: state.thinking,
+      thinkingStartedAt: state.thinkingStartedAt,
+      pendingTool: state.pendingTool,
+      events: state.events,
+      lastUsage: state.lastUsage,
+      isRunning: state.isRunning
+    }))
+  );
   const approve = useAppStore((state) => state.approve);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Keep the newest content in view while streaming, but only when the user is
+  // already near the bottom — never yank them back up if they've scrolled away.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) {
+      // `scrollIntoView` is absent under jsdom — optional-call so tests don't throw.
+      bottomRef.current?.scrollIntoView?.({ block: "end" });
+    }
+  }, [messages, toolHistory, streamText, thinking, pendingTool]);
+
   return (
-    <div className="flex w-[min(760px,100%)] min-h-0 flex-1 flex-col overflow-auto py-2">
+    <div
+      ref={scrollRef}
+      className="flex w-[min(760px,100%)] min-h-0 flex-1 flex-col overflow-auto py-2"
+    >
       {timelineItems(messages, toolHistory).map((item) =>
         item.kind === "message" ? (
           <MessageBubble key={`message-${item.message.id}`} message={item.message} />
@@ -37,21 +67,13 @@ export function ChatView() {
       )}
 
       {thinking ? (
-        <div className="mb-5 flex animate-msg-in gap-3 self-stretch">
-          <Avatar pulsing />
-          <div className="min-w-0 flex-1 pt-0.5">
-            <div className="shimmer-text mb-1 text-[12px] font-semibold">{t("chat.thinking")}</div>
-            <div className="whitespace-pre-wrap break-words text-[13.5px] leading-relaxed text-muted-foreground">
-              {thinking}
-            </div>
-          </div>
-        </div>
+        <ReasoningPanel text={thinking} streaming startedAt={thinkingStartedAt} />
       ) : null}
 
       {pendingTool ? (
-        <div className="mb-5 animate-scale-in self-stretch overflow-hidden rounded-xl border border-amber/40 bg-card shadow-soft">
-          <div className="flex items-center gap-2 border-b border-amber/30 bg-amber/10 px-4 py-2.5">
-            <Terminal className="size-4 text-amber" />
+        <div className="mb-5 animate-scale-in self-stretch overflow-hidden rounded-xl border bg-card shadow-soft">
+          <div className="flex items-center gap-2 border-b bg-muted/60 px-4 py-2.5">
+            <Terminal className="size-4 text-muted-foreground" />
             <span className="text-[13px] font-semibold">{pendingTool.name}</span>
           </div>
           <div className="flex items-start justify-between gap-4 p-4">
@@ -73,14 +95,8 @@ export function ChatView() {
       ) : null}
 
       {streamText ? (
-        <div className="mb-5 flex animate-msg-in gap-3 self-stretch">
-          <Avatar />
-          <div className="min-w-0 flex-1 pt-0.5">
-            <div className="mb-1 text-[12px] font-semibold text-muted-foreground">
-              {t("chat.roleAssistant")}
-            </div>
-            <Markdown text={streamText} className="stream-caret" />
-          </div>
+        <div className="mb-5 animate-msg-in self-stretch">
+          <Markdown text={streamText} className="stream-caret" />
         </div>
       ) : null}
 
@@ -108,29 +124,18 @@ export function ChatView() {
             : ""}
         </div>
       ) : null}
-    </div>
-  );
-}
 
-function Avatar({ pulsing }: { pulsing?: boolean }) {
-  return (
-    <div
-      className={cn(
-        "flex size-8 flex-none items-center justify-center rounded-lg border border-brand/15 bg-brand-soft shadow-soft",
-        pulsing && "animate-pulse"
-      )}
-    >
-      <Logo className="size-[22px]" />
+      <div ref={bottomRef} />
     </div>
   );
 }
 
 const TOOL_STATUS_STYLES: Record<ToolCall["status"], string> = {
-  completed: "text-brand",
+  completed: "text-foreground",
   failed: "text-destructive",
   rejected: "text-destructive",
   running: "text-muted-foreground",
-  pending_approval: "text-amber"
+  pending_approval: "text-foreground"
 };
 
 function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
@@ -182,7 +187,6 @@ function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
 }
 
 function MessageBubble({ message }: { message: Message }) {
-  const { t } = useTranslation();
   const isUser = message.role === "user";
   if (isUser) {
     return (
@@ -193,36 +197,16 @@ function MessageBubble({ message }: { message: Message }) {
       </div>
     );
   }
+  // Assistant turns render as plain left-aligned content — no avatar, no name —
+  // with the persisted reasoning panel (if any) sitting above the answer.
   return (
-    <div className="mb-5 flex animate-msg-in gap-3 self-stretch">
-      <Avatar />
-      <div className="min-w-0 flex-1 pt-0.5">
-        <div className="mb-1 text-[12px] font-semibold text-muted-foreground">
-          {t(roleLabel(message.role))}
-        </div>
-        <Markdown text={message.content} />
-      </div>
+    <div className="mb-5 animate-msg-in self-stretch">
+      {message.reasoning ? (
+        <ReasoningPanel text={message.reasoning} durationMs={message.reasoningMs} />
+      ) : null}
+      <Markdown text={message.content} />
     </div>
   );
-}
-
-type RoleKey =
-  | "chat.roleUser"
-  | "chat.roleAssistant"
-  | "chat.roleTool"
-  | "chat.roleSystem";
-
-function roleLabel(role: Message["role"]): RoleKey {
-  if (role === "user") {
-    return "chat.roleUser";
-  }
-  if (role === "assistant") {
-    return "chat.roleAssistant";
-  }
-  if (role === "tool") {
-    return "chat.roleTool";
-  }
-  return "chat.roleSystem";
 }
 
 type TimelineItem =

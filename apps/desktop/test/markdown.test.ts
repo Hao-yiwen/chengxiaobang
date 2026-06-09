@@ -22,6 +22,20 @@ describe("parseInline", () => {
     expect(parseInline("`a ** b`")).toEqual([{ type: "code", value: "a ** b" }]);
   });
 
+  it("parses links into text and href", () => {
+    expect(parseInline("see [docs](https://example.com) now")).toEqual([
+      { type: "text", value: "see " },
+      { type: "link", value: "docs", href: "https://example.com" },
+      { type: "text", value: " now" }
+    ]);
+  });
+
+  it("captures the link href up to the closing paren (safety is the renderer's job)", () => {
+    expect(parseInline("[x](javascript:alert)")).toEqual([
+      { type: "link", value: "x", href: "javascript:alert" }
+    ]);
+  });
+
   it("returns a single empty text token for empty input", () => {
     expect(parseInline("")).toEqual([{ type: "text", value: "" }]);
   });

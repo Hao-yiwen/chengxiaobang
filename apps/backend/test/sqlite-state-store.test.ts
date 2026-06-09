@@ -54,6 +54,40 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
+  it("persists assistant reasoning and its duration across restarts", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const session = await first.createSession({
+      projectId: null,
+      title: "带思考",
+      accessMode: "approval"
+    });
+    await first.addMessage({ sessionId: session.id, role: "user", content: "你好" });
+    const assistant = await first.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "答案",
+      reasoning: "先想一想",
+      reasoningMs: 2500
+    });
+    expect(assistant).toMatchObject({ reasoning: "先想一想", reasoningMs: 2500 });
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    const messages = await second.listMessages(session.id);
+    await second.close();
+
+    expect(messages).toMatchObject([
+      { role: "user", content: "你好" },
+      { role: "assistant", content: "答案", reasoning: "先想一想", reasoningMs: 2500 }
+    ]);
+    // A plain message carries no reasoning fields (not even null-ish ones).
+    expect(messages[0]).not.toHaveProperty("reasoning");
+    expect(messages[0]).not.toHaveProperty("reasoningMs");
+  });
+
   it("persists runs and tool calls across store restarts", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);

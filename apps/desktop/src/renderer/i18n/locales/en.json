@@ -53,6 +53,10 @@
   },
   "chat": {
     "thinking": "Thinking",
+    "reasoningInProgress": "Thinking",
+    "reasoningDone": "Thought for {{seconds}}s",
+    "copy": "Copy",
+    "copied": "Copied",
     "run": "Run",
     "reject": "Reject",
     "roleUser": "You",

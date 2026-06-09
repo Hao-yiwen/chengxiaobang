@@ -82,6 +82,10 @@ export const messageSchema = z.object({
   sessionId: z.string().min(1),
   role: messageRoleSchema,
   content: z.string(),
+  /** The model's reasoning ("深度思考") that preceded this assistant message. */
+  reasoning: z.string().optional(),
+  /** How long that reasoning took, in milliseconds. */
+  reasoningMs: z.number().int().nonnegative().optional(),
   createdAt: z.string()
 });
 export type Message = z.infer<typeof messageSchema>;

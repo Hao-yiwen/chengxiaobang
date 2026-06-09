@@ -221,25 +221,45 @@ export function Composer() {
         <IconButton title={t("composer.addContext")} onClick={() => void addContext()}>
           <Paperclip className="size-[18px]" />
         </IconButton>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "h-8 gap-1.5 rounded-full px-2.5 font-medium",
-            accessMode === "full_access"
-              ? "text-amber hover:bg-amber/10 hover:text-amber"
-              : "text-brand hover:bg-brand/10 hover:text-brand"
-          )}
-          onClick={() => setAccessMode(accessMode === "approval" ? "full_access" : "approval")}
-        >
-          {accessMode === "full_access" ? (
-            <ShieldCheck className="size-4" />
-          ) : (
-            <LockKeyhole className="size-4" />
-          )}
-          {t(accessMode === "full_access" ? "permission.fullAccess" : "permission.approval")}
-          <ChevronDown className="size-3.5" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 rounded-full px-2.5 font-medium text-muted-foreground hover:text-foreground"
+            >
+              {accessMode === "full_access" ? (
+                <ShieldCheck className="size-4" />
+              ) : (
+                <LockKeyhole className="size-4" />
+              )}
+              {t(accessMode === "full_access" ? "permission.fullAccess" : "permission.approval")}
+              <ChevronDown className="size-3.5 opacity-70" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[300px]">
+            <DropdownMenuItem onSelect={() => setAccessMode("approval")}>
+              <Check className={accessMode === "approval" ? "opacity-100" : "opacity-0"} />
+              <LockKeyhole className="text-muted-foreground" />
+              <span className="flex min-w-0 flex-col gap-0.5 py-0.5">
+                <span className="font-medium">{t("permission.approval")}</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  {t("settings.general.approvalDesc")}
+                </span>
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setAccessMode("full_access")}>
+              <Check className={accessMode === "full_access" ? "opacity-100" : "opacity-0"} />
+              <ShieldCheck className="text-muted-foreground" />
+              <span className="flex min-w-0 flex-col gap-0.5 py-0.5">
+                <span className="font-medium">{t("permission.fullAccess")}</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  {t("settings.general.fullDesc")}
+                </span>
+              </span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <div className="flex-1" />
 
@@ -254,13 +274,16 @@ export function Composer() {
           >
             <Cpu className="size-4 shrink-0 opacity-70" />
             <SelectValue placeholder={t("composer.selectModel")}>
-              {selectedProvider ? `${selectedProvider.name} · ${selectedProvider.model}` : null}
+              {selectedProvider ? selectedProvider.model : null}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {configuredProviders.map((provider) => (
               <SelectItem key={provider.id} value={provider.id}>
-                {provider.name} · {provider.model}
+                <span className="flex items-center gap-2">
+                  <span>{provider.model}</span>
+                  <span className="text-xs text-muted-foreground">{provider.name}</span>
+                </span>
               </SelectItem>
             ))}
           </SelectContent>

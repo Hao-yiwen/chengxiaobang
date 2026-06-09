@@ -10,7 +10,8 @@
 export type Inline =
   | { type: "text"; value: string }
   | { type: "code"; value: string }
-  | { type: "bold"; value: string };
+  | { type: "bold"; value: string }
+  | { type: "link"; value: string; href: string };
 
 export type Block =
   | { type: "paragraph"; inlines: Inline[] }
@@ -18,7 +19,7 @@ export type Block =
   | { type: "code"; lang?: string; content: string }
   | { type: "list"; ordered: boolean; items: Inline[][] };
 
-const INLINE_RE = /`([^`]+)`|\*\*([^*]+?)\*\*/g;
+const INLINE_RE = /`([^`]+)`|\*\*([^*]+?)\*\*|\[([^\]]+)\]\(([^)\s]+)\)/g;
 const FENCE_RE = /^```(\w*)\s*$/;
 const FENCE_CLOSE_RE = /^```\s*$/;
 const HEADING_RE = /^(#{1,3})\s+(.*)$/;
@@ -37,8 +38,10 @@ export function parseInline(text: string): Inline[] {
     }
     if (match[1] !== undefined) {
       tokens.push({ type: "code", value: match[1] });
-    } else {
+    } else if (match[2] !== undefined) {
       tokens.push({ type: "bold", value: match[2] });
+    } else {
+      tokens.push({ type: "link", value: match[3], href: match[4] });
     }
     lastIndex = INLINE_RE.lastIndex;
   }

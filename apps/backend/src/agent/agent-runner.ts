@@ -247,6 +247,8 @@ export class AgentRunner {
       }
 
       let assistantText = "";
+      let reasoningText = "";
+      let reasoningStartedAt: number | undefined;
       let toolCalls: AssistantToolCall[] = [];
       for await (const delta of this.modelClient.streamCompletion({
         provider: context.provider,
@@ -261,6 +263,10 @@ export class AgentRunner {
           return;
         }
         if (delta.type === "thinking") {
+          if (reasoningStartedAt === undefined) {
+            reasoningStartedAt = Date.now();
+          }
+          reasoningText += delta.delta;
           yield { type: "thinking_delta", runId, delta: delta.delta };
         } else if (delta.type === "text") {
           assistantText += delta.delta;
@@ -272,11 +278,20 @@ export class AgentRunner {
         }
       }
 
+      // Reasoning the model streamed this turn, to persist alongside its message.
+      const reasoningPayload = reasoningText
+        ? {
+            reasoning: reasoningText,
+            reasoningMs: reasoningStartedAt !== undefined ? Date.now() - reasoningStartedAt : 0
+          }
+        : undefined;
+
       if (toolCalls.length === 0) {
         const message = await this.store.addMessage({
           sessionId,
           role: "assistant",
-          content: assistantText
+          content: assistantText,
+          ...(reasoningPayload ?? {})
         });
         yield { type: "assistant_done", runId, message };
         await this.store.updateRunStatus(runId, "completed");
@@ -289,7 +304,8 @@ export class AgentRunner {
         const message = await this.store.addMessage({
           sessionId,
           role: "assistant",
-          content: assistantText
+          content: assistantText,
+          ...(reasoningPayload ?? {})
         });
         yield { type: "assistant_done", runId, message };
       }

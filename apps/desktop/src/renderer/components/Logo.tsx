@@ -2,9 +2,11 @@ import { cn } from "@/lib/utils";
 
 /**
  * The 程小帮 brand mark — a friendly, symmetric robot face in the app's
- * teal/amber identity: a centered antenna, a rounded "screen" face with two
- * amber eyes and a smile, and a pair of side ears. Rendered inline so it stays
- * crisp at every size (64px on the welcome screen down to 22px in the chrome).
+ * monochrome identity: a centered antenna, a rounded "screen" face with two
+ * eyes and a smile, and a pair of side ears. All fills derive from the
+ * (neutral) brand tokens so the mark stays pure black/white in both themes.
+ * Rendered inline so it stays crisp at every size (64px on the welcome screen
+ * down to 22px in the chrome).
  */
 export function Logo({ className }: { className?: string }) {
   return (
@@ -23,7 +25,7 @@ export function Logo({ className }: { className?: string }) {
         strokeWidth="30"
         strokeLinecap="round"
       />
-      <circle cx="512" cy="128" r="38" fill="hsl(var(--accent-amber))" />
+      <circle cx="512" cy="128" r="38" fill="hsl(var(--brand))" />
 
       {/* side ears */}
       <rect x="200" y="436" width="44" height="120" rx="22" fill="hsl(var(--brand))" />
@@ -36,8 +38,8 @@ export function Logo({ className }: { className?: string }) {
       <rect x="304" y="298" width="416" height="396" rx="120" fill="hsl(var(--brand-soft))" />
 
       {/* eyes */}
-      <circle cx="430" cy="452" r="44" fill="hsl(var(--accent-amber))" />
-      <circle cx="594" cy="452" r="44" fill="hsl(var(--accent-amber))" />
+      <circle cx="430" cy="452" r="44" fill="hsl(var(--brand))" />
+      <circle cx="594" cy="452" r="44" fill="hsl(var(--brand))" />
 
       {/* smile */}
       <path

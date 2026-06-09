@@ -53,6 +53,10 @@
   },
   "chat": {
     "thinking": "思考",
+    "reasoningInProgress": "思考中",
+    "reasoningDone": "已深度思考 · 用时 {{seconds}} 秒",
+    "copy": "复制",
+    "copied": "已复制",
     "run": "执行",
     "reject": "拒绝",
     "roleUser": "你",

@@ -68,6 +68,8 @@ export class SqliteStateStore implements StateStore {
         session_id text not null,
         role text not null,
         content text not null,
+        reasoning text,
+        reasoning_ms integer,
         created_at text not null,
         foreign key (session_id) references sessions(id) on delete cascade
       );
@@ -110,8 +112,19 @@ export class SqliteStateStore implements StateStore {
       create index if not exists idx_tool_calls_run_updated
         on tool_calls(run_id, updated_at desc);
     `);
+    // Older databases predate the reasoning columns — add them in place.
+    this.ensureColumn("messages", "reasoning", "text");
+    this.ensureColumn("messages", "reasoning_ms", "integer");
     await this.migrateProviderPresets();
     await this.flush();
+  }
+
+  /** Add a column to an existing table when a prior schema version lacked it. */
+  private ensureColumn(table: string, column: string, typeDdl: string): void {
+    const columns = this.query(`pragma table_info(${table})`);
+    if (!columns.some((row) => String(row.name) === column)) {
+      this.exec(`alter table ${table} add column ${column} ${typeDdl};`);
+    }
   }
 
   async close(): Promise<void> {
@@ -273,11 +286,22 @@ export class SqliteStateStore implements StateStore {
       sessionId: input.sessionId,
       role: input.role,
       content: input.content,
+      ...(input.reasoning ? { reasoning: input.reasoning } : {}),
+      ...(input.reasoningMs !== undefined ? { reasoningMs: input.reasoningMs } : {}),
       createdAt: nowIso()
     };
     this.run(
-      "insert into messages (id, session_id, role, content, created_at) values (?, ?, ?, ?, ?)",
-      [message.id, message.sessionId, message.role, message.content, message.createdAt]
+      `insert into messages (id, session_id, role, content, reasoning, reasoning_ms, created_at)
+       values (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        message.id,
+        message.sessionId,
+        message.role,
+        message.content,
+        message.reasoning ?? null,
+        message.reasoningMs ?? null,
+        message.createdAt
+      ]
     );
     await this.touchSession(message.sessionId);
     await this.flush();
@@ -560,11 +584,19 @@ function mapSession(row: Row): Session {
 }
 
 function mapMessage(row: Row): Message {
+  const reasoning =
+    row.reasoning === null || row.reasoning === undefined ? undefined : String(row.reasoning);
+  const reasoningMs =
+    row.reasoning_ms === null || row.reasoning_ms === undefined
+      ? undefined
+      : Number(row.reasoning_ms);
   return {
     id: String(row.id),
     sessionId: String(row.session_id),
     role: row.role as Message["role"],
     content: String(row.content),
+    ...(reasoning !== undefined ? { reasoning } : {}),
+    ...(reasoningMs !== undefined ? { reasoningMs } : {}),
     createdAt: String(row.created_at)
   };
 }

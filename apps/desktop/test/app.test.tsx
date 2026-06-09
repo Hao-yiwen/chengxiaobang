@@ -66,7 +66,8 @@ describe("App", () => {
 
     expect(await screen.findByText("今天想做点什么？")).toBeInTheDocument();
     expect(screen.getByLabelText("输入消息")).toBeInTheDocument();
-    expect(await screen.findByText(/DeepSeek/)).toBeInTheDocument();
+    // The model picker shows just the model id — no provider-name prefix.
+    expect(await screen.findByText("deepseek-v4-flash")).toBeInTheDocument();
   });
 
   it("stays on home and opens the quick setup dialog when no provider has an API key", async () => {
@@ -339,5 +340,47 @@ describe("App", () => {
     fireEvent.click(screen.getByTitle("删除会话"));
     await waitFor(() => expect(deleteSession).toHaveBeenCalledWith("session_1"));
     expect(screen.queryByText("新标题")).not.toBeInTheDocument();
+  });
+
+  it("captures streamed reasoning and renders the answer as plain content", async () => {
+    const userMessage: Message = {
+      id: "u1",
+      sessionId: "session_1",
+      role: "user",
+      content: "你好",
+      createdAt: "2026-06-08T00:00:00.000Z"
+    };
+    const assistantMessage: Message = {
+      id: "a1",
+      sessionId: "session_1",
+      role: "assistant",
+      content: "答案是 42",
+      reasoning: "先拆解问题",
+      reasoningMs: 1200,
+      createdAt: "2026-06-08T00:00:01.000Z"
+    };
+    const client = createClient({
+      // Returned by the post-run reload so the captured reasoning stays attached.
+      listMessages: vi.fn(async () => [userMessage, assistantMessage]),
+      streamRun: vi.fn(async (_input, onEvent) => {
+        onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+        onEvent({ type: "user_message", runId: "run_1", message: userMessage });
+        onEvent({ type: "thinking_delta", runId: "run_1", delta: "先拆解" });
+        onEvent({ type: "thinking_delta", runId: "run_1", delta: "问题" });
+        onEvent({ type: "assistant_delta", runId: "run_1", delta: "答案是 42" });
+        onEvent({ type: "assistant_done", runId: "run_1", message: assistantMessage });
+        onEvent({ type: "run_completed", runId: "run_1" });
+      }) as never
+    });
+
+    render(<App client={client} />);
+    fireEvent.change(await screen.findByLabelText("输入消息"), { target: { value: "你好" } });
+    fireEvent.click(screen.getByTitle("发送"));
+
+    // The answer renders as plain content (no assistant avatar/name label)...
+    expect(await screen.findByText("答案是 42")).toBeInTheDocument();
+    // ...and the streamed reasoning is captured into a collapsible panel.
+    expect(await screen.findByText(/已深度思考/)).toBeInTheDocument();
+    expect(screen.getByText("先拆解问题")).toBeInTheDocument();
   });
 });

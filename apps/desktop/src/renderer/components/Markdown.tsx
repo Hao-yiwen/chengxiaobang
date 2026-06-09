@@ -1,10 +1,12 @@
-import { Fragment, type ReactNode } from "react";
+import { Check, Copy } from "lucide-react";
+import { Fragment, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { parseBlocks, type Inline } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 
 /**
  * Renders the assistant's Markdown output: paragraphs, fenced code blocks,
- * inline code, bold, headings and lists. Deliberately small — see
+ * inline code, bold, links, headings and lists. Deliberately small — see
  * {@link "@/lib/markdown"} for the tokenizer.
  */
 export function Markdown({ text, className }: { text: string; className?: string }) {
@@ -57,6 +59,11 @@ export function Markdown({ text, className }: { text: string; className?: string
   );
 }
 
+/** Only http(s) links are linkified — the main process opens those externally. */
+function isSafeHref(href: string): boolean {
+  return /^https?:\/\//i.test(href);
+}
+
 function renderInlines(inlines: Inline[]): ReactNode {
   return inlines.map((inline, index) => {
     if (inline.type === "code") {
@@ -76,18 +83,52 @@ function renderInlines(inlines: Inline[]): ReactNode {
         </strong>
       );
     }
+    if (inline.type === "link" && isSafeHref(inline.href)) {
+      return (
+        <a
+          key={index}
+          href={inline.href}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"
+        >
+          {inline.value}
+        </a>
+      );
+    }
     return <Fragment key={index}>{inline.value}</Fragment>;
   });
 }
 
 function CodeBlock({ lang, content }: { lang?: string; content: string }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+
+  async function copy(): Promise<void> {
+    try {
+      await navigator.clipboard?.writeText(content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard unavailable or denied — fail silently rather than disrupt the chat.
+    }
+  }
+
   return (
     <div className="overflow-hidden rounded-lg border bg-muted/50">
-      {lang ? (
-        <div className="border-b bg-muted/60 px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-          {lang}
-        </div>
-      ) : null}
+      <div className="flex items-center justify-between border-b bg-muted/60 px-3 py-1.5">
+        <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+          {lang ?? ""}
+        </span>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+          {copied ? t("chat.copied") : t("chat.copy")}
+        </button>
+      </div>
       <pre className="overflow-x-auto px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-foreground/90">
         <code>{content}</code>
       </pre>
