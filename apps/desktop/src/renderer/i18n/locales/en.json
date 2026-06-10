@@ -64,7 +64,29 @@
     "roleTool": "Tool",
     "roleSystem": "System",
     "tokenUsage": "{{total}} tokens this run (in {{prompt}} · out {{completion}})",
-    "tokenCached": " · cache hit {{cached}}"
+    "tokenCached": " · cache hit {{cached}}",
+    "previewFile": "Preview file"
+  },
+  "rightPanel": {
+    "terminal": "Terminal",
+    "browser": "Browser",
+    "files": "File preview",
+    "close": "Close panel",
+    "resize": "Resize panel",
+    "terminalNoProject": "Open a project folder first — terminal commands run in the project directory.",
+    "terminalEmpty": "Type a command below; it runs in the project directory.",
+    "terminalPlaceholder": "Type a command, press Enter to run",
+    "exitCode": "exit code {{code}}",
+    "browserEmpty": "Enter a URL to start browsing, e.g. example.com or a local port like 5173.",
+    "browserPlaceholder": "Enter a URL, press Enter to visit",
+    "back": "Back",
+    "forward": "Forward",
+    "reload": "Reload",
+    "openExternal": "Open in system browser",
+    "filesEmpty": "Click a file path next to a tool call in the chat, or pick a file to preview.",
+    "pickFile": "Choose file…",
+    "fileLoadFailed": "Cannot preview this file",
+    "fileDesktopOnly": "File preview is only available in the desktop app."
   },
   "home": {
     "heading": "What should we work on in {{name}}?",

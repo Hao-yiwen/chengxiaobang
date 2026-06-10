@@ -1,5 +1,19 @@
 export {};
 
+declare module "react" {
+  namespace JSX {
+    interface IntrinsicElements {
+      /** Electron <webview> tag (webviewTag enabled in main) hosting the browser panel. */
+      webview: DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement> & {
+        src?: string;
+        partition?: string;
+        webpreferences?: string;
+        allowpopups?: string;
+      };
+    }
+  }
+}
+
 export type ReadFileResult =
   | { path: string; name: string; ok: true; text: string; size: number }
   | { path: string; name: string; ok: false; error: string; size: number };

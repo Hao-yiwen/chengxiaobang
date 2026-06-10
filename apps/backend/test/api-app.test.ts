@@ -119,6 +119,54 @@ describe("createApp", () => {
     });
   });
 
+  it("executes terminal commands inside the project directory", async () => {
+    const projectRoot = join(dir, "workspace");
+    await mkdir(projectRoot, { recursive: true });
+    await writeFile(join(projectRoot, "hello.txt"), "hi", "utf8");
+    const project = await store.createProject({ name: "workspace", path: projectRoot });
+
+    const response = await app(
+      jsonRequest("/api/terminal/exec", "POST", {
+        projectId: project.id,
+        command: "ls"
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      result: { output: "hello.txt", exitCode: 0 }
+    });
+  });
+
+  it("returns the exit code of failing terminal commands", async () => {
+    const projectRoot = join(dir, "workspace");
+    await mkdir(projectRoot, { recursive: true });
+    const project = await store.createProject({ name: "workspace", path: projectRoot });
+
+    const response = await app(
+      jsonRequest("/api/terminal/exec", "POST", {
+        projectId: project.id,
+        command: "echo broken >&2; exit 2"
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      result: { output: "broken", exitCode: 2 }
+    });
+  });
+
+  it("rejects terminal commands for unknown projects", async () => {
+    const response = await app(
+      jsonRequest("/api/terminal/exec", "POST", {
+        projectId: "missing",
+        command: "echo hi"
+      })
+    );
+
+    expect(response.status).toBe(404);
+  });
+
   it("lists builtin and pi slash commands with project resources taking priority", async () => {
     const globalRoot = join(dir, "global");
     const projectRoot = join(dir, "project");

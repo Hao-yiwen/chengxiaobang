@@ -6,6 +6,8 @@ import { Composer } from "./components/Composer";
 import { HomeStarters } from "./components/HomeStarters";
 import { Logo } from "./components/Logo";
 import { ProviderSetupDialog } from "./components/ProviderSetupDialog";
+import { RightPanel } from "./components/right-panel/RightPanel";
+import { RightPanelSwitch } from "./components/right-panel/RightPanelSwitch";
 import { SettingsView } from "./components/SettingsView";
 import { Sidebar } from "./components/Sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -52,12 +54,14 @@ export function App(props: { client?: ApiClient }) {
         ) : (
           <>
             <Sidebar />
+            <div className="flex min-h-0 min-w-0">
             <main
             className={cn(
-              "relative m-2 ml-0 flex h-[calc(100vh-1rem)] min-h-0 flex-col items-center overflow-hidden rounded-xl border bg-background px-10 pb-7 pt-16 shadow-soft max-[840px]:m-0 max-[840px]:h-screen max-[840px]:rounded-none max-[840px]:border-0",
+              "relative m-2 ml-0 flex h-[calc(100vh-1rem)] min-h-0 min-w-0 flex-1 flex-col items-center overflow-hidden rounded-xl border bg-background px-10 pb-7 pt-16 shadow-soft max-[840px]:m-0 max-[840px]:h-screen max-[840px]:rounded-none max-[840px]:border-0",
               view === "home" ? "home-aura justify-center" : "justify-end"
             )}
           >
+            <RightPanelSwitch />
             {notice ? (
               <div className="animate-scale-in mb-4 w-[min(760px,100%)] rounded-lg border border-amber/40 bg-amber/10 px-4 py-3 text-sm text-foreground/80">
                 {notice}
@@ -86,6 +90,8 @@ export function App(props: { client?: ApiClient }) {
             <Composer />
             {view === "home" ? <HomeStarters /> : null}
             </main>
+            <RightPanel />
+            </div>
           </>
         )}
       </div>

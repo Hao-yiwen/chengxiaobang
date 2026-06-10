@@ -64,7 +64,29 @@
     "roleTool": "工具",
     "roleSystem": "系统",
     "tokenUsage": "本次用量 {{total}} tokens（输入 {{prompt}} · 输出 {{completion}}）",
-    "tokenCached": " · 命中缓存 {{cached}}"
+    "tokenCached": " · 命中缓存 {{cached}}",
+    "previewFile": "预览文件"
+  },
+  "rightPanel": {
+    "terminal": "终端",
+    "browser": "浏览器",
+    "files": "文件预览",
+    "close": "关闭面板",
+    "resize": "调整面板宽度",
+    "terminalNoProject": "请先打开一个项目文件夹，终端会在项目目录中执行命令。",
+    "terminalEmpty": "在下方输入命令，将在项目目录中执行。",
+    "terminalPlaceholder": "输入命令，回车执行",
+    "exitCode": "退出码 {{code}}",
+    "browserEmpty": "输入网址开始浏览，例如 example.com，或本地端口号 5173。",
+    "browserPlaceholder": "输入网址，回车访问",
+    "back": "后退",
+    "forward": "前进",
+    "reload": "刷新",
+    "openExternal": "在系统浏览器中打开",
+    "filesEmpty": "点击对话中文件操作旁的路径，或选择一个文件进行预览。",
+    "pickFile": "选择文件…",
+    "fileLoadFailed": "无法预览该文件",
+    "fileDesktopOnly": "文件预览需要在桌面端使用。"
   },
   "home": {
     "heading": "我们应该在 {{name}} 中做些什么？",

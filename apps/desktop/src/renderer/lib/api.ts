@@ -9,6 +9,8 @@ import type {
   SlashCommand,
   SlashCommandDiagnostic,
   StreamEvent,
+  TerminalExecRequest,
+  TerminalExecResult,
   ToolCall
 } from "@chengxiaobang/shared";
 
@@ -30,6 +32,7 @@ export interface ApiClient {
   testProvider(id: string): Promise<void>;
   approve(toolCallId: string, approved: boolean): Promise<void>;
   abort(runId: string): Promise<void>;
+  terminalExec(input: TerminalExecRequest): Promise<TerminalExecResult>;
   streamRun(input: RunRequest, onEvent: (event: StreamEvent) => void): Promise<void>;
 }
 
@@ -135,6 +138,14 @@ export async function createApiClient(): Promise<ApiClient> {
     },
     async abort(runId) {
       await request(`/api/runs/${runId}/abort`, { method: "POST" });
+    },
+    async terminalExec(input) {
+      return (
+        await request<{ result: TerminalExecResult }>("/api/terminal/exec", {
+          method: "POST",
+          body: JSON.stringify(input)
+        })
+      ).result;
     },
     async streamRun(input, onEvent) {
       const response = await fetch(`${baseURL}/api/runs/stream`, {

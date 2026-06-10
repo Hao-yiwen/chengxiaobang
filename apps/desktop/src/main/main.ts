@@ -109,7 +109,20 @@ async function createWindow(): Promise<void> {
       preload: preloadPath(import.meta.url),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      // Hosts the renderer's browser panel; attached webviews are hardened below.
+      webviewTag: true
+    }
+  });
+
+  mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+    // The webview shows arbitrary web pages: never give it a preload or node.
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    if (!isHttpUrl(params.src)) {
+      event.preventDefault();
     }
   });
 
@@ -135,6 +148,18 @@ async function createWindow(): Promise<void> {
     await mainWindow.loadFile(rendererIndexPath(import.meta.url));
   }
 }
+
+// Pop-ups from browser-panel webviews go to the system browser, never new windows.
+app.on("web-contents-created", (_event, contents) => {
+  if (contents.getType() === "webview") {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (isHttpUrl(url)) {
+        void shell.openExternal(url);
+      }
+      return { action: "deny" };
+    });
+  }
+});
 
 app.whenReady().then(createWindow);
 

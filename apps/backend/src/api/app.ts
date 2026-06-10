@@ -6,8 +6,10 @@ import {
   providerInputSchema,
   runRequestSchema,
   sessionInputSchema,
-  sessionUpdateSchema
+  sessionUpdateSchema,
+  terminalExecRequestSchema
 } from "@chengxiaobang/shared";
+import { runCommand } from "../tools/shell";
 import { ProviderService } from "../model/provider-service";
 import type { StateStore } from "../repository/state-store";
 import type { AgentRunner } from "../agent/agent-runner";
@@ -112,6 +114,16 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
             Connection: "keep-alive"
           })
         });
+      }
+      if (url.pathname === "/api/terminal/exec" && request.method === "POST") {
+        // Terminal-panel commands are typed by the user themselves, so they
+        // run directly without the tool-approval queue.
+        const input = terminalExecRequestSchema.parse(await readJson<unknown>(request));
+        const project = await options.store.getProject(input.projectId);
+        if (!project) {
+          return errorResponse("项目不存在", 404);
+        }
+        return jsonResponse({ result: await runCommand(input.command, project.path) });
       }
       const abortMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/abort$/);
       if (abortMatch && request.method === "POST") {

@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { nowIso, type ToolCall, type ToolName } from "@chengxiaobang/shared";
+import { runCommand } from "./shell";
 import { buildPptx, type DeckSpec } from "./pptx-builder";
 import { buildDocx, type DocSpec } from "./docx-builder";
 import { buildXlsx, type WorkbookSpec } from "./xlsx-builder";
@@ -348,36 +348,9 @@ async function fetchUrl(url: string): Promise<string> {
 }
 
 async function runShell(command: string, cwd: string): Promise<string> {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.env.SHELL ?? "/bin/zsh", ["-lc", command], {
-      cwd,
-      env: process.env
-    });
-    let stdout = "";
-    let stderr = "";
-    const timeout = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error("命令执行超时"));
-    }, 120_000);
-
-    child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      const output = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
-      if (code === 0) {
-        resolvePromise(output || "（命令无输出）");
-      } else {
-        reject(new Error(output || `命令退出码 ${code}`));
-      }
-    });
-  });
+  const { output, exitCode } = await runCommand(command, cwd);
+  if (exitCode !== 0) {
+    throw new Error(output || `命令退出码 ${exitCode}`);
+  }
+  return output || "（命令无输出）";
 }

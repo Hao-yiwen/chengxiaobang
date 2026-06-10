@@ -47,6 +47,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     testProvider: vi.fn() as never,
     approve: vi.fn() as never,
     abort: vi.fn() as never,
+    terminalExec: vi.fn() as never,
     streamRun: vi.fn() as never,
     ...overrides
   };

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { createId } from "@chengxiaobang/shared";
 import type {
   AccessMode,
   Message,
@@ -17,6 +18,7 @@ import i18n, { DEFAULT_LOCALE, type Locale } from "../i18n";
 
 export type Theme = "light" | "dark" | "system";
 export type View = "home" | "chat" | "settings";
+export type RightPanelMode = "terminal" | "browser" | "files";
 
 export interface Attachment {
   path: string;
@@ -24,6 +26,19 @@ export interface Attachment {
   size: number;
   text: string;
 }
+
+/** One command run from the terminal panel; output is absent while running. */
+export interface TerminalEntry {
+  id: string;
+  command: string;
+  output?: string;
+  exitCode?: number;
+}
+
+const RIGHT_PANEL_MIN_WIDTH = 300;
+const RIGHT_PANEL_MAX_WIDTH = 720;
+/** File preview widens the panel to at least this, like an editor pane. */
+const RIGHT_PANEL_FILE_WIDTH = 480;
 
 // The ApiClient is not serializable, so it lives outside the persisted store.
 let apiClient: ApiClient | undefined;
@@ -59,6 +74,13 @@ interface AppState {
   isRunning: boolean;
   activeRunId?: string;
   lastUsage?: TokenUsage;
+  // right workspace panel (mode + width persisted, content transient)
+  rightPanelMode: RightPanelMode | null;
+  rightPanelWidth: number;
+  previewFile?: { path: string };
+  browserUrl: string;
+  terminalEntries: TerminalEntry[];
+  terminalRunning: boolean;
   // theme (persisted)
   theme: Theme;
   // language (persisted)
@@ -77,6 +99,11 @@ interface AppState {
   setActiveProjectId(id: string | undefined): void;
   setTheme(theme: Theme): void;
   setLocale(locale: Locale): void;
+  toggleRightPanel(mode: RightPanelMode): void;
+  setRightPanelWidth(width: number): void;
+  setBrowserUrl(url: string): void;
+  openFilePreview(path: string): void;
+  runTerminalCommand(command: string): Promise<void>;
 
   // actions
   initClient(injected?: ApiClient): Promise<void>;
@@ -128,6 +155,12 @@ const initialState = {
   isRunning: false,
   activeRunId: undefined as string | undefined,
   lastUsage: undefined as TokenUsage | undefined,
+  rightPanelMode: null as RightPanelMode | null,
+  rightPanelWidth: 380,
+  previewFile: undefined as { path: string } | undefined,
+  browserUrl: "",
+  terminalEntries: [] as TerminalEntry[],
+  terminalRunning: false,
   theme: "system" as Theme,
   locale: DEFAULT_LOCALE as Locale,
   clientReady: false
@@ -185,6 +218,57 @@ export const useAppStore = create<AppState>()(
       },
       setTheme: (theme) => set({ theme }),
       setLocale: (locale) => set({ locale }),
+      toggleRightPanel: (mode) =>
+        set((state) => ({ rightPanelMode: state.rightPanelMode === mode ? null : mode })),
+      setRightPanelWidth: (width) =>
+        set({
+          rightPanelWidth: Math.min(
+            RIGHT_PANEL_MAX_WIDTH,
+            Math.max(RIGHT_PANEL_MIN_WIDTH, Math.round(width))
+          )
+        }),
+      setBrowserUrl: (browserUrl) => set({ browserUrl }),
+
+      openFilePreview(path) {
+        const project = selectActiveProject(get());
+        const absolute =
+          path.startsWith("/") || !project ? path : `${project.path}/${path}`;
+        set((state) => ({
+          previewFile: { path: absolute },
+          rightPanelMode: "files",
+          rightPanelWidth: Math.max(state.rightPanelWidth, RIGHT_PANEL_FILE_WIDTH)
+        }));
+      },
+
+      async runTerminalCommand(command) {
+        const state = get();
+        const project = selectActiveProject(state);
+        const trimmed = command.trim();
+        if (!apiClient || !project || !trimmed || state.terminalRunning) {
+          return;
+        }
+        const id = createId("term");
+        set((current) => ({
+          terminalEntries: [...current.terminalEntries, { id, command: trimmed }],
+          terminalRunning: true
+        }));
+        const finish = (output: string, exitCode: number) =>
+          set((current) => ({
+            terminalEntries: current.terminalEntries.map((entry) =>
+              entry.id === id ? { ...entry, output, exitCode } : entry
+            ),
+            terminalRunning: false
+          }));
+        try {
+          const result = await apiClient.terminalExec({
+            projectId: project.id,
+            command: trimmed
+          });
+          finish(result.output, result.exitCode);
+        } catch (error) {
+          finish(error instanceof Error ? error.message : String(error), -1);
+        }
+      },
 
       async initClient(injected) {
         apiClient = injected ?? (await createApiClient());
@@ -599,6 +683,8 @@ export const useAppStore = create<AppState>()(
         activeProjectId: state.activeProjectId,
         providerId: state.providerId,
         accessMode: state.accessMode,
+        rightPanelMode: state.rightPanelMode,
+        rightPanelWidth: state.rightPanelWidth,
         theme: state.theme,
         locale: state.locale
       }),
