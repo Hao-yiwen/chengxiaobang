@@ -1,5 +1,5 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { nowIso, type ToolCall, type ToolName } from "@chengxiaobang/shared";
 import { runCommand } from "./shell";
 import { buildPptx, type DeckSpec } from "./pptx-builder";
@@ -53,6 +53,47 @@ export function parseToolRequest(prompt: string): ToolRequest | undefined {
     return { name: "git_diff", args: {} };
   }
   return undefined;
+}
+
+/**
+ * Relative project file paths for the composer's @-mention autocomplete.
+ * Case-insensitive substring match on the posix-style relative path;
+ * basename-prefix matches rank first, then shorter paths.
+ */
+export async function listProjectFiles(
+  basePath: string,
+  query: string,
+  limit = 50
+): Promise<string[]> {
+  const root = resolve(basePath);
+  const needle = query.trim().toLowerCase();
+  const cappedLimit = Math.max(1, Math.min(limit, 200));
+  const files: string[] = [];
+  await walkFiles(
+    root,
+    root,
+    (absolutePath) => {
+      files.push(relative(root, absolutePath).split(sep).join("/"));
+    },
+    { count: 10_000 }
+  );
+  const matches = needle
+    ? files.filter((file) => file.toLowerCase().includes(needle))
+    : files;
+  const rank = (file: string) =>
+    needle && basename(file).toLowerCase().startsWith(needle) ? 0 : 1;
+  return matches
+    .sort((left, right) => {
+      const byRank = rank(left) - rank(right);
+      if (byRank !== 0) {
+        return byRank;
+      }
+      if (left.length !== right.length) {
+        return left.length - right.length;
+      }
+      return left.localeCompare(right);
+    })
+    .slice(0, cappedLimit);
 }
 
 export class ToolExecutor {

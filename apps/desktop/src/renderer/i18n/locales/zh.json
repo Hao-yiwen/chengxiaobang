@@ -39,7 +39,9 @@
       "builtin": "内置",
       "global": "全局",
       "project": "项目"
-    }
+    },
+    "atFileTag": "文件",
+    "fileMenuLabel": "项目文件建议"
   },
   "permission": {
     "fullAccess": "完全访问",

@@ -11,6 +11,7 @@ import {
   terminalExecRequestSchema
 } from "@chengxiaobang/shared";
 import { runCommand } from "../tools/shell";
+import { listProjectFiles } from "../tools/tool-executor";
 import { ProviderService } from "../model/provider-service";
 import type { StateStore } from "../repository/state-store";
 import type { AgentRunner } from "../agent/agent-runner";
@@ -71,6 +72,16 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
         const projectId = url.searchParams.get("projectId");
         const project = projectId ? await options.store.getProject(projectId) : undefined;
         return jsonResponse(await slashCommandService.list(project));
+      }
+      const projectFilesMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/files$/);
+      if (projectFilesMatch && request.method === "GET") {
+        const project = await options.store.getProject(projectFilesMatch[1]);
+        if (!project) {
+          return errorResponse("项目不存在", 404);
+        }
+        const query = url.searchParams.get("query") ?? "";
+        const limit = Number(url.searchParams.get("limit") ?? "") || 50;
+        return jsonResponse({ files: await listProjectFiles(project.path, query, limit) });
       }
       const messagesMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);
       if (messagesMatch && request.method === "GET") {

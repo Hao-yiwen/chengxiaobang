@@ -24,6 +24,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     listProjects: vi.fn(async () => []),
     createProject: vi.fn() as never,
     listSessions: vi.fn(async () => []),
+    listProjectFiles: vi.fn(async () => []),
     updateSession: vi.fn() as never,
     deleteSession: vi.fn() as never,
     listMessages: vi.fn(async () => []),
@@ -259,6 +260,57 @@ describe("App", () => {
     fireEvent.click(screen.getByText("/review"));
 
     expect(input).toHaveValue("/review ");
+  });
+
+  it("suggests project files when typing @ in a project session", async () => {
+    const project: Project = {
+      id: "project_1",
+      name: "demo",
+      path: "/tmp/demo",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const session: Session = {
+      id: "session_1",
+      projectId: project.id,
+      title: "项目会话",
+      providerId: "deepseek",
+      accessMode: "approval",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const listProjectFiles = vi.fn(async () => ["src/index.ts", "src/main-index.ts"]);
+    const client = createClient({
+      listProjects: vi.fn(async () => [project]),
+      listSessions: vi.fn(async () => [session]),
+      listProjectFiles
+    });
+
+    render(<App client={client} />);
+    const input = await screen.findByLabelText("输入消息");
+
+    fireEvent.change(input, { target: { value: "看看 @ind" } });
+
+    // The fetch is debounced (150ms); findByText absorbs the wait.
+    expect(await screen.findByText("src/index.ts")).toBeInTheDocument();
+    expect(listProjectFiles).toHaveBeenCalledWith("project_1", "ind");
+
+    fireEvent.click(screen.getByText("src/index.ts"));
+    expect(input).toHaveValue("看看 @src/index.ts ");
+  });
+
+  it("does not fetch file suggestions without an active project", async () => {
+    const listProjectFiles = vi.fn(async () => ["src/index.ts"]);
+    const client = createClient({ listProjectFiles });
+
+    render(<App client={client} />);
+    const input = await screen.findByLabelText("输入消息");
+
+    fireEvent.change(input, { target: { value: "@ind" } });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(listProjectFiles).not.toHaveBeenCalled();
+    expect(screen.queryByText("src/index.ts")).not.toBeInTheDocument();
   });
 
   it("does not show slash commands for normal text", async () => {

@@ -2,6 +2,7 @@ import {
   Check,
   ChevronDown,
   Cpu,
+  FileText,
   Folder,
   FolderOpen,
   LockKeyhole,
@@ -70,7 +71,9 @@ export function Composer() {
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [selectionStart, setSelectionStart] = useState(0);
-  const [highlightedCommand, setHighlightedCommand] = useState(0);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  // Escape hides the file menu for the token at this position until a new @ starts.
+  const [dismissedAtStart, setDismissedAtStart] = useState<number>();
   const voice = useVoiceInput({ value, onChange: setInput });
   const configuredProviders = providers.filter((provider) => provider.apiKeyRef);
   const selectedProvider = configuredProviders.find((provider) => provider.id === providerId);
@@ -81,51 +84,94 @@ export function Composer() {
   );
   const showSlashMenu = slashQuery !== undefined && filteredSlashCommands.length > 0;
 
+  const fileSuggestions = useAppStore((state) => state.fileSuggestions);
+  const loadFileSuggestions = useAppStore((state) => state.loadFileSuggestions);
+  const atToken = activeProject ? getAtToken(value, selectionStart) : undefined;
+  const showFileMenu =
+    !showSlashMenu &&
+    atToken !== undefined &&
+    atToken.start !== dismissedAtStart &&
+    fileSuggestions.length > 0;
+
   useEffect(() => {
-    setHighlightedCommand(0);
-  }, [slashQuery, filteredSlashCommands.length]);
+    setHighlightedIndex(0);
+  }, [slashQuery, filteredSlashCommands.length, atToken?.query, fileSuggestions.length]);
+
+  // Debounced fetch of file suggestions while an @-token is being typed.
+  useEffect(() => {
+    if (atToken === undefined) {
+      return;
+    }
+    const query = atToken.query;
+    const timer = window.setTimeout(() => void loadFileSuggestions(query), 150);
+    return () => window.clearTimeout(timer);
+  }, [atToken?.query, atToken === undefined, loadFileSuggestions]);
 
   const updateSelectionStart = () => {
     setSelectionStart(textareaRef.current?.selectionStart ?? value.length);
   };
 
-  const insertSlashCommand = (command: SlashCommand) => {
-    setInput(command.insertText);
-    setHighlightedCommand(0);
+  const focusCaretAt = (position: number) => {
     window.requestAnimationFrame(() => {
       const textarea = textareaRef.current;
       if (!textarea) {
         return;
       }
       textarea.focus();
-      textarea.setSelectionRange(command.insertText.length, command.insertText.length);
-      setSelectionStart(command.insertText.length);
+      textarea.setSelectionRange(position, position);
+      setSelectionStart(position);
     });
   };
 
+  const insertSlashCommand = (command: SlashCommand) => {
+    setInput(command.insertText);
+    setHighlightedIndex(0);
+    focusCaretAt(command.insertText.length);
+  };
+
+  const insertFileReference = (path: string) => {
+    if (atToken === undefined) {
+      return;
+    }
+    const cursor = Math.max(0, Math.min(selectionStart, value.length));
+    const next = `${value.slice(0, atToken.start)}@${path} ${value.slice(cursor)}`;
+    setInput(next);
+    setHighlightedIndex(0);
+    focusCaretAt(atToken.start + path.length + 2);
+  };
+
   const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (showSlashMenu) {
+    // Both menus share one keyboard interaction; slash wins when both could show.
+    const menu = showSlashMenu ? "slash" : showFileMenu ? "file" : undefined;
+    if (menu) {
+      const length = menu === "slash" ? filteredSlashCommands.length : fileSuggestions.length;
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setHighlightedCommand((index) => (index + 1) % filteredSlashCommands.length);
+        setHighlightedIndex((index) => (index + 1) % length);
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setHighlightedCommand(
-          (index) => (index - 1 + filteredSlashCommands.length) % filteredSlashCommands.length
-        );
+        setHighlightedIndex((index) => (index - 1 + length) % length);
         return;
       }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
-        insertSlashCommand(filteredSlashCommands[highlightedCommand] ?? filteredSlashCommands[0]);
+        if (menu === "slash") {
+          insertSlashCommand(filteredSlashCommands[highlightedIndex] ?? filteredSlashCommands[0]);
+        } else {
+          insertFileReference(fileSuggestions[highlightedIndex] ?? fileSuggestions[0]);
+        }
         return;
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        textareaRef.current?.setSelectionRange(value.length, value.length);
-        setSelectionStart(value.length);
+        if (menu === "slash") {
+          textareaRef.current?.setSelectionRange(value.length, value.length);
+          setSelectionStart(value.length);
+        } else if (atToken !== undefined) {
+          setDismissedAtStart(atToken.start);
+        }
         return;
       }
     }
@@ -178,43 +224,54 @@ export function Composer() {
         className="min-h-[56px] resize-none rounded-none border-0 px-4 pb-1.5 pt-4 text-[15px] shadow-none focus-visible:ring-0"
       />
       {showSlashMenu ? (
-        <div className="animate-scale-in absolute bottom-[86px] left-3 right-3 z-20 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-elevated">
-          <div className="max-h-[260px] overflow-y-auto py-1">
-            {filteredSlashCommands.map((command, index) => (
-              <button
-                key={command.id}
-                type="button"
-                className={cn(
-                  "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
-                  index === highlightedCommand ? "bg-accent text-accent-foreground" : "hover:bg-accent"
+        <SuggestionPopover>
+          {filteredSlashCommands.map((command, index) => (
+            <SuggestionItem
+              key={command.id}
+              highlighted={index === highlightedIndex}
+              onHighlight={() => setHighlightedIndex(index)}
+              onPick={() => insertSlashCommand(command)}
+            >
+              <span className="flex size-7 flex-none items-center justify-center rounded-md bg-muted text-muted-foreground">
+                {command.kind === "builtin_tool" ? (
+                  <Terminal className="size-4" />
+                ) : (
+                  <Sparkles className="size-4" />
                 )}
-                onMouseEnter={() => setHighlightedCommand(index)}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  insertSlashCommand(command);
-                }}
-                onClick={() => insertSlashCommand(command)}
-              >
-                <span className="flex size-7 flex-none items-center justify-center rounded-md bg-muted text-muted-foreground">
-                  {command.kind === "builtin_tool" ? (
-                    <Terminal className="size-4" />
-                  ) : (
-                    <Sparkles className="size-4" />
-                  )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">{command.name}</span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {command.description || t("composer.slashNoDescription")}
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium">{command.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {command.description || t("composer.slashNoDescription")}
-                  </span>
-                </span>
-                <span className="flex-none rounded border px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                  {t(`composer.slashSource.${command.source}`)}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+              </span>
+              <span className="flex-none rounded border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                {t(`composer.slashSource.${command.source}`)}
+              </span>
+            </SuggestionItem>
+          ))}
+        </SuggestionPopover>
+      ) : null}
+
+      {showFileMenu ? (
+        <SuggestionPopover ariaLabel={t("composer.fileMenuLabel")}>
+          {fileSuggestions.map((path, index) => (
+            <SuggestionItem
+              key={path}
+              highlighted={index === highlightedIndex}
+              onHighlight={() => setHighlightedIndex(index)}
+              onPick={() => insertFileReference(path)}
+            >
+              <span className="flex size-7 flex-none items-center justify-center rounded-md bg-muted text-muted-foreground">
+                <FileText className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1 truncate font-mono text-[12.5px]">{path}</span>
+              <span className="flex-none rounded border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                {t("composer.atFileTag")}
+              </span>
+            </SuggestionItem>
+          ))}
+        </SuggestionPopover>
       ) : null}
 
       <div className="flex items-center gap-1.5 px-3 pb-2.5 pt-1.5">
@@ -377,6 +434,72 @@ export function Composer() {
       </div>
     </div>
   );
+}
+
+/** Shared popover chrome for the slash-command and @-file suggestion menus. */
+function SuggestionPopover({
+  ariaLabel,
+  children
+}: {
+  ariaLabel?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      aria-label={ariaLabel}
+      className="animate-scale-in absolute bottom-[86px] left-3 right-3 z-20 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-elevated"
+    >
+      <div className="max-h-[260px] overflow-y-auto py-1">{children}</div>
+    </div>
+  );
+}
+
+function SuggestionItem({
+  highlighted,
+  onHighlight,
+  onPick,
+  children
+}: {
+  highlighted: boolean;
+  onHighlight(): void;
+  onPick(): void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+        highlighted ? "bg-accent text-accent-foreground" : "hover:bg-accent"
+      )}
+      onMouseEnter={onHighlight}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        onPick();
+      }}
+      onClick={onPick}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * The @-token being typed at the cursor: `@src/uti` → { query: "src/uti",
+ * start: index of "@" }. The token must start the input or follow whitespace
+ * and may not contain whitespace or another @.
+ */
+export function getAtToken(
+  value: string,
+  selectionStart: number
+): { query: string; start: number } | undefined {
+  const cursor = Math.max(0, Math.min(selectionStart, value.length));
+  const before = value.slice(0, cursor);
+  const match = before.match(/(^|\s)@([^\s@]*)$/);
+  if (!match) {
+    return undefined;
+  }
+  return { query: match[2], start: cursor - match[2].length - 1 };
 }
 
 function getSlashQuery(value: string, selectionStart: number): string | undefined {

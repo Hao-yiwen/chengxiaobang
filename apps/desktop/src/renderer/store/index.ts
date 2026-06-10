@@ -66,6 +66,8 @@ interface AppState {
   // run (transient)
   input: string;
   attachments: Attachment[];
+  /** Project file suggestions for the composer's @-mention menu. */
+  fileSuggestions: string[];
   streamText: string;
   thinking: string;
   // When the current turn's reasoning stream began (epoch ms), for the live timer.
@@ -114,6 +116,7 @@ interface AppState {
   >;
   refresh(): Promise<void>;
   refreshSlashCommands(projectId?: string): Promise<void>;
+  loadFileSuggestions(query: string): Promise<void>;
   restoreInitialState(): Promise<void>;
   loadSessionDetail(id: string): Promise<void>;
   selectSession(id: string): Promise<void>;
@@ -157,6 +160,7 @@ const initialState = {
   notice: undefined as string | undefined,
   input: "",
   attachments: [] as Attachment[],
+  fileSuggestions: [] as string[],
   streamText: "",
   thinking: "",
   thinkingStartedAt: undefined as number | undefined,
@@ -338,6 +342,21 @@ export const useAppStore = create<AppState>()(
         } catch (error) {
           console.warn("加载斜杠命令失败", error);
           set({ slashCommands: [] });
+        }
+      },
+
+      async loadFileSuggestions(query) {
+        const project = selectActiveProject(get());
+        if (!apiClient || !project) {
+          set({ fileSuggestions: [] });
+          return;
+        }
+        try {
+          const files = await apiClient.listProjectFiles(project.id, query);
+          set({ fileSuggestions: files });
+        } catch (error) {
+          console.warn("加载文件建议失败", error);
+          set({ fileSuggestions: [] });
         }
       },
 

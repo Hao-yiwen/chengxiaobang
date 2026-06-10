@@ -39,7 +39,9 @@
       "builtin": "Built-in",
       "global": "Global",
       "project": "Project"
-    }
+    },
+    "atFileTag": "File",
+    "fileMenuLabel": "Project file suggestions"
   },
   "permission": {
     "fullAccess": "Full access",

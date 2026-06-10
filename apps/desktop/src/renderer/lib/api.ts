@@ -18,6 +18,7 @@ export interface ApiClient {
   listProjects(): Promise<Project[]>;
   createProject(input: { path: string; name?: string }): Promise<Project>;
   listSessions(projectId?: string): Promise<Session[]>;
+  listProjectFiles(projectId: string, query: string): Promise<string[]>;
   updateSession(id: string, input: { title?: string }): Promise<Session>;
   deleteSession(id: string): Promise<boolean>;
   listMessages(sessionId: string): Promise<Message[]>;
@@ -77,6 +78,13 @@ export async function createApiClient(): Promise<ApiClient> {
     async listSessions(projectId) {
       const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
       return (await request<{ sessions: Session[] }>(`/api/sessions${query}`)).sessions;
+    },
+    async listProjectFiles(projectId, query) {
+      return (
+        await request<{ files: string[] }>(
+          `/api/projects/${projectId}/files?query=${encodeURIComponent(query)}`
+        )
+      ).files;
     },
     async updateSession(id, input) {
       return (

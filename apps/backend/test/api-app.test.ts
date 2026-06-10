@@ -92,6 +92,23 @@ describe("createApp", () => {
     expect(missing.status).toBe(404);
   });
 
+  it("lists project files for the composer autocomplete", async () => {
+    await mkdir(join(dir, "proj", "src"), { recursive: true });
+    await writeFile(join(dir, "proj", "src", "index.ts"), "export {};");
+    const project = await store.createProject({ name: "demo", path: join(dir, "proj") });
+
+    const response = await app(
+      new Request(`http://local/api/projects/${project.id}/files?query=ind`, { method: "GET" })
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ files: ["src/index.ts"] });
+
+    const missing = await app(
+      new Request("http://local/api/projects/nope/files?query=", { method: "GET" })
+    );
+    expect(missing.status).toBe(404);
+  });
+
   it("allows PATCH in CORS preflight responses", async () => {
     const response = await app(new Request("http://local/api/sessions/session_1", {
       method: "OPTIONS"

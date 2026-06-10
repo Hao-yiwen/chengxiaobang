@@ -52,6 +52,7 @@ function createClient(): ApiClient {
     listProjects: vi.fn(async () => [project]),
     createProject: vi.fn() as never,
     listSessions: vi.fn(async () => sessions),
+    listProjectFiles: vi.fn(async () => []),
     updateSession: vi.fn() as never,
     deleteSession: vi.fn() as never,
     listMessages: vi.fn(async () => []),
