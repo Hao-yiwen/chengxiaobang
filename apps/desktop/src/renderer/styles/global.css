@@ -176,6 +176,102 @@
   }
 }
 
+/* Syntax highlighting (rehype-highlight). The one place colour is allowed:
+   low-saturation tones inside code blocks; all other UI stays monochrome. */
+.hljs-comment,
+.hljs-quote {
+  color: hsl(215 12% 52%);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-doctag {
+  color: hsl(255 32% 54%);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition {
+  color: hsl(150 28% 37%);
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet {
+  color: hsl(25 45% 44%);
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-name {
+  color: hsl(215 45% 46%);
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-type,
+.hljs-built_in {
+  color: hsl(190 35% 36%);
+}
+
+.hljs-meta,
+.hljs-deletion {
+  color: hsl(215 12% 52%);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
+}
+
+.dark .hljs-comment,
+.dark .hljs-quote,
+.dark .hljs-meta,
+.dark .hljs-deletion {
+  color: hsl(215 10% 58%);
+}
+
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-doctag {
+  color: hsl(255 42% 76%);
+}
+
+.dark .hljs-string,
+.dark .hljs-regexp,
+.dark .hljs-addition {
+  color: hsl(150 28% 62%);
+}
+
+.dark .hljs-number,
+.dark .hljs-literal,
+.dark .hljs-symbol,
+.dark .hljs-bullet {
+  color: hsl(25 52% 66%);
+}
+
+.dark .hljs-title,
+.dark .hljs-section,
+.dark .hljs-name {
+  color: hsl(215 58% 70%);
+}
+
+.dark .hljs-attr,
+.dark .hljs-attribute,
+.dark .hljs-variable,
+.dark .hljs-template-variable,
+.dark .hljs-type,
+.dark .hljs-built_in {
+  color: hsl(190 38% 60%);
+}
+
 /* macOS-style overlay scrollbars — slim, unobtrusive */
 ::-webkit-scrollbar {
   width: 10px;

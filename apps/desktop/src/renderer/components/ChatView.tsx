@@ -1,5 +1,5 @@
 import { Check, ChevronRight, FileText, Loader2, Terminal, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Message, ToolCall } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
@@ -208,7 +208,9 @@ function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+// Memoized so per-delta re-renders during streaming skip settled messages —
+// the store preserves referential identity of existing message objects.
+const MessageBubble = memo(function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
   if (isUser) {
     return (
@@ -229,7 +231,7 @@ function MessageBubble({ message }: { message: Message }) {
       <Markdown text={message.content} />
     </div>
   );
-}
+});
 
 type TimelineItem =
   | { kind: "message"; at: string; message: Message }
