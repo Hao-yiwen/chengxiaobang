@@ -20,7 +20,8 @@
     "noMatches": "没有匹配的对话",
     "exportSession": "导出为 Markdown",
     "branchOf": "从「{{title}}」分支",
-    "branchUnknown": "来自已删除的会话"
+    "branchUnknown": "来自已删除的会话",
+    "feishuSession": "来自飞书的会话"
   },
   "composer": {
     "messageLabel": "输入消息",
@@ -145,7 +146,8 @@
       "appearance": "外观",
       "general": "常规",
       "providers": "供应商",
-      "skills": "技能与命令"
+      "skills": "技能与命令",
+      "feishu": "飞书"
     },
     "skills": {
       "title": "技能与命令",
@@ -203,6 +205,39 @@
       "delete": "删除",
       "deleteConfirm": "确定删除该模型配置？",
       "deleted": "已删除"
+    },
+    "groupIntegrations": "集成",
+    "feishu": {
+      "title": "飞书机器人",
+      "connTitle": "连接配置",
+      "connDesc": "使用飞书开放平台「自建应用」的凭据，通过长连接接收消息，无需公网地址。",
+      "appId": "App ID",
+      "appSecret": "App Secret",
+      "appSecretKeepHint": "已保存，留空保持不变",
+      "domain": "平台",
+      "domainFeishu": "飞书",
+      "domainLark": "Lark（国际版）",
+      "enable": "启用飞书机器人",
+      "enableDesc": "开启后保持与飞书的长连接：私聊直接对话，群聊需 @ 机器人",
+      "fullAccess": "允许完全访问",
+      "fullAccessDesc": "默认只读：写文件、执行命令等操作会被自动拒绝",
+      "fullAccessWarning": "开启后，来自飞书的消息可以直接读写本地文件并执行命令。请确认你信任该机器人可触达的所有飞书成员。",
+      "save": "保存并连接",
+      "statusTitle": "连接状态",
+      "status": {
+        "disconnected": "未连接",
+        "connecting": "连接中…",
+        "connected": "已连接",
+        "error": "连接失败"
+      },
+      "guideTitle": "配置指引",
+      "guideDesc": "在飞书开放平台创建自建应用后按以下步骤操作。注意：应用关闭期间的消息不会补发。",
+      "guide1": "在飞书开放平台创建「企业自建应用」，并在「添加应用能力」中开启机器人",
+      "guide2": "在「权限管理」开通 im:message:send_as_bot（发消息）与 im:message.receive_v1 事件权限，建议同时开通 im:chat:readonly 用于会话命名",
+      "guide3": "在「事件与回调」中将订阅方式改为「使用长连接接收事件」，并添加「接收消息 im.message.receive_v1」事件",
+      "guide4": "创建版本并发布应用，在工作台将机器人加入需要的群聊",
+      "guide5": "把上方的 App ID / App Secret 填入并保存，状态变为「已连接」即可在飞书里对话",
+      "saved": "已保存"
     }
   },
   "notice": {

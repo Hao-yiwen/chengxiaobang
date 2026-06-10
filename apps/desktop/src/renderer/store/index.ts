@@ -3,6 +3,9 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { createId } from "@chengxiaobang/shared";
 import type {
   AccessMode,
+  FeishuConfig,
+  FeishuConfigInput,
+  FeishuStatus,
   Message,
   Project,
   ProviderConfig,
@@ -85,6 +88,9 @@ interface AppState {
   browserUrl: string;
   terminalEntries: TerminalEntry[];
   terminalRunning: boolean;
+  // feishu integration (transient; loaded when the settings section opens)
+  feishuConfig?: FeishuConfig;
+  feishuStatus?: FeishuStatus;
   // theme (persisted)
   theme: Theme;
   // language (persisted)
@@ -142,6 +148,9 @@ interface AppState {
   saveProvider(input: ProviderInput): Promise<void>;
   deleteProvider(id: string): Promise<void>;
   testProvider(id: string): Promise<void>;
+  loadFeishuConfig(): Promise<void>;
+  saveFeishuConfig(input: FeishuConfigInput): Promise<void>;
+  refreshFeishuStatus(): Promise<void>;
   clearRunState(): void;
 }
 
@@ -177,6 +186,8 @@ const initialState = {
   browserUrl: "",
   terminalEntries: [] as TerminalEntry[],
   terminalRunning: false,
+  feishuConfig: undefined as FeishuConfig | undefined,
+  feishuStatus: undefined as FeishuStatus | undefined,
   theme: "system" as Theme,
   locale: DEFAULT_LOCALE as Locale,
   clientReady: false
@@ -776,6 +787,42 @@ export const useAppStore = create<AppState>()(
 
       async testProvider(id) {
         await apiClient?.testProvider(id);
+      },
+
+      async loadFeishuConfig() {
+        if (!apiClient) {
+          return;
+        }
+        try {
+          const [config, status] = await Promise.all([
+            apiClient.getFeishuConfig(),
+            apiClient.getFeishuStatus()
+          ]);
+          set({ feishuConfig: config, feishuStatus: status });
+        } catch (error) {
+          console.warn("加载飞书配置失败", error);
+        }
+      },
+
+      async saveFeishuConfig(input) {
+        if (!apiClient) {
+          return;
+        }
+        // Feedback is inline in the settings section — the global notice bar
+        // only renders on the home/chat views.
+        const { config, status } = await apiClient.saveFeishuConfig(input);
+        set({ feishuConfig: config, feishuStatus: status });
+      },
+
+      async refreshFeishuStatus() {
+        if (!apiClient) {
+          return;
+        }
+        try {
+          set({ feishuStatus: await apiClient.getFeishuStatus() });
+        } catch {
+          // Transient polling failure — keep the last known status.
+        }
       },
 
       clearRunState() {

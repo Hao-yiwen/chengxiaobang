@@ -5,6 +5,7 @@ import {
   FileDown,
   Folder,
   GitFork,
+  MessageSquareText,
   FolderOpen,
   MessageSquare,
   MessageSquarePlus,
@@ -316,6 +317,11 @@ function SessionGroup(props: GroupProps) {
                   }
                 >
                   <GitFork className="size-3 text-muted-foreground" />
+                </span>
+              ) : null}
+              {session.feishuChatId ? (
+                <span className="flex-none" title={t("sidebar.feishuSession")}>
+                  <MessageSquareText className="size-3 text-muted-foreground" />
                 </span>
               ) : null}
               <span className="truncate">{session.title}</span>

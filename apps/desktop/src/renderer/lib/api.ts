@@ -1,4 +1,7 @@
 import type {
+  FeishuConfig,
+  FeishuConfigInput,
+  FeishuStatus,
   Message,
   Project,
   ProviderConfig,
@@ -33,6 +36,11 @@ export interface ApiClient {
   saveProvider(input: ProviderInput): Promise<ProviderConfig>;
   deleteProvider(id: string): Promise<boolean>;
   testProvider(id: string): Promise<void>;
+  getFeishuConfig(): Promise<FeishuConfig>;
+  saveFeishuConfig(
+    input: FeishuConfigInput
+  ): Promise<{ config: FeishuConfig; status: FeishuStatus }>;
+  getFeishuStatus(): Promise<FeishuStatus>;
   approve(toolCallId: string, approved: boolean): Promise<void>;
   abort(runId: string): Promise<void>;
   terminalExec(input: TerminalExecRequest): Promise<TerminalExecResult>;
@@ -155,6 +163,18 @@ export async function createApiClient(): Promise<ApiClient> {
     },
     async testProvider(id) {
       await request(`/api/settings/providers/${id}/test`, { method: "POST" });
+    },
+    async getFeishuConfig() {
+      return (await request<{ config: FeishuConfig }>("/api/settings/feishu")).config;
+    },
+    async saveFeishuConfig(input) {
+      return request<{ config: FeishuConfig; status: FeishuStatus }>("/api/settings/feishu", {
+        method: "PUT",
+        body: JSON.stringify(input)
+      });
+    },
+    async getFeishuStatus() {
+      return (await request<{ status: FeishuStatus }>("/api/settings/feishu/status")).status;
     },
     async approve(toolCallId, approved) {
       await request(`/api/approvals/${toolCallId}`, {

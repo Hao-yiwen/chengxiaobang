@@ -20,7 +20,8 @@
     "noMatches": "No matching conversations",
     "exportSession": "Export as Markdown",
     "branchOf": "Branched from \"{{title}}\"",
-    "branchUnknown": "Branched from a deleted session"
+    "branchUnknown": "Branched from a deleted session",
+    "feishuSession": "Session from Feishu"
   },
   "composer": {
     "messageLabel": "Message input",
@@ -145,7 +146,8 @@
       "appearance": "Appearance",
       "general": "General",
       "providers": "Providers",
-      "skills": "Skills & Commands"
+      "skills": "Skills & Commands",
+      "feishu": "Feishu"
     },
     "skills": {
       "title": "Skills & Commands",
@@ -203,6 +205,39 @@
       "delete": "Delete",
       "deleteConfirm": "Delete this model configuration?",
       "deleted": "Deleted"
+    },
+    "groupIntegrations": "Integrations",
+    "feishu": {
+      "title": "Feishu Bot",
+      "connTitle": "Connection",
+      "connDesc": "Uses a Feishu Open Platform self-built app over a WebSocket long connection — no public URL needed.",
+      "appId": "App ID",
+      "appSecret": "App Secret",
+      "appSecretKeepHint": "Saved — leave empty to keep",
+      "domain": "Platform",
+      "domainFeishu": "Feishu",
+      "domainLark": "Lark (global)",
+      "enable": "Enable Feishu bot",
+      "enableDesc": "Keeps a long connection: DMs answer directly, groups require @-mentioning the bot",
+      "fullAccess": "Allow full access",
+      "fullAccessDesc": "Read-only by default: writing files and running commands are auto-denied",
+      "fullAccessWarning": "When enabled, messages from Feishu can directly read/write local files and run commands. Make sure you trust everyone who can reach this bot.",
+      "save": "Save & connect",
+      "statusTitle": "Connection status",
+      "status": {
+        "disconnected": "Disconnected",
+        "connecting": "Connecting…",
+        "connected": "Connected",
+        "error": "Connection failed"
+      },
+      "guideTitle": "Setup guide",
+      "guideDesc": "Create a self-built app on the Feishu Open Platform, then follow these steps. Note: messages sent while the app is closed are not redelivered.",
+      "guide1": "Create a self-built app on the Feishu Open Platform and enable the Bot capability",
+      "guide2": "Grant im:message:send_as_bot and the im:message.receive_v1 event permission; im:chat:readonly is recommended for session naming",
+      "guide3": "In Events & Callbacks, switch subscription to Long Connection and add the im.message.receive_v1 event",
+      "guide4": "Create and publish a version, then add the bot to the group chats you need",
+      "guide5": "Fill in the App ID / App Secret above and save — once it shows Connected you can chat from Feishu",
+      "saved": "Saved"
     }
   },
   "notice": {

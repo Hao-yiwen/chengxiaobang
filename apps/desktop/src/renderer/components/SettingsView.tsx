@@ -7,6 +7,7 @@ import {
   Languages,
   Laptop,
   LockKeyhole,
+  MessageSquareText,
   Moon,
   Search,
   ShieldCheck,
@@ -31,11 +32,13 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
+import { FeishuSection } from "@/components/settings/FeishuSection";
 import { OptionCard } from "@/components/settings/OptionCard";
+import { SectionShell, SettingBlock } from "@/components/settings/SectionShell";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
-type SectionId = "appearance" | "general" | "providers" | "skills";
+type SectionId = "appearance" | "general" | "providers" | "skills" | "feishu";
 
 interface NavDef {
   id: SectionId;
@@ -43,9 +46,10 @@ interface NavDef {
     | "settings.nav.appearance"
     | "settings.nav.general"
     | "settings.nav.providers"
-    | "settings.nav.skills";
+    | "settings.nav.skills"
+    | "settings.nav.feishu";
   icon: typeof Sun;
-  groupKey: "settings.groupPersonal" | "settings.groupModel";
+  groupKey: "settings.groupPersonal" | "settings.groupModel" | "settings.groupIntegrations";
 }
 
 interface NavItem {
@@ -59,7 +63,8 @@ const NAV_DEFS: NavDef[] = [
   { id: "appearance", labelKey: "settings.nav.appearance", icon: SunMoon, groupKey: "settings.groupPersonal" },
   { id: "general", labelKey: "settings.nav.general", icon: SlidersHorizontal, groupKey: "settings.groupPersonal" },
   { id: "providers", labelKey: "settings.nav.providers", icon: Boxes, groupKey: "settings.groupModel" },
-  { id: "skills", labelKey: "settings.nav.skills", icon: Sparkles, groupKey: "settings.groupModel" }
+  { id: "skills", labelKey: "settings.nav.skills", icon: Sparkles, groupKey: "settings.groupModel" },
+  { id: "feishu", labelKey: "settings.nav.feishu", icon: MessageSquareText, groupKey: "settings.groupIntegrations" }
 ];
 
 export function SettingsView() {
@@ -178,39 +183,10 @@ export function SettingsView() {
           {section === "general" ? <GeneralSection /> : null}
           {section === "providers" ? <ProvidersSection /> : null}
           {section === "skills" ? <SkillsSection /> : null}
+          {section === "feishu" ? <FeishuSection /> : null}
         </div>
       </div>
     </>
-  );
-}
-
-function SectionShell(props: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h1 className="mb-8 text-2xl font-semibold tracking-tight">{props.title}</h1>
-      <div className="space-y-10">{props.children}</div>
-    </section>
-  );
-}
-
-function SettingBlock(props: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <h2 className="text-base font-semibold">{props.title}</h2>
-      {props.description ? (
-        <p className="mb-3 mt-1 text-sm text-muted-foreground">{props.description}</p>
-      ) : (
-        <div className="mb-3" />
-      )}
-      {props.children}
-    </div>
   );
 }
 
