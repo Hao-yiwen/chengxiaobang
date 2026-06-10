@@ -72,7 +72,8 @@
     "editCancel": "Cancel",
     "codeExpand": "Show all {{lines}} lines",
     "codeCollapse": "Collapse code",
-    "codeDownload": "Download code"
+    "codeDownload": "Download code",
+    "scrollToBottom": "Scroll to bottom"
   },
   "rightPanel": {
     "terminal": "Terminal",
