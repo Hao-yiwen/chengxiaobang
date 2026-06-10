@@ -17,7 +17,8 @@
     "deleteSession": "删除会话",
     "filterPlaceholder": "搜索对话",
     "clearFilter": "清除搜索",
-    "noMatches": "没有匹配的对话"
+    "noMatches": "没有匹配的对话",
+    "exportSession": "导出为 Markdown"
   },
   "composer": {
     "messageLabel": "输入消息",
@@ -200,6 +201,12 @@
     "openFolderDesktopOnly": "打开文件夹需要在桌面端里使用，浏览器预览没有系统文件选择权限。",
     "addContextDesktopOnly": "添加文件上下文需要在桌面端里使用，浏览器预览没有系统文件读取权限。",
     "skipFile": "跳过 {{name}}：{{error}}",
-    "attachmentBlock": "以下是文件 {{name}} 的内容：\n```\n{{text}}\n```\n"
+    "attachmentBlock": "以下是文件 {{name}} 的内容：\n```\n{{text}}\n```\n",
+    "exportFailed": "导出失败，请重试"
+  },
+  "export": {
+    "toolCall": "工具调用",
+    "reasoning": "深度思考",
+    "exportedAt": "导出时间"
   }
 }

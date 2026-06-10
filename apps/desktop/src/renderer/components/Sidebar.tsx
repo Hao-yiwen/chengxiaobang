@@ -2,6 +2,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  FileDown,
   Folder,
   FolderOpen,
   MessageSquare,
@@ -40,6 +41,7 @@ export function Sidebar() {
   const selectSession = useAppStore((state) => state.selectSession);
   const renameSession = useAppStore((state) => state.renameSession);
   const deleteSession = useAppStore((state) => state.deleteSession);
+  const exportSession = useAppStore((state) => state.exportSession);
 
   const [editingId, setEditingId] = useState<string>();
   const [draftTitle, setDraftTitle] = useState("");
@@ -89,6 +91,7 @@ export function Sidebar() {
     onCommitRename: () => void commitRename(),
     onCancelRename: () => setEditingId(undefined),
     onDelete,
+    onExport: (id: string) => void exportSession(id),
     // A filter match must be visible even in a collapsed group or past the
     // per-group display cap.
     forceOpen: filtering,
@@ -218,6 +221,7 @@ interface GroupProps {
   onCommitRename(): void;
   onCancelRename(): void;
   onDelete(id: string): void;
+  onExport(id: string): void;
   /** Render expanded regardless of the group's own collapse state (filtering). */
   forceOpen?: boolean;
   /** Bypass the per-group display cap (filtering). */
@@ -305,6 +309,14 @@ function SessionGroup(props: GroupProps) {
               className="flex size-6 flex-none items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
             >
               <Pencil className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              title={t("sidebar.exportSession")}
+              onClick={() => props.onExport(session.id)}
+              className="flex size-6 flex-none items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
+            >
+              <FileDown className="size-3.5" />
             </button>
             <button
               type="button"

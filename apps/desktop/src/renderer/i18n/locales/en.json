@@ -17,7 +17,8 @@
     "deleteSession": "Delete conversation",
     "filterPlaceholder": "Filter conversations",
     "clearFilter": "Clear filter",
-    "noMatches": "No matching conversations"
+    "noMatches": "No matching conversations",
+    "exportSession": "Export as Markdown"
   },
   "composer": {
     "messageLabel": "Message input",
@@ -200,6 +201,12 @@
     "openFolderDesktopOnly": "Opening a folder requires the desktop app — the browser preview has no system file-picker access.",
     "addContextDesktopOnly": "Adding file context requires the desktop app — the browser preview has no system file-read access.",
     "skipFile": "Skipped {{name}}: {{error}}",
-    "attachmentBlock": "Here is the content of file {{name}}:\n```\n{{text}}\n```\n"
+    "attachmentBlock": "Here is the content of file {{name}}:\n```\n{{text}}\n```\n",
+    "exportFailed": "Export failed, please try again"
+  },
+  "export": {
+    "toolCall": "Tool call",
+    "reasoning": "Reasoning",
+    "exportedAt": "Exported at"
   }
 }

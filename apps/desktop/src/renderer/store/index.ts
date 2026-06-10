@@ -14,6 +14,8 @@ import type {
   ToolCall
 } from "@chengxiaobang/shared";
 import { createApiClient, type ApiClient } from "../lib/api";
+import { downloadTextFile } from "../lib/download";
+import { buildSessionMarkdown, exportFilename } from "../lib/session-export";
 import i18n, { DEFAULT_LOCALE, type Locale } from "../i18n";
 
 export type Theme = "light" | "dark" | "system";
@@ -117,6 +119,8 @@ interface AppState {
   selectSession(id: string): Promise<void>;
   renameSession(id: string, title: string): Promise<void>;
   deleteSession(id: string): Promise<void>;
+  /** Downloads any session (active or not) as a Markdown document. */
+  exportSession(id: string): Promise<void>;
   newChat(): void;
   openFolder(): Promise<void>;
   addContext(): Promise<void>;
@@ -439,6 +443,32 @@ export const useAppStore = create<AppState>()(
           }
           return { sessions };
         });
+      },
+
+      async exportSession(id) {
+        const session = get().sessions.find((item) => item.id === id);
+        if (!apiClient || !session) {
+          return;
+        }
+        try {
+          // Fetched directly so exporting a non-active session never disturbs
+          // the open chat's messages/toolHistory state.
+          const [messages, history] = await Promise.all([
+            apiClient.listMessages(id),
+            apiClient.listSessionRuns(id)
+          ]);
+          const markdown = buildSessionMarkdown(session, messages, history.toolCalls, {
+            user: i18n.t("chat.roleUser"),
+            assistant: i18n.t("chat.roleAssistant"),
+            toolCall: i18n.t("export.toolCall"),
+            reasoning: i18n.t("export.reasoning"),
+            exportedAt: i18n.t("export.exportedAt")
+          });
+          downloadTextFile(exportFilename(session.title), markdown);
+        } catch (error) {
+          console.warn("导出会话失败", error);
+          set({ notice: i18n.t("notice.exportFailed") });
+        }
       },
 
       newChat() {

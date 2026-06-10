@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
@@ -94,6 +94,29 @@ describe("sidebar session filter", () => {
     expect(await screen.findByText("旧标题A")).toBeInTheDocument();
     expect(screen.getByText("另一个B")).toBeInTheDocument();
     expect(screen.queryByText("唯一目标")).not.toBeInTheDocument();
+  });
+
+  it("exports a non-active session as markdown from its hover action", async () => {
+    const createObjectURL = vi.fn(() => "blob:mock");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL }));
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+
+    const client = createClient();
+    render(<App client={client} />);
+    const row = (await screen.findByText("另一个B")).closest("div");
+
+    fireEvent.click(within(row as HTMLElement).getByTitle("导出为 Markdown"));
+
+    await waitFor(() => expect(client.listMessages).toHaveBeenCalledWith("s2"));
+    expect(client.listSessionRuns).toHaveBeenCalledWith("s2");
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+
+    click.mockRestore();
+    vi.unstubAllGlobals();
   });
 
   it("shows a no-matches hint and clears with Escape", async () => {

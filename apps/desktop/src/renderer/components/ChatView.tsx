@@ -10,6 +10,7 @@ import { ReasoningPanel } from "@/components/ReasoningPanel";
 import { ScrollToBottomButton } from "@/components/ScrollToBottomButton";
 import { thinkingSeconds } from "@/lib/reasoning";
 import { isNearBottom } from "@/lib/scroll";
+import { timelineItems } from "@/lib/timeline";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
@@ -303,24 +304,3 @@ function TurnDuration({ durationMs }: { durationMs: number }) {
   );
 }
 
-type TimelineItem =
-  | { kind: "message"; at: string; message: Message }
-  | { kind: "tool"; at: string; toolCall: ToolCall };
-
-function timelineItems(messages: Message[], toolCalls: ToolCall[]): TimelineItem[] {
-  return [
-    // Tool-role messages are rendered as tool-call rows, not chat bubbles.
-    ...messages
-      .filter((message) => message.role !== "tool")
-      .map((message) => ({
-        kind: "message" as const,
-        at: message.createdAt,
-        message
-      })),
-    ...toolCalls.map((toolCall) => ({
-      kind: "tool" as const,
-      at: toolCall.updatedAt,
-      toolCall
-    }))
-  ].sort((left, right) => left.at.localeCompare(right.at));
-}
