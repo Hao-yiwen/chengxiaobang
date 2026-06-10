@@ -14,7 +14,10 @@
     "saveTitle": "保存标题",
     "cancelRename": "取消重命名",
     "rename": "重命名",
-    "deleteSession": "删除会话"
+    "deleteSession": "删除会话",
+    "filterPlaceholder": "搜索对话",
+    "clearFilter": "清除搜索",
+    "noMatches": "没有匹配的对话"
   },
   "composer": {
     "messageLabel": "输入消息",

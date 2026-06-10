@@ -14,7 +14,10 @@
     "saveTitle": "Save title",
     "cancelRename": "Cancel rename",
     "rename": "Rename",
-    "deleteSession": "Delete conversation"
+    "deleteSession": "Delete conversation",
+    "filterPlaceholder": "Filter conversations",
+    "clearFilter": "Clear filter",
+    "noMatches": "No matching conversations"
   },
   "composer": {
     "messageLabel": "Message input",

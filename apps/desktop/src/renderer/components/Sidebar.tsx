@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Logo } from "@/components/Logo";
+import { filterSessionsByTitle } from "@/lib/session-filter";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
@@ -42,12 +43,18 @@ export function Sidebar() {
 
   const [editingId, setEditingId] = useState<string>();
   const [draftTitle, setDraftTitle] = useState("");
+  const [filter, setFilter] = useState("");
 
-  const ungrouped = sessions.filter((session) => !session.projectId);
-  const projectSessions = projects.map((project) => ({
-    project,
-    sessions: sessions.filter((session) => session.projectId === project.id)
-  }));
+  const filtering = filter.trim().length > 0;
+  const visibleSessions = filterSessionsByTitle(sessions, filter);
+  const ungrouped = visibleSessions.filter((session) => !session.projectId);
+  const projectSessions = projects
+    .map((project) => ({
+      project,
+      sessions: visibleSessions.filter((session) => session.projectId === project.id)
+    }))
+    // While filtering, groups without a match disappear entirely.
+    .filter((group) => !filtering || group.sessions.length > 0);
 
   function startRename(session: Session): void {
     setEditingId(session.id);
@@ -81,7 +88,11 @@ export function Sidebar() {
     onDraftChange: setDraftTitle,
     onCommitRename: () => void commitRename(),
     onCancelRename: () => setEditingId(undefined),
-    onDelete
+    onDelete,
+    // A filter match must be visible even in a collapsed group or past the
+    // per-group display cap.
+    forceOpen: filtering,
+    showAll: filtering
   };
 
   return (
@@ -110,6 +121,33 @@ export function Sidebar() {
         {t("sidebar.search")}
       </Button>
 
+      <div className="relative mt-1">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          aria-label={t("sidebar.filterPlaceholder")}
+          placeholder={t("sidebar.filterPlaceholder")}
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setFilter("");
+              event.currentTarget.blur();
+            }
+          }}
+          className="h-8 pl-8 pr-7 text-[13px]"
+        />
+        {filter ? (
+          <button
+            type="button"
+            title={t("sidebar.clearFilter")}
+            onClick={() => setFilter("")}
+            className="absolute right-1.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        ) : null}
+      </div>
+
       <div className="mb-1 mt-4 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
         {t("sidebar.conversations")}
       </div>
@@ -122,7 +160,9 @@ export function Sidebar() {
             {...groupProps}
           />
         ) : (
-          <p className="px-3 py-2 text-sm text-muted-foreground">{t("sidebar.noChats")}</p>
+          <p className="px-3 py-2 text-sm text-muted-foreground">
+            {filtering ? t("sidebar.noMatches") : t("sidebar.noChats")}
+          </p>
         )}
       </ScrollArea>
 
@@ -178,11 +218,16 @@ interface GroupProps {
   onCommitRename(): void;
   onCancelRename(): void;
   onDelete(id: string): void;
+  /** Render expanded regardless of the group's own collapse state (filtering). */
+  forceOpen?: boolean;
+  /** Bypass the per-group display cap (filtering). */
+  showAll?: boolean;
 }
 
 function SessionGroup(props: GroupProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(true);
+  const expanded = open || props.forceOpen;
   return (
     <div className="mb-2.5">
       <button
@@ -190,19 +235,19 @@ function SessionGroup(props: GroupProps) {
         onClick={() => setOpen((value) => !value)}
         className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
       >
-        {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+        {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
         {props.icon}
         <span className="truncate">{props.name}</span>
         <span className="ml-auto rounded-full bg-muted px-1.5 text-[10.5px] font-medium tabular-nums text-muted-foreground">
           {props.sessions.length}
         </span>
       </button>
-      {open && props.sessions.length === 0 ? (
+      {expanded && props.sessions.length === 0 ? (
         <p className="px-3 py-1.5 pl-8 text-[12px] text-muted-foreground">
           {t("sidebar.noChats")}
         </p>
       ) : null}
-      {open ? props.sessions.slice(0, 8).map((session) =>
+      {expanded ? (props.showAll ? props.sessions : props.sessions.slice(0, 8)).map((session) =>
         props.editingId === session.id ? (
           <div key={session.id} className="flex items-center gap-1 py-1 pl-7 pr-1">
             <Input
