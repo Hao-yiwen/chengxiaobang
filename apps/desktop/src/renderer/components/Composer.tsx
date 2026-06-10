@@ -1,16 +1,15 @@
 import {
+  ArrowUp,
   Check,
   ChevronDown,
-  Cpu,
   FileText,
   Folder,
   FolderOpen,
   LockKeyhole,
   MessageSquare,
-  Paperclip,
-  Send,
-  Sparkles,
+  Plus,
   ShieldCheck,
+  Sparkles,
   Square,
   Terminal,
   X
@@ -41,6 +40,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { selectActiveProject, useAppStore } from "@/store";
 
+const TEXTAREA_MAX_HEIGHT_PX = 220;
+
 export function Composer() {
   const { t } = useTranslation();
   const { value, projects, providers, providerId, accessMode, attachments, isRunning, slashCommands } =
@@ -69,9 +70,7 @@ export function Composer() {
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [selectionStart, setSelectionStart] = useState(0);
-  const [highlightedIndex, setHighlightedIndex] = useState(0);
-  // Escape hides the file menu for the token at this position until a new @ starts.
-  const [dismissedAtStart, setDismissedAtStart] = useState<number>();
+  const [highlightedCommand, setHighlightedCommand] = useState(0);
   const configuredProviders = providers.filter((provider) => provider.apiKeyRef);
   const selectedProvider = configuredProviders.find((provider) => provider.id === providerId);
   const slashQuery = getSlashQuery(value, selectionStart);
@@ -81,6 +80,9 @@ export function Composer() {
   );
   const showSlashMenu = slashQuery !== undefined && filteredSlashCommands.length > 0;
 
+  // @-file mentions (project sessions only). Escape hides the menu for the
+  // token at this position until a new @ starts.
+  const [dismissedAtStart, setDismissedAtStart] = useState<number>();
   const fileSuggestions = useAppStore((state) => state.fileSuggestions);
   const loadFileSuggestions = useAppStore((state) => state.loadFileSuggestions);
   const atToken = activeProject ? getAtToken(value, selectionStart) : undefined;
@@ -89,9 +91,12 @@ export function Composer() {
     atToken !== undefined &&
     atToken.start !== dismissedAtStart &&
     fileSuggestions.length > 0;
+  // Allow sending with no provider configured — the store opens the setup
+  // dialog instead of silently doing nothing.
+  const canSend = value.trim().length > 0;
 
   useEffect(() => {
-    setHighlightedIndex(0);
+    setHighlightedCommand(0);
   }, [slashQuery, filteredSlashCommands.length, atToken?.query, fileSuggestions.length]);
 
   // Debounced fetch of file suggestions while an @-token is being typed.
@@ -104,26 +109,32 @@ export function Composer() {
     return () => window.clearTimeout(timer);
   }, [atToken?.query, atToken === undefined, loadFileSuggestions]);
 
+  // ChatGPT-style auto-growing textarea: expand with content up to a cap.
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, TEXTAREA_MAX_HEIGHT_PX)}px`;
+  }, [value]);
+
   const updateSelectionStart = () => {
     setSelectionStart(textareaRef.current?.selectionStart ?? value.length);
   };
 
-  const focusCaretAt = (position: number) => {
+  const insertSlashCommand = (command: SlashCommand) => {
+    setInput(command.insertText);
+    setHighlightedCommand(0);
     window.requestAnimationFrame(() => {
       const textarea = textareaRef.current;
       if (!textarea) {
         return;
       }
       textarea.focus();
-      textarea.setSelectionRange(position, position);
-      setSelectionStart(position);
+      textarea.setSelectionRange(command.insertText.length, command.insertText.length);
+      setSelectionStart(command.insertText.length);
     });
-  };
-
-  const insertSlashCommand = (command: SlashCommand) => {
-    setInput(command.insertText);
-    setHighlightedIndex(0);
-    focusCaretAt(command.insertText.length);
   };
 
   const insertFileReference = (path: string) => {
@@ -133,31 +144,40 @@ export function Composer() {
     const cursor = Math.max(0, Math.min(selectionStart, value.length));
     const next = `${value.slice(0, atToken.start)}@${path} ${value.slice(cursor)}`;
     setInput(next);
-    setHighlightedIndex(0);
-    focusCaretAt(atToken.start + path.length + 2);
+    setHighlightedCommand(0);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) {
+        return;
+      }
+      const caret = atToken.start + path.length + 2;
+      textarea.focus();
+      textarea.setSelectionRange(caret, caret);
+      setSelectionStart(caret);
+    });
   };
 
   const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Both menus share one keyboard interaction; slash wins when both could show.
     const menu = showSlashMenu ? "slash" : showFileMenu ? "file" : undefined;
     if (menu) {
-      const length = menu === "slash" ? filteredSlashCommands.length : fileSuggestions.length;
+      const menuLength = menu === "slash" ? filteredSlashCommands.length : fileSuggestions.length;
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setHighlightedIndex((index) => (index + 1) % length);
+        setHighlightedCommand((index) => (index + 1) % menuLength);
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setHighlightedIndex((index) => (index - 1 + length) % length);
+        setHighlightedCommand((index) => (index - 1 + menuLength) % menuLength);
         return;
       }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
         if (menu === "slash") {
-          insertSlashCommand(filteredSlashCommands[highlightedIndex] ?? filteredSlashCommands[0]);
+          insertSlashCommand(filteredSlashCommands[highlightedCommand] ?? filteredSlashCommands[0]);
         } else {
-          insertFileReference(fileSuggestions[highlightedIndex] ?? fileSuggestions[0]);
+          insertFileReference(fileSuggestions[highlightedCommand] ?? fileSuggestions[0]);
         }
         return;
       }
@@ -172,8 +192,7 @@ export function Composer() {
         return;
       }
     }
-    // Enter sends (Shift+Enter inserts a newline); respect IME composition so
-    // confirming Chinese candidates never fires a send (ported from main).
+    // Enter sends (Shift+Enter inserts a newline); respect IME composition.
     if (
       event.key === "Enter" &&
       !event.shiftKey &&
@@ -181,7 +200,9 @@ export function Composer() {
       !isRunning
     ) {
       event.preventDefault();
-      void submit();
+      if (canSend) {
+        void submit();
+      }
       return;
     }
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -190,14 +211,14 @@ export function Composer() {
   };
 
   return (
-    <div className="relative w-full overflow-visible rounded-2xl border bg-card shadow-composer transition-all focus-within:border-brand/40 focus-within:ring-4 focus-within:ring-brand/10">
+    <div className="relative w-full rounded-[26px] border bg-card shadow-composer transition-[border-color,box-shadow] focus-within:border-input focus-within:shadow-elevated">
       {attachments.length > 0 ? (
         <div className="flex flex-wrap gap-2 px-4 pt-3.5">
           {attachments.map((attachment) => (
             <Badge
               key={attachment.path}
               variant="secondary"
-              className="max-w-[240px] gap-1.5 py-1 pl-2.5 pr-1 font-normal"
+              className="max-w-[240px] gap-1.5 rounded-lg py-1 pl-2.5 pr-1 font-normal"
               title={attachment.path}
             >
               <span className="truncate">{attachment.name}</span>
@@ -219,6 +240,7 @@ export function Composer() {
 
       <Textarea
         ref={textareaRef}
+        rows={1}
         aria-label={t("composer.messageLabel")}
         placeholder={t("composer.placeholder")}
         value={value}
@@ -230,163 +252,97 @@ export function Composer() {
         onKeyUp={updateSelectionStart}
         onSelect={updateSelectionStart}
         onKeyDown={handleTextareaKeyDown}
-        className="min-h-[56px] resize-none rounded-none border-0 px-4 pb-1.5 pt-4 text-[15px] shadow-none focus-visible:ring-0"
+        className="max-h-[220px] min-h-[44px] resize-none overflow-y-auto rounded-none border-0 bg-transparent px-4 pb-0 pt-3.5 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
       />
+
       {showSlashMenu ? (
-        <SuggestionPopover>
-          {filteredSlashCommands.map((command, index) => (
-            <SuggestionItem
-              key={command.id}
-              highlighted={index === highlightedIndex}
-              onHighlight={() => setHighlightedIndex(index)}
-              onPick={() => insertSlashCommand(command)}
-            >
-              <span className="flex size-7 flex-none items-center justify-center rounded-md bg-muted text-muted-foreground">
-                {command.kind === "builtin_tool" ? (
-                  <Terminal className="size-4" />
-                ) : (
-                  <Sparkles className="size-4" />
+        <div className="animate-scale-in absolute bottom-full left-2 right-2 z-20 mb-2 overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-elevated">
+          <div className="max-h-[260px] overflow-y-auto py-1">
+            {filteredSlashCommands.map((command, index) => (
+              <button
+                key={command.id}
+                type="button"
+                className={cn(
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors",
+                  index === highlightedCommand ? "bg-accent text-accent-foreground" : "hover:bg-accent"
                 )}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium">{command.name}</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {command.description || t("composer.slashNoDescription")}
+                onMouseEnter={() => setHighlightedCommand(index)}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  insertSlashCommand(command);
+                }}
+                onClick={() => insertSlashCommand(command)}
+              >
+                <span className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  {command.kind === "builtin_tool" ? (
+                    <Terminal className="size-4" />
+                  ) : (
+                    <Sparkles className="size-4" />
+                  )}
                 </span>
-              </span>
-              <span className="flex-none rounded border px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                {t(`composer.slashSource.${command.source}`)}
-              </span>
-            </SuggestionItem>
-          ))}
-        </SuggestionPopover>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{command.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {command.description || t("composer.slashNoDescription")}
+                  </span>
+                </span>
+                <span className="flex-none rounded-md border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                  {t(`composer.slashSource.${command.source}`)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       ) : null}
 
       {showFileMenu ? (
-        <SuggestionPopover ariaLabel={t("composer.fileMenuLabel")}>
-          {fileSuggestions.map((path, index) => (
-            <SuggestionItem
-              key={path}
-              highlighted={index === highlightedIndex}
-              onHighlight={() => setHighlightedIndex(index)}
-              onPick={() => insertFileReference(path)}
-            >
-              <span className="flex size-7 flex-none items-center justify-center rounded-md bg-muted text-muted-foreground">
-                <FileText className="size-4" />
-              </span>
-              <span className="min-w-0 flex-1 truncate font-mono text-[12.5px]">{path}</span>
-              <span className="flex-none rounded border px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                {t("composer.atFileTag")}
-              </span>
-            </SuggestionItem>
-          ))}
-        </SuggestionPopover>
+        <div
+          aria-label={t("composer.fileMenuLabel")}
+          className="animate-scale-in absolute bottom-full left-2 right-2 z-20 mb-2 overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-elevated"
+        >
+          <div className="max-h-[260px] overflow-y-auto py-1">
+            {fileSuggestions.map((path, index) => (
+              <button
+                key={path}
+                type="button"
+                className={cn(
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors",
+                  index === highlightedCommand ? "bg-accent text-accent-foreground" : "hover:bg-accent"
+                )}
+                onMouseEnter={() => setHighlightedCommand(index)}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  insertFileReference(path);
+                }}
+                onClick={() => insertFileReference(path)}
+              >
+                <span className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <FileText className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[12.5px]">{path}</span>
+                <span className="flex-none rounded-md border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                  {t("composer.atFileTag")}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       ) : null}
 
-      <div className="flex items-center gap-1.5 px-3 pb-2.5 pt-1.5">
+      <div className="flex items-center gap-1 px-2.5 pb-2.5 pt-1.5 [&_svg]:stroke-[1.75]">
         <IconButton title={t("composer.addContext")} onClick={() => void addContext()}>
-          <Paperclip className="size-[18px]" />
+          <Plus className="size-[19px]" />
         </IconButton>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 gap-1.5 rounded-full px-2.5 font-medium text-muted-foreground hover:text-foreground"
-            >
-              {accessMode === "full_access" ? (
-                <ShieldCheck className="size-4" />
-              ) : (
-                <LockKeyhole className="size-4" />
-              )}
-              {t(accessMode === "full_access" ? "permission.fullAccess" : "permission.approval")}
-              <ChevronDown className="size-3.5 opacity-70" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-[300px]">
-            <DropdownMenuItem onSelect={() => setAccessMode("approval")}>
-              <Check className={accessMode === "approval" ? "opacity-100" : "opacity-0"} />
-              <LockKeyhole className="text-muted-foreground" />
-              <span className="flex min-w-0 flex-col gap-0.5 py-0.5">
-                <span className="font-medium">{t("permission.approval")}</span>
-                <span className="text-xs font-normal text-muted-foreground">
-                  {t("settings.general.approvalDesc")}
-                </span>
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setAccessMode("full_access")}>
-              <Check className={accessMode === "full_access" ? "opacity-100" : "opacity-0"} />
-              <ShieldCheck className="text-muted-foreground" />
-              <span className="flex min-w-0 flex-col gap-0.5 py-0.5">
-                <span className="font-medium">{t("permission.fullAccess")}</span>
-                <span className="text-xs font-normal text-muted-foreground">
-                  {t("settings.general.fullDesc")}
-                </span>
-              </span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <div className="flex-1" />
-
-        <Select
-          value={selectedProvider?.id ?? ""}
-          onValueChange={setProviderId}
-          disabled={configuredProviders.length === 0}
-        >
-          <SelectTrigger
-            aria-label={t("composer.selectModel")}
-            className="h-8 w-auto max-w-[220px] gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground shadow-none hover:bg-accent focus:ring-0"
-          >
-            <Cpu className="size-4 shrink-0 opacity-70" />
-            <SelectValue placeholder={t("composer.selectModel")}>
-              {selectedProvider ? selectedProvider.model : null}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {configuredProviders.map((provider) => (
-              <SelectItem key={provider.id} value={provider.id}>
-                <span className="flex items-center gap-2">
-                  <span>{provider.model}</span>
-                  <span className="text-xs text-muted-foreground">{provider.name}</span>
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {isRunning ? (
-          <Button
-            size="icon"
-            className="size-8 rounded-full"
-            title={t("composer.stop")}
-            onClick={() => void abortRun()}
-          >
-            <Square className="size-4 fill-current" />
-          </Button>
-        ) : (
-          <Button
-            size="icon"
-            className="size-8 rounded-full bg-brand text-brand-foreground shadow-soft transition-transform hover:bg-brand/90 enabled:hover:scale-105 disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
-            title={t("composer.send")}
-            disabled={value.trim().length === 0 || !selectedProvider}
-            onClick={() => void submit()}
-          >
-            <Send className="size-[18px]" />
-          </Button>
-        )}
-      </div>
-
-      <div className="flex items-center rounded-b-2xl border-t bg-muted/40 px-2.5 py-1.5">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 px-2 text-[12.5px] font-normal text-muted-foreground"
+              className="h-8 gap-1.5 rounded-full px-2.5 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
             >
               <Folder className="size-4" />
-              <span className="max-w-[260px] truncate">
+              <span className="max-w-[180px] truncate">
                 {activeProject?.name ?? t("composer.conversationMode")}
               </span>
               <ChevronDown className="size-3.5" />
@@ -395,10 +351,7 @@ export function Composer() {
           <DropdownMenuContent align="start" className="min-w-[220px]">
             <DropdownMenuItem onSelect={() => setActiveProjectId(undefined)}>
               <Check
-                className={cn(
-                  "size-4 text-primary",
-                  activeProject ? "opacity-0" : "opacity-100"
-                )}
+                className={cn("size-4", activeProject ? "opacity-0" : "opacity-100")}
               />
               <MessageSquare className="size-4 text-muted-foreground" />
               {t("composer.conversationMode")}
@@ -408,7 +361,7 @@ export function Composer() {
               <DropdownMenuItem key={project.id} onSelect={() => setActiveProjectId(project.id)}>
                 <Check
                   className={cn(
-                    "size-4 text-primary",
+                    "size-4",
                     project.id === activeProject?.id ? "opacity-100" : "opacity-0"
                   )}
                 />
@@ -422,63 +375,116 @@ export function Composer() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 rounded-full px-2.5 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
+            >
+              {accessMode === "full_access" ? (
+                <ShieldCheck className="size-4" />
+              ) : (
+                <LockKeyhole className="size-4" />
+              )}
+              {t(accessMode === "full_access" ? "permission.fullAccess" : "permission.approval")}
+              <ChevronDown className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[280px]">
+            <DropdownMenuItem
+              className="items-start gap-2.5 py-2.5"
+              onSelect={() => setAccessMode("approval")}
+            >
+              <LockKeyhole className="mt-0.5 size-4 flex-none text-muted-foreground" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium">{t("permission.approval")}</span>
+                <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                  {t("settings.general.approvalDesc")}
+                </span>
+              </span>
+              <Check
+                className={cn(
+                  "mt-0.5 size-4 flex-none",
+                  accessMode === "approval" ? "opacity-100" : "opacity-0"
+                )}
+              />
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="items-start gap-2.5 py-2.5"
+              onSelect={() => setAccessMode("full_access")}
+            >
+              <ShieldCheck className="mt-0.5 size-4 flex-none text-muted-foreground" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium">{t("permission.fullAccess")}</span>
+                <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                  {t("settings.general.fullDesc")}
+                </span>
+              </span>
+              <Check
+                className={cn(
+                  "mt-0.5 size-4 flex-none",
+                  accessMode === "full_access" ? "opacity-100" : "opacity-0"
+                )}
+              />
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="flex-1" />
+
+        <Select
+          value={selectedProvider?.id ?? ""}
+          onValueChange={setProviderId}
+          disabled={configuredProviders.length === 0}
+        >
+          <SelectTrigger
+            aria-label={t("composer.selectModel")}
+            className="h-8 w-auto max-w-[220px] gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-[12.5px] font-normal text-muted-foreground shadow-none hover:bg-accent hover:text-foreground focus:ring-0"
+          >
+            <SelectValue placeholder={t("composer.selectModel")}>
+              {selectedProvider ? selectedProvider.model : null}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {configuredProviders.map((provider) => (
+              <SelectItem key={provider.id} value={provider.id}>
+                {provider.name} · {provider.model}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {isRunning ? (
+          <Button
+            size="icon"
+            className="size-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/85"
+            title={t("composer.stop")}
+            onClick={() => void abortRun()}
+          >
+            <Square className="size-3.5 fill-current" />
+          </Button>
+        ) : (
+          <Button
+            size="icon"
+            className="size-8 rounded-full bg-primary text-primary-foreground transition-opacity hover:bg-primary/85 disabled:bg-muted disabled:text-muted-foreground"
+            title={t("composer.send")}
+            disabled={!canSend}
+            onClick={() => void submit()}
+          >
+            <ArrowUp className="size-[18px]" />
+          </Button>
+        )}
       </div>
     </div>
   );
 }
 
-/** Shared popover chrome for the slash-command and @-file suggestion menus. */
-function SuggestionPopover({
-  ariaLabel,
-  children
-}: {
-  ariaLabel?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      aria-label={ariaLabel}
-      className="animate-scale-in absolute bottom-[86px] left-3 right-3 z-20 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-elevated"
-    >
-      <div className="max-h-[260px] overflow-y-auto py-1">{children}</div>
-    </div>
-  );
-}
-
-function SuggestionItem({
-  highlighted,
-  onHighlight,
-  onPick,
-  children
-}: {
-  highlighted: boolean;
-  onHighlight(): void;
-  onPick(): void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
-        highlighted ? "bg-accent text-accent-foreground" : "hover:bg-accent"
-      )}
-      onMouseEnter={onHighlight}
-      onMouseDown={(event) => {
-        event.preventDefault();
-        onPick();
-      }}
-      onClick={onPick}
-    >
-      {children}
-    </button>
-  );
-}
-
 /**
- * The @-token being typed at the cursor: `@src/uti` → { query: "src/uti",
- * start: index of "@" }. The token must start the input or follow whitespace
- * and may not contain whitespace or another @.
+ * The @-token being typed at the cursor: `@src/uti` -> { query, start of "@" }.
+ * The token must start the input or follow whitespace and may not contain
+ * whitespace or another @.
  */
 export function getAtToken(
   value: string,
@@ -533,7 +539,7 @@ function IconButton(props: {
           type="button"
           variant="ghost"
           size="icon"
-          className={cn("size-8 rounded-full text-muted-foreground", props.className)}
+          className={cn("size-8 rounded-full text-muted-foreground hover:text-foreground", props.className)}
           disabled={props.disabled}
           onClick={props.onClick}
         >
