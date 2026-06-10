@@ -93,6 +93,11 @@ export class SqliteStateStore implements StateStore {
         updated_at text not null,
         foreign key (run_id) references runs(id) on delete cascade
       );
+      create table if not exists settings (
+        key text primary key,
+        value text not null,
+        updated_at text not null
+      );
       create table if not exists providers (
         id text primary key,
         kind text not null,
@@ -122,6 +127,7 @@ export class SqliteStateStore implements StateStore {
     this.ensureColumn("sessions", "compacted_up_to_message_id", "text");
     this.ensureColumn("sessions", "parent_session_id", "text");
     this.ensureColumn("sessions", "fork_message_id", "text");
+    this.ensureColumn("sessions", "feishu_chat_id", "text");
     await this.migrateProviderPresets();
     await this.flush();
   }
@@ -200,6 +206,27 @@ export class SqliteStateStore implements StateStore {
     return this.query("select * from sessions where id = ?", [id]).map(mapSession)[0];
   }
 
+  async findSessionByFeishuChatId(chatId: string): Promise<Session | undefined> {
+    return this.query(
+      "select * from sessions where feishu_chat_id = ? order by updated_at desc limit 1",
+      [chatId]
+    ).map(mapSession)[0];
+  }
+
+  async getSetting(key: string): Promise<string | undefined> {
+    const row = this.query("select value from settings where key = ?", [key])[0];
+    return row === undefined ? undefined : String(row.value);
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    this.run(
+      `insert into settings (key, value, updated_at) values (?, ?, ?)
+       on conflict(key) do update set value = excluded.value, updated_at = excluded.updated_at`,
+      [key, value, nowIso()]
+    );
+    await this.flush();
+  }
+
   async createSession(input: CreateSessionInput): Promise<Session> {
     await this.assertProjectExists(input.projectId);
     await this.assertProviderExists(input.providerId);
@@ -212,14 +239,15 @@ export class SqliteStateStore implements StateStore {
       accessMode: input.accessMode,
       ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
       ...(input.forkMessageId ? { forkMessageId: input.forkMessageId } : {}),
+      ...(input.feishuChatId ? { feishuChatId: input.feishuChatId } : {}),
       createdAt: timestamp,
       updatedAt: timestamp
     };
     this.run(
       `insert into sessions
        (id, project_id, title, provider_id, access_mode, parent_session_id, fork_message_id,
-        created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        feishu_chat_id, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         session.id,
         session.projectId,
@@ -228,6 +256,7 @@ export class SqliteStateStore implements StateStore {
         session.accessMode,
         session.parentSessionId ?? null,
         session.forkMessageId ?? null,
+        session.feishuChatId ?? null,
         session.createdAt,
         session.updatedAt
       ]
@@ -703,6 +732,9 @@ function mapSession(row: Row): Session {
     ...(row.fork_message_id === null || row.fork_message_id === undefined
       ? {}
       : { forkMessageId: String(row.fork_message_id) }),
+    ...(row.feishu_chat_id === null || row.feishu_chat_id === undefined
+      ? {}
+      : { feishuChatId: String(row.feishu_chat_id) }),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };

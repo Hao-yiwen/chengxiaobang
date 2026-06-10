@@ -63,6 +63,8 @@ export const sessionSchema = z.object({
   parentSessionId: z.string().min(1).optional(),
   /** The message (in the parent) the branch was created from. */
   forkMessageId: z.string().min(1).optional(),
+  /** Set on sessions driven by a Feishu chat (one session per chat). */
+  feishuChatId: z.string().min(1).optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -129,7 +131,8 @@ export const toolNameSchema = z.enum([
   "fetch_url",
   "create_pptx",
   "create_docx",
-  "create_xlsx"
+  "create_xlsx",
+  "feishu_send_message"
 ]);
 export type ToolName = z.infer<typeof toolNameSchema>;
 
@@ -213,6 +216,41 @@ export const sessionForkInputSchema = z.object({
   messageId: z.string().min(1)
 });
 export type SessionForkInput = z.infer<typeof sessionForkInputSchema>;
+
+export const feishuDomainSchema = z.enum(["feishu", "lark"]);
+export type FeishuDomain = z.infer<typeof feishuDomainSchema>;
+
+/** Persisted Feishu bot configuration; the App Secret lives in the Keychain. */
+export const feishuConfigSchema = z.object({
+  enabled: z.boolean(),
+  appId: z.string(),
+  appSecretRef: z.string().min(1).optional(),
+  domain: feishuDomainSchema,
+  /** Feishu-triggered runs default to read-only; this opts into full access. */
+  fullAccess: z.boolean()
+});
+export type FeishuConfig = z.infer<typeof feishuConfigSchema>;
+
+export function defaultFeishuConfig(): FeishuConfig {
+  return { enabled: false, appId: "", domain: "feishu", fullAccess: false };
+}
+
+/** Settings form payload: plaintext secret in (optional), ref out. */
+export const feishuConfigInputSchema = z.object({
+  enabled: z.boolean(),
+  appId: z.string(),
+  appSecret: z.string().optional(),
+  domain: feishuDomainSchema,
+  fullAccess: z.boolean()
+});
+export type FeishuConfigInput = z.infer<typeof feishuConfigInputSchema>;
+
+export const feishuStatusSchema = z.object({
+  status: z.enum(["disconnected", "connecting", "connected", "error"]),
+  error: z.string().optional(),
+  botName: z.string().optional()
+});
+export type FeishuStatus = z.infer<typeof feishuStatusSchema>;
 
 /** A user-typed command for the terminal panel, run in the project directory. */
 export const terminalExecRequestSchema = z.object({

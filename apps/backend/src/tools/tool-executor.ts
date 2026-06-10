@@ -191,6 +191,11 @@ export class ToolExecutor {
       await writeFile(target, buffer);
       return `已生成 Excel 表格 ${target}（${workbook.sheets?.length ?? 1} 个工作表）`;
     }
+    if (name === "feishu_send_message") {
+      // The Feishu sender is wired in via the FeishuService; until then (or
+      // when the bot isn't configured) the model gets a recoverable error.
+      throw new Error("飞书未配置或未启用，请先在设置中配置飞书机器人");
+    }
     throw new Error(`未知工具: ${name satisfies never}`);
   }
 }

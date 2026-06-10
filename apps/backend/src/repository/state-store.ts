@@ -20,6 +20,7 @@ export interface CreateSessionInput {
   accessMode: AccessMode;
   parentSessionId?: string;
   forkMessageId?: string;
+  feishuChatId?: string;
 }
 
 export interface CreateMessageInput {
@@ -55,6 +56,8 @@ export interface StateStore {
   createProject(input: CreateProjectInput): Promise<Project>;
   listSessions(projectId?: string | null): Promise<Session[]>;
   getSession(id: string): Promise<Session | undefined>;
+  /** The session bound to a Feishu chat, if one exists (one session per chat). */
+  findSessionByFeishuChatId(chatId: string): Promise<Session | undefined>;
   createSession(input: CreateSessionInput): Promise<Session>;
   updateSession(id: string, input: UpdateSessionInput): Promise<Session>;
   deleteSession(id: string): Promise<boolean>;
@@ -83,4 +86,7 @@ export interface StateStore {
   deleteProvider(id: string): Promise<boolean>;
   insertToolCall(toolCall: ToolCall): Promise<ToolCall>;
   updateToolCall(toolCall: ToolCall): Promise<ToolCall>;
+  /** Small key-value settings (JSON strings), e.g. the Feishu config. */
+  getSetting(key: string): Promise<string | undefined>;
+  setSetting(key: string, value: string): Promise<void>;
 }

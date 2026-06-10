@@ -276,6 +276,56 @@ describe("SqliteStateStore", () => {
     await store.close();
   });
 
+  it("binds sessions to feishu chats and finds them by chat id", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const session = await store.createSession({
+      projectId: null,
+      title: "飞书 · 张三",
+      accessMode: "approval",
+      feishuChatId: "oc_abc123"
+    });
+
+    expect(session.feishuChatId).toBe("oc_abc123");
+    await expect(store.findSessionByFeishuChatId("oc_abc123")).resolves.toMatchObject({
+      id: session.id,
+      title: "飞书 · 张三"
+    });
+    await expect(store.findSessionByFeishuChatId("oc_other")).resolves.toBeUndefined();
+
+    // The per-run session update must not clobber the binding.
+    await store.updateSession(session.id, { accessMode: "full_access" });
+    await expect(store.findSessionByFeishuChatId("oc_abc123")).resolves.toMatchObject({
+      id: session.id
+    });
+
+    // Plain sessions carry no binding at all.
+    const plain = await store.createSession({
+      projectId: null,
+      title: "普通会话",
+      accessMode: "approval"
+    });
+    expect(plain).not.toHaveProperty("feishuChatId");
+    await store.close();
+  });
+
+  it("round-trips key-value settings across restarts", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+
+    expect(await first.getSetting("feishu")).toBeUndefined();
+    await first.setSetting("feishu", JSON.stringify({ enabled: false }));
+    await first.setSetting("feishu", JSON.stringify({ enabled: true }));
+    expect(await first.getSetting("feishu")).toBe(JSON.stringify({ enabled: true }));
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    expect(await second.getSetting("feishu")).toBe(JSON.stringify({ enabled: true }));
+    await second.close();
+  });
+
   it("forks a session by cloning the message prefix with fresh ids", async () => {
     const store = new SqliteStateStore(join(dir, "state.sqlite"));
     await store.initialize();
