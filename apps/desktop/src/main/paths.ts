@@ -5,6 +5,11 @@ export function defaultDataDir(): string {
   return join(homedir(), ".chengxiaobang", "data");
 }
 
+/** The 1024px PNG used as the dev dock icon (packaged builds use the .icns). */
+export function devDockIconPath(appPath: string): string {
+  return join(appPath, "build", "icon.png");
+}
+
 export function preloadPath(mainModuleUrl: string): string {
   return join(dirnameFromUrl(mainModuleUrl), "../preload/index.cjs");
 }

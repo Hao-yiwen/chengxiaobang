@@ -1,11 +1,20 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { defaultDataDir, preloadPath, rendererIndexPath } from "../src/main/paths";
+import {
+  defaultDataDir,
+  devDockIconPath,
+  preloadPath,
+  rendererIndexPath
+} from "../src/main/paths";
 
 describe("main process paths", () => {
   it("defaults data dir to ~/.chengxiaobang/data", () => {
     expect(defaultDataDir()).toBe(join(homedir(), ".chengxiaobang", "data"));
+  });
+
+  it("resolves the dev dock icon inside the app's build directory", () => {
+    expect(devDockIconPath("/repo/apps/desktop")).toBe("/repo/apps/desktop/build/icon.png");
   });
 
   it("loads the CommonJS preload bundle from the sandboxed window", () => {

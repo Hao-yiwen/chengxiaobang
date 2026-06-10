@@ -1,9 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron";
 import { mkdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { startBackendProcess, type BackendProcess } from "./backend-process";
-import { defaultDataDir, preloadPath, rendererIndexPath } from "./paths";
+import { defaultDataDir, devDockIconPath, preloadPath, rendererIndexPath } from "./paths";
 
 const MAX_CONTEXT_FILE_BYTES = 256 * 1024;
 
@@ -161,7 +161,22 @@ app.on("web-contents-created", (_event, contents) => {
   }
 });
 
-app.whenReady().then(createWindow);
+// Packaged builds get the bundle's .icns automatically; dev runs the bare
+// Electron binary, so the dock icon must be set at runtime.
+function applyDevDockIcon(): void {
+  if (app.isPackaged || process.platform !== "darwin") {
+    return;
+  }
+  const icon = nativeImage.createFromPath(devDockIconPath(app.getAppPath()));
+  if (!icon.isEmpty()) {
+    app.dock?.setIcon(icon);
+  }
+}
+
+app.whenReady().then(() => {
+  applyDevDockIcon();
+  return createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
