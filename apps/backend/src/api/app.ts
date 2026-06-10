@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import {
   approvalDecisionSchema,
   encodeSseEvent,
+  feishuConfigInputSchema,
   projectInputSchema,
   providerInputSchema,
   rewindRequestSchema,
@@ -13,6 +14,8 @@ import {
 } from "@chengxiaobang/shared";
 import { runCommand } from "../tools/shell";
 import { listProjectFiles } from "../tools/tool-executor";
+import type { FeishuConfigService } from "../feishu/feishu-config-service";
+import type { FeishuService } from "../feishu/feishu-service";
 import { ProviderService } from "../model/provider-service";
 import type { StateStore } from "../repository/state-store";
 import type { AgentRunner } from "../agent/agent-runner";
@@ -25,6 +28,8 @@ export interface AppOptions {
   providerService: ProviderService;
   runner: AgentRunner;
   slashCommandService?: SlashCommandService;
+  feishuConfigService?: FeishuConfigService;
+  feishuService?: FeishuService;
 }
 
 export function createApp(options: AppOptions): (request: Request) => Promise<Response> {
@@ -172,6 +177,30 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
         const decision = approvalDecisionSchema.parse(await readJson<unknown>(request));
         return jsonResponse({
           accepted: options.runner.approvals.decide(approvalMatch[1], decision.approved)
+        });
+      }
+      if (url.pathname === "/api/settings/feishu" && request.method === "GET") {
+        if (!options.feishuConfigService) {
+          return errorResponse("飞书服务不可用", 404);
+        }
+        // The config carries only the secret ref — never the plaintext.
+        return jsonResponse({ config: await options.feishuConfigService.load() });
+      }
+      if (url.pathname === "/api/settings/feishu" && request.method === "PUT") {
+        if (!options.feishuConfigService || !options.feishuService) {
+          return errorResponse("飞书服务不可用", 404);
+        }
+        const input = feishuConfigInputSchema.parse(await readJson<unknown>(request));
+        const feishuConfig = await options.feishuConfigService.save(input);
+        await options.feishuService.restart();
+        return jsonResponse({
+          config: feishuConfig,
+          status: options.feishuService.getStatus()
+        });
+      }
+      if (url.pathname === "/api/settings/feishu/status" && request.method === "GET") {
+        return jsonResponse({
+          status: options.feishuService?.getStatus() ?? { status: "disconnected" }
         });
       }
       if (url.pathname === "/api/settings/providers" && request.method === "GET") {

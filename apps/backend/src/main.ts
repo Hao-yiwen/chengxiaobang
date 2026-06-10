@@ -3,6 +3,9 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { AgentRunner } from "./agent/agent-runner";
 import { createApp } from "./api/app";
+import { createLarkBridge } from "./feishu/feishu-bridge";
+import { FeishuConfigService } from "./feishu/feishu-config-service";
+import { FeishuService } from "./feishu/feishu-service";
 import { OpenAICompatibleModelClient } from "./model/openai-compatible";
 import { loadPiRuntime } from "./model/pi-runtime";
 import { ProviderService } from "./model/provider-service";
@@ -38,6 +41,14 @@ export async function startBackend(config: BackendConfig) {
   if (!piRuntime.available) {
     console.warn(`[chengxiaobang] pi runtime adapter unavailable: ${piRuntime.error}`);
   }
+  const feishuConfigService = new FeishuConfigService(store, secrets);
+  const feishuService = new FeishuService({
+    configService: feishuConfigService,
+    store,
+    runner,
+    bridgeFactory: createLarkBridge
+  });
+  await feishuService.start();
 
   const server = await startServer({
     port: config.port,
@@ -46,12 +57,15 @@ export async function startBackend(config: BackendConfig) {
       store,
       providerService,
       runner,
-      slashCommandService
+      slashCommandService,
+      feishuConfigService,
+      feishuService
     })
   });
   return {
     port: server.port,
     close: async () => {
+      await feishuService.stop();
       await server.close();
       await store.close();
     }

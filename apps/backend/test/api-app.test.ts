@@ -140,6 +140,70 @@ describe("createApp", () => {
     expect(missing.status).toBe(404);
   });
 
+  it("serves and saves the feishu config without exposing the secret", async () => {
+    const { FeishuConfigService } = await import("../src/feishu/feishu-config-service");
+    const { FeishuService } = await import("../src/feishu/feishu-service");
+    const { FakeFeishuBridge } = await import("./helpers/fake-feishu-bridge");
+    const secrets = new MemorySecretStore();
+    const bridge = new FakeFeishuBridge();
+    const feishuConfigService = new FeishuConfigService(store, secrets);
+    const feishuService = new FeishuService({
+      configService: feishuConfigService,
+      store,
+      runner: new AgentRunner(store, secrets, modelClient),
+      bridgeFactory: () => bridge
+    });
+    const feishuApp = createApp({
+      store,
+      providerService: new ProviderService(store, secrets, modelClient),
+      runner: new AgentRunner(store, secrets, modelClient),
+      feishuConfigService,
+      feishuService
+    });
+
+    const initial = await feishuApp(
+      new Request("http://local/api/settings/feishu", { method: "GET" })
+    );
+    await expect(initial.json()).resolves.toMatchObject({
+      config: { enabled: false, appId: "", domain: "feishu", fullAccess: false }
+    });
+
+    const saved = await feishuApp(
+      jsonRequest("/api/settings/feishu", "PUT", {
+        enabled: true,
+        appId: "cli_a1",
+        appSecret: "super-secret",
+        domain: "feishu",
+        fullAccess: false
+      })
+    );
+    expect(saved.status).toBe(200);
+    const body = (await saved.json()) as {
+      config: { appSecretRef?: string };
+      status: { status: string };
+    };
+    expect(body.config.appSecretRef).toBe("memory:feishu");
+    expect(JSON.stringify(body)).not.toContain("super-secret");
+    // Saving restarted the service against the (fake) bridge.
+    expect(body.status.status).toBe("connected");
+
+    const status = await feishuApp(
+      new Request("http://local/api/settings/feishu/status", { method: "GET" })
+    );
+    await expect(status.json()).resolves.toMatchObject({ status: { status: "connected" } });
+  });
+
+  it("reports feishu routes as unavailable when not wired", async () => {
+    const response = await app(
+      new Request("http://local/api/settings/feishu", { method: "GET" })
+    );
+    expect(response.status).toBe(404);
+    const status = await app(
+      new Request("http://local/api/settings/feishu/status", { method: "GET" })
+    );
+    await expect(status.json()).resolves.toEqual({ status: { status: "disconnected" } });
+  });
+
   it("allows PATCH in CORS preflight responses", async () => {
     const response = await app(new Request("http://local/api/sessions/session_1", {
       method: "OPTIONS"
