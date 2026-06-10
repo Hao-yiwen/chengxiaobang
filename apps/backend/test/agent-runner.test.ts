@@ -51,6 +51,8 @@ describe("AgentRunner", () => {
     const approval = await stream.next();
     expect(approval.value?.type).toBe("tool_call_pending");
     if (approval.value?.type === "tool_call_pending") {
+      // Execution hasn't begun while awaiting approval, so no startedAt yet.
+      expect(approval.value.toolCall.startedAt).toBeUndefined();
       expect(runner.approvals.decide(approval.value.toolCall.id, false)).toBe(true);
     }
 
@@ -65,6 +67,7 @@ describe("AgentRunner", () => {
     const project = await store.createProject({ name: "tmp", path: dir });
     const runner = new AgentRunner(store, secrets, modelClient);
     const events: string[] = [];
+    let result: { startedAt?: string; createdAt: string } | undefined;
 
     for await (const event of runner.stream({
       prompt: "/shell pwd",
@@ -72,11 +75,19 @@ describe("AgentRunner", () => {
       accessMode: "full_access"
     })) {
       events.push(event.type);
+      if (event.type === "tool_result") {
+        result = event.toolCall;
+      }
     }
 
     expect(events).toContain("tool_call_started");
     expect(events).toContain("tool_result");
     expect(events).toContain("assistant_done");
+    // Auto-approved tools stamp startedAt when execution begins.
+    expect(result?.startedAt).toBeDefined();
+    expect(Date.parse(result!.startedAt!)).toBeGreaterThanOrEqual(
+      Date.parse(result!.createdAt)
+    );
   });
 
   it("uses a per-session workspace for standalone chats", async () => {

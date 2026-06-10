@@ -159,6 +159,8 @@ export class AgentRunner {
       name: request.name,
       args: request.args,
       status: needsApproval ? "pending_approval" : "running",
+      // startedAt marks actual execution start, so approval wait is excluded.
+      ...(needsApproval ? {} : { startedAt: nowIso() }),
       createdAt: nowIso(),
       updatedAt: nowIso()
     };
@@ -182,6 +184,7 @@ export class AgentRunner {
       runnable = await this.store.updateToolCall({
         ...initial,
         status: "running",
+        startedAt: nowIso(),
         updatedAt: nowIso()
       });
     }
@@ -379,7 +382,9 @@ export class AgentRunner {
     const needsApproval = requiresApproval(baseToolCall.name) && accessMode === "approval";
     const initial: ToolCall = {
       ...baseToolCall,
-      status: needsApproval ? "pending_approval" : "running"
+      status: needsApproval ? "pending_approval" : "running",
+      // startedAt marks actual execution start, so approval wait is excluded.
+      ...(needsApproval ? {} : { startedAt: nowIso() })
     };
     await this.store.insertToolCall(initial);
 
@@ -401,6 +406,7 @@ export class AgentRunner {
       runnable = await this.store.updateToolCall({
         ...initial,
         status: "running",
+        startedAt: nowIso(),
         updatedAt: nowIso()
       });
     }

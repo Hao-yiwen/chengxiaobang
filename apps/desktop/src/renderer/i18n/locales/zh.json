@@ -78,7 +78,9 @@
     "codeCollapse": "收起代码",
     "codeDownload": "下载代码",
     "scrollToBottom": "回到底部",
-    "turnDuration": "用时 {{seconds}} 秒"
+    "turnDuration": "用时 {{seconds}} 秒",
+    "toolDuration": "用时 {{duration}}",
+    "diffView": "变更对比"
   },
   "rightPanel": {
     "terminal": "终端",

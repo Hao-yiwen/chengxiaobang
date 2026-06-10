@@ -146,6 +146,8 @@ export const toolCallSchema = z.object({
   args: z.record(z.string(), z.unknown()),
   status: z.enum(["pending_approval", "running", "completed", "rejected", "failed"]),
   result: z.string().optional(),
+  /** When execution actually began (post-approval), ISO timestamp. */
+  startedAt: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });

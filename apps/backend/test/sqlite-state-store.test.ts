@@ -144,6 +144,61 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
+  it("round-trips a tool call's startedAt and leaves it absent when unset", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const session = await first.createSession({
+      projectId: null,
+      title: "执行计时",
+      accessMode: "approval"
+    });
+    await first.createRun({ id: "run_1", sessionId: session.id, status: "running" });
+    const createdAt = nowIso();
+    await first.insertToolCall({
+      id: "tool_1",
+      runId: "run_1",
+      name: "write_file",
+      args: { path: "a.txt", content: "hi" },
+      status: "pending_approval",
+      createdAt,
+      updatedAt: createdAt
+    });
+    // Approval granted later: the running transition stamps startedAt.
+    const startedAt = nowIso();
+    await first.updateToolCall({
+      id: "tool_1",
+      runId: "run_1",
+      name: "write_file",
+      args: { path: "a.txt", content: "hi" },
+      status: "completed",
+      result: "已写入",
+      startedAt,
+      createdAt,
+      updatedAt: nowIso()
+    });
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    const [reloaded] = await second.listToolCallsForSession(session.id);
+    expect(reloaded.startedAt).toBe(startedAt);
+
+    // A second tool call without startedAt stays without the property.
+    await second.insertToolCall({
+      id: "tool_2",
+      runId: "run_1",
+      name: "read_file",
+      args: { path: "a.txt" },
+      status: "pending_approval",
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    });
+    const calls = await second.listToolCallsForSession(session.id);
+    expect(calls.find((call) => call.id === "tool_2")).not.toHaveProperty("startedAt");
+    await second.close();
+  });
+
   it("deletes a message and everything after it on rewind", async () => {
     const store = new SqliteStateStore(join(dir, "state.sqlite"));
     await store.initialize();

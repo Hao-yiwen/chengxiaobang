@@ -78,7 +78,9 @@
     "codeCollapse": "Collapse code",
     "codeDownload": "Download code",
     "scrollToBottom": "Scroll to bottom",
-    "turnDuration": "Took {{seconds}}s"
+    "turnDuration": "Took {{seconds}}s",
+    "toolDuration": "took {{duration}}",
+    "diffView": "Diff view"
   },
   "rightPanel": {
     "terminal": "Terminal",

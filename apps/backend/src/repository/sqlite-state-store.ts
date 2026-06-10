@@ -88,6 +88,7 @@ export class SqliteStateStore implements StateStore {
         args_json text not null,
         status text not null,
         result text,
+        started_at text,
         created_at text not null,
         updated_at text not null,
         foreign key (run_id) references runs(id) on delete cascade
@@ -116,6 +117,7 @@ export class SqliteStateStore implements StateStore {
     this.ensureColumn("messages", "reasoning", "text");
     this.ensureColumn("messages", "reasoning_ms", "integer");
     this.ensureColumn("messages", "duration_ms", "integer");
+    this.ensureColumn("tool_calls", "started_at", "text");
     await this.migrateProviderPresets();
     await this.flush();
   }
@@ -475,8 +477,8 @@ export class SqliteStateStore implements StateStore {
     await this.assertRunExists(toolCall.runId);
     this.run(
       `insert into tool_calls
-       (id, run_id, name, args_json, status, result, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, run_id, name, args_json, status, result, started_at, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         toolCall.id,
         toolCall.runId,
@@ -484,6 +486,7 @@ export class SqliteStateStore implements StateStore {
         JSON.stringify(toolCall.args),
         toolCall.status,
         toolCall.result ?? null,
+        toolCall.startedAt ?? null,
         toolCall.createdAt,
         toolCall.updatedAt
       ]
@@ -496,9 +499,15 @@ export class SqliteStateStore implements StateStore {
     await this.assertToolCallExists(toolCall.id);
     this.run(
       `update tool_calls
-       set status = ?, result = ?, updated_at = ?
+       set status = ?, result = ?, started_at = ?, updated_at = ?
        where id = ?`,
-      [toolCall.status, toolCall.result ?? null, toolCall.updatedAt, toolCall.id]
+      [
+        toolCall.status,
+        toolCall.result ?? null,
+        toolCall.startedAt ?? null,
+        toolCall.updatedAt,
+        toolCall.id
+      ]
     );
     await this.flush();
     return toolCall;
@@ -656,6 +665,9 @@ function mapToolCall(row: Row): ToolCall {
     args: JSON.parse(String(row.args_json)) as Record<string, unknown>,
     status: row.status as ToolCall["status"],
     result: row.result === null ? undefined : String(row.result),
+    ...(row.started_at === null || row.started_at === undefined
+      ? {}
+      : { startedAt: String(row.started_at) }),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
