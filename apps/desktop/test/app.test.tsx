@@ -359,6 +359,7 @@ describe("App", () => {
       content: "答案是 42",
       reasoning: "先拆解问题",
       reasoningMs: 1200,
+      durationMs: 3400,
       createdAt: "2026-06-08T00:00:01.000Z"
     };
     const client = createClient({
@@ -384,5 +385,7 @@ describe("App", () => {
     // ...and the streamed reasoning is captured into a collapsible panel.
     expect(await screen.findByText(/已深度思考/)).toBeInTheDocument();
     expect(screen.getByText("先拆解问题")).toBeInTheDocument();
+    // The persisted turn duration renders as a subtle footer (3400ms → 3s).
+    expect(screen.getByText("用时 3 秒")).toBeInTheDocument();
   });
 });

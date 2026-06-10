@@ -164,6 +164,8 @@ describe("AgentRunner", () => {
     expect(assistant?.content).toBe("答案");
     expect(assistant?.reasoning).toBe("先想想再回答");
     expect(assistant?.reasoningMs).toBeGreaterThanOrEqual(0);
+    // Turn timing (model start → answer complete) is persisted alongside.
+    expect(assistant?.durationMs).toBeGreaterThanOrEqual(0);
   });
 
   it("persists failed tool calls before reporting run errors", async () => {

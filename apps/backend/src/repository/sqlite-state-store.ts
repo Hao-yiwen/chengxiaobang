@@ -112,9 +112,10 @@ export class SqliteStateStore implements StateStore {
       create index if not exists idx_tool_calls_run_updated
         on tool_calls(run_id, updated_at desc);
     `);
-    // Older databases predate the reasoning columns — add them in place.
+    // Older databases predate the reasoning/duration columns — add them in place.
     this.ensureColumn("messages", "reasoning", "text");
     this.ensureColumn("messages", "reasoning_ms", "integer");
+    this.ensureColumn("messages", "duration_ms", "integer");
     await this.migrateProviderPresets();
     await this.flush();
   }
@@ -288,11 +289,13 @@ export class SqliteStateStore implements StateStore {
       content: input.content,
       ...(input.reasoning ? { reasoning: input.reasoning } : {}),
       ...(input.reasoningMs !== undefined ? { reasoningMs: input.reasoningMs } : {}),
+      ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
       createdAt: nowIso()
     };
     this.run(
-      `insert into messages (id, session_id, role, content, reasoning, reasoning_ms, created_at)
-       values (?, ?, ?, ?, ?, ?, ?)`,
+      `insert into messages
+       (id, session_id, role, content, reasoning, reasoning_ms, duration_ms, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         message.id,
         message.sessionId,
@@ -300,6 +303,7 @@ export class SqliteStateStore implements StateStore {
         message.content,
         message.reasoning ?? null,
         message.reasoningMs ?? null,
+        message.durationMs ?? null,
         message.createdAt
       ]
     );
@@ -618,6 +622,10 @@ function mapMessage(row: Row): Message {
     row.reasoning_ms === null || row.reasoning_ms === undefined
       ? undefined
       : Number(row.reasoning_ms);
+  const durationMs =
+    row.duration_ms === null || row.duration_ms === undefined
+      ? undefined
+      : Number(row.duration_ms);
   return {
     id: String(row.id),
     sessionId: String(row.session_id),
@@ -625,6 +633,7 @@ function mapMessage(row: Row): Message {
     content: String(row.content),
     ...(reasoning !== undefined ? { reasoning } : {}),
     ...(reasoningMs !== undefined ? { reasoningMs } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
     createdAt: String(row.created_at)
   };
 }

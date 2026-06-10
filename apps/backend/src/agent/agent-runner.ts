@@ -246,6 +246,7 @@ export class AgentRunner {
         return;
       }
 
+      const turnStartedAt = Date.now();
       let assistantText = "";
       let reasoningText = "";
       let reasoningStartedAt: number | undefined;
@@ -291,6 +292,7 @@ export class AgentRunner {
           sessionId,
           role: "assistant",
           content: assistantText,
+          durationMs: Date.now() - turnStartedAt,
           ...(reasoningPayload ?? {})
         });
         yield { type: "assistant_done", runId, message };
@@ -305,6 +307,7 @@ export class AgentRunner {
           sessionId,
           role: "assistant",
           content: assistantText,
+          durationMs: Date.now() - turnStartedAt,
           ...(reasoningPayload ?? {})
         });
         yield { type: "assistant_done", runId, message };

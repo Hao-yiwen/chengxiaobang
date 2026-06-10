@@ -73,7 +73,8 @@
     "codeExpand": "Show all {{lines}} lines",
     "codeCollapse": "Collapse code",
     "codeDownload": "Download code",
-    "scrollToBottom": "Scroll to bottom"
+    "scrollToBottom": "Scroll to bottom",
+    "turnDuration": "Took {{seconds}}s"
   },
   "rightPanel": {
     "terminal": "Terminal",

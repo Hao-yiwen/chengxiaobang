@@ -73,7 +73,8 @@
     "codeExpand": "展开代码（共 {{lines}} 行）",
     "codeCollapse": "收起代码",
     "codeDownload": "下载代码",
-    "scrollToBottom": "回到底部"
+    "scrollToBottom": "回到底部",
+    "turnDuration": "用时 {{seconds}} 秒"
   },
   "rightPanel": {
     "terminal": "终端",

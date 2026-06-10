@@ -69,9 +69,10 @@ describe("SqliteStateStore", () => {
       role: "assistant",
       content: "答案",
       reasoning: "先想一想",
-      reasoningMs: 2500
+      reasoningMs: 2500,
+      durationMs: 4200
     });
-    expect(assistant).toMatchObject({ reasoning: "先想一想", reasoningMs: 2500 });
+    expect(assistant).toMatchObject({ reasoning: "先想一想", reasoningMs: 2500, durationMs: 4200 });
     await first.close();
 
     const second = new SqliteStateStore(dbPath);
@@ -81,11 +82,18 @@ describe("SqliteStateStore", () => {
 
     expect(messages).toMatchObject([
       { role: "user", content: "你好" },
-      { role: "assistant", content: "答案", reasoning: "先想一想", reasoningMs: 2500 }
+      {
+        role: "assistant",
+        content: "答案",
+        reasoning: "先想一想",
+        reasoningMs: 2500,
+        durationMs: 4200
+      }
     ]);
-    // A plain message carries no reasoning fields (not even null-ish ones).
+    // A plain message carries no reasoning/duration fields (not even null-ish ones).
     expect(messages[0]).not.toHaveProperty("reasoning");
     expect(messages[0]).not.toHaveProperty("reasoningMs");
+    expect(messages[0]).not.toHaveProperty("durationMs");
   });
 
   it("persists runs and tool calls across store restarts", async () => {

@@ -8,6 +8,7 @@ import { Markdown } from "@/components/Markdown";
 import { MessageActions, MessageEditor } from "@/components/MessageActions";
 import { ReasoningPanel } from "@/components/ReasoningPanel";
 import { ScrollToBottomButton } from "@/components/ScrollToBottomButton";
+import { thinkingSeconds } from "@/lib/reasoning";
 import { isNearBottom } from "@/lib/scroll";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
@@ -286,10 +287,21 @@ const MessageBubble = memo(function MessageBubble({
         <ReasoningPanel text={message.reasoning} durationMs={message.reasoningMs} />
       ) : null}
       <Markdown text={message.content} />
+      {message.durationMs !== undefined ? <TurnDuration durationMs={message.durationMs} /> : null}
       <MessageActions message={message} isLastAssistant={isLastAssistant} />
     </div>
   );
 });
+
+/** Subtle "用时 N 秒" footer for a completed assistant turn. */
+function TurnDuration({ durationMs }: { durationMs: number }) {
+  const { t } = useTranslation();
+  return (
+    <div className="mt-1.5 text-[11px] text-muted-foreground/70">
+      {t("chat.turnDuration", { seconds: thinkingSeconds(durationMs) })}
+    </div>
+  );
+}
 
 type TimelineItem =
   | { kind: "message"; at: string; message: Message }

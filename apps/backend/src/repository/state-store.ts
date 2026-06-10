@@ -26,6 +26,7 @@ export interface CreateMessageInput {
   content: string;
   reasoning?: string;
   reasoningMs?: number;
+  durationMs?: number;
 }
 
 export interface CreateRunInput {

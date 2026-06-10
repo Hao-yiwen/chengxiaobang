@@ -86,6 +86,8 @@ export const messageSchema = z.object({
   reasoning: z.string().optional(),
   /** How long that reasoning took, in milliseconds. */
   reasoningMs: z.number().int().nonnegative().optional(),
+  /** Model start → answer complete for this turn, in milliseconds. */
+  durationMs: z.number().int().nonnegative().optional(),
   createdAt: z.string()
 });
 export type Message = z.infer<typeof messageSchema>;
