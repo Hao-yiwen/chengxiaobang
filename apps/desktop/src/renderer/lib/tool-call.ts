@@ -30,6 +30,15 @@ export function formatDurationMs(ms: number): string {
   return `${minutes}m ${seconds}s`;
 }
 
+/** Last `segments` path segments for compact display ("…/src/index.ts"). */
+export function shortenPath(path: string, segments = 2): string {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= segments) {
+    return path;
+  }
+  return `…/${parts.slice(-segments).join("/")}`;
+}
+
 /**
  * Diff presentation for file-mutating tools, derived purely from their args
  * (edit_file carries oldText/newText; write_file content counts as all-added).

@@ -3,6 +3,7 @@ import type { ToolCall } from "@chengxiaobang/shared";
 import {
   buildToolCallDiff,
   formatDurationMs,
+  shortenPath,
   toolCallDurationMs
 } from "../src/renderer/lib/tool-call";
 
@@ -58,6 +59,15 @@ describe("formatDurationMs", () => {
     expect(formatDurationMs(1234)).toBe("1.2s");
     expect(formatDurationMs(59_900)).toBe("59.9s");
     expect(formatDurationMs(125_000)).toBe("2m 5s");
+  });
+});
+
+describe("shortenPath", () => {
+  it("keeps short paths and trims long ones to the last segments", () => {
+    expect(shortenPath("a.txt")).toBe("a.txt");
+    expect(shortenPath("src/index.ts")).toBe("src/index.ts");
+    expect(shortenPath("/Users/me/Documents/proj/src/index.ts")).toBe("…/src/index.ts");
+    expect(shortenPath("/Users/me/Documents/proj/src/index.ts", 3)).toBe("…/proj/src/index.ts");
   });
 });
 

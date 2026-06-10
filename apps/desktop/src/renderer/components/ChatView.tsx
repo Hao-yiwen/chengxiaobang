@@ -46,6 +46,8 @@ export function ChatView() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [nearBottom, setNearBottom] = useState(true);
 
+  const showWaiting = isRunning && !streamText && !thinking && !pendingTool;
+
   const lastAssistantId = [...messages]
     .reverse()
     .find((message) => message.role === "assistant")?.id;
@@ -129,6 +131,13 @@ export function ChatView() {
             </div>
           ) : null}
 
+          {showWaiting ? (
+            <div className="mb-6 flex items-center gap-2 self-stretch text-[13.5px] text-muted-foreground">
+              <span className="size-3 flex-none animate-pulse rounded-full bg-foreground" />
+              <span className="shimmer-text">{t("chat.waiting")}</span>
+            </div>
+          ) : null}
+
           {events
             .filter((event) => event.type === "run_error")
             .map((event, index) => (
@@ -200,8 +209,8 @@ const MessageBubble = memo(function MessageBubble({
       );
     }
     return (
-      <div className="group/msg mb-5 flex max-w-[80%] flex-col items-end self-end">
-        <div className="animate-msg-in rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground shadow-soft">
+      <div className="group/msg mb-5 flex max-w-[78%] animate-msg-in flex-col items-end self-end">
+        <div className="rounded-3xl bg-bubble-user px-4 py-2.5 text-foreground">
           <div className="whitespace-pre-wrap break-words text-[14.5px] leading-relaxed">
             {message.content}
           </div>

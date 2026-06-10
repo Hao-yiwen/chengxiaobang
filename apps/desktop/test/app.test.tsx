@@ -232,6 +232,9 @@ describe("App", () => {
 
     expect(await screen.findByText("file package.json")).toBeInTheDocument();
     expect(screen.getByText("list_directory")).toBeInTheDocument();
+    // Statuses render localized, not as raw enums.
+    expect(screen.getByText("已完成")).toBeInTheDocument();
+    expect(screen.queryByText("completed")).not.toBeInTheDocument();
     expect(listSessionRuns).toHaveBeenCalledWith("session_1");
   });
 

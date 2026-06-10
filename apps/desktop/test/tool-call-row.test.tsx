@@ -36,12 +36,24 @@ describe("ToolCallRow", () => {
         toolCall={toolCall({ startedAt: "2026-06-08T00:00:00.000Z", result: "/tmp" })}
       />
     );
-    expect(screen.getByText("用时 1.2s")).toBeInTheDocument();
+    expect(screen.getByText("1.2s")).toBeInTheDocument();
   });
 
   it("shows no duration for legacy rows without startedAt", () => {
     render(<ToolCallRow toolCall={toolCall({ result: "/tmp" })} />);
-    expect(screen.queryByText(/用时/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^\d+(\.\d+)?(ms|s)$/)).not.toBeInTheDocument();
+  });
+
+  it("renders localized statuses instead of raw enums", () => {
+    const { rerender } = render(<ToolCallRow toolCall={toolCall({ result: "ok" })} />);
+    expect(screen.getByText("已完成")).toBeInTheDocument();
+    expect(screen.queryByText("completed")).not.toBeInTheDocument();
+
+    rerender(<ToolCallRow toolCall={toolCall({ status: "failed", result: "boom" })} />);
+    expect(screen.getByText("失败")).toBeInTheDocument();
+
+    rerender(<ToolCallRow toolCall={toolCall({ status: "pending_approval" })} />);
+    expect(screen.getByText("待批准")).toBeInTheDocument();
   });
 
   it("renders an edit_file call as a +/- diff when expanded", () => {

@@ -32,7 +32,7 @@ export function MessageActions({
   return (
     <div
       className={cn(
-        "mt-1 flex items-center gap-0.5 opacity-0 transition-opacity",
+        "mt-0.5 flex items-center gap-0.5 opacity-0 transition-opacity",
         "group-hover/msg:opacity-100 focus-within:opacity-100",
         isUser ? "justify-end" : "justify-start"
       )}
@@ -80,7 +80,7 @@ function ActionButton({
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
       {children}
     </button>

@@ -7,7 +7,6 @@ import {
   FolderOpen,
   LockKeyhole,
   MessageSquare,
-  Mic,
   Paperclip,
   Send,
   Sparkles,
@@ -41,7 +40,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { selectActiveProject, useAppStore } from "@/store";
-import { useVoiceInput } from "@/lib/use-voice-input";
 
 export function Composer() {
   const { t } = useTranslation();
@@ -74,7 +72,6 @@ export function Composer() {
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   // Escape hides the file menu for the token at this position until a new @ starts.
   const [dismissedAtStart, setDismissedAtStart] = useState<number>();
-  const voice = useVoiceInput({ value, onChange: setInput });
   const configuredProviders = providers.filter((provider) => provider.apiKeyRef);
   const selectedProvider = configuredProviders.find((provider) => provider.id === providerId);
   const slashQuery = getSlashQuery(value, selectionStart);
@@ -357,24 +354,6 @@ export function Composer() {
             ))}
           </SelectContent>
         </Select>
-
-        <IconButton
-          title={
-            voice.state === "unsupported"
-              ? t("composer.voiceUnsupported")
-              : voice.state === "listening"
-                ? t("composer.voiceStop")
-                : t("composer.voiceStart")
-          }
-          disabled={voice.state === "unsupported"}
-          onClick={voice.toggle}
-          className={cn(
-            voice.state === "listening" &&
-              "animate-mic-pulse bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive"
-          )}
-        >
-          <Mic className="size-[18px]" />
-        </IconButton>
 
         {isRunning ? (
           <Button

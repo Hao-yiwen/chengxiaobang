@@ -15,7 +15,7 @@ export function DiffView({ lines }: { lines: DiffLine[] }) {
   return (
     <div
       aria-label={t("chat.diffView")}
-      className="max-h-[220px] overflow-auto border-t bg-background/60 py-1 font-mono text-xs leading-relaxed"
+      className="max-h-[220px] overflow-auto border-t bg-background py-1 font-mono text-xs leading-relaxed"
     >
       {lines.map((line, index) => (
         <div key={index} className={cn("flex px-3", LINE_STYLES[line.type])}>

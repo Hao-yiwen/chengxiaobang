@@ -30,9 +30,6 @@
     "placeholder": "Type anything",
     "addContext": "Add context",
     "selectModel": "Select model",
-    "voiceUnsupported": "Voice input isn't supported here",
-    "voiceStop": "Stop voice input",
-    "voiceStart": "Voice input",
     "stop": "Stop",
     "send": "Send",
     "selectProject": "Select project",
@@ -72,15 +69,13 @@
     "run": "Run",
     "reject": "Reject",
     "approvalTitle": "Waiting for approval",
-    "copy": "Copy",
-    "copied": "Copied",
     "scrollToBottom": "Scroll to bottom",
     "roleUser": "You",
     "roleAssistant": "程小帮",
     "roleTool": "Tool",
     "roleSystem": "System",
-    "tokenUsage": "{{total}} tokens this run (in {{prompt}} \u00b7 out {{completion}})",
-    "tokenCached": " \u00b7 cache hit {{cached}}",
+    "tokenUsage": "{{total}} tokens this run (in {{prompt}} · out {{completion}})",
+    "tokenCached": " · cache hit {{cached}}",
     "previewFile": "Preview file",
     "regenerate": "Regenerate",
     "edit": "Edit",
@@ -89,9 +84,7 @@
     "codeExpand": "Show all {{lines}} lines",
     "codeCollapse": "Collapse code",
     "codeDownload": "Download code",
-    "scrollToBottom": "Scroll to bottom",
     "turnDuration": "Took {{seconds}}s",
-    "toolDuration": "took {{duration}}",
     "diffView": "Diff view",
     "compactionTitle": "Context compacted",
     "compactionHint": "Earlier messages were summarized; future turns continue from the summary",
@@ -105,15 +98,15 @@
     }
   },
   "app": {
-    "disclaimer": "\u7a0b\u5c0f\u5e2e can make mistakes. Check important info."
+    "disclaimer": "程小帮 can make mistakes. Check important info."
   },
   "setup": {
     "title": "Set up a model",
-    "desc": "Add one model with an API key to start chatting. You can change it later in Settings \u2192 Providers.",
+    "desc": "Add one model with an API key to start chatting. You can change it later in Settings → Providers.",
     "apiKeyPlaceholder": "Paste your API key",
     "later": "Maybe later",
     "save": "Save & start",
-    "saving": "Saving\u2026"
+    "saving": "Saving…"
   },
   "rightPanel": {
     "terminal": "Terminal",
@@ -121,7 +114,7 @@
     "files": "File preview",
     "close": "Close panel",
     "resize": "Resize panel",
-    "terminalNoProject": "Open a project folder first \u2014 terminal commands run in the project directory.",
+    "terminalNoProject": "Open a project folder first — terminal commands run in the project directory.",
     "terminalEmpty": "Type a command below; it runs in the project directory.",
     "terminalPlaceholder": "Type a command, press Enter to run",
     "exitCode": "exit code {{code}}",
@@ -132,7 +125,7 @@
     "reload": "Reload",
     "openExternal": "Open in system browser",
     "filesEmpty": "Click a file path next to a tool call in the chat, or pick a file to preview.",
-    "pickFile": "Choose file\u2026",
+    "pickFile": "Choose file…",
     "fileLoadFailed": "Cannot preview this file",
     "fileDesktopOnly": "File preview is only available in the desktop app."
   },
