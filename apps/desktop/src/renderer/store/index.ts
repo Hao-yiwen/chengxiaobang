@@ -122,6 +122,12 @@ interface AppState {
   addContext(): Promise<void>;
   removeAttachment(path: string): void;
   submit(): Promise<void>;
+  /** Runs an already-assembled prompt in the active session (used by submit/regenerate/edit). */
+  runPrompt(prompt: string): Promise<void>;
+  /** Rewinds to the last user message and re-runs it. */
+  regenerateLast(): Promise<void>;
+  /** Rewinds to the given user message and re-runs it with edited content. */
+  editAndResend(messageId: string, content: string): Promise<void>;
   abortRun(): Promise<void>;
   approve(toolCallId: string, approved: boolean): void;
   saveProvider(input: ProviderInput): Promise<void>;
@@ -186,6 +192,14 @@ function isConfiguredProvider(provider: ProviderConfig | undefined): provider is
 
 function firstConfiguredProvider(providers: ProviderConfig[]): ProviderConfig | undefined {
   return providers.find(isConfiguredProvider);
+}
+
+/** The provider a run would use: the selected one if configured, else the first configured. */
+function resolveRunProvider(state: AppState): ProviderConfig | undefined {
+  const selected =
+    state.providers.find((provider) => provider.id === state.providerId) ??
+    firstConfiguredProvider(state.providers);
+  return isConfiguredProvider(selected) ? selected : undefined;
 }
 
 export const useAppStore = create<AppState>()(
@@ -500,21 +514,12 @@ export const useAppStore = create<AppState>()(
         if (!apiClient || state.input.trim().length === 0) {
           return;
         }
-        const selectedProvider =
-          state.providers.find((provider) => provider.id === state.providerId) ??
-          firstConfiguredProvider(state.providers);
-        if (!isConfiguredProvider(selectedProvider)) {
-          // No model configured yet — prompt a quick setup instead of navigating away.
+        if (!resolveRunProvider(state)) {
+          // No model configured yet — prompt a quick setup; keep the typed input.
           set({ onboardingOpen: true });
           return;
         }
-        if (selectedProvider.id !== state.providerId) {
-          set({ providerId: selectedProvider.id });
-        }
-        set({ isRunning: true });
-        get().clearRunState();
-        const { attachments, input, activeSessionId, accessMode } = state;
-        const providerId = selectedProvider.id;
+        const { attachments, input } = state;
         const contextBlock =
           attachments.length > 0
             ? attachments
@@ -527,9 +532,58 @@ export const useAppStore = create<AppState>()(
                 )
                 .join("\n") + "\n"
             : "";
-        const prompt = contextBlock + input;
+        set({ input: "", attachments: [] });
+        await get().runPrompt(contextBlock + input);
+      },
+
+      async regenerateLast() {
+        const state = get();
+        if (!apiClient || state.isRunning || !state.activeSessionId) {
+          return;
+        }
+        const lastUser = [...state.messages].reverse().find((item) => item.role === "user");
+        if (!lastUser) {
+          return;
+        }
+        await apiClient.rewindSession(state.activeSessionId, lastUser.id);
+        await get().loadSessionDetail(state.activeSessionId);
+        await get().runPrompt(lastUser.content);
+      },
+
+      async editAndResend(messageId, content) {
+        const state = get();
+        if (
+          !apiClient ||
+          state.isRunning ||
+          !state.activeSessionId ||
+          content.trim().length === 0
+        ) {
+          return;
+        }
+        await apiClient.rewindSession(state.activeSessionId, messageId);
+        await get().loadSessionDetail(state.activeSessionId);
+        await get().runPrompt(content);
+      },
+
+      async runPrompt(prompt) {
+        const state = get();
+        if (!apiClient || prompt.trim().length === 0) {
+          return;
+        }
+        const selectedProvider = resolveRunProvider(state);
+        if (!selectedProvider) {
+          set({ onboardingOpen: true });
+          return;
+        }
+        if (selectedProvider.id !== state.providerId) {
+          set({ providerId: selectedProvider.id });
+        }
+        set({ isRunning: true });
+        get().clearRunState();
+        const { activeSessionId, accessMode } = state;
+        const providerId = selectedProvider.id;
         const activeProject = selectActiveProject(get());
-        set({ input: "", attachments: [], view: "chat" });
+        set({ view: "chat" });
         let runSessionId = activeSessionId;
         try {
           await apiClient.streamRun(

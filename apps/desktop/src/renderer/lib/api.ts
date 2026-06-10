@@ -21,6 +21,7 @@ export interface ApiClient {
   updateSession(id: string, input: { title?: string }): Promise<Session>;
   deleteSession(id: string): Promise<boolean>;
   listMessages(sessionId: string): Promise<Message[]>;
+  rewindSession(sessionId: string, messageId: string): Promise<Message[]>;
   listSessionRuns(sessionId: string): Promise<{ runs: RunRecord[]; toolCalls: ToolCall[] }>;
   listSlashCommands(projectId?: string): Promise<{
     commands: SlashCommand[];
@@ -95,6 +96,14 @@ export async function createApiClient(): Promise<ApiClient> {
     async listMessages(sessionId) {
       return (
         await request<{ messages: Message[] }>(`/api/sessions/${sessionId}/messages`)
+      ).messages;
+    },
+    async rewindSession(sessionId, messageId) {
+      return (
+        await request<{ messages: Message[] }>(`/api/sessions/${sessionId}/rewind`, {
+          method: "POST",
+          body: JSON.stringify({ messageId })
+        })
       ).messages;
     },
     async listSessionRuns(sessionId) {

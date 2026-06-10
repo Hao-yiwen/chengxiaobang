@@ -5,6 +5,7 @@ import type { Message, ToolCall } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/Markdown";
+import { MessageActions, MessageEditor } from "@/components/MessageActions";
 import { ReasoningPanel } from "@/components/ReasoningPanel";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
@@ -39,6 +40,10 @@ export function ChatView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const lastAssistantId = [...messages]
+    .reverse()
+    .find((message) => message.role === "assistant")?.id;
+
   // Keep the newest content in view while streaming, but only when the user is
   // already near the bottom — never yank them back up if they've scrolled away.
   useEffect(() => {
@@ -60,7 +65,11 @@ export function ChatView() {
     >
       {timelineItems(messages, toolHistory).map((item) =>
         item.kind === "message" ? (
-          <MessageBubble key={`message-${item.message.id}`} message={item.message} />
+          <MessageBubble
+            key={`message-${item.message.id}`}
+            message={item.message}
+            isLastAssistant={item.message.id === lastAssistantId}
+          />
         ) : (
           <ToolCallRow key={`tool-${item.toolCall.id}`} toolCall={item.toolCall} />
         )
@@ -210,25 +219,51 @@ function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
 
 // Memoized so per-delta re-renders during streaming skip settled messages —
 // the store preserves referential identity of existing message objects.
-const MessageBubble = memo(function MessageBubble({ message }: { message: Message }) {
+const MessageBubble = memo(function MessageBubble({
+  message,
+  isLastAssistant = false
+}: {
+  message: Message;
+  isLastAssistant?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const editAndResend = useAppStore((state) => state.editAndResend);
   const isUser = message.role === "user";
   if (isUser) {
-    return (
-      <div className="mb-5 max-w-[80%] animate-msg-in self-end rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground shadow-soft">
-        <div className="whitespace-pre-wrap break-words text-[14.5px] leading-relaxed">
-          {message.content}
+    if (editing) {
+      return (
+        <div className="mb-5 w-[min(560px,90%)] self-end">
+          <MessageEditor
+            initial={message.content}
+            onCancel={() => setEditing(false)}
+            onSubmit={(content) => {
+              setEditing(false);
+              void editAndResend(message.id, content);
+            }}
+          />
         </div>
+      );
+    }
+    return (
+      <div className="group/msg mb-5 flex max-w-[80%] flex-col items-end self-end">
+        <div className="animate-msg-in rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground shadow-soft">
+          <div className="whitespace-pre-wrap break-words text-[14.5px] leading-relaxed">
+            {message.content}
+          </div>
+        </div>
+        <MessageActions message={message} onEdit={() => setEditing(true)} />
       </div>
     );
   }
   // Assistant turns render as plain left-aligned content — no avatar, no name —
   // with the persisted reasoning panel (if any) sitting above the answer.
   return (
-    <div className="mb-5 animate-msg-in self-stretch">
+    <div className="group/msg mb-5 animate-msg-in self-stretch">
       {message.reasoning ? (
         <ReasoningPanel text={message.reasoning} durationMs={message.reasoningMs} />
       ) : null}
       <Markdown text={message.content} />
+      <MessageActions message={message} isLastAssistant={isLastAssistant} />
     </div>
   );
 });

@@ -65,7 +65,11 @@
     "roleSystem": "System",
     "tokenUsage": "{{total}} tokens this run (in {{prompt}} · out {{completion}})",
     "tokenCached": " · cache hit {{cached}}",
-    "previewFile": "Preview file"
+    "previewFile": "Preview file",
+    "regenerate": "Regenerate",
+    "edit": "Edit",
+    "editSend": "Send",
+    "editCancel": "Cancel"
   },
   "rightPanel": {
     "terminal": "Terminal",

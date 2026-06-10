@@ -4,6 +4,7 @@ import {
   encodeSseEvent,
   projectInputSchema,
   providerInputSchema,
+  rewindRequestSchema,
   runRequestSchema,
   sessionInputSchema,
   sessionUpdateSchema,
@@ -84,6 +85,15 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
           options.store.listToolCallsForSession(runsMatch[1])
         ]);
         return jsonResponse({ runs, toolCalls });
+      }
+      const rewindMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/rewind$/);
+      if (rewindMatch && request.method === "POST") {
+        const input = rewindRequestSchema.parse(await readJson<unknown>(request));
+        const deleted = await options.store.deleteMessagesFrom(rewindMatch[1], input.messageId);
+        if (deleted === 0) {
+          return errorResponse("消息不存在", 404);
+        }
+        return jsonResponse({ messages: await options.store.listMessages(rewindMatch[1]) });
       }
       const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
       if (sessionMatch && request.method === "PATCH") {

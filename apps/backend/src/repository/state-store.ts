@@ -55,6 +55,12 @@ export interface StateStore {
   touchSession(id: string, title?: string): Promise<void>;
   addMessage(input: CreateMessageInput): Promise<Message>;
   listMessages(sessionId: string): Promise<Message[]>;
+  /**
+   * Deletes the given message and every later one in the session (plus runs
+   * and tool calls from that span). Returns how many messages were removed;
+   * 0 when the message id is not in the session.
+   */
+  deleteMessagesFrom(sessionId: string, messageId: string): Promise<number>;
   createRun(input: CreateRunInput): Promise<void>;
   updateRunStatus(id: string, status: CreateRunInput["status"]): Promise<void>;
   listRuns(sessionId: string): Promise<RunRecord[]>;

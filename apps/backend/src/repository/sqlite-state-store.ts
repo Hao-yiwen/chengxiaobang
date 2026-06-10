@@ -315,6 +315,34 @@ export class SqliteStateStore implements StateStore {
     ]).map(mapMessage);
   }
 
+  async deleteMessagesFrom(sessionId: string, messageId: string): Promise<number> {
+    // Index into the same ordering listMessages uses, so created_at ties
+    // cannot drop a different suffix than the one callers see.
+    const messages = await this.listMessages(sessionId);
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index === -1) {
+      return 0;
+    }
+    const doomed = messages.slice(index);
+    for (const message of doomed) {
+      this.run("delete from messages where id = ?", [message.id]);
+    }
+    // Drop runs (and their tool calls) from the deleted span, or orphaned
+    // tool rows would interleave into the regenerated timeline.
+    const cutoff = doomed[0].createdAt;
+    const runs = this.query("select id from runs where session_id = ? and created_at >= ?", [
+      sessionId,
+      cutoff
+    ]);
+    for (const run of runs) {
+      this.run("delete from tool_calls where run_id = ?", [String(run.id)]);
+    }
+    this.run("delete from runs where session_id = ? and created_at >= ?", [sessionId, cutoff]);
+    await this.touchSession(sessionId);
+    await this.flush();
+    return doomed.length;
+  }
+
   async createRun(input: CreateRunInput): Promise<void> {
     await this.assertSessionExists(input.sessionId);
     const timestamp = nowIso();

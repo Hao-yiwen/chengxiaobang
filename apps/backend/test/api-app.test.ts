@@ -65,6 +65,33 @@ describe("createApp", () => {
     await expect(deleted.json()).resolves.toEqual({ deleted: true });
   });
 
+  it("rewinds a session to a message over HTTP", async () => {
+    const session = await store.createSession({
+      projectId: null,
+      title: "回退",
+      accessMode: "approval"
+    });
+    const first = await store.addMessage({ sessionId: session.id, role: "user", content: "一" });
+    const second = await store.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "二"
+    });
+
+    const response = await app(
+      jsonRequest(`/api/sessions/${session.id}/rewind`, "POST", { messageId: second.id })
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      messages: [{ id: first.id, content: "一" }]
+    });
+
+    const missing = await app(
+      jsonRequest(`/api/sessions/${session.id}/rewind`, "POST", { messageId: "msg_nope" })
+    );
+    expect(missing.status).toBe(404);
+  });
+
   it("allows PATCH in CORS preflight responses", async () => {
     const response = await app(new Request("http://local/api/sessions/session_1", {
       method: "OPTIONS"

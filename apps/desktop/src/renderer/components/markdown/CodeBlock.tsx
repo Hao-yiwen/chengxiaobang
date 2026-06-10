@@ -1,6 +1,7 @@
 import { Check, Copy } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useCopy } from "@/lib/use-copy";
 
 /**
  * Chrome around a fenced code block: language label + copy button. `children`
@@ -17,17 +18,7 @@ export function CodeBlock({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-
-  async function copy(): Promise<void> {
-    try {
-      await navigator.clipboard?.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard unavailable or denied — fail silently rather than disrupt the chat.
-    }
-  }
+  const { copied, copy } = useCopy();
 
   return (
     <div className="overflow-hidden rounded-lg border bg-muted/50">
@@ -37,7 +28,7 @@ export function CodeBlock({
         </span>
         <button
           type="button"
-          onClick={() => void copy()}
+          onClick={() => void copy(text)}
           className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
         >
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}

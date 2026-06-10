@@ -65,7 +65,11 @@
     "roleSystem": "系统",
     "tokenUsage": "本次用量 {{total}} tokens（输入 {{prompt}} · 输出 {{completion}}）",
     "tokenCached": " · 命中缓存 {{cached}}",
-    "previewFile": "预览文件"
+    "previewFile": "预览文件",
+    "regenerate": "重新生成",
+    "edit": "编辑",
+    "editSend": "发送",
+    "editCancel": "取消"
   },
   "rightPanel": {
     "terminal": "终端",

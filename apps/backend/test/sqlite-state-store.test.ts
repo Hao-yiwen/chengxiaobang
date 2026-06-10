@@ -136,6 +136,51 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
+  it("deletes a message and everything after it on rewind", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const session = await store.createSession({
+      projectId: null,
+      title: "回退",
+      accessMode: "approval"
+    });
+    const first = await store.addMessage({ sessionId: session.id, role: "user", content: "一" });
+    await tick();
+    const second = await store.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "二"
+    });
+    await tick();
+    // Runs (and their tool calls) created at/after the rewind point are removed too.
+    await store.createRun({ id: "run_late", sessionId: session.id, status: "completed" });
+    const timestamp = nowIso();
+    await store.insertToolCall({
+      id: "tool_late",
+      runId: "run_late",
+      name: "shell",
+      args: { command: "pwd" },
+      status: "completed",
+      result: "/tmp",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await store.addMessage({ sessionId: session.id, role: "user", content: "三" });
+    await store.addMessage({ sessionId: session.id, role: "assistant", content: "四" });
+
+    expect(await store.deleteMessagesFrom(session.id, second.id)).toBe(3);
+    expect(await store.listMessages(session.id)).toMatchObject([
+      { id: first.id, content: "一" }
+    ]);
+    expect(await store.listRuns(session.id)).toEqual([]);
+    expect(await store.listToolCallsForSession(session.id)).toEqual([]);
+
+    expect(await store.deleteMessagesFrom(session.id, "msg_missing")).toBe(0);
+    expect(await store.listMessages(session.id)).toHaveLength(1);
+
+    await store.close();
+  });
+
   it("rejects messages for missing sessions", async () => {
     const store = new SqliteStateStore(join(dir, "state.sqlite"));
     await store.initialize();
@@ -237,6 +282,11 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 });
+
+/** Waits past the millisecond so ISO created_at timestamps are strictly ordered. */
+function tick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 2));
+}
 
 async function seedProviders(store: SqliteStateStore): Promise<void> {
   const timestamp = nowIso();

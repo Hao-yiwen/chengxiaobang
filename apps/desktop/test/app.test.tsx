@@ -27,6 +27,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     updateSession: vi.fn() as never,
     deleteSession: vi.fn() as never,
     listMessages: vi.fn(async () => []),
+    rewindSession: vi.fn(async () => []),
     listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [] })),
     listSlashCommands: vi.fn(async () => ({
       commands: [

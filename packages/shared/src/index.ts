@@ -187,6 +187,12 @@ export const approvalDecisionSchema = z.object({
 });
 export type ApprovalDecision = z.infer<typeof approvalDecisionSchema>;
 
+/** Rewind a session: delete this message and everything after it. */
+export const rewindRequestSchema = z.object({
+  messageId: z.string().min(1)
+});
+export type RewindRequest = z.infer<typeof rewindRequestSchema>;
+
 /** A user-typed command for the terminal panel, run in the project directory. */
 export const terminalExecRequestSchema = z.object({
   projectId: z.string().min(1),
