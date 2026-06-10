@@ -175,13 +175,25 @@ export function Composer() {
         return;
       }
     }
+    // Enter sends (Shift+Enter inserts a newline); respect IME composition so
+    // confirming Chinese candidates never fires a send (ported from main).
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.nativeEvent.isComposing &&
+      !isRunning
+    ) {
+      event.preventDefault();
+      void submit();
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       void submit();
     }
   };
 
   return (
-    <div className="relative w-[min(760px,100%)] overflow-visible rounded-2xl border bg-card shadow-composer transition-all focus-within:border-brand/40 focus-within:ring-4 focus-within:ring-brand/10">
+    <div className="relative w-full overflow-visible rounded-2xl border bg-card shadow-composer transition-all focus-within:border-brand/40 focus-within:ring-4 focus-within:ring-brand/10">
       {attachments.length > 0 ? (
         <div className="flex flex-wrap gap-2 px-4 pt-3.5">
           {attachments.map((attachment) => (

@@ -3,6 +3,9 @@ import { z } from "zod";
 export const providerKindSchema = z.enum([
   "deepseek",
   "kimi",
+  "minimax",
+  "doubao",
+  "qwen",
   "openai-compatible",
   "custom"
 ]);

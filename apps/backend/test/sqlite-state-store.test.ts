@@ -54,6 +54,24 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
+  it("deletes a project together with its sessions and history", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const project = await store.createProject({ name: "demo", path: join(dir, "p") });
+    const session = await store.createSession({
+      projectId: project.id,
+      title: "会话",
+      accessMode: "approval"
+    });
+    await store.addMessage({ sessionId: session.id, role: "user", content: "hi" });
+
+    expect(await store.deleteProject(project.id)).toBe(true);
+    expect(await store.getProject(project.id)).toBeUndefined();
+    expect(await store.getSession(session.id)).toBeUndefined();
+    expect(await store.deleteProject(project.id)).toBe(false);
+    await store.close();
+  });
+
   it("persists assistant reasoning and its duration across restarts", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);

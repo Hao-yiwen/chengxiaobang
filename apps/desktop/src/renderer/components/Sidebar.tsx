@@ -6,12 +6,11 @@ import {
   Folder,
   GitFork,
   MessageSquareText,
-  FolderOpen,
   MessageSquare,
-  MessageSquarePlus,
   Pencil,
   Search,
   Settings,
+  SquarePen,
   Trash2,
   X
 } from "lucide-react";
@@ -19,13 +18,28 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Session } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Logo } from "@/components/Logo";
 import { filterSessionsByTitle } from "@/lib/session-filter";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
+
+/** Flat ChatGPT-style sidebar row: icon + label, grey hover, no chrome. */
+function SidebarRow(props: { icon: ReactNode; label: string; onClick(): void }) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      className="flex h-9 w-full flex-none items-center gap-2.5 rounded-lg px-2.5 text-left text-[13.5px] text-foreground transition-colors hover:bg-accent"
+    >
+      <span className="flex size-[18px] flex-none items-center justify-center [&_svg]:size-[17px] [&_svg]:stroke-[1.75]">
+        {props.icon}
+      </span>
+      <span className="truncate">{props.label}</span>
+    </button>
+  );
+}
 
 export function Sidebar() {
   const { t } = useTranslation();
@@ -37,13 +51,13 @@ export function Sidebar() {
     }))
   );
   const newChat = useAppStore((state) => state.newChat);
-  const openFolder = useAppStore((state) => state.openFolder);
   const setPaletteOpen = useAppStore((state) => state.setPaletteOpen);
   const setView = useAppStore((state) => state.setView);
   const selectSession = useAppStore((state) => state.selectSession);
   const renameSession = useAppStore((state) => state.renameSession);
   const deleteSession = useAppStore((state) => state.deleteSession);
   const exportSession = useAppStore((state) => state.exportSession);
+  const deleteProject = useAppStore((state) => state.deleteProject);
 
   const [editingId, setEditingId] = useState<string>();
   const [draftTitle, setDraftTitle] = useState("");
@@ -103,30 +117,23 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex h-full min-h-0 flex-col gap-0.5 overflow-hidden bg-surface px-2.5 pb-3 max-[840px]:hidden">
-      {/* Drag strip reserving space for the macOS traffic-light buttons. */}
-      <div className="h-10 flex-none [-webkit-app-region:drag]" />
-      <div className="flex h-9 flex-none items-center gap-2 px-2.5 [-webkit-app-region:drag]">
+    <aside
+      data-testid="app-sidebar"
+      className="flex h-full w-[260px] min-h-0 flex-none flex-col overflow-hidden border-r border-border/70 bg-surface px-2.5 pb-2.5 max-[840px]:hidden"
+    >
+      {/* In Electron (hiddenInset titlebar) the macOS traffic lights occupy the
+          top-left corner — reserve a draggable strip above the brand row so the
+          logo sits below them, not beside them. */}
+      {window.chengxiaobang ? (
+        <div className="h-12 flex-none [-webkit-app-region:drag]" />
+      ) : null}
+      <div className="flex h-11 flex-none items-center gap-2 px-2 [-webkit-app-region:drag]">
         <Logo className="size-[22px]" />
         <span className="text-[13.5px] font-semibold tracking-tight">程小帮</span>
       </div>
 
-      <Button
-        variant="ghost"
-        className="h-9 w-full justify-start gap-2.5 px-2.5 font-medium hover:bg-accent"
-        onClick={newChat}
-      >
-        <MessageSquarePlus className="size-[18px] text-brand" />
-        {t("sidebar.newChat")}
-      </Button>
-      <Button
-        variant="ghost"
-        className="h-9 w-full justify-start gap-2.5 px-2.5 font-medium hover:bg-accent"
-        onClick={() => setPaletteOpen(true)}
-      >
-        <Search className="size-[18px] text-muted-foreground" />
-        {t("sidebar.search")}
-      </Button>
+      <SidebarRow icon={<SquarePen />} label={t("sidebar.newChat")} onClick={newChat} />
+      <SidebarRow icon={<Search />} label={t("sidebar.search")} onClick={() => setPaletteOpen(true)} />
 
       <div className="relative mt-1">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -155,59 +162,53 @@ export function Sidebar() {
         ) : null}
       </div>
 
-      <div className="mb-1 mt-4 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+      <div className="mb-1 mt-5 flex-none px-2.5 text-[11.5px] font-medium text-muted-foreground/80">
         {t("sidebar.conversations")}
       </div>
-      <ScrollArea className="-mx-1 max-h-[34vh] flex-none px-1">
+      <ScrollArea className="-mx-0.5 max-h-[34vh] flex-none px-0.5">
         {ungrouped.length > 0 ? (
           <SessionGroup
-            icon={<MessageSquare className="size-4 text-muted-foreground" />}
+            icon={<MessageSquare className="size-4" />}
             name={t("sidebar.standalone")}
             sessions={ungrouped}
             {...groupProps}
           />
         ) : (
-          <p className="px-3 py-2 text-sm text-muted-foreground">
+          <p className="px-2.5 py-1.5 text-[12.5px] text-muted-foreground/70">
             {filtering ? t("sidebar.noMatches") : t("sidebar.noChats")}
           </p>
         )}
       </ScrollArea>
 
-      <div className="mb-1 mt-4 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+      <div className="mb-1 mt-5 flex-none px-2.5 text-[11.5px] font-medium text-muted-foreground/80">
         {t("sidebar.projects")}
       </div>
-      <Button
-        variant="ghost"
-        className="h-9 w-full justify-start gap-2.5 px-2.5 font-normal text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={() => void openFolder()}
-      >
-        <FolderOpen className="size-[18px]" />
-        {t("sidebar.openFolder")}
-      </Button>
 
-      <ScrollArea className="-mx-1 mt-1 min-h-0 flex-1 px-1">
+      <ScrollArea className="-mx-0.5 mt-0.5 min-h-0 flex-1 px-0.5">
         {projectSessions.map(({ project, sessions: projectSessionList }) => (
           <SessionGroup
             key={project.id}
-            icon={<Folder className="size-4 text-muted-foreground" />}
+            icon={<Folder className="size-4" />}
             name={project.name}
             sessions={projectSessionList}
+            onDeleteGroup={() => {
+              if (window.confirm(t("sidebar.deleteProjectConfirm"))) {
+                void deleteProject(project.id);
+              }
+            }}
             {...groupProps}
           />
         ))}
         {projects.length === 0 ? (
-          <p className="px-3 py-2 text-sm text-muted-foreground">{t("sidebar.noProjects")}</p>
+          <p className="px-2.5 py-1.5 text-[12.5px] text-muted-foreground/70">
+            {t("sidebar.noProjects")}
+          </p>
         ) : null}
       </ScrollArea>
 
-      <Button
-        variant="ghost"
-        className="mt-auto h-9 w-full justify-start gap-2.5 px-2.5 font-medium hover:bg-accent"
-        onClick={() => setView("settings")}
-      >
-        <Settings className="size-[18px] text-muted-foreground" />
-        {t("sidebar.settings")}
-      </Button>
+      <div className="mt-1 flex-none border-t border-border/60 pt-1.5">
+        <SidebarRow icon={<Settings />} label={t("sidebar.settings")} onClick={() => setView("settings")} />
+      </div>
     </aside>
   );
 }
@@ -216,6 +217,8 @@ interface GroupProps {
   icon: ReactNode;
   name: string;
   sessions: Session[];
+  /** Present for project groups: shows a hover delete action on the header. */
+  onDeleteGroup?(): void;
   activeSessionId?: string;
   editingId?: string;
   draftTitle: string;
@@ -238,121 +241,132 @@ function SessionGroup(props: GroupProps) {
   const [open, setOpen] = useState(true);
   const expanded = open || props.forceOpen;
   return (
-    <div className="mb-2.5">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
-      >
-        {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-        {props.icon}
-        <span className="truncate">{props.name}</span>
-        <span className="ml-auto rounded-full bg-muted px-1.5 text-[10.5px] font-medium tabular-nums text-muted-foreground">
-          {props.sessions.length}
-        </span>
-      </button>
-      {expanded && props.sessions.length === 0 ? (
-        <p className="px-3 py-1.5 pl-8 text-[12px] text-muted-foreground">
-          {t("sidebar.noChats")}
-        </p>
-      ) : null}
-      {expanded ? (props.showAll ? props.sessions : props.sessions.slice(0, 8)).map((session) =>
-        props.editingId === session.id ? (
-          <div key={session.id} className="flex items-center gap-1 py-1 pl-7 pr-1">
-            <Input
-              aria-label={t("sidebar.sessionTitle")}
-              autoFocus
-              value={props.draftTitle}
-              onChange={(event) => props.onDraftChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") props.onCommitRename();
-                if (event.key === "Escape") props.onCancelRename();
-              }}
-              className="h-7 text-[13px]"
-            />
-            <button
-              type="button"
-              title={t("sidebar.saveTitle")}
-              onClick={props.onCommitRename}
-              className="flex size-6 flex-none items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <Check className="size-4" />
-            </button>
-            <button
-              type="button"
-              title={t("sidebar.cancelRename")}
-              onClick={props.onCancelRename}
-              className="flex size-6 flex-none items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        ) : (
-          <div
-            key={session.id}
-            className={cn(
-              "group relative flex items-center rounded-md pl-8 pr-1 transition-colors",
-              session.id === props.activeSessionId
-                ? "bg-accent text-accent-foreground before:absolute before:left-2.5 before:top-1/2 before:h-3.5 before:w-[3px] before:-translate-y-1/2 before:rounded-full before:bg-brand"
-                : "hover:bg-accent/60"
-            )}
+    <div className="mb-2">
+      <div className="group/header relative flex items-center">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12.5px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          {expanded ? (
+            <ChevronDown className="size-3.5 flex-none" />
+          ) : (
+            <ChevronRight className="size-3.5 flex-none" />
+          )}
+          <span className="flex flex-none items-center text-muted-foreground/80">{props.icon}</span>
+          <span className="truncate">{props.name}</span>
+          <span className="ml-auto text-[11px] tabular-nums text-muted-foreground/60">
+            {props.sessions.length}
+          </span>
+        </button>
+        {props.onDeleteGroup ? (
+          <button
+            type="button"
+            title={t("sidebar.deleteProject")}
+            onClick={props.onDeleteGroup}
+            className="absolute right-1 flex size-6 flex-none items-center justify-center rounded-md bg-surface text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/header:opacity-100"
           >
-            <button
-              type="button"
-              onClick={() => props.onSelect(session.id)}
-              className={cn(
-                "flex min-w-0 flex-1 items-center gap-1 py-1.5 text-left text-[13px]",
-                session.id === props.activeSessionId && "font-medium"
-              )}
-            >
-              {session.parentSessionId ? (
-                <span
-                  className="flex-none"
-                  title={
-                    props.titleById.has(session.parentSessionId)
-                      ? t("sidebar.branchOf", {
-                          title: props.titleById.get(session.parentSessionId)
-                        })
-                      : t("sidebar.branchUnknown")
-                  }
-                >
-                  <GitFork className="size-3 text-muted-foreground" />
-                </span>
-              ) : null}
-              {session.feishuChatId ? (
-                <span className="flex-none" title={t("sidebar.feishuSession")}>
-                  <MessageSquareText className="size-3 text-muted-foreground" />
-                </span>
-              ) : null}
-              <span className="truncate">{session.title}</span>
-            </button>
-            <button
-              type="button"
-              title={t("sidebar.rename")}
-              onClick={() => props.onStartRename(session)}
-              className="flex size-6 flex-none items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
-            >
-              <Pencil className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              title={t("sidebar.exportSession")}
-              onClick={() => props.onExport(session.id)}
-              className="flex size-6 flex-none items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
-            >
-              <FileDown className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              title={t("sidebar.deleteSession")}
-              onClick={() => props.onDelete(session.id)}
-              className="flex size-6 flex-none items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-destructive group-hover:opacity-100"
-            >
-              <Trash2 className="size-3.5" />
-            </button>
-          </div>
-        )
+            <Trash2 className="size-3.5" />
+          </button>
+        ) : null}
+      </div>
+      {expanded && props.sessions.length === 0 ? (
+        <p className="py-1 pl-9 pr-2 text-[12px] text-muted-foreground/70">{t("sidebar.noChats")}</p>
       ) : null}
+      {expanded
+        ? (props.showAll ? props.sessions : props.sessions.slice(0, 8)).map((session) =>
+            props.editingId === session.id ? (
+              <div key={session.id} className="flex items-center gap-1 py-1 pl-7 pr-1">
+                <Input
+                  aria-label={t("sidebar.sessionTitle")}
+                  autoFocus
+                  value={props.draftTitle}
+                  onChange={(event) => props.onDraftChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") props.onCommitRename();
+                    if (event.key === "Escape") props.onCancelRename();
+                  }}
+                  className="h-7 rounded-md text-[13px]"
+                />
+                <button
+                  type="button"
+                  title={t("sidebar.saveTitle")}
+                  onClick={props.onCommitRename}
+                  className="flex size-6 flex-none items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <Check className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  title={t("sidebar.cancelRename")}
+                  onClick={props.onCancelRename}
+                  className="flex size-6 flex-none items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            ) : (
+              <div
+                key={session.id}
+                className={cn(
+                  "group relative flex items-center rounded-lg pl-9 pr-1 transition-colors",
+                  session.id === props.activeSessionId ? "bg-accent" : "hover:bg-accent/70"
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => props.onSelect(session.id)}
+                  className="flex min-w-0 flex-1 items-center gap-1 py-1.5 text-left text-[13px] text-foreground/90"
+                >
+                  {session.parentSessionId ? (
+                    <span
+                      className="flex-none"
+                      title={
+                        props.titleById.has(session.parentSessionId)
+                          ? t("sidebar.branchOf", {
+                              title: props.titleById.get(session.parentSessionId)
+                            })
+                          : t("sidebar.branchUnknown")
+                      }
+                    >
+                      <GitFork className="size-3 text-muted-foreground" />
+                    </span>
+                  ) : null}
+                  {session.feishuChatId ? (
+                    <span className="flex-none" title={t("sidebar.feishuSession")}>
+                      <MessageSquareText className="size-3 text-muted-foreground" />
+                    </span>
+                  ) : null}
+                  <span className="truncate">{session.title}</span>
+                </button>
+                <button
+                  type="button"
+                  title={t("sidebar.rename")}
+                  onClick={() => props.onStartRename(session)}
+                  className="flex size-6 flex-none items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title={t("sidebar.exportSession")}
+                  onClick={() => props.onExport(session.id)}
+                  className="flex size-6 flex-none items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
+                >
+                  <FileDown className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title={t("sidebar.deleteSession")}
+                  onClick={() => props.onDelete(session.id)}
+                  className="flex size-6 flex-none items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-destructive group-hover:opacity-100"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+            )
+          )
+        : null}
     </div>
   );
 }

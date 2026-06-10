@@ -159,9 +159,9 @@ describe("MessageActions", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "从这条消息创建分支" })[0]);
 
     await waitFor(() => expect(forkSession).toHaveBeenCalledWith("session_1", "u1"));
-    // The branch becomes the active session and shows up in the sidebar
-    // with a branch indicator pointing at its parent.
-    expect(await screen.findByText("历史对话（分支）")).toBeInTheDocument();
+    // The branch becomes the active session and shows up in the sidebar (and
+    // chat header) with a branch indicator pointing at its parent.
+    expect((await screen.findAllByText("历史对话（分支）")).length).toBeGreaterThanOrEqual(1);
     expect(await screen.findByTitle("从「历史对话」分支")).toBeInTheDocument();
     await waitFor(() => expect(listMessages).toHaveBeenCalledWith("session_2"));
   });

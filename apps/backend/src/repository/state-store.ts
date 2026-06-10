@@ -67,6 +67,8 @@ export interface StateStore {
    * are not cloned (tool-role messages keep the model context intact).
    */
   forkSession(sessionId: string, messageId: string): Promise<Session>;
+  /** Deletes a project and cascades to its sessions/messages/runs. */
+  deleteProject(id: string): Promise<boolean>;
   touchSession(id: string, title?: string): Promise<void>;
   addMessage(input: CreateMessageInput): Promise<Message>;
   listMessages(sessionId: string): Promise<Message[]>;

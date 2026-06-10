@@ -4,24 +4,23 @@ import { ChatView } from "./components/ChatView";
 import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { HomeStarters } from "./components/HomeStarters";
-import { Logo } from "./components/Logo";
-import { ProviderSetupDialog } from "./components/ProviderSetupDialog";
 import { RightPanel } from "./components/right-panel/RightPanel";
 import { RightPanelSwitch } from "./components/right-panel/RightPanelSwitch";
 import { SettingsView } from "./components/SettingsView";
+import { SetupDialog } from "./components/SetupDialog";
 import { Sidebar } from "./components/Sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useThemeController } from "@/hooks/use-theme";
 import { useI18nController } from "@/hooks/use-i18n";
 import type { ApiClient } from "@/lib/api";
-import { selectHeading, useAppStore } from "@/store";
-import { cn } from "@/lib/utils";
+import { selectActiveSession, selectHeading, useAppStore } from "@/store";
 
 export function App(props: { client?: ApiClient }) {
   const { t } = useTranslation();
   const view = useAppStore((state) => state.view);
   const notice = useAppStore((state) => state.notice);
   const heading = useAppStore(selectHeading);
+  const activeSession = useAppStore(selectActiveSession);
 
   useThemeController();
   useI18nController();
@@ -45,53 +44,55 @@ export function App(props: { client?: ApiClient }) {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="grid h-screen overflow-hidden grid-cols-[252px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] bg-surface max-[840px]:grid-cols-1">
+      <div className="flex h-screen overflow-hidden bg-background">
         <div className="titlebar-drag" />
         <CommandPalette />
-        <ProviderSetupDialog />
+        <SetupDialog />
         {view === "settings" ? (
           <SettingsView />
         ) : (
           <>
             <Sidebar />
-            <div className="flex min-h-0 min-w-0">
-            <main
-            className={cn(
-              "relative m-2 ml-0 flex h-[calc(100vh-1rem)] min-h-0 min-w-0 flex-1 flex-col items-center overflow-hidden rounded-xl border bg-background px-10 pb-7 pt-16 shadow-soft max-[840px]:m-0 max-[840px]:h-screen max-[840px]:rounded-none max-[840px]:border-0",
-              view === "home" ? "home-aura justify-center" : "justify-end"
-            )}
-          >
-            <RightPanelSwitch />
-            {notice ? (
-              <div className="animate-scale-in mb-4 w-[min(760px,100%)] rounded-lg border border-amber/40 bg-amber/10 px-4 py-3 text-sm text-foreground/80">
-                {notice}
-              </div>
-            ) : null}
-            {view === "home" ? (
-              <div className="mb-9 flex flex-col items-center">
-                <div className="relative mb-7 animate-scale-in">
-                  <div
-                    aria-hidden
-                    className="absolute -inset-5 -z-10 rounded-full bg-brand/20 blur-2xl"
-                  />
-                  <div className="flex size-[72px] items-center justify-center rounded-[20px] border border-brand/15 bg-card shadow-elevated">
-                    <Logo className="size-12" />
+            <main className="relative flex h-screen min-h-0 min-w-0 flex-1 flex-col">
+              <RightPanelSwitch />
+              {notice ? (
+                <div className="absolute inset-x-0 top-12 z-30 flex justify-center px-6">
+                  <div className="animate-scale-in max-w-[44rem] rounded-xl border bg-card px-4 py-2.5 text-[13px] leading-relaxed text-foreground shadow-elevated">
+                    {notice}
                   </div>
                 </div>
-                <h1 className="max-w-[720px] text-balance text-center text-[33px] font-semibold leading-tight tracking-tight">
-                  {heading}
-                </h1>
-                <p className="mt-3 max-w-[560px] text-center text-[15px] text-muted-foreground">
-                  {t("home.subtitle")}
-                </p>
-              </div>
-            ) : null}
-            {view === "chat" ? <ChatView /> : null}
-            <Composer />
-            {view === "home" ? <HomeStarters /> : null}
+              ) : null}
+
+              {view === "home" ? (
+                <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 pb-14 pt-12">
+                  <div className="w-full max-w-[44rem]">
+                    <h1 className="mb-7 text-balance text-center text-[28px] font-semibold leading-tight tracking-tight">
+                      {heading}
+                    </h1>
+                    <Composer />
+                    <HomeStarters />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <header className="flex h-11 flex-none items-center justify-center px-16 [-webkit-app-region:drag]">
+                    <span className="max-w-[60%] truncate text-[13px] font-medium text-muted-foreground">
+                      {activeSession?.title ?? ""}
+                    </span>
+                  </header>
+                  <ChatView />
+                  <div className="flex-none px-6">
+                    <div className="mx-auto w-full max-w-[44rem]">
+                      <Composer />
+                    </div>
+                    <p className="px-2 py-2 text-center text-[11.5px] text-muted-foreground/70">
+                      {t("app.disclaimer")}
+                    </p>
+                  </div>
+                </>
+              )}
             </main>
             <RightPanel />
-            </div>
           </>
         )}
       </div>

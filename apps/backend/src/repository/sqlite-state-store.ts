@@ -353,6 +353,22 @@ export class SqliteStateStore implements StateStore {
     return next;
   }
 
+  async deleteProject(id: string): Promise<boolean> {
+    const exists = await this.getProject(id);
+    if (!exists) {
+      return false;
+    }
+    // Cascade: remove the project's sessions (with their runs/messages) first.
+    const sessions = this.query("select id from sessions where project_id = ?", [id]);
+    for (const session of sessions) {
+      await this.deleteSession(String(session.id));
+    }
+    this.run("delete from projects where id = ?", [id]);
+    await this.flush();
+    console.log("[sqlite-state-store] 已删除项目及其会话:", id, `(${sessions.length} 个会话)`);
+    return true;
+  }
+
   async deleteSession(id: string): Promise<boolean> {
     const exists = await this.getSession(id);
     if (!exists) {

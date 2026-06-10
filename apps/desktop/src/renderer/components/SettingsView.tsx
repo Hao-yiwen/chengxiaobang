@@ -35,6 +35,7 @@ import {
 import { FeishuSection } from "@/components/settings/FeishuSection";
 import { OptionCard } from "@/components/settings/OptionCard";
 import { SectionShell, SettingBlock } from "@/components/settings/SectionShell";
+import { API_KEY_URLS, PROVIDER_KIND_OPTIONS, PROVIDER_PRESETS } from "@/lib/provider-presets";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
@@ -118,9 +119,9 @@ export function SettingsView() {
   }, [filtered]);
 
   return (
-    <>
-      {/* Settings nav — occupies the left column, replacing the main sidebar */}
-      <aside className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto bg-surface px-2.5 pb-4 max-[840px]:hidden">
+    <div className="grid h-screen min-h-0 min-w-0 flex-1 grid-cols-[232px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden bg-background">
+      {/* Settings nav */}
+      <aside className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto border-r border-border/70 bg-surface px-3 pb-4">
         <div className="h-10 flex-none [-webkit-app-region:drag]" />
         <Button
           variant="ghost"
@@ -162,7 +163,7 @@ export function SettingsView() {
                   <Icon
                     className={cn(
                       "size-[18px] transition-colors",
-                      section === item.id ? "text-brand" : "text-muted-foreground"
+                      section === item.id ? "text-foreground" : "text-muted-foreground"
                     )}
                   />
                   {item.label}
@@ -186,7 +187,7 @@ export function SettingsView() {
           {section === "feishu" ? <FeishuSection /> : null}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -282,46 +283,7 @@ function GeneralSection() {
   );
 }
 
-const EMPTY_DRAFT: ProviderInput = {
-  kind: "deepseek",
-  name: "DeepSeek",
-  baseURL: "https://api.deepseek.com",
-  model: "deepseek-v4-flash",
-  apiKey: ""
-};
-
-const PROVIDER_PRESETS: Record<ProviderInput["kind"], Omit<ProviderInput, "apiKey">> = {
-  deepseek: {
-    kind: "deepseek",
-    name: "DeepSeek",
-    baseURL: "https://api.deepseek.com",
-    model: "deepseek-v4-flash"
-  },
-  kimi: {
-    kind: "kimi",
-    name: "Kimi",
-    baseURL: "https://api.moonshot.ai/v1",
-    model: "kimi-k2.6"
-  },
-  "openai-compatible": {
-    kind: "openai-compatible",
-    name: "OpenAI-compatible",
-    baseURL: "https://api.openai.com/v1",
-    model: "gpt-4.1"
-  },
-  custom: {
-    kind: "custom",
-    name: "Custom",
-    baseURL: "https://api.example.com/v1",
-    model: "model-name"
-  }
-};
-
-const API_KEY_URLS: Partial<Record<ProviderInput["kind"], string>> = {
-  deepseek: "https://platform.deepseek.com/api_keys",
-  kimi: "https://platform.kimi.ai/console/api-keys",
-  "openai-compatible": "https://platform.openai.com/api-keys"
-};
+const EMPTY_DRAFT: ProviderInput = { ...PROVIDER_PRESETS.deepseek, apiKey: "" };
 
 function ProvidersSection() {
   const { t } = useTranslation();
@@ -336,7 +298,7 @@ function ProvidersSection() {
   return (
     <SectionShell title={t("settings.providers.title")}>
       {providers.every((provider) => !provider.apiKeyRef) ? (
-        <div className="rounded-lg border border-brand/30 bg-brand-soft/60 px-4 py-3 text-sm text-foreground">
+        <div className="rounded-xl border bg-muted/60 px-4 py-3 text-sm text-foreground">
           {t("settings.providers.required")}
         </div>
       ) : null}
@@ -399,10 +361,11 @@ function ProvidersSection() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="deepseek">DeepSeek</SelectItem>
-                  <SelectItem value="kimi">Kimi</SelectItem>
-                  <SelectItem value="openai-compatible">OpenAI-compatible</SelectItem>
-                  <SelectItem value="custom">Custom</SelectItem>
+                  {PROVIDER_KIND_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </Field>

@@ -142,6 +142,20 @@ async function createWindow(): Promise<void> {
     }
   });
 
+  // Surface renderer problems in the terminal — a blank window is otherwise
+  // undebuggable without opening devtools by hand.
+  mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    if (level >= 2) {
+      console.error(`[renderer:${level === 3 ? "error" : "warn"}] ${message} (${sourceId}:${line})`);
+    }
+  });
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error("[renderer] 渲染进程崩溃:", details.reason, details.exitCode);
+  });
+  mainWindow.webContents.on("did-fail-load", (_event, code, desc, url) => {
+    console.error(`[renderer] 页面加载失败 ${code} ${desc} ${url}`);
+  });
+
   if (process.env.VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {

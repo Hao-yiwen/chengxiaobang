@@ -64,6 +64,7 @@ interface AppState {
   // ui
   view: View;
   paletteOpen: boolean;
+  /** First-run provider setup dialog (shown instead of forcing the settings page). */
   onboardingOpen: boolean;
   notice?: string;
   // run (transient)
@@ -132,6 +133,8 @@ interface AppState {
   exportSession(id: string): Promise<void>;
   /** Branches the active session at a message and switches to the new branch. */
   forkSession(messageId: string): Promise<void>;
+  /** Deletes a project and everything in it (sessions, messages, runs). */
+  deleteProject(id: string): Promise<void>;
   newChat(): void;
   openFolder(): Promise<void>;
   addContext(): Promise<void>;
@@ -380,8 +383,8 @@ export const useAppStore = create<AppState>()(
         }
         const configuredProvider = firstConfiguredProvider(data.providers);
         if (!configuredProvider) {
-          // Land on the home/input page and invite a quick API-key setup via a
-          // lightweight modal instead of forcing the user into full settings.
+          // First run: stay on the home screen and offer a lightweight setup
+          // dialog instead of dumping the user into the settings page.
           set({
             activeSessionId: undefined,
             providerId: undefined,
@@ -477,6 +480,36 @@ export const useAppStore = create<AppState>()(
         });
       },
 
+      async deleteProject(id) {
+        if (!apiClient) {
+          return;
+        }
+        const ok = await apiClient.deleteProject(id);
+        if (!ok) {
+          return;
+        }
+        set((state) => {
+          const projects = state.projects.filter((project) => project.id !== id);
+          const sessions = state.sessions.filter((session) => session.projectId !== id);
+          const activeGone =
+            state.activeProjectId === id ||
+            (state.activeSessionId &&
+              !sessions.some((session) => session.id === state.activeSessionId));
+          if (activeGone) {
+            return {
+              projects,
+              sessions,
+              activeProjectId: undefined,
+              activeSessionId: undefined,
+              messages: [],
+              toolHistory: [],
+              view: "home" as View
+            };
+          }
+          return { projects, sessions };
+        });
+      },
+
       async exportSession(id) {
         const session = get().sessions.find((item) => item.id === id);
         if (!apiClient || !session) {
@@ -514,6 +547,10 @@ export const useAppStore = create<AppState>()(
       },
 
       newChat() {
+        // No model configured -> invite the quick setup right away (from main).
+        if (!firstConfiguredProvider(get().providers)) {
+          set({ onboardingOpen: true });
+        }
         get().clearRunState();
         set({
           activeProjectId: undefined,
@@ -731,7 +768,9 @@ export const useAppStore = create<AppState>()(
             await get().loadSessionDetail(runSessionId);
           }
         } catch (error) {
+          console.error("[store] 运行流中断:", error);
           set((current) => ({
+            pendingTool: undefined,
             events: [
               ...current.events,
               {

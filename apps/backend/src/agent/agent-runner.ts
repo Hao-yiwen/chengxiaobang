@@ -143,6 +143,15 @@ export class AgentRunner {
         controller
       );
     } catch (error) {
+      // A user-initiated abort surfaces as an exception from the fetch — treat
+      // it as a clean stop, not an error (partial answers are persisted inside
+      // the agent loop's own abort handling).
+      if (controller.signal.aborted) {
+        await this.store.updateRunStatus(runId, "aborted");
+        yield { type: "run_aborted", runId };
+        return;
+      }
+      console.error("[agent-runner] 运行失败:", error);
       await this.store.updateRunStatus(runId, "failed");
       yield {
         type: "run_error",
@@ -374,6 +383,24 @@ export class AgentRunner {
         signal: controller.signal
       })) {
         if (controller.signal.aborted) {
+          // Wind down cleanly, keeping any partially streamed answer (ported
+          // from main's 平静收尾 fix).
+          if (assistantText.trim()) {
+            const partial = await this.store.addMessage({
+              sessionId,
+              role: "assistant",
+              content: assistantText,
+              durationMs: Date.now() - turnStartedAt,
+              ...(reasoningText
+                ? {
+                    reasoning: reasoningText,
+                    reasoningMs:
+                      reasoningStartedAt !== undefined ? Date.now() - reasoningStartedAt : 0
+                  }
+                : {})
+            });
+            yield { type: "assistant_done", runId, message: partial };
+          }
           yield { type: "run_aborted", runId };
           await this.store.updateRunStatus(runId, "aborted");
           return;

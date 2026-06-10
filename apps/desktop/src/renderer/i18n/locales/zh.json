@@ -10,6 +10,8 @@
     "noProjects": "还没有项目",
     "settings": "设置",
     "deleteConfirm": "确定删除该对话？",
+    "deleteProject": "删除项目",
+    "deleteProjectConfirm": "确定删除该项目及其全部对话？项目目录中的文件不会被删除。",
     "sessionTitle": "会话标题",
     "saveTitle": "保存标题",
     "cancelRename": "取消重命名",
@@ -64,10 +66,15 @@
     "thinking": "思考",
     "reasoningInProgress": "思考中",
     "reasoningDone": "已深度思考 · 用时 {{seconds}} 秒",
+    "waiting": "正在思考…",
     "copy": "复制",
     "copied": "已复制",
     "run": "执行",
     "reject": "拒绝",
+    "approvalTitle": "等待批准",
+    "copy": "复制",
+    "copied": "已复制",
+    "scrollToBottom": "回到底部",
     "roleUser": "你",
     "roleAssistant": "程小帮",
     "roleTool": "工具",
@@ -88,7 +95,25 @@
     "diffView": "变更对比",
     "compactionTitle": "上下文已压缩",
     "compactionHint": "较早的对话已总结为摘要，后续对话将基于摘要继续",
-    "forkFromHere": "从这条消息创建分支"
+    "forkFromHere": "从这条消息创建分支",
+    "toolStatus": {
+      "completed": "已完成",
+      "failed": "失败",
+      "rejected": "已拒绝",
+      "running": "执行中",
+      "pendingApproval": "待批准"
+    }
+  },
+  "app": {
+    "disclaimer": "程小帮也可能会犯错，请核查重要信息。"
+  },
+  "setup": {
+    "title": "配置模型",
+    "desc": "添加一个带 API Key 的模型即可开始对话，之后可以在「设置 → 供应商」中修改。",
+    "apiKeyPlaceholder": "粘贴你的 API Key",
+    "later": "稍后再说",
+    "save": "保存并开始",
+    "saving": "保存中…"
   },
   "rightPanel": {
     "terminal": "终端",

@@ -68,7 +68,9 @@ export function ChatView() {
   }, [messages, toolHistory, streamText, thinking, pendingTool]);
 
   return (
-    <div className="relative flex w-[min(760px,100%)] min-h-0 flex-1 flex-col">
+    // Full-bleed scroll area with a centered content column, matching the
+    // ChatGPT-style app layout (the composer lives outside, in App).
+    <div className="relative flex min-h-0 w-full flex-1 flex-col">
       <div
         ref={scrollRef}
         data-testid="chat-scroll"
@@ -78,80 +80,82 @@ export function ChatView() {
             setNearBottom(isNearBottom(el));
           }
         }}
-        className="flex min-h-0 flex-1 flex-col overflow-auto py-2"
+        className="min-h-0 flex-1 overflow-y-auto px-6"
       >
-        {timelineItems(messages, toolHistory).map((item) =>
-          item.kind === "message" ? (
-            <MessageBubble
-              key={`message-${item.message.id}`}
-              message={item.message}
-              isLastAssistant={item.message.id === lastAssistantId}
-            />
-          ) : (
-            <ToolCallRow key={`tool-${item.toolCall.id}`} toolCall={item.toolCall} />
-          )
-        )}
+        <div className="mx-auto flex w-full max-w-[44rem] flex-col py-3">
+          {timelineItems(messages, toolHistory).map((item) =>
+            item.kind === "message" ? (
+              <MessageBubble
+                key={`message-${item.message.id}`}
+                message={item.message}
+                isLastAssistant={item.message.id === lastAssistantId}
+              />
+            ) : (
+              <ToolCallRow key={`tool-${item.toolCall.id}`} toolCall={item.toolCall} />
+            )
+          )}
 
-        {thinking ? (
-          <ReasoningPanel text={thinking} streaming startedAt={thinkingStartedAt} />
-        ) : null}
+          {thinking ? (
+            <ReasoningPanel text={thinking} streaming startedAt={thinkingStartedAt} />
+          ) : null}
 
-        {pendingTool ? (
-          <div className="mb-5 animate-scale-in self-stretch overflow-hidden rounded-xl border bg-card shadow-soft">
-            <div className="flex items-center gap-2 border-b bg-muted/60 px-4 py-2.5">
-              <Terminal className="size-4 text-muted-foreground" />
-              <span className="text-[13px] font-semibold">{pendingTool.name}</span>
-            </div>
-            <div className="flex items-start justify-between gap-4 p-4">
-              <pre className="min-w-0 flex-1 max-h-[220px] overflow-auto rounded-lg bg-muted px-3 py-2.5 font-mono text-xs leading-relaxed text-muted-foreground">
-                {JSON.stringify(pendingTool.args, null, 2)}
-              </pre>
-              <div className="flex flex-none flex-col items-stretch gap-2">
-                <Button size="sm" onClick={() => approve(pendingTool.id, true)}>
-                  <Check className="size-4" />
-                  {t("chat.run")}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => approve(pendingTool.id, false)}>
-                  <X className="size-4" />
-                  {t("chat.reject")}
-                </Button>
+          {pendingTool ? (
+            <div className="mb-5 animate-scale-in self-stretch overflow-hidden rounded-xl border bg-card shadow-soft">
+              <div className="flex items-center gap-2 border-b bg-muted/60 px-4 py-2.5">
+                <Terminal className="size-4 text-muted-foreground" />
+                <span className="text-[13px] font-semibold">{pendingTool.name}</span>
+              </div>
+              <div className="flex items-start justify-between gap-4 p-4">
+                <pre className="min-w-0 flex-1 max-h-[220px] overflow-auto rounded-lg bg-muted px-3 py-2.5 font-mono text-xs leading-relaxed text-muted-foreground">
+                  {JSON.stringify(pendingTool.args, null, 2)}
+                </pre>
+                <div className="flex flex-none flex-col items-stretch gap-2">
+                  <Button size="sm" onClick={() => approve(pendingTool.id, true)}>
+                    <Check className="size-4" />
+                    {t("chat.run")}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => approve(pendingTool.id, false)}>
+                    <X className="size-4" />
+                    {t("chat.reject")}
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
 
-        {streamText ? (
-          <div className="mb-5 animate-msg-in self-stretch">
-            <Markdown text={streamText} className="stream-caret" />
-          </div>
-        ) : null}
-
-        {events
-          .filter((event) => event.type === "run_error")
-          .map((event, index) => (
-            <div
-              key={`${event.type}-${index}`}
-              className="mb-3 flex items-start gap-2 self-stretch rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 font-mono text-xs text-destructive"
-            >
-              <X className="mt-0.5 size-3.5 flex-none" />
-              <span className="min-w-0 break-words">{event.error}</span>
+          {streamText ? (
+            <div className="mb-5 animate-msg-in self-stretch">
+              <Markdown text={streamText} className="stream-caret" />
             </div>
-          ))}
+          ) : null}
 
-        {!isRunning && lastUsage ? (
-          <div className="mb-2 self-start text-[11px] text-muted-foreground/70">
-            {t("chat.tokenUsage", {
-              total: lastUsage.totalTokens,
-              prompt: lastUsage.promptTokens,
-              completion: lastUsage.completionTokens
-            })}
-            {lastUsage.cachedPromptTokens
-              ? t("chat.tokenCached", { cached: lastUsage.cachedPromptTokens })
-              : ""}
-          </div>
-        ) : null}
+          {events
+            .filter((event) => event.type === "run_error")
+            .map((event, index) => (
+              <div
+                key={`${event.type}-${index}`}
+                className="mb-3 flex items-start gap-2 self-stretch rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 font-mono text-xs text-destructive"
+              >
+                <X className="mt-0.5 size-3.5 flex-none" />
+                <span className="min-w-0 break-words">{event.error}</span>
+              </div>
+            ))}
+
+          {!isRunning && lastUsage ? (
+            <div className="mb-2 self-start text-[11px] text-muted-foreground/70">
+              {t("chat.tokenUsage", {
+                total: lastUsage.totalTokens,
+                prompt: lastUsage.promptTokens,
+                completion: lastUsage.completionTokens
+              })}
+              {lastUsage.cachedPromptTokens
+                ? t("chat.tokenCached", { cached: lastUsage.cachedPromptTokens })
+                : ""}
+            </div>
+          ) : null}
 
         <div ref={bottomRef} />
+        </div>
       </div>
 
       {!nearBottom ? (

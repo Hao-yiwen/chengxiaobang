@@ -20,6 +20,7 @@ import type {
 export interface ApiClient {
   listProjects(): Promise<Project[]>;
   createProject(input: { path: string; name?: string }): Promise<Project>;
+  deleteProject(id: string): Promise<boolean>;
   listSessions(projectId?: string): Promise<Session[]>;
   listProjectFiles(projectId: string, query: string): Promise<string[]>;
   updateSession(id: string, input: { title?: string }): Promise<Session>;
@@ -83,6 +84,11 @@ export async function createApiClient(): Promise<ApiClient> {
           body: JSON.stringify(input)
         })
       ).project;
+    },
+    async deleteProject(id) {
+      return (
+        await request<{ deleted: boolean }>(`/api/projects/${id}`, { method: "DELETE" })
+      ).deleted;
     },
     async listSessions(projectId) {
       const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
@@ -203,9 +209,20 @@ export async function createApiClient(): Promise<ApiClient> {
         body: JSON.stringify(input)
       });
       if (!response.ok || !response.body) {
-        throw new Error(response.statusText);
+        const body = await response.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? response.statusText ?? "运行请求失败");
       }
-      await readSseStream(response.body, onEvent);
+      let sawEvent = false;
+      await readSseStream(response.body, (event) => {
+        sawEvent = true;
+        onEvent(event);
+      });
+      // A stream that closes without a single event means the run died during
+      // setup — surface it instead of silently doing nothing.
+      if (!sawEvent) {
+        console.error("[api] /api/runs/stream 返回了空事件流");
+        throw new Error("运行启动失败：后端没有返回任何事件，请检查模型配置");
+      }
     }
   };
 }

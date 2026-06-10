@@ -82,23 +82,26 @@ beforeEach(() => {
 describe("sidebar session filter", () => {
   it("filters sessions by title and reveals matches past the group cap", async () => {
     render(<App client={createClient()} />);
-    await screen.findByText("旧标题A");
+    // The active session title also shows in the chat header now — scope all
+    // sidebar assertions to the sidebar itself.
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+    await sidebar.findByText("旧标题A");
 
     // The 9th project session is hidden by the per-group display cap.
-    expect(screen.queryByText("唯一目标")).not.toBeInTheDocument();
+    expect(sidebar.queryByText("唯一目标")).not.toBeInTheDocument();
 
-    const input = screen.getByLabelText("搜索对话");
+    const input = sidebar.getByLabelText("搜索对话");
     fireEvent.change(input, { target: { value: "唯一" } });
 
-    expect(await screen.findByText("唯一目标")).toBeInTheDocument();
-    expect(screen.queryByText("旧标题A")).not.toBeInTheDocument();
-    expect(screen.queryByText("另一个B")).not.toBeInTheDocument();
+    expect(await sidebar.findByText("唯一目标")).toBeInTheDocument();
+    expect(sidebar.queryByText("旧标题A")).not.toBeInTheDocument();
+    expect(sidebar.queryByText("另一个B")).not.toBeInTheDocument();
 
     // Clearing restores the full list (and re-hides the capped session).
-    fireEvent.click(screen.getByTitle("清除搜索"));
-    expect(await screen.findByText("旧标题A")).toBeInTheDocument();
-    expect(screen.getByText("另一个B")).toBeInTheDocument();
-    expect(screen.queryByText("唯一目标")).not.toBeInTheDocument();
+    fireEvent.click(sidebar.getByTitle("清除搜索"));
+    expect(await sidebar.findByText("旧标题A")).toBeInTheDocument();
+    expect(sidebar.getByText("另一个B")).toBeInTheDocument();
+    expect(sidebar.queryByText("唯一目标")).not.toBeInTheDocument();
   });
 
   it("exports a non-active session as markdown from its hover action", async () => {
@@ -126,15 +129,16 @@ describe("sidebar session filter", () => {
 
   it("shows a no-matches hint and clears with Escape", async () => {
     render(<App client={createClient()} />);
-    await screen.findByText("旧标题A");
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+    await sidebar.findByText("旧标题A");
 
-    const input = screen.getByLabelText("搜索对话");
+    const input = sidebar.getByLabelText("搜索对话");
     fireEvent.change(input, { target: { value: "zzz不存在" } });
 
-    expect(await screen.findByText("没有匹配的对话")).toBeInTheDocument();
+    expect(await sidebar.findByText("没有匹配的对话")).toBeInTheDocument();
 
     fireEvent.keyDown(input, { key: "Escape" });
-    await waitFor(() => expect(screen.getByText("旧标题A")).toBeInTheDocument());
+    await waitFor(() => expect(sidebar.getByText("旧标题A")).toBeInTheDocument());
     expect(input).toHaveValue("");
   });
 });

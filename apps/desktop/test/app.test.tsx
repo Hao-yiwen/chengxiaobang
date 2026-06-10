@@ -6,7 +6,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
-import type { Message, Project, ProviderConfig, Session, ToolCall } from "@chengxiaobang/shared";
+import type {
+  Message,
+  Project,
+  ProviderConfig,
+  ProviderInput,
+  Session,
+  ToolCall
+} from "@chengxiaobang/shared";
 
 const provider: ProviderConfig = {
   id: "deepseek",
@@ -23,6 +30,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     listProjects: vi.fn(async () => []),
     createProject: vi.fn() as never,
+    deleteProject: vi.fn(async () => true),
     listSessions: vi.fn(async () => []),
     listProjectFiles: vi.fn(async () => []),
     updateSession: vi.fn() as never,
@@ -73,11 +81,12 @@ describe("App", () => {
 
     expect(await screen.findByText("今天想做点什么？")).toBeInTheDocument();
     expect(screen.getByLabelText("输入消息")).toBeInTheDocument();
-    // The model picker shows just the model id — no provider-name prefix.
+    // The model picker shows just the model name, without the provider prefix.
     expect(await screen.findByText("deepseek-v4-flash")).toBeInTheDocument();
+    expect(screen.queryByText("DeepSeek · deepseek-v4-flash")).not.toBeInTheDocument();
   });
 
-  it("stays on home and opens the quick setup dialog when no provider has an API key", async () => {
+  it("stays on home and opens the setup dialog when no provider has an API key", async () => {
     const client = createClient({
       listProviders: vi.fn(async () => [
         {
@@ -89,11 +98,38 @@ describe("App", () => {
 
     render(<App client={client} />);
 
-    // The home/input page remains visible (no forced jump to full settings)...
+    // The home screen stays visible; setup happens in a lightweight dialog.
     expect(await screen.findByText("今天想做点什么？")).toBeInTheDocument();
-    // ...and a lightweight setup dialog invites configuring an API key.
-    expect(await screen.findByText("配置一个模型即可开始")).toBeInTheDocument();
+    expect(await screen.findByText("配置模型")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("粘贴你的 API Key")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "供应商" })).not.toBeInTheDocument();
+  });
+
+  it("saves a provider from the setup dialog", async () => {
+    const saved = { ...provider, id: "p_new" };
+    const saveProvider = vi.fn(async (_input: ProviderInput) => saved);
+    const listProviders = vi
+      .fn()
+      .mockResolvedValueOnce([{ ...provider, apiKeyRef: undefined }])
+      .mockResolvedValue([saved]);
+    const client = createClient({ listProviders, saveProvider: saveProvider as never });
+
+    render(<App client={client} />);
+    await screen.findByText("配置模型");
+
+    fireEvent.change(screen.getByPlaceholderText("粘贴你的 API Key"), {
+      target: { value: "sk-test" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存并开始" }));
+
+    await waitFor(() => expect(saveProvider).toHaveBeenCalled());
+    expect(saveProvider.mock.calls[0]?.[0]).toMatchObject({
+      kind: "deepseek",
+      apiKey: "sk-test"
+    });
+    await waitFor(() =>
+      expect(screen.queryByText("配置模型")).not.toBeInTheDocument()
+    );
   });
 
   it("switches UI language to English when the locale changes", async () => {
@@ -228,6 +264,21 @@ describe("App", () => {
     await waitFor(() => expect(abort).toHaveBeenCalledWith("run_1"));
   });
 
+  it("sends with Enter and keeps Shift+Enter for newlines", async () => {
+    const streamRun = vi.fn(async (..._args: Parameters<ApiClient["streamRun"]>) => {});
+    const client = createClient({ streamRun: streamRun as never });
+
+    render(<App client={client} />);
+    const input = await screen.findByLabelText("输入消息");
+
+    fireEvent.change(input, { target: { value: "你好" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    expect(streamRun).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(streamRun).toHaveBeenCalled());
+  });
+
   it("shows slash commands and inserts the selected command into the composer", async () => {
     const client = createClient({
       listSlashCommands: vi.fn(async () => ({
@@ -291,6 +342,9 @@ describe("App", () => {
     });
 
     render(<App client={client} />);
+    // The restored session flips home -> chat, remounting the composer; wait
+    // for the chat-only disclaimer so we grab the live instance.
+    await screen.findByText("程小帮也可能会犯错，请核查重要信息。");
     const input = await screen.findByLabelText("输入消息");
 
     fireEvent.change(input, { target: { value: "看看 @ind" } });
@@ -332,8 +386,13 @@ describe("App", () => {
     const client = createClient();
 
     render(<App client={client} />);
+    await screen.findByText("今天想做点什么？");
 
-    fireEvent.click(await screen.findByText("打开文件夹"));
+    // The entry point lives in the composer's project dropdown now; trigger the
+    // same store action it invokes.
+    await act(async () => {
+      await useAppStore.getState().openFolder();
+    });
 
     expect(
       await screen.findByText("打开文件夹需要在桌面端里使用，浏览器预览没有系统文件选择权限。")
@@ -364,6 +423,39 @@ describe("App", () => {
 
     await waitFor(() => expect(streamRun).toHaveBeenCalled());
     expect(streamRun.mock.calls[0]?.[0]).toMatchObject({ projectId: null });
+  });
+
+  it("deletes a project (and its chats) from the sidebar", async () => {
+    const project: Project = {
+      id: "project_1",
+      name: "demo",
+      path: "/tmp/demo",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const session: Session = {
+      id: "session_p1",
+      projectId: project.id,
+      title: "项目里的对话",
+      providerId: "deepseek",
+      accessMode: "approval",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const deleteProject = vi.fn(async () => true);
+    const client = createClient({
+      listProjects: vi.fn(async () => [project]),
+      listSessions: vi.fn(async () => [session]),
+      deleteProject
+    });
+
+    render(<App client={client} />);
+    expect(await screen.findByText("项目里的对话")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("删除项目"));
+    await waitFor(() => expect(deleteProject).toHaveBeenCalledWith("project_1"));
+    expect(screen.queryByText("项目里的对话")).not.toBeInTheDocument();
+    expect(screen.queryByText("demo")).not.toBeInTheDocument();
   });
 
   it("renames and deletes persisted sessions from the sidebar", async () => {

@@ -15,14 +15,16 @@ export function OptionCard(props: {
       className={cn(
         "flex flex-1 items-start gap-3 rounded-xl border p-4 text-left transition-all",
         props.selected
-          ? "border-brand/50 bg-brand-soft/50 ring-1 ring-brand/30"
-          : "border-border hover:border-border hover:bg-accent/50"
+          ? "border-foreground/70 ring-1 ring-foreground/50"
+          : "border-border hover:bg-accent/50"
       )}
     >
       <span
         className={cn(
           "mt-0.5 flex size-8 flex-none items-center justify-center rounded-lg transition-colors [&_svg]:size-[18px]",
-          props.selected ? "bg-brand/15 text-brand" : "bg-muted text-foreground"
+          props.selected
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted text-foreground"
         )}
       >
         {props.icon}
@@ -36,10 +38,10 @@ export function OptionCard(props: {
       <span
         className={cn(
           "mt-0.5 flex size-[18px] flex-none items-center justify-center rounded-full border-2 transition-colors",
-          props.selected ? "border-brand" : "border-muted-foreground/40"
+          props.selected ? "border-foreground" : "border-muted-foreground/40"
         )}
       >
-        {props.selected ? <span className="size-2 rounded-full bg-brand" /> : null}
+        {props.selected ? <span className="size-2 rounded-full bg-foreground" /> : null}
       </span>
     </button>
   );

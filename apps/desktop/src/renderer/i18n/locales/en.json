@@ -10,6 +10,8 @@
     "noProjects": "No projects yet",
     "settings": "Settings",
     "deleteConfirm": "Delete this conversation?",
+    "deleteProject": "Delete project",
+    "deleteProjectConfirm": "Delete this project and all its conversations? Files in the project folder are untouched.",
     "sessionTitle": "Conversation title",
     "saveTitle": "Save title",
     "cancelRename": "Cancel rename",
@@ -64,16 +66,21 @@
     "thinking": "Thinking",
     "reasoningInProgress": "Thinking",
     "reasoningDone": "Thought for {{seconds}}s",
+    "waiting": "Thinking…",
     "copy": "Copy",
     "copied": "Copied",
     "run": "Run",
     "reject": "Reject",
+    "approvalTitle": "Waiting for approval",
+    "copy": "Copy",
+    "copied": "Copied",
+    "scrollToBottom": "Scroll to bottom",
     "roleUser": "You",
     "roleAssistant": "程小帮",
     "roleTool": "Tool",
     "roleSystem": "System",
-    "tokenUsage": "{{total}} tokens this run (in {{prompt}} · out {{completion}})",
-    "tokenCached": " · cache hit {{cached}}",
+    "tokenUsage": "{{total}} tokens this run (in {{prompt}} \u00b7 out {{completion}})",
+    "tokenCached": " \u00b7 cache hit {{cached}}",
     "previewFile": "Preview file",
     "regenerate": "Regenerate",
     "edit": "Edit",
@@ -88,7 +95,25 @@
     "diffView": "Diff view",
     "compactionTitle": "Context compacted",
     "compactionHint": "Earlier messages were summarized; future turns continue from the summary",
-    "forkFromHere": "Branch from this message"
+    "forkFromHere": "Branch from this message",
+    "toolStatus": {
+      "completed": "Done",
+      "failed": "Failed",
+      "rejected": "Rejected",
+      "running": "Running",
+      "pendingApproval": "Pending approval"
+    }
+  },
+  "app": {
+    "disclaimer": "\u7a0b\u5c0f\u5e2e can make mistakes. Check important info."
+  },
+  "setup": {
+    "title": "Set up a model",
+    "desc": "Add one model with an API key to start chatting. You can change it later in Settings \u2192 Providers.",
+    "apiKeyPlaceholder": "Paste your API key",
+    "later": "Maybe later",
+    "save": "Save & start",
+    "saving": "Saving\u2026"
   },
   "rightPanel": {
     "terminal": "Terminal",
@@ -96,7 +121,7 @@
     "files": "File preview",
     "close": "Close panel",
     "resize": "Resize panel",
-    "terminalNoProject": "Open a project folder first — terminal commands run in the project directory.",
+    "terminalNoProject": "Open a project folder first \u2014 terminal commands run in the project directory.",
     "terminalEmpty": "Type a command below; it runs in the project directory.",
     "terminalPlaceholder": "Type a command, press Enter to run",
     "exitCode": "exit code {{code}}",
@@ -107,7 +132,7 @@
     "reload": "Reload",
     "openExternal": "Open in system browser",
     "filesEmpty": "Click a file path next to a tool call in the chat, or pick a file to preview.",
-    "pickFile": "Choose file…",
+    "pickFile": "Choose file\u2026",
     "fileLoadFailed": "Cannot preview this file",
     "fileDesktopOnly": "File preview is only available in the desktop app."
   },
