@@ -54,6 +54,11 @@ export const sessionSchema = z.object({
   title: z.string().min(1),
   providerId: z.string().min(1).optional(),
   accessMode: accessModeSchema,
+  /**
+   * Set by /compact: messages up to and including this one are replaced by
+   * the latest compaction summary when building model context.
+   */
+  compactedUpToMessageId: z.string().min(1).optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -81,6 +86,8 @@ export const messageSchema = z.object({
   id: z.string().min(1),
   sessionId: z.string().min(1),
   role: messageRoleSchema,
+  /** Special message kinds; a /compact summary renders as a system-style card. */
+  kind: z.enum(["compaction_summary"]).optional(),
   content: z.string(),
   /** The model's reasoning ("深度思考") that preceded this assistant message. */
   reasoning: z.string().optional(),

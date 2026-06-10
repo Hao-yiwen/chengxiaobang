@@ -23,6 +23,7 @@ export interface CreateSessionInput {
 export interface CreateMessageInput {
   sessionId: string;
   role: Message["role"];
+  kind?: Message["kind"];
   content: string;
   reasoning?: string;
   reasoningMs?: number;
@@ -39,6 +40,8 @@ export interface UpdateSessionInput {
   title?: string;
   providerId?: string | null;
   accessMode?: AccessMode;
+  /** undefined preserves the current value; null clears it. */
+  compactedUpToMessageId?: string | null;
 }
 
 export interface StateStore {

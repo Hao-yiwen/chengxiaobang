@@ -1,4 +1,4 @@
-import { Check, Terminal, X } from "lucide-react";
+import { Archive, Check, ChevronDown, Terminal, X } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Message } from "@chengxiaobang/shared";
@@ -12,6 +12,7 @@ import { ToolCallRow } from "@/components/ToolCallRow";
 import { thinkingSeconds } from "@/lib/reasoning";
 import { isNearBottom } from "@/lib/scroll";
 import { timelineItems } from "@/lib/timeline";
+import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
 export function ChatView() {
@@ -175,6 +176,9 @@ const MessageBubble = memo(function MessageBubble({
 }) {
   const [editing, setEditing] = useState(false);
   const editAndResend = useAppStore((state) => state.editAndResend);
+  if (message.kind === "compaction_summary") {
+    return <CompactionCard message={message} />;
+  }
   const isUser = message.role === "user";
   if (isUser) {
     if (editing) {
@@ -215,6 +219,40 @@ const MessageBubble = memo(function MessageBubble({
     </div>
   );
 });
+
+/** System-style card for a /compact summary; collapsed by default. */
+function CompactionCard({ message }: { message: Message }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-5 animate-msg-in self-stretch overflow-hidden rounded-xl border bg-muted/40">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-muted/70"
+      >
+        <Archive className="size-4 flex-none text-muted-foreground" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-semibold">{t("chat.compactionTitle")}</span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {t("chat.compactionHint")}
+          </span>
+        </span>
+        <ChevronDown
+          className={cn(
+            "size-4 flex-none text-muted-foreground transition-transform",
+            open && "rotate-180"
+          )}
+        />
+      </button>
+      {open ? (
+        <div className="border-t px-4 py-3">
+          <Markdown text={message.content} className="text-[13.5px]" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 /** Subtle "用时 N 秒" footer for a completed assistant turn. */
 function TurnDuration({ durationMs }: { durationMs: number }) {

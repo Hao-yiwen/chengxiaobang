@@ -82,7 +82,9 @@
     "scrollToBottom": "回到底部",
     "turnDuration": "用时 {{seconds}} 秒",
     "toolDuration": "用时 {{duration}}",
-    "diffView": "变更对比"
+    "diffView": "变更对比",
+    "compactionTitle": "上下文已压缩",
+    "compactionHint": "较早的对话已总结为摘要，后续对话将基于摘要继续"
   },
   "rightPanel": {
     "terminal": "终端",

@@ -396,6 +396,39 @@ describe("App", () => {
     expect(screen.queryByText("新标题")).not.toBeInTheDocument();
   });
 
+  it("renders a compaction summary as a collapsible system card", async () => {
+    const session: Session = {
+      id: "session_1",
+      projectId: null,
+      title: "压缩过的会话",
+      providerId: "deepseek",
+      accessMode: "approval",
+      createdAt: "2026-06-08T00:00:00.000Z",
+      updatedAt: "2026-06-08T00:00:02.000Z"
+    };
+    const summary: Message = {
+      id: "m_summary",
+      sessionId: session.id,
+      role: "assistant",
+      kind: "compaction_summary",
+      content: "此前讨论了登录模块重构",
+      createdAt: "2026-06-08T00:00:01.000Z"
+    };
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      listMessages: vi.fn(async () => [summary])
+    });
+
+    render(<App client={client} />);
+
+    // The card header replaces the plain assistant bubble...
+    expect(await screen.findByText("上下文已压缩")).toBeInTheDocument();
+    expect(screen.queryByText("此前讨论了登录模块重构")).not.toBeInTheDocument();
+    // ...and the summary body expands on demand.
+    fireEvent.click(screen.getByText("上下文已压缩"));
+    expect(await screen.findByText("此前讨论了登录模块重构")).toBeInTheDocument();
+  });
+
   it("captures streamed reasoning and renders the answer as plain content", async () => {
     const userMessage: Message = {
       id: "u1",

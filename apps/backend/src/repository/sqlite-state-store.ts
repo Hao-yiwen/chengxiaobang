@@ -117,7 +117,9 @@ export class SqliteStateStore implements StateStore {
     this.ensureColumn("messages", "reasoning", "text");
     this.ensureColumn("messages", "reasoning_ms", "integer");
     this.ensureColumn("messages", "duration_ms", "integer");
+    this.ensureColumn("messages", "kind", "text");
     this.ensureColumn("tool_calls", "started_at", "text");
+    this.ensureColumn("sessions", "compacted_up_to_message_id", "text");
     await this.migrateProviderPresets();
     await this.flush();
   }
@@ -239,13 +241,26 @@ export class SqliteStateStore implements StateStore {
       providerId:
         input.providerId === null ? undefined : input.providerId ?? current.providerId,
       accessMode: input.accessMode ?? current.accessMode,
+      // undefined must preserve the pointer — the run-start updateSession call
+      // (providerId/accessMode only) would otherwise clobber it on every run.
+      compactedUpToMessageId:
+        input.compactedUpToMessageId === null
+          ? undefined
+          : input.compactedUpToMessageId ?? current.compactedUpToMessageId,
       updatedAt: nowIso()
     };
     this.run(
       `update sessions
-       set title = ?, provider_id = ?, access_mode = ?, updated_at = ?
+       set title = ?, provider_id = ?, access_mode = ?, compacted_up_to_message_id = ?, updated_at = ?
        where id = ?`,
-      [next.title, next.providerId ?? null, next.accessMode, next.updatedAt, id]
+      [
+        next.title,
+        next.providerId ?? null,
+        next.accessMode,
+        next.compactedUpToMessageId ?? null,
+        next.updatedAt,
+        id
+      ]
     );
     await this.flush();
     return next;
@@ -288,6 +303,7 @@ export class SqliteStateStore implements StateStore {
       id: createId("msg"),
       sessionId: input.sessionId,
       role: input.role,
+      ...(input.kind ? { kind: input.kind } : {}),
       content: input.content,
       ...(input.reasoning ? { reasoning: input.reasoning } : {}),
       ...(input.reasoningMs !== undefined ? { reasoningMs: input.reasoningMs } : {}),
@@ -296,12 +312,13 @@ export class SqliteStateStore implements StateStore {
     };
     this.run(
       `insert into messages
-       (id, session_id, role, content, reasoning, reasoning_ms, duration_ms, created_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, session_id, role, kind, content, reasoning, reasoning_ms, duration_ms, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         message.id,
         message.sessionId,
         message.role,
+        message.kind ?? null,
         message.content,
         message.reasoning ?? null,
         message.reasoningMs ?? null,
@@ -619,12 +636,16 @@ function mapSession(row: Row): Session {
     title: String(row.title),
     providerId: row.provider_id === null ? undefined : String(row.provider_id),
     accessMode: row.access_mode === "full_access" ? "full_access" : "approval",
+    ...(row.compacted_up_to_message_id === null || row.compacted_up_to_message_id === undefined
+      ? {}
+      : { compactedUpToMessageId: String(row.compacted_up_to_message_id) }),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
 }
 
 function mapMessage(row: Row): Message {
+  const kind = row.kind === "compaction_summary" ? ("compaction_summary" as const) : undefined;
   const reasoning =
     row.reasoning === null || row.reasoning === undefined ? undefined : String(row.reasoning);
   const reasoningMs =
@@ -639,6 +660,7 @@ function mapMessage(row: Row): Message {
     id: String(row.id),
     sessionId: String(row.session_id),
     role: row.role as Message["role"],
+    ...(kind ? { kind } : {}),
     content: String(row.content),
     ...(reasoning !== undefined ? { reasoning } : {}),
     ...(reasoningMs !== undefined ? { reasoningMs } : {}),

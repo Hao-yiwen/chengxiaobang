@@ -144,6 +144,38 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
+  it("round-trips message kind and keeps the compaction pointer across unrelated updates", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const store = new SqliteStateStore(dbPath);
+    await store.initialize();
+    const session = await store.createSession({
+      projectId: null,
+      title: "压缩",
+      accessMode: "approval"
+    });
+    const plain = await store.addMessage({ sessionId: session.id, role: "user", content: "你好" });
+    await store.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      kind: "compaction_summary",
+      content: "摘要"
+    });
+    await store.updateSession(session.id, { compactedUpToMessageId: plain.id });
+
+    // The run-start update (provider/accessMode only) must not clobber the pointer.
+    await store.updateSession(session.id, { title: "改名", accessMode: "full_access" });
+    expect((await store.getSession(session.id))?.compactedUpToMessageId).toBe(plain.id);
+
+    // Explicit null clears it.
+    await store.updateSession(session.id, { compactedUpToMessageId: null });
+    expect((await store.getSession(session.id))?.compactedUpToMessageId).toBeUndefined();
+
+    const messages = await store.listMessages(session.id);
+    expect(messages[0]).not.toHaveProperty("kind");
+    expect(messages[1].kind).toBe("compaction_summary");
+    await store.close();
+  });
+
   it("round-trips a tool call's startedAt and leaves it absent when unset", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);

@@ -78,6 +78,14 @@ export const builtinSlashCommands: SlashCommand[] = [
     description: "查看当前项目 Git 变更摘要和 diff 检查",
     source: "builtin",
     insertText: "/git diff"
+  },
+  {
+    id: "builtin:/compact",
+    name: "/compact",
+    kind: "builtin_tool",
+    description: "压缩对话上下文：将较早的历史总结为摘要，节省 token",
+    source: "builtin",
+    insertText: "/compact"
   }
 ];
 

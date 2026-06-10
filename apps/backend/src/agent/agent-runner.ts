@@ -5,6 +5,7 @@ import {
   type AssistantToolCall,
   type ProviderConfig,
   type RunRequest,
+  type Session,
   type StreamEvent,
   type TokenUsage,
   type ToolCall,
@@ -18,10 +19,12 @@ import { ApprovalQueue } from "./approval-queue";
 import { parseToolRequest, requiresApproval, ToolExecutor } from "../tools/tool-executor";
 import { TOOL_DEFINITIONS } from "../tools/tool-schemas";
 import { SlashCommandService } from "../tools/slash-command-service";
-import { buildHistory, buildSystemPrompt } from "./agent-context";
+import { buildCompactionRequest, buildHistory, buildSystemPrompt } from "./agent-context";
 import { defaultSessionDir } from "../paths";
 
 const MAX_TOOL_ITERATIONS = 25;
+/** /compact keeps this many most-recent messages out of the summary. */
+const COMPACT_KEEP_RECENT = 4;
 
 export class AgentRunner {
   readonly approvals = new ApprovalQueue();
@@ -84,6 +87,13 @@ export class AgentRunner {
       .prompt;
     const workspacePath = project?.path ?? this.sessionWorkspacePath(activeSession.id);
 
+    // /compact is a meta command about the conversation itself: it never
+    // persists a user message and runs its own summarize-only model call.
+    if (expandedPrompt.trim() === "/compact") {
+      yield* this.runCompaction(activeSession, selectedProvider, selectedApiKey, controller);
+      return;
+    }
+
     const runId = createId("run");
     this.abortControllers.set(runId, controller);
     await this.store.createRun({ id: runId, sessionId: activeSession.id, status: "running" });
@@ -126,10 +136,108 @@ export class AgentRunner {
           apiKey: selectedApiKey,
           workspacePath,
           accessMode: input.accessMode,
-          projectName: project?.name
+          projectName: project?.name,
+          compactedUpToMessageId: activeSession.compactedUpToMessageId
         },
         controller
       );
+    } catch (error) {
+      await this.store.updateRunStatus(runId, "failed");
+      yield {
+        type: "run_error",
+        runId,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    } finally {
+      this.abortControllers.delete(runId);
+    }
+  }
+
+  /**
+   * Summarize older history into a compaction summary message and move the
+   * session's compaction pointer, so future runs send [summary + recent
+   * messages] instead of the full history.
+   */
+  private async *runCompaction(
+    session: Session,
+    provider: ProviderConfig,
+    apiKey: string,
+    controller: AbortController
+  ): AsyncGenerator<StreamEvent> {
+    const runId = createId("run");
+    this.abortControllers.set(runId, controller);
+    await this.store.createRun({ id: runId, sessionId: session.id, status: "running" });
+    yield { type: "run_started", runId, sessionId: session.id };
+    try {
+      const messages = await this.store.listMessages(session.id);
+      const cutoffIndex = session.compactedUpToMessageId
+        ? messages.findIndex((message) => message.id === session.compactedUpToMessageId)
+        : -1;
+      const visible = messages.filter(
+        (message, index) => index > cutoffIndex && message.kind !== "compaction_summary"
+      );
+      const toSummarize = visible.slice(0, Math.max(0, visible.length - COMPACT_KEEP_RECENT));
+
+      if (toSummarize.length === 0) {
+        const notice = await this.store.addMessage({
+          sessionId: session.id,
+          role: "assistant",
+          content: "当前对话内容较少，无需压缩。"
+        });
+        yield { type: "assistant_done", runId, message: notice };
+        await this.store.updateRunStatus(runId, "completed");
+        yield { type: "run_completed", runId };
+        return;
+      }
+
+      // Fold the previous summary (if any) into the new one so repeated
+      // /compact never loses earlier context.
+      const summaryRows = messages.filter(
+        (message) => message.kind === "compaction_summary"
+      );
+      const foldHistory = buildHistory([...summaryRows, ...toSummarize]);
+
+      let summaryText = "";
+      let usage: TokenUsage | undefined;
+      for await (const delta of this.modelClient.streamCompletion({
+        provider,
+        apiKey,
+        messages: buildCompactionRequest(foldHistory),
+        signal: controller.signal
+      })) {
+        if (controller.signal.aborted) {
+          break;
+        }
+        if (delta.type === "text" || delta.type === "thinking") {
+          if (delta.type === "text") {
+            summaryText += delta.delta;
+          }
+          // Streamed as thinking so the renderer shows live progress in the
+          // reasoning panel without treating it as a chat answer.
+          yield { type: "thinking_delta", runId, delta: delta.delta };
+        } else if (delta.type === "usage") {
+          usage = delta.usage;
+        }
+      }
+
+      if (controller.signal.aborted || summaryText.trim().length === 0) {
+        await this.store.updateRunStatus(runId, "aborted");
+        yield { type: "run_aborted", runId };
+        return;
+      }
+
+      const summaryMessage = await this.store.addMessage({
+        sessionId: session.id,
+        role: "assistant",
+        kind: "compaction_summary",
+        content: summaryText.trim()
+      });
+      await this.store.updateSession(session.id, {
+        compactedUpToMessageId: toSummarize[toSummarize.length - 1].id
+      });
+      yield { type: "assistant_done", runId, message: summaryMessage };
+      await this.store.updateRunStatus(runId, "completed");
+      yield { type: "run_completed", runId, usage };
     } catch (error) {
       await this.store.updateRunStatus(runId, "failed");
       yield {
@@ -225,6 +333,7 @@ export class AgentRunner {
       workspacePath: string;
       accessMode: RunRequest["accessMode"];
       projectName?: string;
+      compactedUpToMessageId?: string;
     },
     controller: AbortController
   ): AsyncGenerator<StreamEvent> {
@@ -238,7 +347,7 @@ export class AgentRunner {
           projectName: context.projectName
         })
       },
-      ...buildHistory(persisted)
+      ...buildHistory(persisted, context.compactedUpToMessageId)
     ];
 
     let usage: TokenUsage | undefined;

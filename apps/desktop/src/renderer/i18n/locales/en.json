@@ -82,7 +82,9 @@
     "scrollToBottom": "Scroll to bottom",
     "turnDuration": "Took {{seconds}}s",
     "toolDuration": "took {{duration}}",
-    "diffView": "Diff view"
+    "diffView": "Diff view",
+    "compactionTitle": "Context compacted",
+    "compactionHint": "Earlier messages were summarized; future turns continue from the summary"
   },
   "rightPanel": {
     "terminal": "Terminal",

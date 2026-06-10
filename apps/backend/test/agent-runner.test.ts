@@ -179,6 +179,104 @@ describe("AgentRunner", () => {
     expect(assistant?.durationMs).toBeGreaterThanOrEqual(0);
   });
 
+  it("compacts older history into a summary and moves the session pointer", async () => {
+    const captured: Array<Array<{ role: string; content: string }>> = [];
+    const compactionModel: ModelClient = {
+      async *streamCompletion(input) {
+        captured.push(input.messages.map(({ role, content }) => ({ role, content })));
+        yield { type: "text", delta: "这是压缩摘要" };
+      },
+      async testProvider() {}
+    };
+    const runner = new AgentRunner(store, secrets, compactionModel);
+    const session = await store.createSession({
+      projectId: null,
+      title: "长对话",
+      providerId: "deepseek",
+      accessMode: "approval"
+    });
+    for (let index = 1; index <= 4; index += 1) {
+      await store.addMessage({ sessionId: session.id, role: "user", content: `问题${index}` });
+      await store.addMessage({ sessionId: session.id, role: "assistant", content: `回答${index}` });
+    }
+
+    const events: string[] = [];
+    for await (const event of runner.stream({
+      sessionId: session.id,
+      prompt: "/compact",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      events.push(event.type);
+    }
+
+    expect(events).toContain("thinking_delta");
+    expect(events).toContain("assistant_done");
+    expect(events).toContain("run_completed");
+    // /compact itself never becomes a chat message.
+    expect(events).not.toContain("user_message");
+
+    const messages = await store.listMessages(session.id);
+    expect(messages.some((message) => message.content.includes("/compact"))).toBe(false);
+    const summary = messages.find((message) => message.kind === "compaction_summary");
+    expect(summary?.content).toBe("这是压缩摘要");
+    // 8 visible messages, keep the last 4 → pointer lands on the 4th.
+    const updated = await store.getSession(session.id);
+    expect(updated?.compactedUpToMessageId).toBe(messages[3].id);
+
+    // A follow-up run sends [summary + recent] instead of the full history.
+    captured.length = 0;
+    for await (const event of runner.stream({
+      sessionId: session.id,
+      prompt: "继续",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      void event;
+    }
+    const followUp = captured[0] ?? [];
+    const joined = followUp.map((message) => message.content).join("\n");
+    expect(joined).toContain("【此前对话的摘要】");
+    expect(joined).toContain("这是压缩摘要");
+    expect(joined).not.toContain("问题1");
+    expect(joined).toContain("问题4");
+  });
+
+  it("skips compaction for short sessions without calling the model", async () => {
+    let modelCalls = 0;
+    const spyModel: ModelClient = {
+      async *streamCompletion() {
+        modelCalls += 1;
+        yield { type: "text", delta: "不应该被调用" };
+      },
+      async testProvider() {}
+    };
+    const runner = new AgentRunner(store, secrets, spyModel);
+    const session = await store.createSession({
+      projectId: null,
+      title: "短对话",
+      providerId: "deepseek",
+      accessMode: "approval"
+    });
+    await store.addMessage({ sessionId: session.id, role: "user", content: "你好" });
+
+    const events: string[] = [];
+    for await (const event of runner.stream({
+      sessionId: session.id,
+      prompt: "/compact",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      events.push(event.type);
+    }
+
+    expect(modelCalls).toBe(0);
+    expect(events).toContain("assistant_done");
+    const messages = await store.listMessages(session.id);
+    expect(messages.at(-1)?.content).toContain("无需压缩");
+    expect((await store.getSession(session.id))?.compactedUpToMessageId).toBeUndefined();
+  });
+
   it("persists failed tool calls before reporting run errors", async () => {
     const runner = new AgentRunner(store, secrets, modelClient);
     const events = [];
