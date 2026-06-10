@@ -10,6 +10,8 @@
     "noProjects": "No projects yet",
     "settings": "Settings",
     "deleteConfirm": "Delete this conversation?",
+    "deleteProject": "Delete project",
+    "deleteProjectConfirm": "Delete this project and all its conversations? Files in the project folder are untouched.",
     "sessionTitle": "Conversation title",
     "saveTitle": "Save title",
     "cancelRename": "Cancel rename",
@@ -43,12 +45,35 @@
   },
   "chat": {
     "thinking": "Thinking",
+    "waiting": "Thinking…",
     "run": "Run",
     "reject": "Reject",
+    "approvalTitle": "Waiting for approval",
+    "copy": "Copy",
+    "copied": "Copied",
+    "scrollToBottom": "Scroll to bottom",
     "roleUser": "You",
     "roleAssistant": "程小帮",
     "roleTool": "Tool",
-    "roleSystem": "System"
+    "roleSystem": "System",
+    "toolStatus": {
+      "completed": "Done",
+      "failed": "Failed",
+      "rejected": "Rejected",
+      "running": "Running",
+      "pendingApproval": "Pending approval"
+    }
+  },
+  "app": {
+    "disclaimer": "程小帮 can make mistakes. Check important info."
+  },
+  "setup": {
+    "title": "Set up a model",
+    "desc": "Add one model with an API key to start chatting. You can change it later in Settings → Providers.",
+    "apiKeyPlaceholder": "Paste your API key",
+    "later": "Maybe later",
+    "save": "Save & start",
+    "saving": "Saving…"
   },
   "home": {
     "heading": "What should we work on in {{name}}?",

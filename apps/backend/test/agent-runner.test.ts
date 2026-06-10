@@ -113,6 +113,37 @@ describe("AgentRunner", () => {
     );
   });
 
+  it("persists the thinking stream on the assistant message", async () => {
+    const thinkingModel: ModelClient = {
+      async *streamCompletion() {
+        yield { type: "thinking" as const, delta: "先想一" };
+        yield { type: "thinking" as const, delta: "想" };
+        yield { type: "text" as const, delta: "答案" };
+      },
+      async testProvider() {}
+    };
+    const runner = new AgentRunner(store, secrets, thinkingModel);
+
+    let sessionId = "";
+    for await (const event of runner.stream({
+      prompt: "你好",
+      projectId: null,
+      accessMode: "full_access"
+    })) {
+      if (event.type === "run_started") {
+        sessionId = event.sessionId;
+      }
+      if (event.type === "assistant_done") {
+        expect(event.message.thinking).toBe("先想一想");
+        expect(event.message.content).toBe("答案");
+      }
+    }
+
+    const persisted = await store.listMessages(sessionId);
+    const assistant = persisted.find((message) => message.role === "assistant");
+    expect(assistant?.thinking).toBe("先想一想");
+  });
+
   it("emits persisted user messages before assistant output", async () => {
     const runner = new AgentRunner(store, secrets, modelClient);
     const events = [];

@@ -1,5 +1,10 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+
+// Resolve aliases relative to this config file so tests work on any machine.
+const fromRoot = (relative: string): string =>
+  fileURLToPath(new URL(relative, import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
@@ -24,10 +29,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@chengxiaobang/shared": "/Users/minimax/Documents/chengxiaobang/packages/shared/src/index.ts",
-      "@chengxiaobang/backend": "/Users/minimax/Documents/chengxiaobang/apps/backend/src",
-      "@chengxiaobang/desktop": "/Users/minimax/Documents/chengxiaobang/apps/desktop/src",
-      "@": "/Users/minimax/Documents/chengxiaobang/apps/desktop/src/renderer"
+      "@chengxiaobang/shared": fromRoot("packages/shared/src/index.ts"),
+      "@chengxiaobang/backend": fromRoot("apps/backend/src"),
+      "@chengxiaobang/desktop": fromRoot("apps/desktop/src"),
+      "@": fromRoot("apps/desktop/src/renderer")
     }
   }
 });

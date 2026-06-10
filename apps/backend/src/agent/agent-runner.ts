@@ -91,6 +91,7 @@ export class AgentRunner {
     yield { type: "user_message", runId, message: userMessage };
 
     let assistantText = "";
+    let thinkingText = "";
     try {
       const project = activeSession.projectId
         ? await this.store.getProject(activeSession.projectId)
@@ -170,11 +171,11 @@ export class AgentRunner {
         signal: controller.signal
       })) {
         if (controller.signal.aborted) {
-          yield { type: "run_aborted", runId };
-          await this.store.updateRunStatus(runId, "aborted");
+          yield* this.finishAborted(runId, activeSession.id, assistantText, thinkingText);
           return;
         }
         if (delta.type === "thinking") {
+          thinkingText += delta.delta;
           yield { type: "thinking_delta", runId, delta: delta.delta };
         } else {
           assistantText += delta.delta;
@@ -182,14 +183,24 @@ export class AgentRunner {
         }
       }
 
+      // Persist the reasoning stream alongside the answer so the UI can keep
+      // showing it after the run completes (and across restarts).
       const message: Message = await this.store.addMessage({
         sessionId: activeSession.id,
         role: "assistant",
-        content: assistantText
+        content: assistantText,
+        ...(thinkingText ? { thinking: thinkingText } : {})
       });
       yield { type: "assistant_done", runId, message };
       await this.store.updateRunStatus(runId, "completed");
     } catch (error) {
+      // A user-initiated abort surfaces as an exception from the fetch — treat
+      // it as a clean stop, not an error.
+      if (controller.signal.aborted) {
+        yield* this.finishAborted(runId, activeSession.id, assistantText, thinkingText);
+        return;
+      }
+      console.error("[agent-runner] 运行失败:", error);
       await this.store.updateRunStatus(runId, "failed");
       yield {
         type: "run_error",
@@ -199,6 +210,26 @@ export class AgentRunner {
     } finally {
       this.abortControllers.delete(runId);
     }
+  }
+
+  /** Wind an aborted run down cleanly, keeping any partially streamed answer. */
+  private async *finishAborted(
+    runId: string,
+    sessionId: string,
+    assistantText: string,
+    thinkingText: string
+  ): AsyncGenerator<StreamEvent> {
+    if (assistantText) {
+      const message = await this.store.addMessage({
+        sessionId,
+        role: "assistant",
+        content: assistantText,
+        ...(thinkingText ? { thinking: thinkingText } : {})
+      });
+      yield { type: "assistant_done", runId, message };
+    }
+    yield { type: "run_aborted", runId };
+    await this.store.updateRunStatus(runId, "aborted");
   }
 }
 

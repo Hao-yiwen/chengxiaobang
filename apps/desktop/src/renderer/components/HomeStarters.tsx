@@ -30,15 +30,15 @@ export function HomeStarters() {
   }
 
   return (
-    <div className="mt-5 flex w-[min(760px,100%)] flex-wrap justify-center gap-2">
+    <div className="mt-4 flex flex-wrap justify-center gap-2">
       {STARTERS.map(({ key, icon: Icon }) => (
         <button
           key={key}
           type="button"
           onClick={() => pick(t(`home.starters.${key}Prompt` as const))}
-          className="group flex items-center gap-2 rounded-full border bg-card px-3.5 py-2 text-[13px] font-medium text-muted-foreground shadow-soft transition-all hover:-translate-y-0.5 hover:border-brand/30 hover:text-foreground hover:shadow-elevated"
+          className="flex items-center gap-2 rounded-full border px-3.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
-          <Icon className="size-4 text-brand/70 transition-colors group-hover:text-brand" />
+          <Icon className="size-4" />
           {t(`home.starters.${key}Title` as const)}
         </button>
       ))}

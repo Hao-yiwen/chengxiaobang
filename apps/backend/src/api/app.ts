@@ -48,6 +48,10 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
         });
         return jsonResponse({ project }, 201);
       }
+      const projectMatch = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
+      if (projectMatch && request.method === "DELETE") {
+        return jsonResponse({ deleted: await options.store.deleteProject(projectMatch[1]) });
+      }
       if (url.pathname === "/api/sessions" && request.method === "GET") {
         const projectId = url.searchParams.get("projectId");
         return jsonResponse({
@@ -99,8 +103,33 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
             const encoder = new TextEncoder();
-            for await (const event of options.runner.stream(input)) {
-              controller.enqueue(encoder.encode(encodeSseEvent(event)));
+            // SSE comment heartbeat: keeps the connection alive through idle
+            // periods (approval waits, slow model startup) where no events
+            // flow — otherwise runtimes/proxies cut the quiet stream.
+            const heartbeat = setInterval(() => {
+              try {
+                controller.enqueue(encoder.encode(": keep-alive\n\n"));
+              } catch {
+                clearInterval(heartbeat);
+              }
+            }, 15_000);
+            try {
+              for await (const event of options.runner.stream(input)) {
+                controller.enqueue(encoder.encode(encodeSseEvent(event)));
+              }
+            } catch (error) {
+              // Setup failures (missing key, missing session…) throw before the
+              // generator yields anything. Without this, the client would see an
+              // empty stream and fail silently.
+              const message = error instanceof Error ? error.message : String(error);
+              console.error("[api] /api/runs/stream 运行失败:", message);
+              controller.enqueue(
+                encoder.encode(
+                  encodeSseEvent({ type: "run_error", runId: "setup", error: message })
+                )
+              );
+            } finally {
+              clearInterval(heartbeat);
             }
             controller.close();
           }

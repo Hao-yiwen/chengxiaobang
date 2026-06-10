@@ -19,8 +19,10 @@ export type Block =
   | { type: "list"; ordered: boolean; items: Inline[][] };
 
 const INLINE_RE = /`([^`]+)`|\*\*([^*]+?)\*\*/g;
-const FENCE_RE = /^```(\w*)\s*$/;
-const FENCE_CLOSE_RE = /^```\s*$/;
+// Fences may be indented (e.g. nested under a list item) — accept leading
+// whitespace and strip the same amount from the code body.
+const FENCE_RE = /^(\s*)```([\w+-]*)\s*$/;
+const FENCE_CLOSE_RE = /^\s*```\s*$/;
 const HEADING_RE = /^(#{1,3})\s+(.*)$/;
 const BULLET_RE = /^\s*[-*]\s+(.*)$/;
 const ORDERED_RE = /^\s*\d+\.\s+(.*)$/;
@@ -68,14 +70,15 @@ export function parseBlocks(source: string): Block[] {
     const fence = line.match(FENCE_RE);
     if (fence) {
       flushParagraph();
+      const indent = fence[1].length;
       const buffer: string[] = [];
       i += 1;
       while (i < lines.length && !FENCE_CLOSE_RE.test(lines[i])) {
-        buffer.push(lines[i]);
+        buffer.push(dedent(lines[i], indent));
         i += 1;
       }
       i += 1; // skip the closing fence
-      blocks.push({ type: "code", lang: fence[1] || undefined, content: buffer.join("\n") });
+      blocks.push({ type: "code", lang: fence[2] || undefined, content: buffer.join("\n") });
       continue;
     }
 
@@ -115,4 +118,13 @@ export function parseBlocks(source: string): Block[] {
 
   flushParagraph();
   return blocks;
+}
+
+/** Strip up to `count` leading spaces, so indented fences keep relative indent. */
+function dedent(line: string, count: number): string {
+  let removed = 0;
+  while (removed < count && line[removed] === " ") {
+    removed += 1;
+  }
+  return line.slice(removed);
 }

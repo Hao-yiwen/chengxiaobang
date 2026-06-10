@@ -4,69 +4,69 @@
 
 @layer base {
   :root {
-    /* Cards sit on a faintly cool, recessed canvas so they read as elevated.
-       Neutrals carry a subtle cool cast that ties to the teal brand and reads
-       more designed than sterile pure-grey. */
+    /* Classic black & white ChatGPT-style palette. Pure neutral greys —
+       the only chromatic colors in the app are destructive red states. */
     --background: 0 0% 100%;
-    --foreground: 220 16% 13%;
-    /* Recessed canvas behind elevated cards (sidebar, panels, app shell) */
-    --surface: 210 24% 96.5%;
+    --foreground: 0 0% 5%;
+    /* Sidebar / recessed panels */
+    --surface: 0 0% 97.6%;
     --card: 0 0% 100%;
-    --card-foreground: 220 16% 13%;
+    --card-foreground: 0 0% 5%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 16% 13%;
-    --primary: 220 18% 16%;
-    --primary-foreground: 210 20% 98%;
-    --secondary: 210 22% 95%;
-    --secondary-foreground: 220 16% 16%;
-    --muted: 210 22% 95.5%;
-    --muted-foreground: 215 13% 45%;
-    --accent: 210 24% 92.5%;
-    --accent-foreground: 220 18% 14%;
+    --popover-foreground: 0 0% 5%;
+    /* Primary action = black button, white text (ChatGPT send button) */
+    --primary: 0 0% 5%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 95%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 94.5%;
+    --muted-foreground: 0 0% 36%;
+    --accent: 0 0% 92.5%;
+    --accent-foreground: 0 0% 9%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
-    --border: 214 22% 88%;
-    --input: 214 20% 85%;
-    /* Brand-tinted focus ring reads more intentional than neutral grey */
-    --ring: 173 52% 40%;
-    /* Brand accent — derived from the app icon (teal + amber). Used sparingly. */
-    --brand: 173 56% 35%;
+    --border: 0 0% 89%;
+    --input: 0 0% 86%;
+    --ring: 0 0% 5%;
+    /* Legacy aliases kept neutral so nothing in the tree renders color. */
+    --brand: 0 0% 5%;
     --brand-foreground: 0 0% 100%;
-    --brand-soft: 173 44% 93%;
-    --accent-amber: 38 92% 58%;
+    --brand-soft: 0 0% 94.5%;
+    --accent-amber: 0 0% 36%;
     --radius: 0.75rem;
-    /* Cool-tinted shadow — softer and more premium than flat black */
-    --shadow-color: 220 42% 22%;
+    --shadow-color: 0 0% 0%;
+    /* User message bubble (light grey, like ChatGPT) */
+    --bubble-user: 0 0% 94.5%;
   }
 
   .dark {
-    /* Layered dark slate: bg recedes, cards/popovers read as elevated. A faint
-       cool (220) cast keeps it cohesive with the light theme. */
-    --background: 220 16% 7.5%;
-    --foreground: 210 16% 96%;
-    --surface: 220 15% 9.5%;
-    --card: 220 14% 11.5%;
-    --card-foreground: 210 16% 96%;
-    --popover: 220 14% 12.5%;
-    --popover-foreground: 210 16% 96%;
-    --primary: 210 16% 96%;
-    --primary-foreground: 220 18% 10%;
-    --secondary: 220 12% 17%;
-    --secondary-foreground: 210 16% 96%;
-    --muted: 220 12% 16%;
-    --muted-foreground: 215 13% 63%;
-    --accent: 220 12% 19.5%;
+    /* ChatGPT dark: #212121 canvas, #171717 sidebar, #303030 elevated. */
+    --background: 0 0% 13%;
+    --foreground: 0 0% 93%;
+    --surface: 0 0% 9%;
+    --card: 0 0% 17%;
+    --card-foreground: 0 0% 93%;
+    --popover: 0 0% 19%;
+    --popover-foreground: 0 0% 93%;
+    --primary: 0 0% 100%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 19%;
+    --secondary-foreground: 0 0% 93%;
+    --muted: 0 0% 19%;
+    --muted-foreground: 0 0% 65%;
+    --accent: 0 0% 22%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 62% 50%;
+    --destructive: 0 62% 52%;
     --destructive-foreground: 0 0% 98%;
-    --border: 220 12% 19%;
-    --input: 220 12% 23%;
-    --ring: 172 48% 52%;
-    --brand: 172 52% 53%;
-    --brand-foreground: 220 18% 8%;
-    --brand-soft: 173 30% 17%;
-    --accent-amber: 41 90% 64%;
-    --shadow-color: 220 50% 3%;
+    --border: 0 0% 24%;
+    --input: 0 0% 28%;
+    --ring: 0 0% 93%;
+    --brand: 0 0% 100%;
+    --brand-foreground: 0 0% 9%;
+    --brand-soft: 0 0% 19%;
+    --accent-amber: 0 0% 65%;
+    --shadow-color: 0 0% 0%;
+    --bubble-user: 0 0% 19%;
   }
 }
 
@@ -88,8 +88,8 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     font-synthesis: none;
-    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
-    letter-spacing: -0.006em;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    letter-spacing: -0.004em;
   }
 
   #root {
@@ -98,26 +98,15 @@
   }
 
   ::selection {
-    background: hsl(var(--brand) / 0.22);
+    background: hsl(var(--foreground) / 0.14);
   }
 
-  /* Crisper, calmer focus ring across interactive elements */
   :focus-visible {
     outline: none;
   }
 }
 
 @layer components {
-  /* Subtle brand aura at the top of the home canvas so the empty hero space
-     reads as intentional rather than barren. Layered over bg-background. */
-  .home-aura {
-    background-image: radial-gradient(
-      90% 55% at 50% -8%,
-      hsl(var(--brand) / 0.07),
-      transparent 62%
-    );
-  }
-
   /* Draggable titlebar strip across the top of the window (Electron hiddenInset) */
   .titlebar-drag {
     position: fixed;
@@ -134,22 +123,22 @@
   .stream-caret::after {
     content: "";
     display: inline-block;
-    width: 6px;
-    height: 1.05em;
-    margin-left: 2px;
-    border-radius: 2px;
+    width: 8px;
+    height: 1em;
+    margin-left: 3px;
+    border-radius: 99px;
     vertical-align: text-bottom;
-    background: hsl(var(--brand));
-    animation: caret 1.1s steps(2) infinite;
+    background: hsl(var(--foreground));
+    animation: caret 1s steps(2) infinite;
   }
 
   /* Soft animated shimmer for "thinking" placeholder text */
   .shimmer-text {
     background: linear-gradient(
       100deg,
-      hsl(var(--muted-foreground) / 0.45) 30%,
-      hsl(var(--foreground) / 0.9) 50%,
-      hsl(var(--muted-foreground) / 0.45) 70%
+      hsl(var(--muted-foreground) / 0.5) 30%,
+      hsl(var(--foreground) / 0.95) 50%,
+      hsl(var(--muted-foreground) / 0.5) 70%
     );
     background-size: 200% 100%;
     -webkit-background-clip: text;

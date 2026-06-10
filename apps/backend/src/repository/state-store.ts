@@ -24,6 +24,7 @@ export interface CreateMessageInput {
   sessionId: string;
   role: Message["role"];
   content: string;
+  thinking?: string;
 }
 
 export interface CreateRunInput {
@@ -50,6 +51,7 @@ export interface StateStore {
   createSession(input: CreateSessionInput): Promise<Session>;
   updateSession(id: string, input: UpdateSessionInput): Promise<Session>;
   deleteSession(id: string): Promise<boolean>;
+  deleteProject(id: string): Promise<boolean>;
   touchSession(id: string, title?: string): Promise<void>;
   addMessage(input: CreateMessageInput): Promise<Message>;
   listMessages(sessionId: string): Promise<Message[]>;

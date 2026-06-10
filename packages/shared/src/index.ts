@@ -3,6 +3,9 @@ import { z } from "zod";
 export const providerKindSchema = z.enum([
   "deepseek",
   "kimi",
+  "minimax",
+  "doubao",
+  "qwen",
   "openai-compatible",
   "custom"
 ]);
@@ -82,6 +85,8 @@ export const messageSchema = z.object({
   sessionId: z.string().min(1),
   role: messageRoleSchema,
   content: z.string(),
+  /** Reasoning text emitted by thinking models, kept so the UI can re-show it. */
+  thinking: z.string().optional(),
   createdAt: z.string()
 });
 export type Message = z.infer<typeof messageSchema>;

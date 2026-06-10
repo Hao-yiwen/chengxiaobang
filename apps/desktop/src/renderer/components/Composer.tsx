@@ -1,16 +1,15 @@
 import {
+  ArrowUp,
   Check,
   ChevronDown,
-  Cpu,
   Folder,
   FolderOpen,
   LockKeyhole,
   MessageSquare,
   Mic,
-  Paperclip,
-  Send,
-  Sparkles,
+  Plus,
   ShieldCheck,
+  Sparkles,
   Square,
   Terminal,
   X
@@ -41,6 +40,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { selectActiveProject, useAppStore } from "@/store";
 import { useVoiceInput } from "@/lib/use-voice-input";
+
+const TEXTAREA_MAX_HEIGHT_PX = 220;
 
 export function Composer() {
   const { t } = useTranslation();
@@ -80,10 +81,23 @@ export function Composer() {
     [slashCommands, slashQuery]
   );
   const showSlashMenu = slashQuery !== undefined && filteredSlashCommands.length > 0;
+  // Allow sending with no provider configured — the store opens the setup
+  // dialog instead of silently doing nothing.
+  const canSend = value.trim().length > 0;
 
   useEffect(() => {
     setHighlightedCommand(0);
   }, [slashQuery, filteredSlashCommands.length]);
+
+  // ChatGPT-style auto-growing textarea: expand with content up to a cap.
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, TEXTAREA_MAX_HEIGHT_PX)}px`;
+  }, [value]);
 
   const updateSelectionStart = () => {
     setSelectionStart(textareaRef.current?.selectionStart ?? value.length);
@@ -129,20 +143,33 @@ export function Composer() {
         return;
       }
     }
+    // Enter sends (Shift+Enter inserts a newline); respect IME composition.
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.nativeEvent.isComposing &&
+      !isRunning
+    ) {
+      event.preventDefault();
+      if (canSend) {
+        void submit();
+      }
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       void submit();
     }
   };
 
   return (
-    <div className="relative w-[min(760px,100%)] overflow-visible rounded-2xl border bg-card shadow-composer transition-all focus-within:border-brand/40 focus-within:ring-4 focus-within:ring-brand/10">
+    <div className="relative w-full rounded-[26px] border bg-card shadow-composer transition-[border-color,box-shadow] focus-within:border-input focus-within:shadow-elevated">
       {attachments.length > 0 ? (
         <div className="flex flex-wrap gap-2 px-4 pt-3.5">
           {attachments.map((attachment) => (
             <Badge
               key={attachment.path}
               variant="secondary"
-              className="max-w-[240px] gap-1.5 py-1 pl-2.5 pr-1 font-normal"
+              className="max-w-[240px] gap-1.5 rounded-lg py-1 pl-2.5 pr-1 font-normal"
               title={attachment.path}
             >
               <span className="truncate">{attachment.name}</span>
@@ -164,6 +191,7 @@ export function Composer() {
 
       <Textarea
         ref={textareaRef}
+        rows={1}
         aria-label={t("composer.messageLabel")}
         placeholder={t("composer.placeholder")}
         value={value}
@@ -175,17 +203,18 @@ export function Composer() {
         onKeyUp={updateSelectionStart}
         onSelect={updateSelectionStart}
         onKeyDown={handleTextareaKeyDown}
-        className="min-h-[56px] resize-none rounded-none border-0 px-4 pb-1.5 pt-4 text-[15px] shadow-none focus-visible:ring-0"
+        className="max-h-[220px] min-h-[44px] resize-none overflow-y-auto rounded-none border-0 bg-transparent px-4 pb-0 pt-3.5 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
       />
+
       {showSlashMenu ? (
-        <div className="animate-scale-in absolute bottom-[86px] left-3 right-3 z-20 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-elevated">
+        <div className="animate-scale-in absolute bottom-full left-2 right-2 z-20 mb-2 overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-elevated">
           <div className="max-h-[260px] overflow-y-auto py-1">
             {filteredSlashCommands.map((command, index) => (
               <button
                 key={command.id}
                 type="button"
                 className={cn(
-                  "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors",
                   index === highlightedCommand ? "bg-accent text-accent-foreground" : "hover:bg-accent"
                 )}
                 onMouseEnter={() => setHighlightedCommand(index)}
@@ -195,7 +224,7 @@ export function Composer() {
                 }}
                 onClick={() => insertSlashCommand(command)}
               >
-                <span className="flex size-7 flex-none items-center justify-center rounded-md bg-muted text-muted-foreground">
+                <span className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted text-muted-foreground">
                   {command.kind === "builtin_tool" ? (
                     <Terminal className="size-4" />
                   ) : (
@@ -208,7 +237,7 @@ export function Composer() {
                     {command.description || t("composer.slashNoDescription")}
                   </span>
                 </span>
-                <span className="flex-none rounded border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                <span className="flex-none rounded-md border px-1.5 py-0.5 text-[11px] text-muted-foreground">
                   {t(`composer.slashSource.${command.source}`)}
                 </span>
               </button>
@@ -217,29 +246,108 @@ export function Composer() {
         </div>
       ) : null}
 
-      <div className="flex items-center gap-1.5 px-3 pb-2.5 pt-1.5">
+      <div className="flex items-center gap-1 px-2.5 pb-2.5 pt-1.5 [&_svg]:stroke-[1.75]">
         <IconButton title={t("composer.addContext")} onClick={() => void addContext()}>
-          <Paperclip className="size-[18px]" />
+          <Plus className="size-[19px]" />
         </IconButton>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "h-8 gap-1.5 rounded-full px-2.5 font-medium",
-            accessMode === "full_access"
-              ? "text-amber hover:bg-amber/10 hover:text-amber"
-              : "text-brand hover:bg-brand/10 hover:text-brand"
-          )}
-          onClick={() => setAccessMode(accessMode === "approval" ? "full_access" : "approval")}
-        >
-          {accessMode === "full_access" ? (
-            <ShieldCheck className="size-4" />
-          ) : (
-            <LockKeyhole className="size-4" />
-          )}
-          {t(accessMode === "full_access" ? "permission.fullAccess" : "permission.approval")}
-          <ChevronDown className="size-3.5" />
-        </Button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 rounded-full px-2.5 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
+            >
+              <Folder className="size-4" />
+              <span className="max-w-[180px] truncate">
+                {activeProject?.name ?? t("composer.conversationMode")}
+              </span>
+              <ChevronDown className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-[220px]">
+            <DropdownMenuItem onSelect={() => setActiveProjectId(undefined)}>
+              <Check
+                className={cn("size-4", activeProject ? "opacity-0" : "opacity-100")}
+              />
+              <MessageSquare className="size-4 text-muted-foreground" />
+              {t("composer.conversationMode")}
+            </DropdownMenuItem>
+            {projects.length > 0 ? <DropdownMenuSeparator /> : null}
+            {projects.map((project) => (
+              <DropdownMenuItem key={project.id} onSelect={() => setActiveProjectId(project.id)}>
+                <Check
+                  className={cn(
+                    "size-4",
+                    project.id === activeProject?.id ? "opacity-100" : "opacity-0"
+                  )}
+                />
+                <span className="truncate">{project.name}</span>
+              </DropdownMenuItem>
+            ))}
+            {projects.length > 0 ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem onSelect={() => void openFolder()}>
+              <FolderOpen className="size-4 text-muted-foreground" />
+              {t("composer.openFolderEllipsis")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 rounded-full px-2.5 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
+            >
+              {accessMode === "full_access" ? (
+                <ShieldCheck className="size-4" />
+              ) : (
+                <LockKeyhole className="size-4" />
+              )}
+              {t(accessMode === "full_access" ? "permission.fullAccess" : "permission.approval")}
+              <ChevronDown className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[280px]">
+            <DropdownMenuItem
+              className="items-start gap-2.5 py-2.5"
+              onSelect={() => setAccessMode("approval")}
+            >
+              <LockKeyhole className="mt-0.5 size-4 flex-none text-muted-foreground" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium">{t("permission.approval")}</span>
+                <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                  {t("settings.general.approvalDesc")}
+                </span>
+              </span>
+              <Check
+                className={cn(
+                  "mt-0.5 size-4 flex-none",
+                  accessMode === "approval" ? "opacity-100" : "opacity-0"
+                )}
+              />
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="items-start gap-2.5 py-2.5"
+              onSelect={() => setAccessMode("full_access")}
+            >
+              <ShieldCheck className="mt-0.5 size-4 flex-none text-muted-foreground" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium">{t("permission.fullAccess")}</span>
+                <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                  {t("settings.general.fullDesc")}
+                </span>
+              </span>
+              <Check
+                className={cn(
+                  "mt-0.5 size-4 flex-none",
+                  accessMode === "full_access" ? "opacity-100" : "opacity-0"
+                )}
+              />
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <div className="flex-1" />
 
@@ -250,11 +358,10 @@ export function Composer() {
         >
           <SelectTrigger
             aria-label={t("composer.selectModel")}
-            className="h-8 w-auto max-w-[220px] gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground shadow-none hover:bg-accent focus:ring-0"
+            className="h-8 w-auto max-w-[220px] gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-[12.5px] font-normal text-muted-foreground shadow-none hover:bg-accent hover:text-foreground focus:ring-0"
           >
-            <Cpu className="size-4 shrink-0 opacity-70" />
             <SelectValue placeholder={t("composer.selectModel")}>
-              {selectedProvider ? `${selectedProvider.name} · ${selectedProvider.model}` : null}
+              {selectedProvider ? selectedProvider.model : null}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -281,76 +388,29 @@ export function Composer() {
               "animate-mic-pulse bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive"
           )}
         >
-          <Mic className="size-[18px]" />
+          <Mic className="size-[17px]" />
         </IconButton>
 
         {isRunning ? (
           <Button
             size="icon"
-            className="size-8 rounded-full"
+            className="size-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/85"
             title={t("composer.stop")}
             onClick={() => void abortRun()}
           >
-            <Square className="size-4 fill-current" />
+            <Square className="size-3.5 fill-current" />
           </Button>
         ) : (
           <Button
             size="icon"
-            className="size-8 rounded-full bg-brand text-brand-foreground shadow-soft transition-transform hover:bg-brand/90 enabled:hover:scale-105 disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
+            className="size-8 rounded-full bg-primary text-primary-foreground transition-opacity hover:bg-primary/85 disabled:bg-muted disabled:text-muted-foreground"
             title={t("composer.send")}
-            disabled={value.trim().length === 0 || !selectedProvider}
+            disabled={!canSend}
             onClick={() => void submit()}
           >
-            <Send className="size-[18px]" />
+            <ArrowUp className="size-[18px]" />
           </Button>
         )}
-      </div>
-
-      <div className="flex items-center rounded-b-2xl border-t bg-muted/40 px-2.5 py-1.5">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 px-2 text-[12.5px] font-normal text-muted-foreground"
-            >
-              <Folder className="size-4" />
-              <span className="max-w-[260px] truncate">
-                {activeProject?.name ?? t("composer.conversationMode")}
-              </span>
-              <ChevronDown className="size-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[220px]">
-            <DropdownMenuItem onSelect={() => setActiveProjectId(undefined)}>
-              <Check
-                className={cn(
-                  "size-4 text-primary",
-                  activeProject ? "opacity-0" : "opacity-100"
-                )}
-              />
-              <MessageSquare className="size-4 text-muted-foreground" />
-              {t("composer.conversationMode")}
-            </DropdownMenuItem>
-            {projects.length > 0 ? <DropdownMenuSeparator /> : null}
-            {projects.map((project) => (
-              <DropdownMenuItem key={project.id} onSelect={() => setActiveProjectId(project.id)}>
-                <Check
-                  className={cn(
-                    "size-4 text-primary",
-                    project.id === activeProject?.id ? "opacity-100" : "opacity-0"
-                  )}
-                />
-                <span className="truncate">{project.name}</span>
-              </DropdownMenuItem>
-            ))}
-            {projects.length > 0 ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuItem onSelect={() => void openFolder()}>
-              <FolderOpen className="size-4 text-muted-foreground" />
-              {t("composer.openFolderEllipsis")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
     </div>
   );
@@ -396,7 +456,7 @@ function IconButton(props: {
           type="button"
           variant="ghost"
           size="icon"
-          className={cn("size-8 rounded-full text-muted-foreground", props.className)}
+          className={cn("size-8 rounded-full text-muted-foreground hover:text-foreground", props.className)}
           disabled={props.disabled}
           onClick={props.onClick}
         >

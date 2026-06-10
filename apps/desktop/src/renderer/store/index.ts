@@ -43,6 +43,8 @@ interface AppState {
   // ui
   view: View;
   paletteOpen: boolean;
+  /** First-run provider setup dialog (shown instead of forcing the settings page). */
+  setupOpen: boolean;
   notice?: string;
   // run (transient)
   input: string;
@@ -64,6 +66,7 @@ interface AppState {
   setView(view: View): void;
   setInput(input: string): void;
   setPaletteOpen(open: boolean): void;
+  setSetupOpen(open: boolean): void;
   setNotice(notice: string | undefined): void;
   setProviderId(id: string | undefined): void;
   setAccessMode(mode: AccessMode): void;
@@ -83,6 +86,7 @@ interface AppState {
   selectSession(id: string): Promise<void>;
   renameSession(id: string, title: string): Promise<void>;
   deleteSession(id: string): Promise<void>;
+  deleteProject(id: string): Promise<void>;
   newChat(): void;
   openFolder(): Promise<void>;
   addContext(): Promise<void>;
@@ -108,6 +112,7 @@ const initialState = {
   accessMode: "approval" as AccessMode,
   view: "home" as View,
   paletteOpen: false,
+  setupOpen: false,
   notice: undefined as string | undefined,
   input: "",
   attachments: [] as Attachment[],
@@ -149,15 +154,10 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       ...initialState,
 
-      setView: (view) => {
-        if (view !== "settings" && !firstConfiguredProvider(get().providers)) {
-          set({ view: "settings", notice: i18n.t("notice.providerRequired") });
-          return;
-        }
-        set({ view });
-      },
+      setView: (view) => set({ view }),
       setInput: (input) => set({ input }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+      setSetupOpen: (setupOpen) => set({ setupOpen }),
       setNotice: (notice) => set({ notice }),
       setProviderId: (providerId) => set({ providerId }),
       setAccessMode: (accessMode) => set({ accessMode }),
@@ -239,13 +239,15 @@ export const useAppStore = create<AppState>()(
         }
         const configuredProvider = firstConfiguredProvider(data.providers);
         if (!configuredProvider) {
+          // First run: stay on the home screen and offer a lightweight setup
+          // dialog instead of dumping the user into the settings page.
           set({
             activeSessionId: undefined,
             providerId: undefined,
             messages: [],
             toolHistory: [],
-            view: "settings",
-            notice: i18n.t("notice.providerRequired")
+            view: "home",
+            setupOpen: true
           });
           return;
         }
@@ -334,10 +336,39 @@ export const useAppStore = create<AppState>()(
         });
       },
 
+      async deleteProject(id) {
+        if (!apiClient) {
+          return;
+        }
+        const ok = await apiClient.deleteProject(id);
+        if (!ok) {
+          return;
+        }
+        set((state) => {
+          const projects = state.projects.filter((project) => project.id !== id);
+          const sessions = state.sessions.filter((session) => session.projectId !== id);
+          const activeGone =
+            state.activeProjectId === id ||
+            (state.activeSessionId &&
+              !sessions.some((session) => session.id === state.activeSessionId));
+          if (activeGone) {
+            return {
+              projects,
+              sessions,
+              activeProjectId: undefined,
+              activeSessionId: undefined,
+              messages: [],
+              toolHistory: [],
+              view: "home" as View
+            };
+          }
+          return { projects, sessions };
+        });
+      },
+
       newChat() {
         if (!firstConfiguredProvider(get().providers)) {
-          set({ view: "settings", notice: i18n.t("notice.providerRequired") });
-          return;
+          set({ setupOpen: true });
         }
         get().clearRunState();
         set({
@@ -413,7 +444,7 @@ export const useAppStore = create<AppState>()(
         }
         const selectedProvider = state.providers.find((provider) => provider.id === state.providerId);
         if (!isConfiguredProvider(selectedProvider)) {
-          set({ view: "settings", notice: i18n.t("notice.providerRequired") });
+          set({ setupOpen: true });
           return;
         }
         set({ isRunning: true });
@@ -489,7 +520,9 @@ export const useAppStore = create<AppState>()(
             await get().loadSessionDetail(runSessionId);
           }
         } catch (error) {
+          console.error("[store] 运行流中断:", error);
           set((current) => ({
+            pendingTool: undefined,
             events: [
               ...current.events,
               {
@@ -523,7 +556,7 @@ export const useAppStore = create<AppState>()(
         const saved = await apiClient.saveProvider(input);
         await get().refresh();
         if (isConfiguredProvider(saved)) {
-          set({ providerId: saved.id, notice: undefined });
+          set({ providerId: saved.id, notice: undefined, setupOpen: false });
         }
       },
 

@@ -14,6 +14,10 @@ export async function startServer(options: {
   if (bun?.serve) {
     const server = bun.serve({
       port: options.port,
+      // Bun's default idleTimeout (10s) kills quiet SSE streams — e.g. a run
+      // waiting on tool approval. Max allowed is 255 seconds; the SSE
+      // keep-alive heartbeat in api/app.ts keeps streams below it anyway.
+      idleTimeout: 255,
       fetch: options.fetch
     }) as { port: number; stop(closeActive?: boolean): void };
     return {

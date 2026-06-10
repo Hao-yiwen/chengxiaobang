@@ -34,6 +34,14 @@ describe("parseBlocks", () => {
     ]);
   });
 
+  it("recognizes indented fences (e.g. nested under a list item) and dedents them", () => {
+    const blocks = parseBlocks("- 建议\n\n  ```python\n  def f():\n      return 1\n  ```");
+    expect(blocks).toEqual([
+      { type: "list", ordered: false, items: [[{ type: "text", value: "建议" }]] },
+      { type: "code", lang: "python", content: "def f():\n    return 1" }
+    ]);
+  });
+
   it("extracts a fenced code block with a language", () => {
     const blocks = parseBlocks("before\n\n```ts\nconst x = 1;\n```\n\nafter");
     expect(blocks).toEqual([

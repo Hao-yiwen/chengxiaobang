@@ -54,6 +54,50 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
+  it("deletes a project together with its sessions and history", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const project = await store.createProject({ name: "demo", path: join(dir, "p") });
+    const session = await store.createSession({
+      projectId: project.id,
+      title: "会话",
+      accessMode: "approval"
+    });
+    await store.addMessage({ sessionId: session.id, role: "user", content: "hi" });
+
+    expect(await store.deleteProject(project.id)).toBe(true);
+    expect(await store.getProject(project.id)).toBeUndefined();
+    expect(await store.getSession(session.id)).toBeUndefined();
+    expect(await store.deleteProject(project.id)).toBe(false);
+    await store.close();
+  });
+
+  it("round-trips assistant thinking text across restarts", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const session = await first.createSession({
+      projectId: null,
+      title: "思考",
+      accessMode: "approval"
+    });
+    await first.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "答案",
+      thinking: "推理过程"
+    });
+    await first.addMessage({ sessionId: session.id, role: "user", content: "无思考" });
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    const messages = await second.listMessages(session.id);
+    expect(messages[0]?.thinking).toBe("推理过程");
+    expect(messages[1]?.thinking).toBeUndefined();
+    await second.close();
+  });
+
   it("persists runs and tool calls across store restarts", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);

@@ -68,6 +68,7 @@ export class SqliteStateStore implements StateStore {
         session_id text not null,
         role text not null,
         content text not null,
+        thinking text,
         created_at text not null,
         foreign key (session_id) references sessions(id) on delete cascade
       );
@@ -111,7 +112,17 @@ export class SqliteStateStore implements StateStore {
         on tool_calls(run_id, updated_at desc);
     `);
     await this.migrateProviderPresets();
+    this.migrateMessageThinkingColumn();
     await this.flush();
+  }
+
+  /** Adds the messages.thinking column to databases created before it existed. */
+  private migrateMessageThinkingColumn(): void {
+    const columns = this.query("pragma table_info(messages)");
+    if (!columns.some((row) => String(row.name) === "thinking")) {
+      console.log("[sqlite-state-store] 迁移：为 messages 表新增 thinking 列");
+      this.run("alter table messages add column thinking text");
+    }
   }
 
   async close(): Promise<void> {
@@ -235,6 +246,22 @@ export class SqliteStateStore implements StateStore {
     return next;
   }
 
+  async deleteProject(id: string): Promise<boolean> {
+    const exists = await this.getProject(id);
+    if (!exists) {
+      return false;
+    }
+    // Cascade: remove the project's sessions (with their runs/messages) first.
+    const sessions = this.query("select id from sessions where project_id = ?", [id]);
+    for (const session of sessions) {
+      await this.deleteSession(String(session.id));
+    }
+    this.run("delete from projects where id = ?", [id]);
+    await this.flush();
+    console.log("[sqlite-state-store] 已删除项目及其会话:", id, `(${sessions.length} 个会话)`);
+    return true;
+  }
+
   async deleteSession(id: string): Promise<boolean> {
     const exists = await this.getSession(id);
     if (!exists) {
@@ -273,11 +300,19 @@ export class SqliteStateStore implements StateStore {
       sessionId: input.sessionId,
       role: input.role,
       content: input.content,
+      ...(input.thinking ? { thinking: input.thinking } : {}),
       createdAt: nowIso()
     };
     this.run(
-      "insert into messages (id, session_id, role, content, created_at) values (?, ?, ?, ?, ?)",
-      [message.id, message.sessionId, message.role, message.content, message.createdAt]
+      "insert into messages (id, session_id, role, content, thinking, created_at) values (?, ?, ?, ?, ?, ?)",
+      [
+        message.id,
+        message.sessionId,
+        message.role,
+        message.content,
+        message.thinking ?? null,
+        message.createdAt
+      ]
     );
     await this.touchSession(message.sessionId);
     await this.flush();
@@ -552,6 +587,7 @@ function mapMessage(row: Row): Message {
     sessionId: String(row.session_id),
     role: row.role as Message["role"],
     content: String(row.content),
+    ...(row.thinking == null || row.thinking === "" ? {} : { thinking: String(row.thinking) }),
     createdAt: String(row.created_at)
   };
 }
