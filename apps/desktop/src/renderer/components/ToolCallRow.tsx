@@ -2,7 +2,9 @@ import { Check, ChevronRight, FileText, Loader2, X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ToolCall } from "@chengxiaobang/shared";
+import { ArtifactCard } from "@/components/ArtifactCard";
 import { DiffView } from "@/components/DiffView";
+import { artifactFromToolCall, artifactKind } from "@/lib/artifact";
 import {
   buildToolCallDiff,
   formatDurationMs,
@@ -24,14 +26,21 @@ const TOOL_STATUS_KEYS = {
 const FILE_PREVIEW_TOOLS = new Set<ToolCall["name"]>(["read_file", "write_file", "edit_file"]);
 
 /**
- * One tool invocation in the timeline, in main's original card style:
- * status icon + name + localized status, a one-line result preview when
- * collapsed, the full result (or a diff for file-mutating tools) on click.
+ * One tool invocation in the timeline. Generated deliverables render as an
+ * ArtifactCard (clickable → right preview); every other tool is a compact
+ * single-line row — icon + name + status + duration — that expands on click
+ * to its raw result or, for edit/write, a diff. No noisy collapsed preview.
  */
 export function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const openFilePreview = useAppStore((state) => state.openFilePreview);
+  const openArtifact = useAppStore((state) => state.openArtifact);
+
+  const artifact = artifactFromToolCall(toolCall);
+  if (artifact) {
+    return <ArtifactCard artifact={artifact} toolName={toolCall.name} />;
+  }
+
   const isRunning = toolCall.status === "running" || toolCall.status === "pending_approval";
   const isError = toolCall.status === "failed" || toolCall.status === "rejected";
   const filePath =
@@ -42,13 +51,13 @@ export function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
   const diff = toolCall.status === "completed" ? buildToolCallDiff(toolCall) : undefined;
   const expandable = Boolean(toolCall.result || diff);
   return (
-    <div className="mb-3 max-w-full self-start overflow-hidden rounded-xl border bg-surface/60">
+    <div className="mb-1.5 max-w-full self-start overflow-hidden rounded-lg border bg-surface/60">
       <div className="flex items-center">
         <button
           type="button"
           onClick={() => expandable && setOpen((value) => !value)}
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left font-mono text-xs",
+            "flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left font-mono text-xs",
             expandable && "transition-colors hover:bg-accent/60"
           )}
         >
@@ -77,7 +86,7 @@ export function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
           <button
             type="button"
             title={t("chat.previewFile")}
-            onClick={() => openFilePreview(filePath)}
+            onClick={() => openArtifact(filePath, artifactKind(filePath))}
             className="mr-2.5 flex max-w-[220px] flex-none items-center gap-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
           >
             <FileText className="size-3 flex-none" />
@@ -87,16 +96,10 @@ export function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
       </div>
       {open && diff ? (
         <DiffView lines={diff} />
-      ) : toolCall.result ? (
-        open ? (
-          <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words border-t bg-background px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground">
-            {toolCall.result}
-          </pre>
-        ) : (
-          <pre className="max-h-[1.6rem] overflow-hidden whitespace-pre-wrap break-words border-t bg-background px-3 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground/60">
-            {toolCall.result}
-          </pre>
-        )
+      ) : open && toolCall.result ? (
+        <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words border-t bg-background px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground">
+          {toolCall.result}
+        </pre>
       ) : null}
     </div>
   );

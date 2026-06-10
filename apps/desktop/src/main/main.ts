@@ -40,6 +40,15 @@ async function createWindow(): Promise<void> {
     return { ok: true, path: dir };
   });
 
+  // Open a generated artifact (pptx/docx/xlsx …) in the user's default app.
+  ipcMain.handle("open-path", async (_event, target: unknown) => {
+    if (typeof target !== "string" || target.length === 0) {
+      return { ok: false, error: "无效路径" };
+    }
+    const error = await shell.openPath(target);
+    return error ? { ok: false, error } : { ok: true };
+  });
+
   ipcMain.handle("set-theme-source", (_event, source: unknown) => {
     if (source === "light" || source === "dark" || source === "system") {
       nativeTheme.themeSource = source;

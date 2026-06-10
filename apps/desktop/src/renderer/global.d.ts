@@ -25,50 +25,9 @@ declare global {
       pickDirectory(): Promise<string | undefined>;
       pickFiles(): Promise<string[]>;
       readFileText(filePath: string): Promise<ReadFileResult>;
+      openPath?(filePath: string): Promise<{ ok: boolean; error?: string }>;
       openSkillsDir?(): Promise<{ ok: boolean; path: string }>;
       setThemeSource?(source: "light" | "dark" | "system"): Promise<void>;
     };
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
-    SpeechRecognition?: SpeechRecognitionConstructor;
-  }
-
-  type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
-
-  interface SpeechRecognitionInstance extends EventTarget {
-    lang: string;
-    continuous: boolean;
-    interimResults: boolean;
-    maxAlternatives: number;
-    start(): void;
-    stop(): void;
-    abort(): void;
-    onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
-    onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
-    onend: ((event: Event) => void) | null;
-    onstart: ((event: Event) => void) | null;
-  }
-
-  interface SpeechRecognitionResultEvent extends Event {
-    resultIndex: number;
-    results: {
-      length: number;
-      item(index: number): {
-        isFinal: boolean;
-        length: number;
-        item(index: number): { transcript: string };
-        [index: number]: { transcript: string };
-      };
-      [index: number]: {
-        isFinal: boolean;
-        length: number;
-        item(index: number): { transcript: string };
-        [index: number]: { transcript: string };
-      };
-    };
-  }
-
-  interface SpeechRecognitionErrorEvent extends Event {
-    error: string;
-    message: string;
   }
 }

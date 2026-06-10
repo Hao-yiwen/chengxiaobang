@@ -8,6 +8,7 @@ import { Markdown } from "@/components/Markdown";
 import { MessageActions, MessageEditor } from "@/components/MessageActions";
 import { ReasoningPanel } from "@/components/ReasoningPanel";
 import { ScrollToBottomButton } from "@/components/ScrollToBottomButton";
+import { StreamingMarkdown } from "@/components/StreamingMarkdown";
 import { ToolCallRow } from "@/components/ToolCallRow";
 import { thinkingSeconds } from "@/lib/reasoning";
 import { isNearBottom } from "@/lib/scroll";
@@ -44,6 +45,7 @@ export function ChatView() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollFrame = useRef<number | null>(null);
   const [nearBottom, setNearBottom] = useState(true);
 
   const showWaiting = isRunning && !streamText && !thinking && !pendingTool;
@@ -63,11 +65,33 @@ export function ChatView() {
     }
     const near = isNearBottom(el);
     setNearBottom(near);
-    if (near) {
-      // `scrollIntoView` is absent under jsdom — optional-call so tests don't throw.
-      bottomRef.current?.scrollIntoView?.({ block: "end" });
+    if (!near) {
+      return;
     }
+    // `scrollIntoView` is absent under jsdom — optional-call so tests don't throw.
+    if (typeof window.requestAnimationFrame !== "function") {
+      bottomRef.current?.scrollIntoView?.({ block: "end" });
+      return;
+    }
+    // Coalesce per-delta snaps into one frame so layout is forced at most once
+    // per paint while streaming (DeepSeek-GUI's use-timeline-scroll approach).
+    if (scrollFrame.current !== null) {
+      window.cancelAnimationFrame(scrollFrame.current);
+    }
+    scrollFrame.current = window.requestAnimationFrame(() => {
+      scrollFrame.current = null;
+      bottomRef.current?.scrollIntoView?.({ block: "end" });
+    });
   }, [messages, toolHistory, streamText, thinking, pendingTool]);
+
+  useEffect(
+    () => () => {
+      if (scrollFrame.current !== null) {
+        window.cancelAnimationFrame?.(scrollFrame.current);
+      }
+    },
+    []
+  );
 
   return (
     // Full-bleed scroll area with a centered content column, matching the
@@ -127,7 +151,7 @@ export function ChatView() {
 
           {streamText ? (
             <div className="mb-5 animate-msg-in self-stretch">
-              <Markdown text={streamText} className="stream-caret" />
+              <StreamingMarkdown text={streamText} className="stream-caret" />
             </div>
           ) : null}
 

@@ -95,7 +95,9 @@
       "rejected": "Rejected",
       "running": "Running",
       "pendingApproval": "Pending approval"
-    }
+    },
+    "artifactPreview": "Click to preview on the right",
+    "artifactOpenExternal": "Click to open in the system app"
   },
   "app": {
     "disclaimer": "程小帮 can make mistakes. Check important info."
@@ -264,7 +266,8 @@
     "addContextDesktopOnly": "Adding file context requires the desktop app — the browser preview has no system file-read access.",
     "skipFile": "Skipped {{name}}: {{error}}",
     "attachmentBlock": "Here is the content of file {{name}}:\n```\n{{text}}\n```\n",
-    "exportFailed": "Export failed, please try again"
+    "exportFailed": "Export failed, please try again",
+    "openArtifactDesktopOnly": "Opening this file requires the desktop app"
   },
   "export": {
     "toolCall": "Tool call",

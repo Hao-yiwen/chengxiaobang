@@ -16,6 +16,7 @@ import type {
   TokenUsage,
   ToolCall
 } from "@chengxiaobang/shared";
+import type { ArtifactKind } from "../lib/artifact";
 import { createApiClient, type ApiClient } from "../lib/api";
 import { downloadTextFile } from "../lib/download";
 import { buildSessionMarkdown, exportFilename } from "../lib/session-export";
@@ -114,6 +115,8 @@ interface AppState {
   setRightPanelWidth(width: number): void;
   setBrowserUrl(url: string): void;
   openFilePreview(path: string): void;
+  /** Opens a generated artifact by kind: html→browser, office→system app, else→file panel. */
+  openArtifact(path: string, kind: ArtifactKind): void;
   runTerminalCommand(command: string): Promise<void>;
 
   // actions
@@ -268,14 +271,35 @@ export const useAppStore = create<AppState>()(
       setBrowserUrl: (browserUrl) => set({ browserUrl }),
 
       openFilePreview(path) {
-        const project = selectActiveProject(get());
-        const absolute =
-          path.startsWith("/") || !project ? path : `${project.path}/${path}`;
+        const absolute = resolveProjectPath(get(), path);
         set((state) => ({
           previewFile: { path: absolute },
           rightPanelMode: "files",
           rightPanelWidth: Math.max(state.rightPanelWidth, RIGHT_PANEL_FILE_WIDTH)
         }));
+      },
+
+      openArtifact(path, kind) {
+        const absolute = resolveProjectPath(get(), path);
+        if (kind === "html") {
+          // True render in the browser panel via a file URL.
+          set((state) => ({
+            browserUrl: `file://${absolute}`,
+            rightPanelMode: "browser",
+            rightPanelWidth: Math.max(state.rightPanelWidth, RIGHT_PANEL_FILE_WIDTH)
+          }));
+          return;
+        }
+        if (kind === "office") {
+          // Binary docs can't render in-app — hand off to the system app.
+          if (window.chengxiaobang?.openPath) {
+            void window.chengxiaobang.openPath(absolute);
+          } else {
+            set({ notice: i18n.t("notice.openArtifactDesktopOnly") });
+          }
+          return;
+        }
+        get().openFilePreview(path);
       },
 
       async runTerminalCommand(command) {
@@ -908,6 +932,12 @@ export const useAppStore = create<AppState>()(
     }
   )
 );
+
+/** Resolves a tool path (relative to the active project, or already absolute). */
+function resolveProjectPath(state: AppState, path: string): string {
+  const project = selectActiveProject(state);
+  return path.startsWith("/") || !project ? path : `${project.path}/${path}`;
+}
 
 /** Reset the singleton store (used by tests). */
 export function resetAppStore(): void {

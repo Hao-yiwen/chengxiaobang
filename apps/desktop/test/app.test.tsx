@@ -230,11 +230,14 @@ describe("App", () => {
 
     render(<App client={client} />);
 
-    expect(await screen.findByText("file package.json")).toBeInTheDocument();
-    expect(screen.getByText("list_directory")).toBeInTheDocument();
-    // Statuses render localized, not as raw enums.
+    // The row is a clean one-liner with a localized status; the raw result
+    // only appears once expanded (no noisy collapsed preview).
+    expect(await screen.findByText("list_directory")).toBeInTheDocument();
     expect(screen.getByText("已完成")).toBeInTheDocument();
     expect(screen.queryByText("completed")).not.toBeInTheDocument();
+    expect(screen.queryByText("file package.json")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("list_directory"));
+    expect(await screen.findByText("file package.json")).toBeInTheDocument();
     expect(listSessionRuns).toHaveBeenCalledWith("session_1");
   });
 

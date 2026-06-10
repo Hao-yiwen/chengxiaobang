@@ -95,7 +95,9 @@
       "rejected": "已拒绝",
       "running": "执行中",
       "pendingApproval": "待批准"
-    }
+    },
+    "artifactPreview": "点击在右侧预览",
+    "artifactOpenExternal": "点击用系统应用打开"
   },
   "app": {
     "disclaimer": "程小帮也可能会犯错，请核查重要信息。"
@@ -264,7 +266,8 @@
     "addContextDesktopOnly": "添加文件上下文需要在桌面端里使用，浏览器预览没有系统文件读取权限。",
     "skipFile": "跳过 {{name}}：{{error}}",
     "attachmentBlock": "以下是文件 {{name}} 的内容：\n```\n{{text}}\n```\n",
-    "exportFailed": "导出失败，请重试"
+    "exportFailed": "导出失败，请重试",
+    "openArtifactDesktopOnly": "需要在桌面端打开该文件"
   },
   "export": {
     "toolCall": "工具调用",
