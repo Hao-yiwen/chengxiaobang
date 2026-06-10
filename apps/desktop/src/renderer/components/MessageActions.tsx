@@ -1,4 +1,4 @@
-import { Check, Copy, Pencil, RefreshCw } from "lucide-react";
+import { Check, Copy, GitFork, Pencil, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Message } from "@chengxiaobang/shared";
@@ -25,6 +25,7 @@ export function MessageActions({
   const { t } = useTranslation();
   const isRunning = useAppStore((state) => state.isRunning);
   const regenerateLast = useAppStore((state) => state.regenerateLast);
+  const forkSession = useAppStore((state) => state.forkSession);
   const { copied, copy } = useCopy();
   const isUser = message.role === "user";
 
@@ -50,6 +51,14 @@ export function MessageActions({
       {isUser && !isRunning && onEdit ? (
         <ActionButton label={t("chat.edit")} onClick={onEdit}>
           <Pencil className="size-3.5" />
+        </ActionButton>
+      ) : null}
+      {!isRunning ? (
+        <ActionButton
+          label={t("chat.forkFromHere")}
+          onClick={() => void forkSession(message.id)}
+        >
+          <GitFork className="size-3.5" />
         </ActionButton>
       ) : null}
     </div>

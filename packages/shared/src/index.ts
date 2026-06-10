@@ -59,6 +59,10 @@ export const sessionSchema = z.object({
    * the latest compaction summary when building model context.
    */
   compactedUpToMessageId: z.string().min(1).optional(),
+  /** Set on forked sessions: the session this one branched from. */
+  parentSessionId: z.string().min(1).optional(),
+  /** The message (in the parent) the branch was created from. */
+  forkMessageId: z.string().min(1).optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -203,6 +207,12 @@ export const rewindRequestSchema = z.object({
   messageId: z.string().min(1)
 });
 export type RewindRequest = z.infer<typeof rewindRequestSchema>;
+
+/** Fork a session from a message (inclusive). */
+export const sessionForkInputSchema = z.object({
+  messageId: z.string().min(1)
+});
+export type SessionForkInput = z.infer<typeof sessionForkInputSchema>;
 
 /** A user-typed command for the terminal panel, run in the project directory. */
 export const terminalExecRequestSchema = z.object({

@@ -55,6 +55,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     deleteSession: vi.fn() as never,
     listMessages: vi.fn(async () => [userMessage, assistantMessage]),
     rewindSession: vi.fn(async () => [] as Message[]),
+    forkSession: vi.fn() as never,
     listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [] })),
     listSlashCommands: vi.fn(async () => ({ commands: [], diagnostics: [] })),
     listProviders: vi.fn(async () => [provider]),
@@ -134,7 +135,35 @@ describe("MessageActions", () => {
     expect(streamRun.mock.calls[0]?.[0]).toMatchObject({ prompt: "改过的问题" });
   });
 
-  it("hides regenerate and edit while a run is active", async () => {
+  it("forks the session from a message and switches to the branch", async () => {
+    const branch: Session = {
+      ...session,
+      id: "session_2",
+      title: "历史对话（分支）",
+      parentSessionId: session.id,
+      forkMessageId: "u1"
+    };
+    const forkSession = vi.fn(async () => branch);
+    const listMessages = vi.fn(async (id: string) =>
+      id === "session_2" ? [userMessage] : [userMessage, assistantMessage]
+    );
+    const client = createClient({ forkSession: forkSession as never, listMessages });
+
+    render(<App client={client} />);
+    await screen.findByText("答案是 42");
+
+    // One fork button per message; the first belongs to the user message.
+    fireEvent.click(screen.getAllByRole("button", { name: "从这条消息创建分支" })[0]);
+
+    await waitFor(() => expect(forkSession).toHaveBeenCalledWith("session_1", "u1"));
+    // The branch becomes the active session and shows up in the sidebar
+    // with a branch indicator pointing at its parent.
+    expect(await screen.findByText("历史对话（分支）")).toBeInTheDocument();
+    expect(await screen.findByTitle("从「历史对话」分支")).toBeInTheDocument();
+    await waitFor(() => expect(listMessages).toHaveBeenCalledWith("session_2"));
+  });
+
+  it("hides regenerate, edit and fork while a run is active", async () => {
     render(<App client={createClient()} />);
     await screen.findByText("答案是 42");
 
@@ -144,6 +173,9 @@ describe("MessageActions", () => {
 
     expect(screen.queryByRole("button", { name: "重新生成" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "从这条消息创建分支" })
+    ).not.toBeInTheDocument();
     // Copy stays available — it doesn't mutate the session.
     expect(screen.getAllByRole("button", { name: "复制" })).toHaveLength(2);
   });

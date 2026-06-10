@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FileDown,
   Folder,
+  GitFork,
   FolderOpen,
   MessageSquare,
   MessageSquarePlus,
@@ -92,6 +93,8 @@ export function Sidebar() {
     onCancelRename: () => setEditingId(undefined),
     onDelete,
     onExport: (id: string) => void exportSession(id),
+    // For branch indicators: parent titles looked up across all sessions.
+    titleById: new Map(sessions.map((session) => [session.id, session.title])),
     // A filter match must be visible even in a collapsed group or past the
     // per-group display cap.
     forceOpen: filtering,
@@ -222,6 +225,7 @@ interface GroupProps {
   onCancelRename(): void;
   onDelete(id: string): void;
   onExport(id: string): void;
+  titleById: Map<string, string>;
   /** Render expanded regardless of the group's own collapse state (filtering). */
   forceOpen?: boolean;
   /** Bypass the per-group display cap (filtering). */
@@ -296,10 +300,24 @@ function SessionGroup(props: GroupProps) {
               type="button"
               onClick={() => props.onSelect(session.id)}
               className={cn(
-                "flex-1 truncate py-1.5 text-left text-[13px]",
+                "flex min-w-0 flex-1 items-center gap-1 py-1.5 text-left text-[13px]",
                 session.id === props.activeSessionId && "font-medium"
               )}
             >
+              {session.parentSessionId ? (
+                <span
+                  className="flex-none"
+                  title={
+                    props.titleById.has(session.parentSessionId)
+                      ? t("sidebar.branchOf", {
+                          title: props.titleById.get(session.parentSessionId)
+                        })
+                      : t("sidebar.branchUnknown")
+                  }
+                >
+                  <GitFork className="size-3 text-muted-foreground" />
+                </span>
+              ) : null}
               <span className="truncate">{session.title}</span>
             </button>
             <button

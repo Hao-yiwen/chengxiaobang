@@ -57,6 +57,7 @@ function createClient(): ApiClient {
     deleteSession: vi.fn() as never,
     listMessages: vi.fn(async () => []),
     rewindSession: vi.fn(async () => []),
+    forkSession: vi.fn() as never,
     listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [] })),
     listSlashCommands: vi.fn(async () => ({ commands: [], diagnostics: [] })),
     listProviders: vi.fn(async () => [provider]),

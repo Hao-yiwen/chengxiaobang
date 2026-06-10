@@ -6,6 +6,7 @@ import {
   providerInputSchema,
   rewindRequestSchema,
   runRequestSchema,
+  sessionForkInputSchema,
   sessionInputSchema,
   sessionUpdateSchema,
   terminalExecRequestSchema
@@ -105,6 +106,22 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
           return errorResponse("消息不存在", 404);
         }
         return jsonResponse({ messages: await options.store.listMessages(rewindMatch[1]) });
+      }
+      const forkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/fork$/);
+      if (forkMatch && request.method === "POST") {
+        if (!(await options.store.getSession(forkMatch[1]))) {
+          return errorResponse("会话不存在", 404);
+        }
+        const input = sessionForkInputSchema.parse(await readJson<unknown>(request));
+        try {
+          const session = await options.store.forkSession(forkMatch[1], input.messageId);
+          return jsonResponse({ session }, 201);
+        } catch (error) {
+          if (error instanceof Error && error.message === "消息不存在") {
+            return errorResponse("消息不存在", 404);
+          }
+          throw error;
+        }
       }
       const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
       if (sessionMatch && request.method === "PATCH") {

@@ -23,6 +23,7 @@ export interface ApiClient {
   deleteSession(id: string): Promise<boolean>;
   listMessages(sessionId: string): Promise<Message[]>;
   rewindSession(sessionId: string, messageId: string): Promise<Message[]>;
+  forkSession(sessionId: string, messageId: string): Promise<Session>;
   listSessionRuns(sessionId: string): Promise<{ runs: RunRecord[]; toolCalls: ToolCall[] }>;
   listSlashCommands(projectId?: string): Promise<{
     commands: SlashCommand[];
@@ -113,6 +114,14 @@ export async function createApiClient(): Promise<ApiClient> {
           body: JSON.stringify({ messageId })
         })
       ).messages;
+    },
+    async forkSession(sessionId, messageId) {
+      return (
+        await request<{ session: Session }>(`/api/sessions/${sessionId}/fork`, {
+          method: "POST",
+          body: JSON.stringify({ messageId })
+        })
+      ).session;
     },
     async listSessionRuns(sessionId) {
       return request<{ runs: RunRecord[]; toolCalls: ToolCall[] }>(

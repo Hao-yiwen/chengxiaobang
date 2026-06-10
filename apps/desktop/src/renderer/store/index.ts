@@ -124,6 +124,8 @@ interface AppState {
   deleteSession(id: string): Promise<void>;
   /** Downloads any session (active or not) as a Markdown document. */
   exportSession(id: string): Promise<void>;
+  /** Branches the active session at a message and switches to the new branch. */
+  forkSession(messageId: string): Promise<void>;
   newChat(): void;
   openFolder(): Promise<void>;
   addContext(): Promise<void>;
@@ -488,6 +490,16 @@ export const useAppStore = create<AppState>()(
           console.warn("导出会话失败", error);
           set({ notice: i18n.t("notice.exportFailed") });
         }
+      },
+
+      async forkSession(messageId) {
+        const state = get();
+        if (!apiClient || !state.activeSessionId || state.isRunning) {
+          return;
+        }
+        const session = await apiClient.forkSession(state.activeSessionId, messageId);
+        set((current) => ({ sessions: [session, ...current.sessions] }));
+        await get().selectSession(session.id);
       },
 
       newChat() {

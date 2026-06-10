@@ -276,6 +276,53 @@ describe("SqliteStateStore", () => {
     await store.close();
   });
 
+  it("forks a session by cloning the message prefix with fresh ids", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const source = await store.createSession({
+      projectId: null,
+      title: "原会话",
+      accessMode: "full_access"
+    });
+    const first = await store.addMessage({ sessionId: source.id, role: "user", content: "一" });
+    await tick();
+    const second = await store.addMessage({
+      sessionId: source.id,
+      role: "assistant",
+      content: "二",
+      reasoning: "想了想",
+      reasoningMs: 800
+    });
+    await tick();
+    await store.addMessage({ sessionId: source.id, role: "user", content: "三" });
+    await store.updateSession(source.id, { compactedUpToMessageId: first.id });
+
+    const fork = await store.forkSession(source.id, second.id);
+
+    expect(fork.parentSessionId).toBe(source.id);
+    expect(fork.forkMessageId).toBe(second.id);
+    expect(fork.title).toBe("原会话（分支）");
+    expect(fork.accessMode).toBe("full_access");
+
+    const cloned = await store.listMessages(fork.id);
+    expect(cloned.map((message) => message.content)).toEqual(["一", "二"]);
+    // Fresh ids, preserved timestamps and reasoning fields.
+    expect(cloned[0].id).not.toBe(first.id);
+    expect(cloned[0].createdAt).toBe(first.createdAt);
+    expect(cloned[1]).toMatchObject({ reasoning: "想了想", reasoningMs: 800 });
+    // The compaction pointer is remapped to the cloned row's id.
+    expect(fork.compactedUpToMessageId).toBe(cloned[0].id);
+
+    // Deleting the parent leaves the branch intact.
+    await store.deleteSession(source.id);
+    expect((await store.listMessages(fork.id)).map((m) => m.content)).toEqual(["一", "二"]);
+
+    await expect(store.forkSession("missing", second.id)).rejects.toThrow("会话不存在");
+    await expect(store.forkSession(fork.id, "msg_missing")).rejects.toThrow("消息不存在");
+
+    await store.close();
+  });
+
   it("rejects messages for missing sessions", async () => {
     const store = new SqliteStateStore(join(dir, "state.sqlite"));
     await store.initialize();

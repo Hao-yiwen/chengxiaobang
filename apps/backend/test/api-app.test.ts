@@ -109,6 +109,37 @@ describe("createApp", () => {
     expect(missing.status).toBe(404);
   });
 
+  it("forks a session over HTTP", async () => {
+    const session = await store.createSession({
+      projectId: null,
+      title: "分支源",
+      accessMode: "approval"
+    });
+    const first = await store.addMessage({ sessionId: session.id, role: "user", content: "一" });
+    await store.addMessage({ sessionId: session.id, role: "assistant", content: "二" });
+
+    const response = await app(
+      jsonRequest(`/api/sessions/${session.id}/fork`, "POST", { messageId: first.id })
+    );
+    expect(response.status).toBe(201);
+    const { session: fork } = (await response.json()) as {
+      session: { id: string; parentSessionId?: string };
+    };
+    expect(fork.parentSessionId).toBe(session.id);
+
+    const messages = await app(
+      new Request(`http://local/api/sessions/${fork.id}/messages`, { method: "GET" })
+    );
+    await expect(messages.json()).resolves.toMatchObject({
+      messages: [{ content: "一" }]
+    });
+
+    const missing = await app(
+      jsonRequest("/api/sessions/nope/fork", "POST", { messageId: first.id })
+    );
+    expect(missing.status).toBe(404);
+  });
+
   it("allows PATCH in CORS preflight responses", async () => {
     const response = await app(new Request("http://local/api/sessions/session_1", {
       method: "OPTIONS"

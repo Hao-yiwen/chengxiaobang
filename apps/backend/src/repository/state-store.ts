@@ -18,6 +18,8 @@ export interface CreateSessionInput {
   title: string;
   providerId?: string;
   accessMode: AccessMode;
+  parentSessionId?: string;
+  forkMessageId?: string;
 }
 
 export interface CreateMessageInput {
@@ -56,6 +58,12 @@ export interface StateStore {
   createSession(input: CreateSessionInput): Promise<Session>;
   updateSession(id: string, input: UpdateSessionInput): Promise<Session>;
   deleteSession(id: string): Promise<boolean>;
+  /**
+   * Clones messages up to and including `messageId` into a new session
+   * linked to the source via parentSessionId/forkMessageId. Runs/tool calls
+   * are not cloned (tool-role messages keep the model context intact).
+   */
+  forkSession(sessionId: string, messageId: string): Promise<Session>;
   touchSession(id: string, title?: string): Promise<void>;
   addMessage(input: CreateMessageInput): Promise<Message>;
   listMessages(sessionId: string): Promise<Message[]>;

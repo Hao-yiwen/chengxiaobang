@@ -18,7 +18,9 @@
     "filterPlaceholder": "Filter conversations",
     "clearFilter": "Clear filter",
     "noMatches": "No matching conversations",
-    "exportSession": "Export as Markdown"
+    "exportSession": "Export as Markdown",
+    "branchOf": "Branched from \"{{title}}\"",
+    "branchUnknown": "Branched from a deleted session"
   },
   "composer": {
     "messageLabel": "Message input",
@@ -84,7 +86,8 @@
     "toolDuration": "took {{duration}}",
     "diffView": "Diff view",
     "compactionTitle": "Context compacted",
-    "compactionHint": "Earlier messages were summarized; future turns continue from the summary"
+    "compactionHint": "Earlier messages were summarized; future turns continue from the summary",
+    "forkFromHere": "Branch from this message"
   },
   "rightPanel": {
     "terminal": "Terminal",

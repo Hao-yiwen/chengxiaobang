@@ -120,6 +120,8 @@ export class SqliteStateStore implements StateStore {
     this.ensureColumn("messages", "kind", "text");
     this.ensureColumn("tool_calls", "started_at", "text");
     this.ensureColumn("sessions", "compacted_up_to_message_id", "text");
+    this.ensureColumn("sessions", "parent_session_id", "text");
+    this.ensureColumn("sessions", "fork_message_id", "text");
     await this.migrateProviderPresets();
     await this.flush();
   }
@@ -208,25 +210,81 @@ export class SqliteStateStore implements StateStore {
       title: input.title,
       providerId: input.providerId,
       accessMode: input.accessMode,
+      ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
+      ...(input.forkMessageId ? { forkMessageId: input.forkMessageId } : {}),
       createdAt: timestamp,
       updatedAt: timestamp
     };
     this.run(
       `insert into sessions
-       (id, project_id, title, provider_id, access_mode, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?)`,
+       (id, project_id, title, provider_id, access_mode, parent_session_id, fork_message_id,
+        created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         session.id,
         session.projectId,
         session.title,
         session.providerId ?? null,
         session.accessMode,
+        session.parentSessionId ?? null,
+        session.forkMessageId ?? null,
         session.createdAt,
         session.updatedAt
       ]
     );
     await this.flush();
     return session;
+  }
+
+  async forkSession(sessionId: string, messageId: string): Promise<Session> {
+    const source = await this.getSession(sessionId);
+    if (!source) {
+      throw new Error("会话不存在");
+    }
+    const messages = await this.listMessages(sessionId);
+    const index = messages.findIndex((message) => message.id === messageId);
+    if (index === -1) {
+      throw new Error("消息不存在");
+    }
+    const fork = await this.createSession({
+      projectId: source.projectId,
+      title: `${source.title}（分支）`,
+      providerId: source.providerId,
+      accessMode: source.accessMode,
+      parentSessionId: source.id,
+      forkMessageId: messageId
+    });
+    // Clone with fresh ids but original created_at so the timeline order and
+    // any compaction pointer stay meaningful in the branch.
+    const idMap = new Map<string, string>();
+    for (const message of messages.slice(0, index + 1)) {
+      const newId = createId("msg");
+      idMap.set(message.id, newId);
+      this.run(
+        `insert into messages
+         (id, session_id, role, kind, content, reasoning, reasoning_ms, duration_ms, created_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          newId,
+          fork.id,
+          message.role,
+          message.kind ?? null,
+          message.content,
+          message.reasoning ?? null,
+          message.reasoningMs ?? null,
+          message.durationMs ?? null,
+          message.createdAt
+        ]
+      );
+    }
+    await this.flush();
+    const remappedPointer = source.compactedUpToMessageId
+      ? idMap.get(source.compactedUpToMessageId)
+      : undefined;
+    if (remappedPointer) {
+      return this.updateSession(fork.id, { compactedUpToMessageId: remappedPointer });
+    }
+    return fork;
   }
 
   async updateSession(id: string, input: UpdateSessionInput): Promise<Session> {
@@ -639,6 +697,12 @@ function mapSession(row: Row): Session {
     ...(row.compacted_up_to_message_id === null || row.compacted_up_to_message_id === undefined
       ? {}
       : { compactedUpToMessageId: String(row.compacted_up_to_message_id) }),
+    ...(row.parent_session_id === null || row.parent_session_id === undefined
+      ? {}
+      : { parentSessionId: String(row.parent_session_id) }),
+    ...(row.fork_message_id === null || row.fork_message_id === undefined
+      ? {}
+      : { forkMessageId: String(row.fork_message_id) }),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
