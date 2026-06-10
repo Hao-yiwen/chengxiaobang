@@ -13,6 +13,7 @@ import { SqliteStateStore } from "./repository/sqlite-state-store";
 import { createSecretStore } from "./secrets/secret-store";
 import { startServer } from "./server";
 import { SlashCommandService } from "./tools/slash-command-service";
+import { ToolExecutor } from "./tools/tool-executor";
 import { defaultDataDir, defaultSessionDir } from "./paths";
 
 export interface BackendConfig {
@@ -29,11 +30,15 @@ export async function startBackend(config: BackendConfig) {
   const modelClient = new OpenAICompatibleModelClient();
   const providerService = new ProviderService(store, secrets, modelClient);
   const slashCommandService = new SlashCommandService();
+  // Lazily resolved: the FeishuService is constructed after the runner
+  // (it consumes the runner), so the executor reaches it through a closure.
+  let feishuServiceRef: FeishuService | undefined;
+  const toolExecutor = new ToolExecutor(() => feishuServiceRef?.getSender());
   const runner = new AgentRunner(
     store,
     secrets,
     modelClient,
-    undefined,
+    toolExecutor,
     defaultSessionDir,
     slashCommandService
   );
@@ -48,6 +53,7 @@ export async function startBackend(config: BackendConfig) {
     runner,
     bridgeFactory: createLarkBridge
   });
+  feishuServiceRef = feishuService;
   await feishuService.start();
 
   const server = await startServer({

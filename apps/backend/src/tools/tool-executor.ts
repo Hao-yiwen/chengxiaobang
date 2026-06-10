@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { nowIso, type ToolCall, type ToolName } from "@chengxiaobang/shared";
+import type { FeishuSender } from "../feishu/feishu-bridge";
 import { runCommand } from "./shell";
 import { buildPptx, type DeckSpec } from "./pptx-builder";
 import { buildDocx, type DocSpec } from "./docx-builder";
@@ -97,6 +98,12 @@ export async function listProjectFiles(
 }
 
 export class ToolExecutor {
+  /**
+   * The Feishu sender is resolved lazily because the FeishuService is
+   * constructed after the agent runner (it needs the runner itself).
+   */
+  constructor(private readonly getFeishuSender?: () => FeishuSender | undefined) {}
+
   async execute(toolCall: ToolCall, basePath: string): Promise<ToolCall> {
     const result = await this.runTool(toolCall.name, toolCall.args, basePath);
     return {
@@ -192,9 +199,13 @@ export class ToolExecutor {
       return `已生成 Excel 表格 ${target}（${workbook.sheets?.length ?? 1} 个工作表）`;
     }
     if (name === "feishu_send_message") {
-      // The Feishu sender is wired in via the FeishuService; until then (or
-      // when the bot isn't configured) the model gets a recoverable error.
-      throw new Error("飞书未配置或未启用，请先在设置中配置飞书机器人");
+      const sender = this.getFeishuSender?.();
+      if (!sender) {
+        throw new Error("飞书未配置或未启用，请先在设置中配置飞书机器人");
+      }
+      const chatId = stringArg(args.chatId);
+      await sender.sendText(chatId, stringArg(args.content));
+      return `已发送飞书消息到 ${chatId}`;
     }
     throw new Error(`未知工具: ${name satisfies never}`);
   }

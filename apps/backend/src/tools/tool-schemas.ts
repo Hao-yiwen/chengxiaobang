@@ -298,6 +298,25 @@ export const TOOL_DEFINITIONS: ModelTool[] = [
         required: ["path", "workbook"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "feishu_send_message",
+      description:
+        "将一条文本消息主动发送到飞书群聊或私聊。需要用户已在设置中配置并启用飞书机器人。",
+      parameters: {
+        type: "object",
+        properties: {
+          chatId: {
+            type: "string",
+            description: "飞书会话 chat_id（通常以 oc_ 开头）"
+          },
+          content: { type: "string", description: "要发送的文本内容" }
+        },
+        required: ["chatId", "content"]
+      }
+    }
   }
 ];
 
@@ -308,7 +327,10 @@ const MUTATING_TOOLS = new Set<ToolName>([
   "shell",
   "create_pptx",
   "create_docx",
-  "create_xlsx"
+  "create_xlsx",
+  // Outbound messaging needs consent too — and being approval-gated means
+  // read-only Feishu-triggered runs can never spam Feishu themselves.
+  "feishu_send_message"
 ]);
 
 export function requiresApproval(name: ToolName): boolean {

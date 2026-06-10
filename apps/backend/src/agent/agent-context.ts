@@ -6,6 +6,8 @@ export function buildSystemPrompt(input: {
   workspacePath: string;
   accessMode: AccessMode;
   projectName?: string;
+  /** The session is driven by a Feishu chat; replies go back as plain text. */
+  viaFeishu?: boolean;
 }): string {
   const platform = process.platform;
   const accessLine =
@@ -27,10 +29,17 @@ export function buildSystemPrompt(input: {
     "- 用户消息中以 @相对路径 形式引用的文件，请先用 read_file 读取其内容再继续。",
     "- 制作演示文稿（PPT/幻灯片）时，使用 create_pptx 工具并提供结构化的 deck 规格（标题页、章节页、要点页等），生成真正的 .pptx 文件。",
     "- 撰写 Word 文档/报告时，使用 create_docx 工具。",
+    "- 需要把消息主动发送到飞书群聊/私聊时，使用 feishu_send_message 工具（用户需已在设置中配置飞书机器人）。",
     "- 完成后用简洁的中文总结你做了什么、生成了哪些文件，以及用户下一步可以怎么做。",
     "- 如果工具返回错误，阅读错误信息并尝试自行修复，不要直接放弃。",
     "",
     accessLine,
+    ...(input.viaFeishu
+      ? [
+          "",
+          "当前对话来自飞书：你的回复会以纯文本发送回飞书，请避免使用 Markdown 表格或复杂格式；不要调用 feishu_send_message 重复发送你的回复。"
+        ]
+      : []),
     "",
     "始终使用中文回复用户。"
   ].join("\n");

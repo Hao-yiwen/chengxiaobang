@@ -137,7 +137,8 @@ export class AgentRunner {
           workspacePath,
           accessMode: input.accessMode,
           projectName: project?.name,
-          compactedUpToMessageId: activeSession.compactedUpToMessageId
+          compactedUpToMessageId: activeSession.compactedUpToMessageId,
+          viaFeishu: Boolean(activeSession.feishuChatId)
         },
         controller
       );
@@ -334,6 +335,7 @@ export class AgentRunner {
       accessMode: RunRequest["accessMode"];
       projectName?: string;
       compactedUpToMessageId?: string;
+      viaFeishu?: boolean;
     },
     controller: AbortController
   ): AsyncGenerator<StreamEvent> {
@@ -344,7 +346,8 @@ export class AgentRunner {
         content: buildSystemPrompt({
           workspacePath: context.workspacePath,
           accessMode: context.accessMode,
-          projectName: context.projectName
+          projectName: context.projectName,
+          viaFeishu: context.viaFeishu
         })
       },
       ...buildHistory(persisted, context.compactedUpToMessageId)

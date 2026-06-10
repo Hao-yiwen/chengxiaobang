@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { nowIso, type ToolCall, type ToolName } from "@chengxiaobang/shared";
-import { ToolExecutor, listProjectFiles, parseToolRequest } from "../src/tools/tool-executor";
+import {
+  ToolExecutor,
+  listProjectFiles,
+  parseToolRequest,
+  requiresApproval
+} from "../src/tools/tool-executor";
 
 function toolCall(name: ToolName, args: Record<string, unknown>): ToolCall {
   return {
@@ -148,6 +153,41 @@ describe("ToolExecutor", () => {
     await expect(
       executor.execute(toolCall("read_file", { path: "../../etc/passwd" }), dir)
     ).rejects.toThrow("超出当前项目范围");
+  });
+});
+
+describe("feishu_send_message tool", () => {
+  it("sends through the injected sender and reports success", async () => {
+    const sent: Array<{ chatId: string; text: string }> = [];
+    const withSender = new ToolExecutor(() => ({
+      async sendText(chatId: string, text: string) {
+        sent.push({ chatId, text });
+      }
+    }));
+
+    const result = await withSender.execute(
+      toolCall("feishu_send_message", { chatId: "oc_123", content: "进度：已完成" }),
+      "/tmp"
+    );
+
+    expect(sent).toEqual([{ chatId: "oc_123", text: "进度：已完成" }]);
+    expect(result.status).toBe("completed");
+    expect(result.result).toContain("oc_123");
+  });
+
+  it("fails with a configuration hint when no sender is available", async () => {
+    const withoutSender = new ToolExecutor();
+    await expect(
+      withoutSender.execute(
+        toolCall("feishu_send_message", { chatId: "oc_123", content: "hi" }),
+        "/tmp"
+      )
+    ).rejects.toThrow("飞书未配置或未启用");
+  });
+
+  it("requires approval like other mutating tools", () => {
+    expect(requiresApproval("feishu_send_message")).toBe(true);
+    expect(requiresApproval("read_file")).toBe(false);
   });
 });
 
