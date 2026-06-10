@@ -69,7 +69,10 @@
     "regenerate": "重新生成",
     "edit": "编辑",
     "editSend": "发送",
-    "editCancel": "取消"
+    "editCancel": "取消",
+    "codeExpand": "展开代码（共 {{lines}} 行）",
+    "codeCollapse": "收起代码",
+    "codeDownload": "下载代码"
   },
   "rightPanel": {
     "terminal": "终端",

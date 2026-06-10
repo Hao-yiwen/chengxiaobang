@@ -48,6 +48,52 @@ describe("Markdown", () => {
     expect(container.querySelector("pre")).toHaveTextContent("foo bar");
   });
 
+  it("collapses long code blocks and expands on demand", () => {
+    const code = Array.from({ length: 30 }, (_, index) => `line${index}`).join("\n");
+    const { container } = render(<Markdown text={"```ts\n" + code + "\n```"} />);
+
+    expect(screen.getByText("展开代码（共 30 行）")).toBeInTheDocument();
+    expect(container.querySelector("pre")?.className).toContain("max-h-[360px]");
+
+    fireEvent.click(screen.getByText("展开代码（共 30 行）"));
+
+    expect(screen.getByText("收起代码")).toBeInTheDocument();
+    expect(container.querySelector("pre")?.className).not.toContain("max-h-[360px]");
+  });
+
+  it("renders short code blocks without a collapse control", () => {
+    render(<Markdown text={"```ts\nconst x = 1;\n```"} />);
+    expect(screen.queryByText(/展开代码/)).not.toBeInTheDocument();
+    expect(screen.queryByText("收起代码")).not.toBeInTheDocument();
+  });
+
+  it("downloads a code block with the language-mapped extension", () => {
+    const createObjectURL = vi.fn(() => "blob:mock");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL }));
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    let downloadName = "";
+    const setter = vi
+      .spyOn(HTMLAnchorElement.prototype, "download", "set")
+      .mockImplementation(function (this: HTMLAnchorElement, value: string) {
+        downloadName = value;
+      });
+
+    render(<Markdown text={"```ts\nconst x = 1;\n```"} />);
+    fireEvent.click(screen.getByLabelText("下载代码"));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(downloadName).toMatch(/\.ts$/);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock");
+
+    click.mockRestore();
+    setter.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
   it("renders GFM tables", () => {
     render(<Markdown text={"| 名称 | 值 |\n| --- | --- |\n| 端口 | 8080 |"} />);
     expect(screen.getByRole("table")).toBeInTheDocument();

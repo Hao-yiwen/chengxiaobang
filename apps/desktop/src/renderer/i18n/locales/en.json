@@ -69,7 +69,10 @@
     "regenerate": "Regenerate",
     "edit": "Edit",
     "editSend": "Send",
-    "editCancel": "Cancel"
+    "editCancel": "Cancel",
+    "codeExpand": "Show all {{lines}} lines",
+    "codeCollapse": "Collapse code",
+    "codeDownload": "Download code"
   },
   "rightPanel": {
     "terminal": "Terminal",
