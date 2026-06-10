@@ -12,6 +12,10 @@ export default defineConfig({
     "@earendil-works/pi-agent-core",
     "pptxgenjs",
     "docx",
-    "exceljs"
-  ]
+    "exceljs",
+    "@larksuiteoapi/node-sdk"
+  ],
+  // Optional native peers of ws (pulled in via the lark SDK); ws degrades
+  // gracefully at runtime when they're absent, but esbuild must not resolve them.
+  external: ["bufferutil", "utf-8-validate"]
 });
