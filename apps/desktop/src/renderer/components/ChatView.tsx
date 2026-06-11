@@ -163,14 +163,16 @@ export function ChatView() {
           ) : null}
 
           {events
-            .filter((event) => event.type === "run_error")
+            .filter((event) => event.type === "run_end" && event.status === "failed")
             .map((event, index) => (
               <div
                 key={`${event.type}-${index}`}
                 className="mb-3 flex items-start gap-2 self-stretch rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 font-mono text-xs text-destructive"
               >
                 <X className="mt-0.5 size-3.5 flex-none" />
-                <span className="min-w-0 break-words">{event.error}</span>
+                <span className="min-w-0 break-words">
+                  {event.type === "run_end" ? event.error : null}
+                </span>
               </div>
             ))}
 

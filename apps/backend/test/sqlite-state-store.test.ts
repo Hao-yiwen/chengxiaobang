@@ -114,6 +114,61 @@ describe("SqliteStateStore", () => {
     expect(messages[0]).not.toHaveProperty("durationMs");
   });
 
+  it("round-trips the pi message payload and leaves it absent when unset", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const session = await first.createSession({
+      projectId: null,
+      title: "payload",
+      accessMode: "approval"
+    });
+    await first.addMessage({ sessionId: session.id, role: "user", content: "你好" });
+    const payload = JSON.stringify({ role: "assistant", content: [{ type: "text", text: "答" }] });
+    const assistant = await first.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "答",
+      payload
+    });
+    expect(assistant.payload).toBe(payload);
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    const messages = await second.listMessages(session.id);
+    await second.close();
+
+    expect(messages[0]).not.toHaveProperty("payload");
+    expect(messages[1].payload).toBe(payload);
+  });
+
+  it("clones the payload when forking a session", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const source = await store.createSession({
+      projectId: null,
+      title: "原会话",
+      accessMode: "approval"
+    });
+    await store.addMessage({ sessionId: source.id, role: "user", content: "一" });
+    await tick();
+    const payload = JSON.stringify({ role: "assistant", content: [{ type: "text", text: "二" }] });
+    const assistant = await store.addMessage({
+      sessionId: source.id,
+      role: "assistant",
+      content: "二",
+      payload
+    });
+
+    const fork = await store.forkSession(source.id, assistant.id);
+    const cloned = await store.listMessages(fork.id);
+
+    expect(cloned[0]).not.toHaveProperty("payload");
+    expect(cloned[1].payload).toBe(payload);
+    await store.close();
+  });
+
   it("persists runs and tool calls across store restarts", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);

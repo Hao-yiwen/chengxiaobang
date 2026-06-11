@@ -7,13 +7,15 @@ import {
 } from "@chengxiaobang/shared";
 import type { StateStore } from "../repository/state-store";
 import type { SecretStore } from "../secrets/secret-store";
-import type { ModelClient } from "./openai-compatible";
+import { testProvider } from "./pi-model";
+
+type TestProviderFn = (provider: ProviderConfig, apiKey?: string) => Promise<void>;
 
 export class ProviderService {
   constructor(
     private readonly store: StateStore,
     private readonly secrets: SecretStore,
-    private readonly modelClient: ModelClient
+    private readonly testProviderFn: TestProviderFn = testProvider
   ) {}
 
   async listProviders(): Promise<ProviderConfig[]> {
@@ -54,6 +56,6 @@ export class ProviderService {
     const apiKey = provider.apiKeyRef
       ? await this.secrets.getSecret(provider.apiKeyRef)
       : undefined;
-    await this.modelClient.testProvider(provider, apiKey);
+    await this.testProviderFn(provider, apiKey);
   }
 }

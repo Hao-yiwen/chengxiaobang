@@ -2,35 +2,36 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { nowIso, type ProviderConfig, type ToolCall } from "@chengxiaobang/shared";
+import {
+  nowIso,
+  parseSseChunk,
+  type ProviderConfig,
+  type ToolCall
+} from "@chengxiaobang/shared";
 import { AgentRunner } from "../src/agent/agent-runner";
 import { createApp } from "../src/api/app";
-import type { ModelClient } from "../src/model/openai-compatible";
 import { ProviderService } from "../src/model/provider-service";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 import { MemorySecretStore } from "../src/secrets/secret-store";
 import { SlashCommandService } from "../src/tools/slash-command-service";
+import { scriptedStreamFn } from "./helpers/scripted-stream";
 
 describe("createApp", () => {
   let dir: string;
   let store: SqliteStateStore;
+  let secrets: MemorySecretStore;
   let app: (request: Request) => Promise<Response>;
-
-  const modelClient: ModelClient = {
-    streamCompletion: vi.fn() as never,
-    testProvider: vi.fn()
-  };
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "cxb-api-"));
     store = new SqliteStateStore(join(dir, "state.sqlite"));
     await store.initialize();
-    const secrets = new MemorySecretStore();
+    secrets = new MemorySecretStore();
     await seedProvider(store, secrets);
     app = createApp({
       store,
-      providerService: new ProviderService(store, secrets, modelClient),
-      runner: new AgentRunner(store, secrets, modelClient),
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets),
       slashCommandService: new SlashCommandService(join(dir, "global"))
     });
   });
@@ -38,6 +39,31 @@ describe("createApp", () => {
   afterEach(async () => {
     await store.close();
     await rm(dir, { recursive: true, force: true });
+  });
+
+  it("keeps health public and protects API routes when a token is configured", async () => {
+    const tokenApp = createApp({
+      token: "secret-token",
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets)
+    });
+
+    const health = await tokenApp(new Request("http://local/api/health", { method: "GET" }));
+    expect(health.status).toBe(200);
+
+    const rejected = await tokenApp(new Request("http://local/api/projects", { method: "GET" }));
+    expect(rejected.status).toBe(401);
+    await expect(rejected.json()).resolves.toEqual({ error: "未授权" });
+
+    const accepted = await tokenApp(
+      new Request("http://local/api/projects", {
+        method: "GET",
+        headers: { "x-chengxiaobang-token": "secret-token" }
+      })
+    );
+    expect(accepted.status).toBe(200);
+    await expect(accepted.json()).resolves.toEqual({ projects: [] });
   });
 
   it("updates and deletes sessions through HTTP API", async () => {
@@ -144,19 +170,18 @@ describe("createApp", () => {
     const { FeishuConfigService } = await import("../src/feishu/feishu-config-service");
     const { FeishuService } = await import("../src/feishu/feishu-service");
     const { FakeFeishuBridge } = await import("./helpers/fake-feishu-bridge");
-    const secrets = new MemorySecretStore();
     const bridge = new FakeFeishuBridge();
     const feishuConfigService = new FeishuConfigService(store, secrets);
     const feishuService = new FeishuService({
       configService: feishuConfigService,
       store,
-      runner: new AgentRunner(store, secrets, modelClient),
+      runner: new AgentRunner(store, secrets),
       bridgeFactory: () => bridge
     });
     const feishuApp = createApp({
       store,
-      providerService: new ProviderService(store, secrets, modelClient),
-      runner: new AgentRunner(store, secrets, modelClient),
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets),
       feishuConfigService,
       feishuService
     });
@@ -210,6 +235,51 @@ describe("createApp", () => {
     }));
 
     expect(response.headers.get("Access-Control-Allow-Methods")).toContain("PATCH");
+  });
+
+  it("streams setup failures as a failed run_end event", async () => {
+    await store.deleteProvider("deepseek");
+
+    const response = await app(
+      jsonRequest("/api/runs/stream", "POST", {
+        prompt: "你好",
+        accessMode: "approval"
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("text/event-stream");
+    const body = await response.text();
+    expect(body).toContain('"type":"run_end"');
+    expect(body).toContain('"status":"failed"');
+  });
+
+  it("streams a full run as SSE events in contract order", async () => {
+    const scripted = scriptedStreamFn([{ thinking: "想一想", text: "你好！" }]);
+    const sseApp = createApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets, { streamFn: scripted.streamFn })
+    });
+
+    const response = await sseApp(
+      jsonRequest("/api/runs/stream", "POST", {
+        prompt: "你好",
+        accessMode: "approval"
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const events = parseSseChunk(await response.text());
+    expect(events.map((event) => event.type)).toEqual([
+      "run_started",
+      "message",
+      "delta",
+      "delta",
+      "message",
+      "run_end"
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
   });
 
   it("returns persisted runs and tool calls for a session", async () => {
@@ -364,8 +434,8 @@ describe("createApp", () => {
     );
     const localApp = createApp({
       store,
-      providerService: new ProviderService(store, new MemorySecretStore(), modelClient),
-      runner: new AgentRunner(store, new MemorySecretStore(), modelClient),
+      providerService: new ProviderService(store, new MemorySecretStore(), vi.fn()),
+      runner: new AgentRunner(store, new MemorySecretStore()),
       slashCommandService: new SlashCommandService(globalRoot)
     });
 

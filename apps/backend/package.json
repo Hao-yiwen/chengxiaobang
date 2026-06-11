@@ -6,7 +6,7 @@
   "main": "./dist/main.js",
   "types": "./dist/main.d.ts",
   "scripts": {
-    "dev": "tsx src/main.ts",
+    "dev": "bun --watch src/main.ts",
     "build": "tsup --config tsup.config.ts && node scripts/copy-sql-wasm.mjs && node scripts/copy-skills.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
@@ -17,6 +17,7 @@
     "@larksuiteoapi/node-sdk": "1.66.1",
     "docx": "^9.7.1",
     "exceljs": "^4.4.0",
+    "hono": "^4.12.25",
     "pptxgenjs": "^4.0.1",
     "sql.js": "1.13.0",
     "zod": "4.2.0"

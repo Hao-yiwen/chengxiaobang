@@ -8,8 +8,10 @@ export type TimelineItem =
 export function timelineItems(messages: Message[], toolCalls: ToolCall[]): TimelineItem[] {
   return [
     // Tool-role messages are rendered as tool-call rows, not chat bubbles.
+    // Tool-only assistant turns persist with empty content (their payload
+    // drives history replay) — nothing to show for those either.
     ...messages
-      .filter((message) => message.role !== "tool")
+      .filter((message) => message.role !== "tool" && message.content.trim().length > 0)
       .map((message) => ({
         kind: "message" as const,
         at: message.createdAt,

@@ -729,61 +729,55 @@ export const useAppStore = create<AppState>()(
             },
             (event) => {
               set((current) => ({ events: [...current.events, event] }));
-              if (event.type === "run_started") {
-                runSessionId = event.sessionId;
-                set({ activeRunId: event.runId, activeSessionId: event.sessionId, view: "chat" });
-              }
-              if (event.type === "user_message") {
-                set((current) => ({ messages: appendMessage(current.messages, event.message) }));
-              }
-              if (event.type === "assistant_delta") {
-                set((current) => ({ streamText: current.streamText + event.delta }));
-              }
-              if (event.type === "thinking_delta") {
-                set((current) => ({
-                  thinking: current.thinking + event.delta,
-                  thinkingStartedAt: current.thinkingStartedAt ?? Date.now()
-                }));
-              }
-              if (event.type === "tool_call_pending") {
-                set({ pendingTool: event.toolCall });
-              }
-              if (event.type === "tool_call_started") {
-                set({ pendingTool: undefined });
-              }
-              if (event.type === "tool_result") {
-                set((current) => ({
-                  pendingTool: undefined,
-                  toolHistory: upsertToolCall(current.toolHistory, event.toolCall)
-                }));
-              }
-              if (event.type === "assistant_done") {
-                // A run may emit several assistant_done events (interim narration
-                // between tool calls). The streamed reasoning is persisted on the
-                // message itself (event.message.reasoning), so just flush the live
-                // buffers — keep the run active until completion/abort/error.
-                set((current) => ({
-                  messages: appendMessage(current.messages, event.message),
-                  streamText: "",
-                  thinking: "",
-                  thinkingStartedAt: undefined
-                }));
-              }
-              if (event.type === "run_completed") {
-                set({
-                  activeRunId: undefined,
-                  pendingTool: undefined,
-                  lastUsage: event.usage
-                });
-              }
-              if (event.type === "run_aborted" || event.type === "run_error") {
-                set({
-                  activeRunId: undefined,
-                  pendingTool: undefined,
-                  streamText: "",
-                  thinking: "",
-                  thinkingStartedAt: undefined
-                });
+              switch (event.type) {
+                case "run_started":
+                  runSessionId = event.sessionId;
+                  set({ activeRunId: event.runId, activeSessionId: event.sessionId, view: "chat" });
+                  break;
+                case "delta":
+                  if (event.channel === "text") {
+                    set((current) => ({ streamText: current.streamText + event.delta }));
+                  } else {
+                    set((current) => ({
+                      thinking: current.thinking + event.delta,
+                      thinkingStartedAt: current.thinkingStartedAt ?? Date.now()
+                    }));
+                  }
+                  break;
+                case "message":
+                  // A run may deliver several messages (the user echo, interim
+                  // assistant narration between tool calls, the final answer).
+                  // Assistant messages carry their persisted reasoning, so just
+                  // flush the live buffers — the run stays active until run_end.
+                  set((current) => ({
+                    messages: appendMessage(current.messages, event.message),
+                    ...(event.message.role === "assistant"
+                      ? { streamText: "", thinking: "", thinkingStartedAt: undefined }
+                      : {})
+                  }));
+                  break;
+                case "tool_call":
+                  // The status field carries the state machine: pending_approval
+                  // shows the approval card; any later transition clears it.
+                  if (event.toolCall.status === "pending_approval") {
+                    set({ pendingTool: event.toolCall });
+                  } else {
+                    set((current) => ({
+                      pendingTool: undefined,
+                      toolHistory: upsertToolCall(current.toolHistory, event.toolCall)
+                    }));
+                  }
+                  break;
+                case "run_end":
+                  set({
+                    activeRunId: undefined,
+                    pendingTool: undefined,
+                    streamText: "",
+                    thinking: "",
+                    thinkingStartedAt: undefined,
+                    ...(event.status === "completed" ? { lastUsage: event.usage } : {})
+                  });
+                  break;
               }
             }
           );
@@ -798,8 +792,9 @@ export const useAppStore = create<AppState>()(
             events: [
               ...current.events,
               {
-                type: "run_error",
+                type: "run_end",
                 runId: "local",
+                status: "failed",
                 error: error instanceof Error ? error.message : String(error)
               }
             ]

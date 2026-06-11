@@ -1,5 +1,4 @@
-import type { AccessMode, Message } from "@chengxiaobang/shared";
-import type { ModelMessage } from "../model/openai-compatible";
+import type { AccessMode } from "@chengxiaobang/shared";
 
 /** Build the system prompt that turns the model into the 程小帮 agent. */
 export function buildSystemPrompt(input: {
@@ -44,69 +43,4 @@ export function buildSystemPrompt(input: {
     "",
     "始终使用中文回复用户。"
   ].join("\n");
-}
-
-/**
- * Reconstruct prior conversation as plain model messages. Tool messages from
- * earlier runs are folded into user-visible context (we don't replay structured
- * tool_call linkage across runs — only within the current run does that matter).
- *
- * After a /compact, messages up to and including `compactedUpToMessageId` are
- * replaced by the latest compaction summary, hoisted to the front as a user
- * block; summary rows themselves never appear inline.
- */
-export function buildHistory(
-  messages: Message[],
-  compactedUpToMessageId?: string
-): ModelMessage[] {
-  const summary = [...messages]
-    .reverse()
-    .find((message) => message.kind === "compaction_summary");
-  const cutoffIndex = compactedUpToMessageId
-    ? messages.findIndex((message) => message.id === compactedUpToMessageId)
-    : -1;
-
-  const history: ModelMessage[] = [];
-  for (const [index, message] of messages.entries()) {
-    if (index <= cutoffIndex || message.kind === "compaction_summary") {
-      continue;
-    }
-    if (message.role === "system") {
-      continue;
-    }
-    if (message.role === "tool") {
-      history.push({ role: "user", content: `【工具结果】\n${message.content}` });
-      continue;
-    }
-    history.push({ role: message.role, content: message.content });
-  }
-  if (summary) {
-    history.unshift({ role: "user", content: `【此前对话的摘要】\n${summary.content}` });
-  }
-  return history;
-}
-
-/**
- * Model request asking for a compaction summary of `history` — kept separate
- * so the prompt is unit-testable without the runner.
- */
-export function buildCompactionRequest(history: ModelMessage[]): ModelMessage[] {
-  const transcript = history
-    .map((message) => `[${message.role}]\n${message.content}`)
-    .join("\n\n");
-  return [
-    {
-      role: "system",
-      content: [
-        "你是一个对话压缩器。请把下面的对话历史总结成一段精炼的中文摘要，供后续对话作为上下文使用。",
-        "摘要必须保留：",
-        "- 用户的目标与任务背景",
-        "- 已经做出的决定和结论",
-        "- 已创建/修改的文件及关键改动",
-        "- 尚未解决的问题或待办事项",
-        "直接输出摘要正文，不要添加前言或解释。"
-      ].join("\n")
-    },
-    { role: "user", content: transcript }
-  ];
 }

@@ -245,7 +245,7 @@ describe("App", () => {
     let emit: ((event: Parameters<ApiClient["streamRun"]>[1] extends (event: infer E) => void ? E : never) => void) | undefined;
     let resolveStream: (() => void) | undefined;
     const abort = vi.fn(async () => {
-      emit?.({ type: "run_aborted", runId: "run_1" });
+      emit?.({ type: "run_end", runId: "run_1", status: "aborted" });
       resolveStream?.();
     });
     const client = createClient({
@@ -554,12 +554,12 @@ describe("App", () => {
       listMessages: vi.fn(async () => [userMessage, assistantMessage]),
       streamRun: vi.fn(async (_input, onEvent) => {
         onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
-        onEvent({ type: "user_message", runId: "run_1", message: userMessage });
-        onEvent({ type: "thinking_delta", runId: "run_1", delta: "先拆解" });
-        onEvent({ type: "thinking_delta", runId: "run_1", delta: "问题" });
-        onEvent({ type: "assistant_delta", runId: "run_1", delta: "答案是 42" });
-        onEvent({ type: "assistant_done", runId: "run_1", message: assistantMessage });
-        onEvent({ type: "run_completed", runId: "run_1" });
+        onEvent({ type: "message", runId: "run_1", message: userMessage });
+        onEvent({ type: "delta", channel: "thinking", runId: "run_1", delta: "先拆解" });
+        onEvent({ type: "delta", channel: "thinking", runId: "run_1", delta: "问题" });
+        onEvent({ type: "delta", channel: "text", runId: "run_1", delta: "答案是 42" });
+        onEvent({ type: "message", runId: "run_1", message: assistantMessage });
+        onEvent({ type: "run_end", runId: "run_1", status: "completed" });
       }) as never
     });
 
