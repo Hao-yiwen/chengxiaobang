@@ -22,7 +22,6 @@ import { useTranslation } from "react-i18next";
 import type { ProviderInput } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -121,7 +120,7 @@ export function SettingsView() {
   return (
     <div className="grid h-screen min-h-0 min-w-0 flex-1 grid-cols-[232px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden bg-background">
       {/* Settings nav */}
-      <aside className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto border-r border-border bg-surface px-3 pb-4">
+      <aside className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto border-r border-border bg-background px-3 pb-4">
         <div className="h-10 flex-none [-webkit-app-region:drag]" />
         <Button
           variant="ghost"
@@ -156,8 +155,8 @@ export function SettingsView() {
                   className={cn(
                     "group flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left text-caption transition-colors",
                     section === item.id
-                      ? "bg-background font-medium text-foreground"
-                      : "text-foreground hover:bg-background/60"
+                      ? "bg-soft-stone font-medium text-foreground"
+                      : "text-foreground hover:bg-soft-stone/70"
                   )}
                 >
                   <Icon
@@ -179,7 +178,7 @@ export function SettingsView() {
 
       {/* Content — flat white Cohere surface; the nav border carries containment */}
       <div className="h-screen min-h-0 overflow-y-auto bg-background px-12 pb-16 pt-16">
-        <div className="mx-auto max-w-[760px]">
+        <div className="mx-auto max-w-[820px]">
           {section === "appearance" ? <AppearanceSection /> : null}
           {section === "general" ? <GeneralSection /> : null}
           {section === "providers" ? <ProvidersSection /> : null}
@@ -306,9 +305,9 @@ function ProvidersSection() {
         title={t("settings.providers.configuredTitle")}
         description={t("settings.providers.configuredDesc")}
       >
-        <Card className="divide-y p-1.5">
+        <div data-testid="settings-provider-list" className="divide-y rounded-sm border bg-background">
           {providers.length === 0 ? (
-            <div className="px-3 py-4 text-caption text-muted-foreground">
+            <div className="px-4 py-4 text-caption text-muted-foreground">
               {t("settings.providers.empty")}
             </div>
           ) : (
@@ -327,20 +326,20 @@ function ProvidersSection() {
                   });
                   setStatus("");
                 }}
-                className="flex w-full flex-col gap-0.5 rounded-xs px-3 py-2.5 text-left transition-colors hover:bg-accent/60"
+                className="flex w-full flex-col gap-0.5 px-4 py-3 text-left transition-colors hover:bg-soft-stone/60"
               >
                 <span className="text-caption font-medium">{provider.name}</span>
                 <span className="text-micro text-muted-foreground">{provider.model}</span>
               </button>
             ))
           )}
-        </Card>
+        </div>
       </SettingBlock>
 
       <SettingBlock
         title={draft.id ? t("settings.providers.edit") : t("settings.providers.create")}
       >
-        <Card className="p-6">
+        <div data-testid="settings-provider-form" className="rounded-sm border bg-background p-6">
           <form
             className="grid gap-4"
             onSubmit={async (event) => {
@@ -456,7 +455,7 @@ function ProvidersSection() {
               <span className="text-caption text-muted-foreground">{status}</span>
             </div>
           </form>
-        </Card>
+        </div>
       </SettingBlock>
     </SectionShell>
   );
@@ -484,14 +483,14 @@ function SkillsSection() {
         title={t("settings.skills.listTitle")}
         description={t("settings.skills.listDesc")}
       >
-        <Card className="divide-y p-1.5">
+        <div data-testid="settings-skills-list" className="divide-y rounded-sm border bg-background">
           {slashCommands.length === 0 ? (
-            <div className="px-3 py-4 text-caption text-muted-foreground">
+            <div className="px-4 py-4 text-caption text-muted-foreground">
               {t("settings.skills.empty")}
             </div>
           ) : (
             slashCommands.map((command) => (
-              <div key={command.id} className="flex items-start gap-3 px-3 py-2.5">
+              <div key={command.id} className="flex items-start gap-3 px-4 py-3">
                 <span className="mt-0.5 rounded-xs bg-muted px-1.5 py-0.5 font-mono text-micro text-foreground">
                   {command.name}
                 </span>
@@ -506,7 +505,7 @@ function SkillsSection() {
               </div>
             ))
           )}
-        </Card>
+        </div>
       </SettingBlock>
 
       <SettingBlock

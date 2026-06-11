@@ -88,6 +88,8 @@ describe("Feishu settings section", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("App ID")).toHaveValue("cli_existing")
     );
+    expect(screen.getByTestId("settings-feishu-form")).toHaveClass("rounded-sm", "border");
+    expect(screen.getByTestId("settings-feishu-form")).not.toHaveClass("rounded-md");
     // A saved secret never echoes back — only the keep-it hint shows.
     expect(screen.getByLabelText("App Secret")).toHaveValue("");
     expect(screen.getByPlaceholderText("已保存，留空保持不变")).toBeInTheDocument();

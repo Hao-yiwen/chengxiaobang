@@ -59,9 +59,9 @@ export function SetupDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setSetupOpen}>
-      <DialogContent className="max-w-[420px] gap-5 p-6">
-        <DialogHeader className="items-center text-center sm:text-center">
-          <Logo className="mb-2 size-10" />
+      <DialogContent className="max-w-[520px] gap-5 p-7">
+        <DialogHeader className="items-start border-b pb-5 text-left sm:text-left">
+          <Logo className="mb-3 size-8" />
           <DialogTitle>{t("setup.title")}</DialogTitle>
           <DialogDescription className="leading-relaxed">
             {t("setup.desc")}
@@ -147,7 +147,7 @@ export function SetupDialog() {
             >
               {t("setup.later")}
             </Button>
-            <Button type="submit" size="sm" className="rounded-full px-4" disabled={!canSave}>
+            <Button type="submit" size="sm" className="rounded-sm px-4" disabled={!canSave}>
               {saving ? t("setup.saving") : t("setup.save")}
             </Button>
           </div>

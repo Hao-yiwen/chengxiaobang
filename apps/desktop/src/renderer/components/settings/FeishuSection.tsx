@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { FeishuDomain, FeishuStatus } from "@chengxiaobang/shared";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -70,7 +69,7 @@ export function FeishuSection() {
         title={t("settings.feishu.connTitle")}
         description={t("settings.feishu.connDesc")}
       >
-        <Card className="space-y-4 p-4">
+        <div data-testid="settings-feishu-form" className="space-y-4 rounded-sm border bg-background p-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="feishu-app-id">{t("settings.feishu.appId")}</Label>
@@ -150,7 +149,7 @@ export function FeishuSection() {
               {t("settings.feishu.save")}
             </Button>
           </div>
-        </Card>
+        </div>
       </SettingBlock>
 
       <SettingBlock title={t("settings.feishu.statusTitle")}>

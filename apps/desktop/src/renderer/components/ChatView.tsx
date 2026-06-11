@@ -94,8 +94,8 @@ export function ChatView() {
   );
 
   return (
-    // Full-bleed scroll area with a centered content column, matching the
-    // ChatGPT-style app layout (the composer lives outside, in App).
+    // Full-bleed scroll area with a centered content column; the composer
+    // lives outside so the bottom rule and input surface stay stable.
     <div className="relative flex min-h-0 w-full flex-1 flex-col">
       <div
         ref={scrollRef}
@@ -106,9 +106,9 @@ export function ChatView() {
             setNearBottom(isNearBottom(el));
           }
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-6"
+        className="min-h-0 flex-1 overflow-y-auto px-8"
       >
-        <div className="mx-auto flex w-full max-w-[44rem] flex-col py-3">
+        <div className="mx-auto flex w-full max-w-[48rem] flex-col py-5">
           {timelineItems(messages, toolHistory).map((item) =>
             item.kind === "message" ? (
               <MessageBubble
@@ -302,4 +302,3 @@ function TurnDuration({ durationMs }: { durationMs: number }) {
     </div>
   );
 }
-

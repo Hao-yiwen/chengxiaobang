@@ -7,7 +7,7 @@ import { useAppStore } from "@/store";
 
 /**
  * The right workspace panel: a single resizable slot that hosts one of the
- * terminal / browser / file-preview panes, mirroring the left main card.
+ * terminal / browser / file-preview panes on the same rule-driven shell.
  */
 export function RightPanel() {
   const { t } = useTranslation();
@@ -50,7 +50,7 @@ export function RightPanel() {
         onPointerDown={onResizeStart}
         className="absolute left-0 top-0 z-10 h-full w-1.5 cursor-col-resize"
       />
-      <header className="flex flex-none items-center justify-between gap-2 border-b px-4 pb-2.5 pt-10">
+      <header className="flex h-14 flex-none items-center justify-between gap-2 border-b px-4">
         <h2 className="font-mono text-mono-label uppercase text-foreground">{title}</h2>
         <button
           type="button"

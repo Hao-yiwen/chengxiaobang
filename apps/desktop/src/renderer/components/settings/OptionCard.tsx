@@ -13,10 +13,10 @@ export function OptionCard(props: {
       type="button"
       onClick={props.onSelect}
       className={cn(
-        "flex flex-1 items-start gap-3 rounded-sm border p-4 text-left transition-all",
+        "flex flex-1 items-start gap-3 rounded-sm border p-4 text-left transition-colors",
         props.selected
-          ? "border-primary ring-1 ring-primary"
-          : "border-border hover:bg-accent/50"
+          ? "border-primary bg-soft-stone"
+          : "border-border bg-background hover:bg-soft-stone/60"
       )}
     >
       <span
@@ -37,11 +37,11 @@ export function OptionCard(props: {
       </span>
       <span
         className={cn(
-          "mt-0.5 flex size-[18px] flex-none items-center justify-center rounded-full border-2 transition-colors",
-          props.selected ? "border-primary" : "border-muted-foreground/40"
+          "mt-0.5 flex size-[18px] flex-none items-center justify-center rounded-xs border transition-colors",
+          props.selected ? "border-primary bg-primary" : "border-muted-foreground/40"
         )}
       >
-        {props.selected ? <span className="size-2 rounded-full bg-primary" /> : null}
+        {props.selected ? <span className="size-1.5 bg-primary-foreground" /> : null}
       </span>
     </button>
   );

@@ -25,13 +25,13 @@ import { filterSessionsByTitle } from "@/lib/session-filter";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
-/** Flat sidebar row on the stone surface: icon + label, canvas-white hover. */
+/** Flat sidebar row: icon + label on a rule-driven navigation surface. */
 function SidebarRow(props: { icon: ReactNode; label: string; onClick(): void }) {
   return (
     <button
       type="button"
       onClick={props.onClick}
-      className="flex h-9 w-full flex-none items-center gap-2.5 rounded-sm px-2.5 text-left text-caption text-foreground transition-colors hover:bg-background/60"
+      className="flex h-9 w-full flex-none items-center gap-2.5 rounded-sm px-2.5 text-left text-caption text-foreground transition-colors hover:bg-soft-stone"
     >
       <span className="flex size-[18px] flex-none items-center justify-center [&_svg]:size-[17px] [&_svg]:stroke-[1.75]">
         {props.icon}
@@ -119,7 +119,7 @@ export function Sidebar() {
   return (
     <aside
       data-testid="app-sidebar"
-      className="flex h-full w-[260px] min-h-0 flex-none flex-col overflow-hidden border-r border-border bg-surface px-2.5 pb-2.5 max-[840px]:hidden"
+      className="flex h-full w-[272px] min-h-0 flex-none flex-col overflow-hidden border-r border-border bg-background px-3 pb-3 max-[840px]:hidden"
     >
       {/* In Electron (hiddenInset titlebar) the macOS traffic lights occupy the
           top-left corner — reserve a draggable strip above the brand row so the
@@ -127,15 +127,17 @@ export function Sidebar() {
       {window.chengxiaobang ? (
         <div className="h-12 flex-none [-webkit-app-region:drag]" />
       ) : null}
-      <div className="flex h-11 flex-none items-center gap-2 px-2 [-webkit-app-region:drag]">
+      <div className="flex h-11 flex-none items-center gap-2 border-b px-2 [-webkit-app-region:drag]">
         <Logo className="size-[22px]" />
-        <span className="text-caption font-medium tracking-tight">程小帮</span>
+        <span className="font-mono text-mono-label uppercase text-foreground">程小帮</span>
       </div>
 
-      <SidebarRow icon={<SquarePen />} label={t("sidebar.newChat")} onClick={newChat} />
-      <SidebarRow icon={<Search />} label={t("sidebar.search")} onClick={() => setPaletteOpen(true)} />
+      <div className="mt-3 space-y-1 border-b pb-3">
+        <SidebarRow icon={<SquarePen />} label={t("sidebar.newChat")} onClick={newChat} />
+        <SidebarRow icon={<Search />} label={t("sidebar.search")} onClick={() => setPaletteOpen(true)} />
+      </div>
 
-      <div className="relative mt-1">
+      <div className="relative mt-3">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           aria-label={t("sidebar.filterPlaceholder")}
@@ -155,14 +157,14 @@ export function Sidebar() {
             type="button"
             title={t("sidebar.clearFilter")}
             onClick={() => setFilter("")}
-            className="absolute right-1.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-xs text-muted-foreground hover:bg-background/60 hover:text-foreground"
+            className="absolute right-1.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-xs text-muted-foreground hover:bg-soft-stone hover:text-foreground"
           >
             <X className="size-3.5" />
           </button>
         ) : null}
       </div>
 
-      <div className="mb-1 mt-5 flex-none px-2.5 font-mono text-[11px] uppercase tracking-[0.28px] text-muted-slate">
+      <div className="mb-1 mt-5 flex-none border-t px-2.5 pt-4 font-mono text-[11px] uppercase tracking-[0.28px] text-muted-slate">
         {t("sidebar.conversations")}
       </div>
       <ScrollArea className="-mx-0.5 max-h-[34vh] flex-none px-0.5">
@@ -180,7 +182,7 @@ export function Sidebar() {
         )}
       </ScrollArea>
 
-      <div className="mb-1 mt-5 flex-none px-2.5 font-mono text-[11px] uppercase tracking-[0.28px] text-muted-slate">
+      <div className="mb-1 mt-5 flex-none border-t px-2.5 pt-4 font-mono text-[11px] uppercase tracking-[0.28px] text-muted-slate">
         {t("sidebar.projects")}
       </div>
 
@@ -206,7 +208,7 @@ export function Sidebar() {
         ) : null}
       </ScrollArea>
 
-      <div className="mt-1 flex-none border-t border-border pt-1.5">
+      <div className="mt-2 flex-none border-t border-border pt-2">
         <SidebarRow icon={<Settings />} label={t("sidebar.settings")} onClick={() => setView("settings")} />
       </div>
     </aside>
@@ -246,7 +248,7 @@ function SessionGroup(props: GroupProps) {
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-2 py-1.5 text-left text-micro font-medium text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-2 py-1.5 text-left text-micro font-medium text-muted-foreground transition-colors hover:bg-soft-stone hover:text-foreground"
         >
           {expanded ? (
             <ChevronDown className="size-3.5 flex-none" />
@@ -264,7 +266,7 @@ function SessionGroup(props: GroupProps) {
             type="button"
             title={t("sidebar.deleteProject")}
             onClick={props.onDeleteGroup}
-            className="absolute right-1 flex size-6 flex-none items-center justify-center rounded-xs bg-surface text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/header:opacity-100"
+            className="absolute right-1 flex size-6 flex-none items-center justify-center rounded-xs bg-background text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/header:opacity-100"
           >
             <Trash2 className="size-3.5" />
           </button>
@@ -292,7 +294,7 @@ function SessionGroup(props: GroupProps) {
                   type="button"
                   title={t("sidebar.saveTitle")}
                   onClick={props.onCommitRename}
-                  className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                  className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-soft-stone hover:text-foreground"
                 >
                   <Check className="size-4" />
                 </button>
@@ -300,7 +302,7 @@ function SessionGroup(props: GroupProps) {
                   type="button"
                   title={t("sidebar.cancelRename")}
                   onClick={props.onCancelRename}
-                  className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                  className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-soft-stone hover:text-foreground"
                 >
                   <X className="size-4" />
                 </button>
@@ -310,7 +312,7 @@ function SessionGroup(props: GroupProps) {
                 key={session.id}
                 className={cn(
                   "group relative flex items-center rounded-sm pl-9 pr-1 transition-colors",
-                  session.id === props.activeSessionId ? "bg-background" : "hover:bg-background/60"
+                  session.id === props.activeSessionId ? "bg-soft-stone" : "hover:bg-soft-stone/70"
                 )}
               >
                 <button

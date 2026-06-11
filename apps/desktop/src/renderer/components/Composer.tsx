@@ -211,7 +211,10 @@ export function Composer() {
   };
 
   return (
-    <div className="relative w-full rounded-pill border bg-card transition-colors focus-within:border-foreground/30">
+    <div
+      data-testid="composer-shell"
+      className="relative w-full rounded-lg border border-border bg-card transition-colors focus-within:border-form-focus"
+    >
       {attachments.length > 0 ? (
         <div className="flex flex-wrap gap-2 px-4 pt-3.5">
           {attachments.map((attachment) => (
@@ -229,7 +232,7 @@ export function Composer() {
                 type="button"
                 aria-label={t("composer.removeAttachment", { name: attachment.name })}
                 onClick={() => removeAttachment(attachment.path)}
-                className="flex size-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                className="flex size-4 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
               >
                 <X className="size-3" />
               </button>
@@ -252,11 +255,11 @@ export function Composer() {
         onKeyUp={updateSelectionStart}
         onSelect={updateSelectionStart}
         onKeyDown={handleTextareaKeyDown}
-        className="max-h-[220px] min-h-[44px] resize-none overflow-y-auto rounded-none border-0 bg-transparent px-4 pb-0 pt-3.5 text-body focus-visible:border-transparent focus-visible:ring-0"
+        className="max-h-[220px] min-h-[68px] resize-none overflow-y-auto rounded-none border-0 bg-transparent px-4 pb-3 pt-3.5 text-body focus-visible:border-transparent focus-visible:ring-0"
       />
 
       {showSlashMenu ? (
-        <div className="animate-scale-in absolute bottom-full left-2 right-2 z-20 mb-2 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-overlay">
+        <div className="animate-scale-in absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-sm border bg-popover text-popover-foreground shadow-overlay">
           <div className="max-h-[260px] overflow-y-auto py-1">
             {filteredSlashCommands.map((command, index) => (
               <button
@@ -273,7 +276,7 @@ export function Composer() {
                 }}
                 onClick={() => insertSlashCommand(command)}
               >
-                <span className="flex size-7 flex-none items-center justify-center rounded-sm bg-muted text-muted-foreground">
+                <span className="flex size-7 flex-none items-center justify-center rounded-xs bg-soft-stone text-muted-foreground">
                   {command.kind === "builtin_tool" ? (
                     <Terminal className="size-4" />
                   ) : (
@@ -286,7 +289,7 @@ export function Composer() {
                     {command.description || t("composer.slashNoDescription")}
                   </span>
                 </span>
-                <span className="flex-none rounded-full border px-1.5 py-0.5 text-micro text-muted-foreground">
+                <span className="flex-none rounded-xs border px-1.5 py-0.5 text-micro text-muted-foreground">
                   {t(`composer.slashSource.${command.source}`)}
                 </span>
               </button>
@@ -298,7 +301,7 @@ export function Composer() {
       {showFileMenu ? (
         <div
           aria-label={t("composer.fileMenuLabel")}
-          className="animate-scale-in absolute bottom-full left-2 right-2 z-20 mb-2 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-overlay"
+          className="animate-scale-in absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-sm border bg-popover text-popover-foreground shadow-overlay"
         >
           <div className="max-h-[260px] overflow-y-auto py-1">
             {fileSuggestions.map((path, index) => (
@@ -316,11 +319,11 @@ export function Composer() {
                 }}
                 onClick={() => insertFileReference(path)}
               >
-                <span className="flex size-7 flex-none items-center justify-center rounded-sm bg-muted text-muted-foreground">
+                <span className="flex size-7 flex-none items-center justify-center rounded-xs bg-soft-stone text-muted-foreground">
                   <FileText className="size-4" />
                 </span>
                 <span className="min-w-0 flex-1 truncate font-mono text-micro">{path}</span>
-                <span className="flex-none rounded-full border px-1.5 py-0.5 text-micro text-muted-foreground">
+                <span className="flex-none rounded-xs border px-1.5 py-0.5 text-micro text-muted-foreground">
                   {t("composer.atFileTag")}
                 </span>
               </button>
@@ -329,7 +332,7 @@ export function Composer() {
         </div>
       ) : null}
 
-      <div className="flex items-center gap-1 px-2.5 pb-2.5 pt-1.5 [&_svg]:stroke-[1.75]">
+      <div className="flex items-center gap-1 px-2.5 pb-2.5 pt-0 [&_svg]:stroke-[1.75]">
         <IconButton title={t("composer.addContext")} onClick={() => void addContext()}>
           <Plus className="size-[19px]" />
         </IconButton>
@@ -339,7 +342,7 @@ export function Composer() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 gap-1.5 rounded-full px-2.5 text-micro font-normal text-muted-foreground hover:text-foreground"
+              className="h-8 gap-1.5 rounded-xs px-2.5 text-micro font-normal text-muted-foreground hover:bg-soft-stone hover:text-foreground"
             >
               <Folder className="size-4" />
               <span className="max-w-[180px] truncate">
@@ -381,7 +384,7 @@ export function Composer() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 gap-1.5 rounded-full px-2.5 text-micro font-normal text-muted-foreground hover:text-foreground"
+              className="h-8 gap-1.5 rounded-xs px-2.5 text-micro font-normal text-muted-foreground hover:bg-soft-stone hover:text-foreground"
             >
               {accessMode === "full_access" ? (
                 <ShieldCheck className="size-4" />
@@ -441,7 +444,7 @@ export function Composer() {
         >
           <SelectTrigger
             aria-label={t("composer.selectModel")}
-            className="h-8 w-auto max-w-[220px] gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-micro font-normal text-muted-foreground hover:bg-accent hover:text-foreground focus:border-transparent focus:ring-0"
+            className="h-8 w-auto max-w-[220px] gap-1.5 rounded-xs border-0 bg-transparent px-2.5 text-micro font-normal text-muted-foreground hover:bg-soft-stone hover:text-foreground focus:border-transparent focus:ring-0"
           >
             <SelectValue placeholder={t("composer.selectModel")}>
               {selectedProvider ? selectedProvider.model : null}
@@ -459,7 +462,7 @@ export function Composer() {
         {isRunning ? (
           <Button
             size="icon"
-            className="size-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/85"
+            className="size-8 rounded-sm bg-primary text-primary-foreground hover:bg-primary/85"
             title={t("composer.stop")}
             onClick={() => void abortRun()}
           >
@@ -468,7 +471,7 @@ export function Composer() {
         ) : (
           <Button
             size="icon"
-            className="size-8 rounded-full bg-primary text-primary-foreground transition-opacity hover:bg-primary/85 disabled:bg-muted disabled:text-muted-foreground"
+            className="size-8 rounded-sm bg-primary text-primary-foreground transition-opacity hover:bg-primary/85 disabled:bg-muted disabled:text-muted-foreground"
             title={t("composer.send")}
             disabled={!canSend}
             onClick={() => void submit()}
@@ -539,7 +542,7 @@ function IconButton(props: {
           type="button"
           variant="ghost"
           size="icon"
-          className={cn("size-8 rounded-full text-muted-foreground hover:text-foreground", props.className)}
+          className={cn("size-8 rounded-xs text-muted-foreground hover:bg-soft-stone hover:text-foreground", props.className)}
           disabled={props.disabled}
           onClick={props.onClick}
         >

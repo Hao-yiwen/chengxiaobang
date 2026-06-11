@@ -81,9 +81,28 @@ describe("App", () => {
 
     expect(await screen.findByText("今天想做点什么？")).toBeInTheDocument();
     expect(screen.getByLabelText("输入消息")).toBeInTheDocument();
+    expect(screen.getByTestId("composer-shell")).toHaveClass("rounded-lg");
+    expect(screen.getByTestId("composer-shell")).not.toHaveClass("rounded-pill");
     // The model picker shows just the model name, without the provider prefix.
     expect(await screen.findByText("deepseek-v4-flash")).toBeInTheDocument();
     expect(screen.queryByText("DeepSeek · deepseek-v4-flash")).not.toBeInTheDocument();
+  });
+
+  it("uses rule-driven settings panels instead of nested cards", async () => {
+    const client = createClient();
+
+    render(<App client={client} />);
+
+    fireEvent.click(await screen.findByText("设置"));
+    fireEvent.click(await screen.findByText("供应商"));
+
+    expect(await screen.findByTestId("settings-provider-list")).toHaveClass(
+      "rounded-sm",
+      "border"
+    );
+    expect(screen.getByTestId("settings-provider-form")).toHaveClass("rounded-sm", "border");
+    expect(screen.getByTestId("settings-provider-list")).not.toHaveClass("rounded-md");
+    expect(screen.getByTestId("settings-provider-form")).not.toHaveClass("rounded-md");
   });
 
   it("stays on home and opens the setup dialog when no provider has an API key", async () => {
