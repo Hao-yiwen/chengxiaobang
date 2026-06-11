@@ -50,7 +50,7 @@ export function ReasoningPanel({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-1.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <ChevronDown
           className={cn("size-3.5 transition-transform duration-200", open ? "" : "-rotate-90")}
@@ -64,7 +64,7 @@ export function ReasoningPanel({
         )}
       >
         <div className="overflow-hidden">
-          <div className="ml-1.5 mt-1.5 whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-[13px] leading-relaxed text-muted-foreground/90">
+          <div className="ml-1.5 mt-1.5 whitespace-pre-wrap break-words border-l border-hairline pl-3 text-caption text-muted-foreground/90">
             {text}
           </div>
         </div>

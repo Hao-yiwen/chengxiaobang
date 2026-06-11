@@ -34,9 +34,9 @@ export function CodeBlock({
   const [collapsed, setCollapsed] = useState(collapsible);
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-muted/50">
+    <div className="overflow-hidden rounded-sm border bg-muted/50">
       <div className="flex items-center justify-between border-b bg-muted/60 px-3 py-1.5">
-        <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+        <span className="font-mono text-[11px] uppercase tracking-[0.28px] text-muted-slate">
           {language ?? ""}
         </span>
         <div className="flex items-center gap-3">
@@ -45,14 +45,14 @@ export function CodeBlock({
             title={t("chat.codeDownload")}
             aria-label={t("chat.codeDownload")}
             onClick={() => downloadTextFile(codeFileName(language), text)}
-            className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+            className="flex items-center gap-1 text-micro text-muted-foreground transition-colors hover:text-foreground"
           >
             <Download className="size-3" />
           </button>
           <button
             type="button"
             onClick={() => void copy(text)}
-            className="flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+            className="flex items-center gap-1 text-micro text-muted-foreground transition-colors hover:text-foreground"
           >
             {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
             {copied ? t("chat.copied") : t("chat.copy")}
@@ -62,7 +62,7 @@ export function CodeBlock({
       <div className="relative">
         <pre
           className={cn(
-            "overflow-x-auto px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-foreground/90",
+            "overflow-x-auto px-3.5 py-3 font-mono text-micro leading-relaxed text-foreground/90",
             collapsible && collapsed && "max-h-[360px] overflow-hidden"
           )}
         >
@@ -76,7 +76,7 @@ export function CodeBlock({
         <button
           type="button"
           onClick={() => setCollapsed((value) => !value)}
-          className="flex w-full items-center justify-center gap-1 border-t py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+          className="flex w-full items-center justify-center gap-1 border-t py-1.5 text-micro text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
         >
           <ChevronDown
             className={cn("size-3 transition-transform", !collapsed && "rotate-180")}

@@ -16,7 +16,7 @@ interface WebviewElement extends HTMLElement {
 }
 
 const NAV_BUTTON_CLASS =
-  "flex size-7 flex-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
+  "flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
 
 export function BrowserPanel() {
   const { t } = useTranslation();
@@ -107,7 +107,7 @@ export function BrowserPanel() {
             placeholder={t("rightPanel.browserPlaceholder")}
             aria-label={t("rightPanel.browserPlaceholder")}
             spellCheck={false}
-            className="h-7 w-full rounded-md border bg-muted/40 px-2.5 font-mono text-xs outline-none transition-colors focus:border-brand/50"
+            className="h-7 w-full rounded-xs border bg-muted/40 px-2.5 font-mono text-micro outline-none transition-colors focus:border-form-focus"
           />
         </form>
         <button
@@ -143,7 +143,7 @@ export function BrowserPanel() {
             />
           )
         ) : (
-          <div className="flex h-full items-center justify-center px-6 text-center text-[13px] text-muted-foreground">
+          <div className="flex h-full items-center justify-center px-6 text-center text-caption text-muted-foreground">
             {t("rightPanel.browserEmpty")}
           </div>
         )}

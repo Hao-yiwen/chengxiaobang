@@ -57,7 +57,7 @@ export function App(props: { client?: ApiClient }) {
               <RightPanelSwitch />
               {notice ? (
                 <div className="absolute inset-x-0 top-12 z-30 flex justify-center px-6">
-                  <div className="animate-scale-in max-w-[44rem] rounded-xl border bg-card px-4 py-2.5 text-[13px] leading-relaxed text-foreground shadow-elevated">
+                  <div className="animate-scale-in max-w-[44rem] rounded-sm border bg-card px-4 py-2.5 text-caption leading-relaxed text-foreground shadow-overlay">
                     {notice}
                   </div>
                 </div>
@@ -66,7 +66,10 @@ export function App(props: { client?: ApiClient }) {
               {view === "home" ? (
                 <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 pb-14 pt-12">
                   <div className="w-full max-w-[44rem]">
-                    <h1 className="mb-7 text-balance text-center text-[28px] font-semibold leading-tight tracking-tight">
+                    <p className="mb-4 text-center font-mono text-mono-label uppercase text-coral">
+                      {t("home.tagline")}
+                    </p>
+                    <h1 className="mb-8 text-balance text-center font-display text-section font-normal">
                       {heading}
                     </h1>
                     <Composer />
@@ -76,7 +79,7 @@ export function App(props: { client?: ApiClient }) {
               ) : (
                 <>
                   <header className="flex h-11 flex-none items-center justify-center px-16 [-webkit-app-region:drag]">
-                    <span className="max-w-[60%] truncate text-[13px] font-medium text-muted-foreground">
+                    <span className="max-w-[60%] truncate text-caption font-medium text-body-muted">
                       {activeSession?.title ?? ""}
                     </span>
                   </header>
@@ -85,7 +88,7 @@ export function App(props: { client?: ApiClient }) {
                     <div className="mx-auto w-full max-w-[44rem]">
                       <Composer />
                     </div>
-                    <p className="px-2 py-2 text-center text-[11.5px] text-muted-foreground/70">
+                    <p className="px-2 py-2 text-center text-micro text-muted-slate">
                       {t("app.disclaimer")}
                     </p>
                   </div>

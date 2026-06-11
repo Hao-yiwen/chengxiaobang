@@ -121,7 +121,7 @@ export function SettingsView() {
   return (
     <div className="grid h-screen min-h-0 min-w-0 flex-1 grid-cols-[232px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden bg-background">
       {/* Settings nav */}
-      <aside className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto border-r border-border/70 bg-surface px-3 pb-4">
+      <aside className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto border-r border-border bg-surface px-3 pb-4">
         <div className="h-10 flex-none [-webkit-app-region:drag]" />
         <Button
           variant="ghost"
@@ -143,7 +143,7 @@ export function SettingsView() {
         </div>
         {groups.map(([group, items]) => (
           <div key={group} className="mb-2">
-            <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className="px-2 py-1.5 font-mono text-[11px] uppercase tracking-[0.28px] text-muted-slate">
               {group}
             </div>
             {items.map((item) => {
@@ -154,10 +154,10 @@ export function SettingsView() {
                   type="button"
                   onClick={() => setSection(item.id)}
                   className={cn(
-                    "group flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+                    "group flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left text-caption transition-colors",
                     section === item.id
-                      ? "bg-accent font-medium text-accent-foreground"
-                      : "text-foreground hover:bg-accent/60"
+                      ? "bg-background font-medium text-foreground"
+                      : "text-foreground hover:bg-background/60"
                   )}
                 >
                   <Icon
@@ -173,12 +173,12 @@ export function SettingsView() {
           </div>
         ))}
         {groups.length === 0 ? (
-          <p className="px-2.5 py-2 text-sm text-muted-foreground">{t("settings.noResults")}</p>
+          <p className="px-2.5 py-2 text-caption text-muted-foreground">{t("settings.noResults")}</p>
         ) : null}
       </aside>
 
-      {/* Content — occupies the main column, styled like the chat surface card */}
-      <div className="m-2 ml-0 h-[calc(100vh-1rem)] min-h-0 overflow-y-auto rounded-xl border bg-background px-12 pb-16 pt-16 shadow-soft max-[840px]:m-0 max-[840px]:h-screen max-[840px]:rounded-none max-[840px]:border-0">
+      {/* Content — flat white Cohere surface; the nav border carries containment */}
+      <div className="h-screen min-h-0 overflow-y-auto bg-background px-12 pb-16 pt-16">
         <div className="mx-auto max-w-[760px]">
           {section === "appearance" ? <AppearanceSection /> : null}
           {section === "general" ? <GeneralSection /> : null}
@@ -298,7 +298,7 @@ function ProvidersSection() {
   return (
     <SectionShell title={t("settings.providers.title")}>
       {providers.every((provider) => !provider.apiKeyRef) ? (
-        <div className="rounded-xl border bg-muted/60 px-4 py-3 text-sm text-foreground">
+        <div className="rounded-sm border bg-pale-blue px-4 py-3 text-caption text-ink">
           {t("settings.providers.required")}
         </div>
       ) : null}
@@ -308,7 +308,7 @@ function ProvidersSection() {
       >
         <Card className="divide-y p-1.5">
           {providers.length === 0 ? (
-            <div className="px-3 py-4 text-sm text-muted-foreground">
+            <div className="px-3 py-4 text-caption text-muted-foreground">
               {t("settings.providers.empty")}
             </div>
           ) : (
@@ -327,10 +327,10 @@ function ProvidersSection() {
                   });
                   setStatus("");
                 }}
-                className="flex w-full flex-col gap-0.5 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/60"
+                className="flex w-full flex-col gap-0.5 rounded-xs px-3 py-2.5 text-left transition-colors hover:bg-accent/60"
               >
-                <span className="text-sm font-medium">{provider.name}</span>
-                <span className="text-[13px] text-muted-foreground">{provider.model}</span>
+                <span className="text-caption font-medium">{provider.name}</span>
+                <span className="text-micro text-muted-foreground">{provider.model}</span>
               </button>
             ))
           )}
@@ -453,7 +453,7 @@ function ProvidersSection() {
                   {t("settings.providers.delete")}
                 </Button>
               ) : null}
-              <span className="text-sm text-muted-foreground">{status}</span>
+              <span className="text-caption text-muted-foreground">{status}</span>
             </div>
           </form>
         </Card>
@@ -486,21 +486,21 @@ function SkillsSection() {
       >
         <Card className="divide-y p-1.5">
           {slashCommands.length === 0 ? (
-            <div className="px-3 py-4 text-sm text-muted-foreground">
+            <div className="px-3 py-4 text-caption text-muted-foreground">
               {t("settings.skills.empty")}
             </div>
           ) : (
             slashCommands.map((command) => (
               <div key={command.id} className="flex items-start gap-3 px-3 py-2.5">
-                <span className="mt-0.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[12px] text-foreground">
+                <span className="mt-0.5 rounded-xs bg-muted px-1.5 py-0.5 font-mono text-micro text-foreground">
                   {command.name}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] text-muted-foreground">
+                  <div className="text-caption text-muted-foreground">
                     {command.description || t("composer.slashNoDescription")}
                   </div>
                 </div>
-                <span className="flex-none text-[11px] text-muted-foreground/70">
+                <span className="flex-none text-micro text-muted-slate">
                   {sourceLabel[command.source] ?? command.source}
                 </span>
               </div>

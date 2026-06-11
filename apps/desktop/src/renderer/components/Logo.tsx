@@ -18,7 +18,7 @@ export function Logo({ className }: { className?: string }) {
     >
       <rect x="64" y="64" width="896" height="896" rx="236" fill="currentColor" />
       <g
-        stroke="hsl(var(--background))"
+        stroke="rgb(var(--background))"
         strokeWidth="78"
         strokeLinecap="round"
         strokeLinejoin="round"

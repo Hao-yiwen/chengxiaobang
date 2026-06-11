@@ -211,18 +211,18 @@ export function Composer() {
   };
 
   return (
-    <div className="relative w-full rounded-[26px] border bg-card shadow-composer transition-[border-color,box-shadow] focus-within:border-input focus-within:shadow-elevated">
+    <div className="relative w-full rounded-pill border bg-card transition-colors focus-within:border-foreground/30">
       {attachments.length > 0 ? (
         <div className="flex flex-wrap gap-2 px-4 pt-3.5">
           {attachments.map((attachment) => (
             <Badge
               key={attachment.path}
               variant="secondary"
-              className="max-w-[240px] gap-1.5 rounded-lg py-1 pl-2.5 pr-1 font-normal"
+              className="max-w-[240px] gap-1.5 py-1 pl-2.5 pr-1 font-normal"
               title={attachment.path}
             >
               <span className="truncate">{attachment.name}</span>
-              <span className="flex-none text-[11px] text-muted-foreground">
+              <span className="flex-none text-micro text-muted-foreground">
                 {formatSize(attachment.size)}
               </span>
               <button
@@ -252,18 +252,18 @@ export function Composer() {
         onKeyUp={updateSelectionStart}
         onSelect={updateSelectionStart}
         onKeyDown={handleTextareaKeyDown}
-        className="max-h-[220px] min-h-[44px] resize-none overflow-y-auto rounded-none border-0 bg-transparent px-4 pb-0 pt-3.5 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
+        className="max-h-[220px] min-h-[44px] resize-none overflow-y-auto rounded-none border-0 bg-transparent px-4 pb-0 pt-3.5 text-body focus-visible:border-transparent focus-visible:ring-0"
       />
 
       {showSlashMenu ? (
-        <div className="animate-scale-in absolute bottom-full left-2 right-2 z-20 mb-2 overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-elevated">
+        <div className="animate-scale-in absolute bottom-full left-2 right-2 z-20 mb-2 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-overlay">
           <div className="max-h-[260px] overflow-y-auto py-1">
             {filteredSlashCommands.map((command, index) => (
               <button
                 key={command.id}
                 type="button"
                 className={cn(
-                  "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors",
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-left text-caption transition-colors",
                   index === highlightedCommand ? "bg-accent text-accent-foreground" : "hover:bg-accent"
                 )}
                 onMouseEnter={() => setHighlightedCommand(index)}
@@ -273,7 +273,7 @@ export function Composer() {
                 }}
                 onClick={() => insertSlashCommand(command)}
               >
-                <span className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <span className="flex size-7 flex-none items-center justify-center rounded-sm bg-muted text-muted-foreground">
                   {command.kind === "builtin_tool" ? (
                     <Terminal className="size-4" />
                   ) : (
@@ -282,11 +282,11 @@ export function Composer() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium">{command.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
+                  <span className="block truncate text-micro text-muted-foreground">
                     {command.description || t("composer.slashNoDescription")}
                   </span>
                 </span>
-                <span className="flex-none rounded-md border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                <span className="flex-none rounded-full border px-1.5 py-0.5 text-micro text-muted-foreground">
                   {t(`composer.slashSource.${command.source}`)}
                 </span>
               </button>
@@ -298,7 +298,7 @@ export function Composer() {
       {showFileMenu ? (
         <div
           aria-label={t("composer.fileMenuLabel")}
-          className="animate-scale-in absolute bottom-full left-2 right-2 z-20 mb-2 overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-elevated"
+          className="animate-scale-in absolute bottom-full left-2 right-2 z-20 mb-2 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-overlay"
         >
           <div className="max-h-[260px] overflow-y-auto py-1">
             {fileSuggestions.map((path, index) => (
@@ -306,7 +306,7 @@ export function Composer() {
                 key={path}
                 type="button"
                 className={cn(
-                  "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors",
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-left text-caption transition-colors",
                   index === highlightedCommand ? "bg-accent text-accent-foreground" : "hover:bg-accent"
                 )}
                 onMouseEnter={() => setHighlightedCommand(index)}
@@ -316,11 +316,11 @@ export function Composer() {
                 }}
                 onClick={() => insertFileReference(path)}
               >
-                <span className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <span className="flex size-7 flex-none items-center justify-center rounded-sm bg-muted text-muted-foreground">
                   <FileText className="size-4" />
                 </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[12.5px]">{path}</span>
-                <span className="flex-none rounded-md border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                <span className="min-w-0 flex-1 truncate font-mono text-micro">{path}</span>
+                <span className="flex-none rounded-full border px-1.5 py-0.5 text-micro text-muted-foreground">
                   {t("composer.atFileTag")}
                 </span>
               </button>
@@ -339,7 +339,7 @@ export function Composer() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 gap-1.5 rounded-full px-2.5 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
+              className="h-8 gap-1.5 rounded-full px-2.5 text-micro font-normal text-muted-foreground hover:text-foreground"
             >
               <Folder className="size-4" />
               <span className="max-w-[180px] truncate">
@@ -381,7 +381,7 @@ export function Composer() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 gap-1.5 rounded-full px-2.5 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
+              className="h-8 gap-1.5 rounded-full px-2.5 text-micro font-normal text-muted-foreground hover:text-foreground"
             >
               {accessMode === "full_access" ? (
                 <ShieldCheck className="size-4" />
@@ -399,8 +399,8 @@ export function Composer() {
             >
               <LockKeyhole className="mt-0.5 size-4 flex-none text-muted-foreground" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] font-medium">{t("permission.approval")}</span>
-                <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                <span className="block text-caption font-medium">{t("permission.approval")}</span>
+                <span className="mt-0.5 block text-micro leading-snug text-muted-foreground">
                   {t("settings.general.approvalDesc")}
                 </span>
               </span>
@@ -417,8 +417,8 @@ export function Composer() {
             >
               <ShieldCheck className="mt-0.5 size-4 flex-none text-muted-foreground" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] font-medium">{t("permission.fullAccess")}</span>
-                <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                <span className="block text-caption font-medium">{t("permission.fullAccess")}</span>
+                <span className="mt-0.5 block text-micro leading-snug text-muted-foreground">
                   {t("settings.general.fullDesc")}
                 </span>
               </span>
@@ -441,7 +441,7 @@ export function Composer() {
         >
           <SelectTrigger
             aria-label={t("composer.selectModel")}
-            className="h-8 w-auto max-w-[220px] gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-[12.5px] font-normal text-muted-foreground shadow-none hover:bg-accent hover:text-foreground focus:ring-0"
+            className="h-8 w-auto max-w-[220px] gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-micro font-normal text-muted-foreground hover:bg-accent hover:text-foreground focus:border-transparent focus:ring-0"
           >
             <SelectValue placeholder={t("composer.selectModel")}>
               {selectedProvider ? selectedProvider.model : null}

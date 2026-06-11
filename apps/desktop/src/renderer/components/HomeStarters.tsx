@@ -49,7 +49,7 @@ export function HomeStarters() {
           key={key}
           type="button"
           onClick={() => pick(t(`home.starters.${key}Prompt` as const))}
-          className="flex items-center gap-2 rounded-full border px-3.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="flex items-center gap-2 rounded-xl border border-primary/30 px-3.5 py-2 text-button text-foreground transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
         >
           <Icon className="size-4" />
           {t(`home.starters.${key}Title` as const)}

@@ -22,8 +22,9 @@ export function RightPanelSwitch() {
           title={pane.label}
           onClick={() => toggleRightPanel(pane.mode)}
           className={cn(
-            "flex size-8 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-soft transition-colors hover:bg-muted hover:text-foreground",
-            mode === pane.mode && "bg-muted text-foreground"
+            "flex size-8 items-center justify-center rounded-sm border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            mode === pane.mode &&
+              "border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground"
           )}
         >
           <pane.icon className="size-4" />

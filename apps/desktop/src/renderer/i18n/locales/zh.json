@@ -134,6 +134,7 @@
   "home": {
     "heading": "我们应该在 {{name}} 中做些什么？",
     "headingNoProject": "今天想做点什么？",
+    "tagline": "程小帮 · AI 工作台",
     "subtitle": "你的桌面 AI 编码助手，随时待命。",
     "starters": {
       "pptTitle": "做一份 PPT",
