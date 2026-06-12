@@ -4,7 +4,8 @@ import {
   sessionForkInputSchema,
   sessionInputSchema,
   sessionUpdateSchema,
-  type Message
+  type Message,
+  type Session
 } from "@chengxiaobang/shared";
 import type { AppContext } from "../context";
 import type { StoredMessage } from "../../repository/state-store";
@@ -49,6 +50,16 @@ export function sessionRoutes(context: AppContext): Hono {
     return c.json({ runs, toolCalls });
   });
 
+  app.get("/:sessionId/debug-context", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const planMode = c.req.query("planMode") === "true";
+    const debug = await context.runner.buildSessionDebugContext(sessionId, { planMode });
+    if (!debug) {
+      return c.json({ error: "会话不存在" }, 404);
+    }
+    return c.json({ debug });
+  });
+
   app.post("/:sessionId/rewind", async (c) => {
     const sessionId = c.req.param("sessionId");
     const input = rewindRequestSchema.parse(await c.req.json());
@@ -78,10 +89,16 @@ export function sessionRoutes(context: AppContext): Hono {
   });
 
   app.patch("/:sessionId", async (c) => {
-    const session = await context.store.updateSession(
-      c.req.param("sessionId"),
-      sessionUpdateSchema.parse(await c.req.json())
-    );
+    const { pinned, ...update } = sessionUpdateSchema.parse(await c.req.json());
+    const id = c.req.param("sessionId");
+    let session: Session | undefined;
+    // pinned 单独出现时绕开 updateSession，避免 bump updated_at 扰动列表排序。
+    if (Object.keys(update).length > 0 || pinned === undefined) {
+      session = await context.store.updateSession(id, update);
+    }
+    if (pinned !== undefined) {
+      session = await context.store.setSessionPinned(id, pinned);
+    }
     return c.json({ session });
   });
 

@@ -4,88 +4,152 @@
 
 @layer base {
   :root {
-    /* ── DESIGN.md palette (Cohere system) — RGB channel triplets of the
-       spec hex values, consumed as rgb(var(--x) / <alpha-value>). ── */
+    /* Vercel 风格调色板：近白画布、近黑墨色、精细灰阶与大面积专用渐变。 */
     --canvas: 255 255 255; /* #ffffff */
-    --ink: 33 33 33; /* #212121 */
-    --cohere-black: 0 0 0; /* #000000 */
-    --near-black: 23 23 28; /* #17171c primary */
-    --deep-green: 0 60 51; /* #003c33 */
-    --dark-navy: 7 24 41; /* #071829 */
-    --soft-stone: 238 236 231; /* #eeece7 */
-    --pale-green: 237 252 233; /* #edfce9 */
-    --pale-blue: 241 245 255; /* #f1f5ff */
-    --coral: 255 119 89; /* #ff7759 */
-    --coral-soft: 255 173 155; /* #ffad9b */
-    --action-blue: 24 99 220; /* #1863dc */
-    --focus-blue: 76 110 230; /* #4c6ee6 */
-    --form-focus: 155 96 170; /* #9b60aa */
-    --muted-slate: 147 147 159; /* #93939f */
-    --slate: 117 117 138; /* #75758a */
-    --body-muted: 97 97 97; /* #616161 */
-    --card-border: 242 242 242; /* #f2f2f2 */
-    --border-light: 229 231 235; /* #e5e7eb */
-    --error: 179 0 0; /* #b30000 */
+    --canvas-soft: 250 250 250; /* #fafafa */
+    --canvas-soft-2: 245 245 245; /* #f5f5f5 */
+    --ink: 23 23 23; /* #171717 */
+    --body: 77 77 77; /* #4d4d4d */
+    --mute: 136 136 136; /* #888888 */
+    --hairline-strong: 161 161 161; /* #a1a1a1 */
+    --cyan: 80 227 194; /* #50e3c2 */
+    --highlight-pink: 255 0 128; /* #ff0080 */
+    --violet: 121 40 202; /* #7928ca */
+    --link: 0 112 243; /* #0070f3 */
+    --link-deep: 7 97 209; /* #0761d1 */
+    --link-bg-soft: 211 229 255; /* #d3e5ff */
+    --error: 238 0 0; /* #ee0000 */
+    --error-soft: 247 212 214; /* #f7d4d6 */
+    --error-deep: 197 0 0; /* #c50000 */
+    --warning: 245 166 35; /* #f5a623 */
+    --warning-soft: 255 239 207; /* #ffefcf */
+    --warning-deep: 171 87 10; /* #ab570a */
+    --gradient-develop-start: 0 124 240; /* #007cf0 */
+    --gradient-develop-end: 0 223 216; /* #00dfd8 */
+    --gradient-preview-start: 121 40 202; /* #7928ca */
+    --gradient-preview-end: 255 0 128; /* #ff0080 */
+    --gradient-ship-start: 255 77 77; /* #ff4d4d */
+    --gradient-ship-end: 249 203 40; /* #f9cb28 */
 
-    /* ── Semantic layer — shadcn names, values strictly from the spec. ── */
-    --background: var(--canvas);
+    /* 兼容旧组件名的别名，实际颜色已切到 Vercel 灰阶/语义色。 */
+    --soft-stone: var(--canvas-soft-2);
+    --pale-blue: var(--link-bg-soft);
+    --pale-green: 232 247 255;
+    --coral: var(--highlight-pink);
+    --coral-soft: var(--warning-soft);
+    --deep-green: var(--ink);
+    --dark-navy: var(--ink);
+    --action-blue: var(--link);
+    --focus-blue: var(--link);
+    --form-focus: var(--link);
+    --muted-slate: var(--mute);
+    --slate: var(--hairline-strong);
+    --body-muted: var(--body);
+    --card-border: 235 235 235; /* #ebebeb */
+    --border-light: 235 235 235; /* #ebebeb */
+
+    /* shadcn 语义层：页面底色使用 98% 白，卡片使用纯白。 */
+    --background: var(--canvas-soft);
     --foreground: var(--ink);
-    /* Sidebar / recessed panels: warm stone surface */
-    --surface: var(--soft-stone);
-    --card: 255 255 255;
+    --surface: var(--canvas-soft-2);
+    --surface-hover: 236 236 236; /* #ececec：列表项 hover 的苹果灰，比 canvas-soft-2 深一档 */
+    --card: var(--canvas);
     --card-foreground: var(--ink);
-    --popover: 255 255 255;
+    --popover: var(--canvas);
     --popover-foreground: var(--ink);
-    /* Primary action = near-black pill CTA */
-    --primary: var(--near-black);
-    --primary-foreground: 255 255 255;
-    --secondary: var(--soft-stone);
+    --primary: var(--ink);
+    --primary-foreground: var(--canvas);
+    --secondary: var(--canvas);
     --secondary-foreground: var(--ink);
-    --muted: var(--card-border);
-    --muted-foreground: var(--body-muted);
-    --accent: var(--border-light);
+    --muted: var(--canvas-soft-2);
+    --muted-foreground: var(--mute);
+    --accent: var(--canvas-soft-2);
     --accent-foreground: var(--ink);
     --destructive: var(--error);
-    --destructive-foreground: 255 255 255;
-    /* Hairline #d9d9dd — standard rules and thin input borders */
-    --border: 217 217 221;
-    --input: 217 217 221;
-    --ring: var(--focus-blue);
-    /* User message bubble: soft stone */
-    --bubble-user: var(--soft-stone);
+    --destructive-foreground: var(--canvas);
+    --border: 235 235 235;
+    --input: 235 235 235;
+    --ring: var(--link);
+    --bubble-user: var(--canvas-soft-2);
+
+    /* 状态色映射到 Vercel 语义与渐变色系，供印章/计划/问答卡复用。 */
+    --success: var(--link);
+    --moss: var(--link);
+    --ochre: var(--warning);
+    --indigo: var(--violet);
+    --cinnabar: var(--highlight-pink);
+    --cinnabar-soft: 255 240 247; /* #fff0f7 */
+    --ink-3: var(--mute);
+    --ink-4: var(--hairline-strong);
+
+    --line: rgb(235 235 235);
+    --line-strong: rgb(161 161 161);
+    --line-weak: rgb(245 245 245);
   }
 
   .dark {
-    /* Derived Cohere dark: #17171c canvas, near-black sidebar, white pill CTA.
-       coral / deep-green / dark-navy / pale-* stay literal brand constants. */
-    --background: 23 23 28; /* #17171c */
-    --foreground: 236 236 238; /* #ececee */
-    --surface: 16 16 20; /* #101014 */
-    --card: 30 30 36; /* #1e1e24 */
-    --card-foreground: 236 236 238;
-    --popover: 34 34 41; /* #222229 */
-    --popover-foreground: 236 236 238;
-    --primary: 255 255 255;
-    --primary-foreground: 23 23 28;
-    --secondary: 40 40 47; /* #28282f */
-    --secondary-foreground: 236 236 238;
-    --muted: 36 36 43; /* #24242b */
-    --muted-foreground: 154 154 165; /* #9a9aa5 */
-    --accent: 44 44 52; /* #2c2c34 */
-    --accent-foreground: 245 245 246;
-    --destructive: 229 72 77; /* #e5484d — error lifted for dark */
-    --destructive-foreground: 255 255 255;
-    --border: 46 46 54; /* #2e2e36 */
-    --input: 56 56 65; /* #383841 */
-    --ring: 110 140 240; /* #6e8cf0 */
-    --action-blue: 94 142 242; /* #5e8ef2 — links lifted for contrast */
-    --focus-blue: 110 140 240;
-    --muted-slate: 154 154 165;
-    --slate: 138 138 150;
-    --body-muted: 178 178 186;
-    --card-border: 40 40 47;
-    --border-light: 52 52 60;
-    --bubble-user: 40 40 47; /* #28282f */
+    --canvas: 18 18 18;
+    --canvas-soft: 10 10 10;
+    --canvas-soft-2: 38 38 38;
+    --ink: 250 250 250;
+    --body: 209 209 209;
+    --mute: 136 136 136;
+    --hairline-strong: 115 115 115;
+    --link: 82 168 255;
+    --link-deep: 0 112 243;
+    --link-bg-soft: 0 49 102;
+    --error: 255 77 79;
+    --error-soft: 72 25 27;
+    --error-deep: 255 120 120;
+    --warning-soft: 77 48 12;
+
+    --soft-stone: var(--canvas-soft-2);
+    --pale-blue: var(--link-bg-soft);
+    --pale-green: 0 49 102;
+    --action-blue: var(--link);
+    --focus-blue: var(--link);
+    --form-focus: var(--link);
+    --muted-slate: var(--mute);
+    --slate: var(--hairline-strong);
+    --body-muted: var(--body);
+    --card-border: 38 38 38;
+    --border-light: 38 38 38;
+
+    --background: var(--canvas-soft);
+    --foreground: var(--ink);
+    --surface: 18 18 18;
+    --surface-hover: 48 48 48; /* 暗色下比 canvas-soft-2(38) 亮一档 */
+    --card: 18 18 18;
+    --card-foreground: var(--ink);
+    --popover: 18 18 18;
+    --popover-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: 10 10 10;
+    --secondary: 18 18 18;
+    --secondary-foreground: var(--ink);
+    --muted: 38 38 38;
+    --muted-foreground: var(--mute);
+    --accent: 38 38 38;
+    --accent-foreground: var(--ink);
+    --destructive: var(--error);
+    --destructive-foreground: 10 10 10;
+    --border: 38 38 38;
+    --input: 77 77 77;
+    --ring: var(--link);
+    --bubble-user: 38 38 38;
+
+    --success: var(--link);
+    --moss: var(--link);
+    --ochre: var(--warning);
+    --indigo: 191 128 255;
+    --cinnabar: var(--highlight-pink);
+    --cinnabar-soft: 64 16 40;
+    --ink-3: var(--mute);
+    --ink-4: var(--hairline-strong);
+
+    --line: rgb(38 38 38);
+    --line-strong: rgb(77 77 77);
+    --line-weak: rgb(31 31 31);
   }
 }
 
@@ -107,7 +171,7 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     font-synthesis: none;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings: "ss01" 1, "ss02" 1, "rlig" 1, "calt" 1;
   }
 
   #root {
@@ -116,7 +180,7 @@
   }
 
   ::selection {
-    background: rgb(var(--foreground) / 0.12);
+    background: rgb(var(--link-bg-soft) / 0.9);
   }
 
   :focus-visible {
@@ -125,19 +189,21 @@
 }
 
 @layer components {
-  /* Draggable titlebar strip across the top of the window (Electron hiddenInset) */
+  /* Electron 隐藏标题栏的可拖拽区域。 */
   .titlebar-drag {
     position: fixed;
     top: 0;
-    left: 0;
-    right: 0;
+    /* 左上角是 macOS 红绿灯和侧边栏折叠按钮；拖拽区避开这里，避免 Electron 抢走点击。 */
+    left: 118px;
+    /* 右上角是项目打开器和侧边面板按钮；拖拽区避开这里，避免 Electron 抢走点击。 */
+    right: 11rem;
     height: 38px;
     z-index: 50;
     -webkit-app-region: drag;
     pointer-events: none;
   }
 
-  /* Streaming caret used by ChatView */
+  /* ChatView 流式输出时的插入光标。 */
   .stream-caret::after {
     content: "";
     display: inline-block;
@@ -150,7 +216,7 @@
     animation: caret 1s steps(2) infinite;
   }
 
-  /* Soft animated shimmer for "thinking" placeholder text */
+  /* 思考占位文本的低调扫光。 */
   .shimmer-text {
     background: linear-gradient(
       100deg,
@@ -182,38 +248,36 @@
   }
 }
 
-/* Syntax highlighting (rehype-highlight) — DESIGN.md system colors:
-   action-blue keywords, deep-green strings, dark-navy titles, focus-blue
-   attributes, a contrast-darkened coral for numerics, slate metadata. */
+/* rehype-highlight 语法高亮：灰阶底座 + Vercel 链接蓝 / 紫粉 / 青色渐变色系。 */
 .hljs-comment,
 .hljs-quote {
-  color: #93939f;
+  color: #888888;
   font-style: italic;
 }
 
 .hljs-keyword,
 .hljs-selector-tag,
 .hljs-doctag {
-  color: #1863dc;
+  color: #0070f3;
 }
 
 .hljs-string,
 .hljs-regexp,
 .hljs-addition {
-  color: #003c33;
+  color: #0070f3;
 }
 
 .hljs-number,
 .hljs-literal,
 .hljs-symbol,
 .hljs-bullet {
-  color: #d05a3d;
+  color: #ff0080;
 }
 
 .hljs-title,
 .hljs-section,
 .hljs-name {
-  color: #071829;
+  color: #171717;
 }
 
 .hljs-attr,
@@ -222,12 +286,12 @@
 .hljs-template-variable,
 .hljs-type,
 .hljs-built_in {
-  color: #4c6ee6;
+  color: #7928ca;
 }
 
 .hljs-meta,
 .hljs-deletion {
-  color: #75758a;
+  color: #a1a1a1;
 }
 
 .hljs-emphasis {
@@ -242,32 +306,32 @@
 .dark .hljs-quote,
 .dark .hljs-meta,
 .dark .hljs-deletion {
-  color: #8a8a96;
+  color: #888888;
 }
 
 .dark .hljs-keyword,
 .dark .hljs-selector-tag,
 .dark .hljs-doctag {
-  color: #7ea6f4;
+  color: #52a8ff;
 }
 
 .dark .hljs-string,
 .dark .hljs-regexp,
 .dark .hljs-addition {
-  color: #7fc8a9;
+  color: #52a8ff;
 }
 
 .dark .hljs-number,
 .dark .hljs-literal,
 .dark .hljs-symbol,
 .dark .hljs-bullet {
-  color: #ff9d80;
+  color: #ff4d9d;
 }
 
 .dark .hljs-title,
 .dark .hljs-section,
 .dark .hljs-name {
-  color: #d6e2ff;
+  color: #fafafa;
 }
 
 .dark .hljs-attr,
@@ -276,10 +340,10 @@
 .dark .hljs-template-variable,
 .dark .hljs-type,
 .dark .hljs-built_in {
-  color: #9db1f0;
+  color: #bf80ff;
 }
 
-/* macOS-style overlay scrollbars — slim, unobtrusive */
+/* macOS 覆盖式滚动条：窄、低存在感。 */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

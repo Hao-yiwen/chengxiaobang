@@ -160,7 +160,9 @@ export class FeishuService {
       for await (const event of this.options.runner.stream({
         sessionId,
         prompt,
-        accessMode: fullAccess ? "full_access" : "approval"
+        accessMode: fullAccess ? "full_access" : "approval",
+        // 计划模式不对飞书通道开放（§1.5）：阻塞型确认无人消费。
+        planMode: false
       })) {
         if (
           event.type === "tool_call" &&
@@ -169,7 +171,10 @@ export class FeishuService {
         ) {
           // Read-only enforcement: nobody is around to approve, so mutating
           // tools are denied and the model gets the standard rejection text.
-          this.options.runner.approvals.decide(event.toolCall.id, false);
+          console.log(
+            `[feishu] 只读会话自动拒绝工具 toolCallId=${event.toolCall.id} tool=${event.toolCall.name}`
+          );
+          this.options.runner.approvals.decide(event.toolCall.id, { approved: false });
         } else if (event.type === "message" && event.message.role === "assistant") {
           const content = event.message.content.trim();
           if (content) {

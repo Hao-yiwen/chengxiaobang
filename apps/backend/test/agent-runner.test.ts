@@ -59,7 +59,7 @@ describe("AgentRunner", () => {
       expect(approval.value.toolCall.status).toBe("pending_approval");
       // Execution hasn't begun while awaiting approval, so no startedAt yet.
       expect(approval.value.toolCall.startedAt).toBeUndefined();
-      expect(runner.approvals.decide(approval.value.toolCall.id, false)).toBe(true);
+      expect(runner.approvals.decide(approval.value.toolCall.id, { approved: false })).toBe(true);
     }
 
     for await (const event of stream) {
@@ -154,6 +154,156 @@ describe("AgentRunner", () => {
     }
   });
 
+  it("titles new sessions with the AI summary and streams session_updated mid-run", async () => {
+    const titleScripted = scriptedStreamFn([{ text: "「修复登录报错」" }]);
+    const { runner } = runnerWith(
+      store,
+      secrets,
+      [{ text: "好的" }, { text: "继续" }],
+      { titleStreamFn: titleScripted.streamFn }
+    );
+    const events: StreamEvent[] = [];
+    let sessionId: string | undefined;
+
+    for await (const event of runner.stream({
+      prompt: "帮我修复一下登录页面报错的问题，控制台提示 401",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      events.push(event);
+      if (event.type === "run_started") {
+        sessionId = event.sessionId;
+      }
+    }
+
+    // The title is pushed into the run's stream so the sidebar can update
+    // without waiting for the post-run session refetch.
+    const titleEvent = events.find((event) => event.type === "session_updated");
+    expect(titleEvent).toMatchObject({
+      type: "session_updated",
+      session: { id: sessionId, title: "修复登录报错" }
+    });
+    await expect(store.getSession(sessionId!)).resolves.toMatchObject({
+      title: "修复登录报错"
+    });
+    expect(titleScripted.calls).toHaveLength(1);
+
+    // Follow-up runs on an already-titled session must not retitle it.
+    for await (const event of runner.stream({
+      prompt: "继续",
+      sessionId,
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      void event;
+    }
+    expect(titleScripted.calls).toHaveLength(1);
+    await expect(store.getSession(sessionId!)).resolves.toMatchObject({
+      title: "修复登录报错"
+    });
+  });
+
+  it("uses the first user message as fallback title when title generation fails", async () => {
+    const titleScripted = scriptedStreamFn([{ error: "标题模型不可用" }]);
+    const { runner } = runnerWith(store, secrets, [{ text: "好的" }, { text: "继续" }], {
+      titleStreamFn: titleScripted.streamFn
+    });
+    let sessionId: string | undefined;
+
+    for await (const event of runner.stream({
+      prompt: "登录页面报错了，帮我看看",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      if (event.type === "run_started") {
+        sessionId = event.sessionId;
+      }
+    }
+    await expect(store.getSession(sessionId!)).resolves.toMatchObject({
+      title: "登录页面报错了，帮我看看"
+    });
+
+    // 已经写入兜底标题后，后续运行不再重复调用标题模型。
+    for await (const event of runner.stream({
+      prompt: "继续",
+      sessionId,
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      void event;
+    }
+    expect(titleScripted.calls).toHaveLength(1);
+    await expect(store.getSession(sessionId!)).resolves.toMatchObject({
+      title: "登录页面报错了，帮我看看"
+    });
+  });
+
+  it("retitles sessions still on the placeholder from their first user message", async () => {
+    const session = await store.createSession({
+      projectId: null,
+      title: "新对话",
+      providerId: "deepseek",
+      accessMode: "approval"
+    });
+    await store.addMessage({
+      sessionId: session.id,
+      role: "user",
+      content: "帮我写一个周报模板"
+    });
+    const titleScripted = scriptedStreamFn([{ text: "周报模板" }]);
+    const { runner } = runnerWith(store, secrets, [{ text: "好的" }], {
+      titleStreamFn: titleScripted.streamFn
+    });
+
+    for await (const event of runner.stream({
+      prompt: "继续",
+      sessionId: session.id,
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      void event;
+    }
+
+    // The retry titles from the session's first user message, not "继续".
+    expect(titleScripted.calls).toHaveLength(1);
+    expect(titleScripted.calls[0].context.messages[0]?.content).toBe("帮我写一个周报模板");
+    await expect(store.getSession(session.id)).resolves.toMatchObject({ title: "周报模板" });
+  });
+
+  it("pushes a reasoning-only message before the tool calls it preceded", async () => {
+    const { runner } = runnerWith(store, secrets, [
+      {
+        thinking: "先想清楚要列哪个目录",
+        toolCalls: [{ id: "call_1", name: "list_directory", arguments: { path: "." } }]
+      },
+      { text: "目录已列出" }
+    ]);
+    const events: StreamEvent[] = [];
+
+    for await (const event of runner.stream({
+      prompt: "看看目录",
+      projectId: null,
+      accessMode: "full_access"
+    })) {
+      events.push(event);
+    }
+
+    const reasoningOnlyIndex = events.findIndex(
+      (event) =>
+        event.type === "message" &&
+        event.message.role === "assistant" &&
+        event.message.content === ""
+    );
+    const firstToolIndex = events.findIndex((event) => event.type === "tool_call");
+    expect(reasoningOnlyIndex).toBeGreaterThanOrEqual(0);
+    expect(firstToolIndex).toBeGreaterThan(reasoningOnlyIndex);
+    const reasoningOnly = events[reasoningOnlyIndex];
+    if (reasoningOnly.type === "message") {
+      expect(reasoningOnly.message.reasoning).toBe("先想清楚要列哪个目录");
+    }
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
+  });
+
   it("persists the model's streamed reasoning and pi payload on the assistant message", async () => {
     const { runner } = runnerWith(store, secrets, [{ thinking: "先想想再回答", text: "答案" }]);
     let sessionId: string | undefined;
@@ -186,6 +336,75 @@ describe("AgentRunner", () => {
     expect(JSON.parse(assistant!.payload!)).toMatchObject({
       role: "assistant",
       stopReason: "stop"
+    });
+  });
+
+  it("resolves reasoningMode with run > session > provider priority", async () => {
+    const saved = await store.getProvider("deepseek");
+    await store.upsertProvider({ ...saved!, reasoningMode: "high" });
+    const { runner, calls } = runnerWith(store, secrets, [
+      { text: "provider" },
+      { text: "session" },
+      { text: "run" }
+    ]);
+
+    const providerEvents: StreamEvent[] = [];
+    for await (const event of runner.stream({
+      prompt: "provider 默认",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      providerEvents.push(event);
+    }
+    expect(providerEvents.find((event) => event.type === "run_started")).toMatchObject({
+      type: "run_started",
+      reasoningMode: "high"
+    });
+    expect(capturedReasoning(calls[0].options)).toBe("high");
+
+    const session = await store.createSession({
+      projectId: null,
+      title: "会话推理",
+      providerId: "deepseek",
+      accessMode: "approval",
+      reasoningMode: "xhigh"
+    });
+    const sessionEvents: StreamEvent[] = [];
+    for await (const event of runner.stream({
+      sessionId: session.id,
+      prompt: "session 记忆",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      sessionEvents.push(event);
+    }
+    expect(sessionEvents.find((event) => event.type === "run_started")).toMatchObject({
+      type: "run_started",
+      reasoningMode: "xhigh"
+    });
+    expect(capturedReasoning(calls[1].options)).toBe("xhigh");
+
+    const runEvents: StreamEvent[] = [];
+    for await (const event of runner.stream({
+      sessionId: session.id,
+      prompt: "run 覆盖",
+      projectId: null,
+      accessMode: "approval",
+      model: "deepseek-v4-pro",
+      reasoningMode: "off"
+    })) {
+      runEvents.push(event);
+    }
+    expect(runEvents.find((event) => event.type === "run_started")).toMatchObject({
+      type: "run_started",
+      model: "deepseek-v4-pro",
+      reasoningMode: "off"
+    });
+    expect(calls[2].model).toMatchObject({ id: "deepseek-v4-pro", reasoning: true });
+    expect(capturedReasoning(calls[2].options)).toBeUndefined();
+    await expect(store.getSession(session.id)).resolves.toMatchObject({
+      model: "deepseek-v4-pro",
+      reasoningMode: "off"
     });
   });
 
@@ -328,6 +547,32 @@ describe("AgentRunner", () => {
     expect(userContents).toContain("请 review src/index.ts");
   });
 
+  it("hides ask_user from headless runs but keeps it for interactive ones", async () => {
+    const { runner, calls } = runnerWith(store, secrets, [{ text: "好" }, { text: "好" }]);
+
+    for await (const _event of runner.stream(
+      { prompt: "执行定时任务", projectId: null, accessMode: "approval" },
+      { headless: true }
+    )) {
+      // drain stream
+    }
+    const headlessTools = calls[0].context.tools?.map((tool) => tool.name) ?? [];
+    expect(headlessTools).not.toContain("ask_user");
+    // 定时任务工具对所有 run 可见（含 headless，模型可在执行中管理任务）。
+    expect(headlessTools).toContain("schedule_create");
+
+    for await (const _event of runner.stream({
+      prompt: "普通对话",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      // drain stream
+    }
+    const interactiveTools = calls[1].context.tools?.map((tool) => tool.name) ?? [];
+    expect(interactiveTools).toContain("ask_user");
+    expect(interactiveTools).toContain("schedule_create");
+  });
+
   it("requires at least one model with an API key before creating a run", async () => {
     const emptyStore = new SqliteStateStore(join(dir, "empty-state.sqlite"));
     await emptyStore.initialize();
@@ -365,4 +610,8 @@ async function seedProvider(
     updatedAt: timestamp
   };
   await store.upsertProvider(provider);
+}
+
+function capturedReasoning(options: unknown): string | undefined {
+  return (options as { reasoning?: string } | undefined)?.reasoning;
 }

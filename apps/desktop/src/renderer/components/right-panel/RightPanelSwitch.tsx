@@ -1,35 +1,26 @@
-import { FileCode, Globe, SquareTerminal } from "lucide-react";
+import { SidebarSimpleIcon as PanelRight } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
-import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
-/** The icon cluster in the main view's top-right corner that toggles the right panel. */
+/** The top-right toggle that opens/closes the right workspace panel. */
 export function RightPanelSwitch() {
   const { t } = useTranslation();
-  const mode = useAppStore((state) => state.rightPanelMode);
+  const open = useAppStore((state) => state.rightPanelOpen);
   const toggleRightPanel = useAppStore((state) => state.toggleRightPanel);
-  const panes = [
-    { mode: "terminal" as const, icon: SquareTerminal, label: t("rightPanel.terminal") },
-    { mode: "browser" as const, icon: Globe, label: t("rightPanel.browser") },
-    { mode: "files" as const, icon: FileCode, label: t("rightPanel.files") }
-  ];
   return (
-    <div className="absolute right-6 top-3 z-20 flex items-center gap-1 max-[840px]:hidden">
-      {panes.map((pane) => (
-        <button
-          key={pane.mode}
-          type="button"
-          title={pane.label}
-          onClick={() => toggleRightPanel(pane.mode)}
-          className={cn(
-            "flex size-8 items-center justify-center rounded-xs border border-transparent bg-transparent text-muted-foreground transition-colors hover:bg-soft-stone hover:text-foreground",
-            mode === pane.mode &&
-              "border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground"
-          )}
-        >
-          <pane.icon className="size-4" />
-        </button>
-      ))}
-    </div>
+    <button
+      type="button"
+      title={open ? t("rightPanel.collapse") : t("rightPanel.open")}
+      onClick={() => {
+        console.debug("[right-panel] 切换侧边面板", {
+          openBefore: open,
+          innerWidth: window.innerWidth
+        });
+        toggleRightPanel();
+      }}
+      className="flex size-8 items-center justify-center rounded-xs border border-transparent bg-transparent text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
+    >
+      <PanelRight className="size-4" />
+    </button>
   );
 }

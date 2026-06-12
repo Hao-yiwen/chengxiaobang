@@ -1,14 +1,23 @@
 import type {
+  ApprovalDecision,
   FeishuConfig,
   FeishuConfigInput,
   FeishuStatus,
+  GitChangesResult,
+  GitInfo,
   Message,
   Project,
+  ProjectFileEntry,
   ProviderConfig,
   ProviderInput,
+  ProviderModelOption,
   RunRecord,
   RunRequest,
+  ScheduledTask,
+  ScheduledTaskUpdate,
+  SessionDebugContext,
   Session,
+  SessionUpdate,
   SlashCommand,
   SlashCommandDiagnostic,
   StreamEvent,
@@ -20,15 +29,29 @@ import type {
 export interface ApiClient {
   listProjects(): Promise<Project[]>;
   createProject(input: { path: string; name?: string }): Promise<Project>;
+  renameProject(id: string, name: string): Promise<Project>;
+  /** 置顶/取消置顶项目（会话置顶走 updateSession 的 pinned 字段）。 */
+  setProjectPinned(id: string, pinned: boolean): Promise<Project>;
   deleteProject(id: string): Promise<boolean>;
   listSessions(projectId?: string): Promise<Session[]>;
   listProjectFiles(projectId: string, query: string): Promise<string[]>;
-  updateSession(id: string, input: { title?: string }): Promise<Session>;
+  /** 当前项目文件树面板读取某个目录的直属子项。 */
+  listProjectDirectory(projectId: string, path?: string): Promise<ProjectFileEntry[]>;
+  /** 当前项目是否为 Git 仓库（右侧菜单显隐用，避免为菜单拉完整 diff）。 */
+  getGitInfo?(projectId: string): Promise<GitInfo>;
+  /** 当前项目的未提交 git 变更（变更面板用）。 */
+  getGitChanges(projectId: string): Promise<GitChangesResult>;
+  updateSession(id: string, input: SessionUpdate): Promise<Session>;
   deleteSession(id: string): Promise<boolean>;
   listMessages(sessionId: string): Promise<Message[]>;
   rewindSession(sessionId: string, messageId: string): Promise<Message[]>;
   forkSession(sessionId: string, messageId: string): Promise<Session>;
   listSessionRuns(sessionId: string): Promise<{ runs: RunRecord[]; toolCalls: ToolCall[] }>;
+  /** 当前会话的 agent 调试上下文，只读，不会启动模型或修改会话。 */
+  getSessionDebugContext?(
+    sessionId: string,
+    options?: { planMode?: boolean }
+  ): Promise<SessionDebugContext>;
   listSlashCommands(projectId?: string): Promise<{
     commands: SlashCommand[];
     diagnostics: SlashCommandDiagnostic[];
@@ -37,12 +60,22 @@ export interface ApiClient {
   saveProvider(input: ProviderInput): Promise<ProviderConfig>;
   deleteProvider(id: string): Promise<boolean>;
   testProvider(id: string): Promise<void>;
+  /** 实时拉取某 provider 的可用模型列表（ARCH-SPEC §6.3，新端点）。 */
+  listProviderModels(providerId: string): Promise<string[]>;
+  /** 静态目录 + 在线模型合并后的模型选项，包含推理能力。 */
+  listProviderModelOptions(providerId: string): Promise<ProviderModelOption[]>;
+  listTasks(): Promise<ScheduledTask[]>;
+  updateTask(id: string, input: ScheduledTaskUpdate): Promise<ScheduledTask>;
+  deleteTask(id: string): Promise<boolean>;
+  /** 立即触发一次执行；后端 fire-and-forget，结果经任务行 lastStatus 反映。 */
+  runTaskNow(id: string): Promise<void>;
   getFeishuConfig(): Promise<FeishuConfig>;
   saveFeishuConfig(
     input: FeishuConfigInput
   ): Promise<{ config: FeishuConfig; status: FeishuStatus }>;
   getFeishuStatus(): Promise<FeishuStatus>;
-  approve(toolCallId: string, approved: boolean): Promise<void>;
+  /** 审批/计划确认/ask-user 答复共用：决议对象整体透传（ARCH-SPEC §1.7）。 */
+  approve(toolCallId: string, decision: ApprovalDecision): Promise<void>;
   abort(runId: string): Promise<void>;
   terminalExec(input: TerminalExecRequest): Promise<TerminalExecResult>;
   streamRun(input: RunRequest, onEvent: (event: StreamEvent) => void): Promise<void>;
@@ -85,6 +118,22 @@ export async function createApiClient(): Promise<ApiClient> {
         })
       ).project;
     },
+    async renameProject(id, name) {
+      return (
+        await request<{ project: Project }>(`/api/projects/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ name })
+        })
+      ).project;
+    },
+    async setProjectPinned(id, pinned) {
+      return (
+        await request<{ project: Project }>(`/api/projects/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ pinned })
+        })
+      ).project;
+    },
     async deleteProject(id) {
       return (
         await request<{ deleted: boolean }>(`/api/projects/${id}`, { method: "DELETE" })
@@ -100,6 +149,27 @@ export async function createApiClient(): Promise<ApiClient> {
           `/api/projects/${projectId}/files?query=${encodeURIComponent(query)}`
         )
       ).files;
+    },
+    async listProjectDirectory(projectId, path = ".") {
+      return (
+        await request<{ entries: ProjectFileEntry[] }>(
+          `/api/projects/${projectId}/files/tree?path=${encodeURIComponent(path)}`
+        )
+      ).entries;
+    },
+    async getGitInfo(projectId) {
+      return (
+        await request<{ info: GitInfo }>(
+          `/api/projects/${encodeURIComponent(projectId)}/git/info`
+        )
+      ).info;
+    },
+    async getGitChanges(projectId) {
+      return (
+        await request<{ changes: GitChangesResult }>(
+          `/api/projects/${encodeURIComponent(projectId)}/git/changes`
+        )
+      ).changes;
     },
     async updateSession(id, input) {
       return (
@@ -142,6 +212,14 @@ export async function createApiClient(): Promise<ApiClient> {
         `/api/sessions/${sessionId}/runs`
       );
     },
+    async getSessionDebugContext(sessionId, options = {}) {
+      const query = options.planMode ? "?planMode=true" : "";
+      return (
+        await request<{ debug: SessionDebugContext }>(
+          `/api/sessions/${encodeURIComponent(sessionId)}/debug-context${query}`
+        )
+      ).debug;
+    },
     async listSlashCommands(projectId) {
       const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
       return request<{ commands: SlashCommand[]; diagnostics: SlashCommandDiagnostic[] }>(
@@ -170,6 +248,41 @@ export async function createApiClient(): Promise<ApiClient> {
     async testProvider(id) {
       await request(`/api/settings/providers/${id}/test`, { method: "POST" });
     },
+    async listProviderModels(providerId) {
+      return (
+        await request<{ models: string[] }>(
+          `/api/settings/providers/${encodeURIComponent(providerId)}/models`
+        )
+      ).models;
+    },
+    async listProviderModelOptions(providerId) {
+      return (
+        await request<{ models: ProviderModelOption[] }>(
+          `/api/settings/providers/${encodeURIComponent(providerId)}/model-options`
+        )
+      ).models;
+    },
+    async listTasks() {
+      return (await request<{ tasks: ScheduledTask[] }>("/api/tasks")).tasks;
+    },
+    async updateTask(id, input) {
+      return (
+        await request<{ task: ScheduledTask }>(`/api/tasks/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(input)
+        })
+      ).task;
+    },
+    async deleteTask(id) {
+      return (
+        await request<{ deleted: boolean }>(`/api/tasks/${encodeURIComponent(id)}`, {
+          method: "DELETE"
+        })
+      ).deleted;
+    },
+    async runTaskNow(id) {
+      await request(`/api/tasks/${encodeURIComponent(id)}/run`, { method: "POST" });
+    },
     async getFeishuConfig() {
       return (await request<{ config: FeishuConfig }>("/api/settings/feishu")).config;
     },
@@ -182,10 +295,10 @@ export async function createApiClient(): Promise<ApiClient> {
     async getFeishuStatus() {
       return (await request<{ status: FeishuStatus }>("/api/settings/feishu/status")).status;
     },
-    async approve(toolCallId, approved) {
+    async approve(toolCallId, decision) {
       await request(`/api/approvals/${toolCallId}`, {
         method: "POST",
-        body: JSON.stringify({ approved })
+        body: JSON.stringify(decision)
       });
     },
     async abort(runId) {

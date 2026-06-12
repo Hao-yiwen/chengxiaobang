@@ -1,4 +1,9 @@
-import { Check, ChevronDown, Copy, Download } from "lucide-react";
+import {
+  CaretDownIcon as ChevronDown,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  DownloadSimpleIcon as Download
+} from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { codeFileName } from "@/lib/code-file";

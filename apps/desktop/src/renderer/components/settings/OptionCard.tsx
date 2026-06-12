@@ -15,8 +15,8 @@ export function OptionCard(props: {
       className={cn(
         "flex flex-1 items-start gap-3 rounded-sm border p-4 text-left transition-colors",
         props.selected
-          ? "border-primary bg-soft-stone"
-          : "border-border bg-background hover:bg-soft-stone/60"
+          ? "border-border bg-hairline"
+          : "border-border bg-canvas hover:bg-canvas-soft-2"
       )}
     >
       <span
@@ -24,7 +24,7 @@ export function OptionCard(props: {
           "mt-0.5 flex size-8 flex-none items-center justify-center rounded-xs transition-colors [&_svg]:size-[18px]",
           props.selected
             ? "bg-primary text-primary-foreground"
-            : "bg-soft-stone text-ink"
+            : "bg-canvas-soft-2 text-ink"
         )}
       >
         {props.icon}
@@ -37,11 +37,13 @@ export function OptionCard(props: {
       </span>
       <span
         className={cn(
-          "mt-0.5 flex size-[18px] flex-none items-center justify-center rounded-xs border transition-colors",
-          props.selected ? "border-primary bg-primary" : "border-muted-foreground/40"
+          "mt-0.5 flex size-[18px] flex-none items-center justify-center rounded-full border transition-colors",
+          props.selected ? "border-primary" : "border-muted-foreground/40"
         )}
       >
-        {props.selected ? <span className="size-1.5 bg-primary-foreground" /> : null}
+        {props.selected ? (
+          <span className="size-2 rounded-full bg-primary" />
+        ) : null}
       </span>
     </button>
   );

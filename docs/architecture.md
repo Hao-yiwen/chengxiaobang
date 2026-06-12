@@ -75,7 +75,7 @@ chengxiaobang/
 
 ## 3. 契约层:packages/shared
 
-### 3.1 StreamEvent(SSE 事件契约,共 5 种)
+### 3.1 StreamEvent(SSE 事件契约,共 6 种)
 
 agent 循环对外的全部输出。`src/stream.ts`:
 
@@ -85,6 +85,7 @@ type StreamEvent =
   | { type: "delta";       runId; channel: "text" | "thinking"; delta }
   | { type: "message";     runId; message: Message }   // 已持久化的消息
   | { type: "tool_call";   runId; toolCall: ToolCall } // 每次状态迁移发一次
+  | { type: "session_updated"; runId; session: Session } // run 中途的会话元数据变更
   | { type: "run_end";     runId; status: "completed"|"failed"|"aborted";
       usage?: TokenUsage; error? };                    // 永远是最后一个事件
 ```
@@ -92,6 +93,7 @@ type StreamEvent =
 - `delta`:模型增量输出,text/thinking 双通道。
 - `message`:user 回显、assistant 中间叙述与最终回答(中止时含已流出的部分回答)。
 - `tool_call`:状态机由 `ToolCall.status` 携带——`pending_approval → running → completed | failed | rejected`,每次迁移发一次事件,渲染层据此驱动审批卡片与工具历史。
+- `session_updated`:run 中途的会话元数据变更(目前是 AI 生成的会话标题),渲染层据此即时更新侧边栏而无需整表刷新。
 - `run_end`:唯一终态事件;completed 时带 `usage`。
 
 SSE 编解码(`encodeSseEvent`/`parseSseChunk`)同在此文件,前后端共用。

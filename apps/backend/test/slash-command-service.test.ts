@@ -60,6 +60,82 @@ describe("SlashCommandService", () => {
 
     expect(result).toEqual({ matched: false, prompt: "/ls src" });
   });
+
+  describe("skills（§5.3）", () => {
+    /** 隔离真实内置技能目录：builtin 根指向空临时目录。 */
+    let isolated: SlashCommandService;
+
+    beforeEach(() => {
+      isolated = new SlashCommandService(join(dir, "global"), join(dir, "builtin"));
+    });
+
+    async function writeSkill(
+      root: string,
+      name: string,
+      description: string,
+      extraFrontmatter = ""
+    ): Promise<void> {
+      await mkdir(join(root, "skills", name), { recursive: true });
+      await writeFile(
+        join(root, "skills", name, "SKILL.md"),
+        `---\nname: ${name}\ndescription: ${description}\n${extraFrontmatter}---\n${name} 的操作说明正文`,
+        "utf8"
+      );
+    }
+
+    it("listSkills returns name and description for loaded skills", async () => {
+      await writeSkill(join(dir, "global"), "excel", "处理表格");
+      await writeSkill(join(dir, "global"), "ppt", "做演示文稿");
+
+      const skills = await isolated.listSkills();
+
+      expect(skills).toEqual(
+        expect.arrayContaining([
+          { name: "excel", description: "处理表格" },
+          { name: "ppt", description: "做演示文稿" }
+        ])
+      );
+      expect(skills).toHaveLength(2);
+    });
+
+    it("listSkills filters skills with disable-model-invocation", async () => {
+      await writeSkill(join(dir, "global"), "excel", "处理表格");
+      await writeSkill(join(dir, "global"), "secret", "隐藏技能", "disable-model-invocation: true\n");
+
+      const skills = await isolated.listSkills();
+
+      expect(skills.map((skill) => skill.name)).toEqual(["excel"]);
+    });
+
+    it("findSkill returns the full skill and undefined for unknown names", async () => {
+      await writeSkill(join(dir, "global"), "excel", "处理表格");
+
+      const hit = await isolated.findSkill("excel");
+      expect(hit?.name).toBe("excel");
+      expect(hit?.content).toContain("excel 的操作说明正文");
+
+      await expect(isolated.findSkill("missing")).resolves.toBeUndefined();
+    });
+
+    it("findSkill respects disable-model-invocation", async () => {
+      await writeSkill(join(dir, "global"), "secret", "隐藏技能", "disable-model-invocation: true\n");
+
+      await expect(isolated.findSkill("secret")).resolves.toBeUndefined();
+    });
+
+    it("prefers project skills over global ones in both listSkills and findSkill", async () => {
+      const projectPath = join(dir, "project");
+      await writeSkill(join(dir, "global"), "excel", "全局版");
+      await writeSkill(join(projectPath, ".chengxiaobang"), "excel", "项目版");
+      const project = createProject(projectPath);
+
+      const skills = await isolated.listSkills(project);
+      expect(skills).toEqual([{ name: "excel", description: "项目版" }]);
+
+      const found = await isolated.findSkill("excel", project);
+      expect(found?.description).toBe("项目版");
+    });
+  });
 });
 
 function createProject(path: string): Project {

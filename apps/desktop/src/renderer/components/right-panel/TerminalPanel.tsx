@@ -1,28 +1,136 @@
-import { Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { createId } from "@chengxiaobang/shared";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { selectActiveProject, useAppStore } from "@/store";
+import "@xterm/xterm/css/xterm.css";
 
-/**
- * A lightweight command runner (no PTY): each entry is one command executed
- * in the active project directory via the backend's /api/terminal/exec.
- */
+const TERMINAL_FONT =
+  "JetBrains Mono, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace";
+
+function hasTerminalBridge(): boolean {
+  const bridge = window.chengxiaobang;
+  return Boolean(
+    bridge?.terminalStart &&
+      bridge.terminalWrite &&
+      bridge.terminalResize &&
+      bridge.terminalClose &&
+      bridge.onTerminalData &&
+      bridge.onTerminalExit
+  );
+}
+
+/** 右侧真实 PTY 终端：main 进程持有 node-pty，renderer 只负责 xterm 渲染和输入转发。 */
 export function TerminalPanel() {
   const { t } = useTranslation();
-  const entries = useAppStore((state) => state.terminalEntries);
-  const running = useAppStore((state) => state.terminalRunning);
-  const runTerminalCommand = useAppStore((state) => state.runTerminalCommand);
   const project = useAppStore(selectActiveProject);
-  const [input, setInput] = useState("");
-  const [historyIndex, setHistoryIndex] = useState<number | undefined>(undefined);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const terminalRef = useRef<Terminal | null>(null);
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
+    if (!project || !hasTerminalBridge() || !containerRef.current) {
+      return undefined;
     }
-  }, [entries]);
+    const bridge = window.chengxiaobang;
+    const terminalId = createId("pty");
+    const terminal = new Terminal({
+      cursorBlink: true,
+      convertEol: false,
+      fontFamily: TERMINAL_FONT,
+      fontSize: 12,
+      lineHeight: 1.45,
+      scrollback: 5000,
+      theme: {
+        background: "#171717",
+        foreground: "#f5f5f5",
+        cursor: "#50e3c2",
+        selectionBackground: "#d3e5ff55",
+        black: "#171717",
+        red: "#ee0000",
+        green: "#0070f3",
+        yellow: "#f5a623",
+        blue: "#0070f3",
+        magenta: "#7928ca",
+        cyan: "#50e3c2",
+        white: "#f5f5f5"
+      }
+    });
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    terminal.open(containerRef.current);
+    terminal.focus();
+    terminalRef.current = terminal;
+
+    let disposed = false;
+    let frame = 0;
+    const resizePty = () => {
+      if (disposed) {
+        return;
+      }
+      try {
+        fitAddon.fit();
+        void bridge?.terminalResize?.(terminalId, terminal.cols, terminal.rows);
+      } catch (error) {
+        console.warn("[terminal] xterm 尺寸计算失败:", error);
+      }
+    };
+    const scheduleResize = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(resizePty);
+    };
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(() => {
+            scheduleResize();
+          });
+    resizeObserver?.observe(containerRef.current);
+
+    const inputDisposable = terminal.onData((data) => {
+      void bridge?.terminalWrite?.(terminalId, data);
+    });
+    const offData = bridge?.onTerminalData?.((event) => {
+      if (event.id === terminalId) {
+        terminal.write(event.data);
+      }
+    });
+    const offExit = bridge?.onTerminalExit?.((event) => {
+      if (event.id === terminalId) {
+        terminal.write(`\r\n${t("rightPanel.terminalExited", { code: event.exitCode })}\r\n`);
+      }
+    });
+
+    scheduleResize();
+    void bridge
+      ?.terminalStart?.({
+        id: terminalId,
+        cwd: project.path,
+        cols: terminal.cols,
+        rows: terminal.rows
+      })
+      .then((result) => {
+        if (!result.ok && !disposed) {
+          terminal.write(
+            `${t("rightPanel.terminalStartFailed", { message: result.error })}\r\n`
+          );
+        }
+      });
+
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      inputDisposable.dispose();
+      offData?.();
+      offExit?.();
+      void bridge?.terminalClose?.(terminalId);
+      terminal.dispose();
+      if (terminalRef.current === terminal) {
+        terminalRef.current = null;
+      }
+    };
+  }, [project, t]);
 
   if (!project) {
     return (
@@ -32,85 +140,22 @@ export function TerminalPanel() {
     );
   }
 
-  function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>): void {
-    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      if (!input.trim() || running) {
-        return;
-      }
-      void runTerminalCommand(input);
-      setInput("");
-      setHistoryIndex(undefined);
-      return;
-    }
-    const commands = entries.map((entry) => entry.command);
-    if (event.key === "ArrowUp" && commands.length > 0) {
-      event.preventDefault();
-      const next = historyIndex === undefined ? commands.length - 1 : Math.max(0, historyIndex - 1);
-      setHistoryIndex(next);
-      setInput(commands[next] ?? "");
-    }
-    if (event.key === "ArrowDown" && historyIndex !== undefined) {
-      event.preventDefault();
-      const next = historyIndex + 1;
-      if (next >= commands.length) {
-        setHistoryIndex(undefined);
-        setInput("");
-      } else {
-        setHistoryIndex(next);
-        setInput(commands[next] ?? "");
-      }
-    }
+  if (!hasTerminalBridge()) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-center text-caption text-muted-foreground">
+        {t("rightPanel.terminalUnsupported")}
+      </div>
+    );
   }
 
   return (
-    // DESIGN.md agent-console / dark-feature-band: a deep-green console field.
-    <div className="flex h-full min-h-0 flex-col bg-deep-green text-white">
+    <div className="flex h-full min-h-0 flex-col bg-primary text-primary-foreground">
       <div
-        ref={scrollRef}
-        className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-micro leading-relaxed"
-      >
-        <p className="mb-2 truncate text-white/50" title={project.path}>
-          {project.path}
-        </p>
-        {entries.length === 0 ? (
-          <p className="text-white/60">{t("rightPanel.terminalEmpty")}</p>
-        ) : (
-          entries.map((entry) => (
-            <div key={entry.id} className="mb-3">
-              <div className="flex items-center gap-2 font-medium text-white">
-                <span className="select-none text-white/50">$</span>
-                <span className="min-w-0 break-all">{entry.command}</span>
-                {entry.output === undefined ? (
-                  <Loader2 className="size-3 flex-none animate-spin text-white/60" />
-                ) : null}
-              </div>
-              {entry.output ? (
-                <pre className="mt-1 whitespace-pre-wrap break-words text-white/80">
-                  {entry.output}
-                </pre>
-              ) : null}
-              {entry.exitCode !== undefined && entry.exitCode !== 0 ? (
-                <p className="mt-1 text-coral-soft">
-                  {t("rightPanel.exitCode", { code: entry.exitCode })}
-                </p>
-              ) : null}
-            </div>
-          ))
-        )}
-      </div>
-      <div className="flex flex-none items-center gap-2 border-t border-white/15 px-4 py-2.5 font-mono text-micro">
-        <span className="select-none text-white/50">$</span>
-        <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={t("rightPanel.terminalPlaceholder")}
-          aria-label={t("rightPanel.terminalPlaceholder")}
-          spellCheck={false}
-          className="h-7 w-full bg-transparent font-mono text-micro text-white caret-coral outline-none placeholder:text-white/40"
-        />
-      </div>
+        ref={containerRef}
+        aria-label={t("rightPanel.terminal")}
+        className="min-h-0 flex-1 overflow-hidden px-3 py-3"
+        onMouseDown={() => terminalRef.current?.focus()}
+      />
     </div>
   );
 }

@@ -3,7 +3,7 @@ import type { Context } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { ProviderConfig, Session, StreamEvent } from "@chengxiaobang/shared";
 import type { StateStore, StoredMessage } from "../repository/state-store";
-import { buildModel, toTokenUsage } from "../model/pi-model";
+import { buildModel, buildModelStreamOptions, toTokenUsage } from "../model/pi-model";
 
 /** /compact keeps this many most-recent messages out of the summary. */
 const COMPACT_KEEP_RECENT = 4;
@@ -59,7 +59,14 @@ export async function* runCompaction(options: {
   streamFn?: StreamFn;
 }): AsyncGenerator<StreamEvent> {
   const { store, session, runId, signal } = options;
-  yield { type: "run_started", runId, sessionId: session.id };
+  yield {
+    type: "run_started",
+    runId,
+    sessionId: session.id,
+    providerId: options.provider.id,
+    model: options.provider.model,
+    ...(options.provider.reasoningMode ? { reasoningMode: options.provider.reasoningMode } : {})
+  };
   try {
     const messages = await store.listMessages(session.id);
     const cutoffIndex = session.compactedUpToMessageId
@@ -90,6 +97,7 @@ export async function* runCompaction(options: {
     const streamFunction = options.streamFn ?? streamSimple;
     const stream = await streamFunction(buildModel(options.provider), context, {
       apiKey: options.apiKey,
+      ...buildModelStreamOptions(options.provider),
       signal
     });
 

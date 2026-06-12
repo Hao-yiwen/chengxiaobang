@@ -1,9 +1,16 @@
-import { Check, Copy, GitFork, Pencil, RefreshCw } from "lucide-react";
+import {
+  ArrowClockwiseIcon as RefreshCw,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  GitForkIcon as GitFork,
+  PencilSimpleIcon as Pencil
+} from "@phosphor-icons/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Message } from "@chengxiaobang/shared";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCopy } from "@/lib/use-copy";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
@@ -32,7 +39,7 @@ export function MessageActions({
   return (
     <div
       className={cn(
-        "mt-0.5 flex items-center gap-0.5 opacity-0 transition-opacity",
+        "mt-0.5 flex items-center gap-2 opacity-0 transition-opacity",
         "group-hover/msg:opacity-100 focus-within:opacity-100",
         isUser ? "justify-end" : "justify-start"
       )}
@@ -65,7 +72,9 @@ export function MessageActions({
   );
 }
 
-function ActionButton({
+const ActionButton = MetaActionButton;
+
+export function MetaActionButton({
   label,
   onClick,
   children
@@ -75,15 +84,19 @@ function ActionButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className="rounded-xs p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-    >
-      {children}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          onClick={onClick}
+          className="rounded-xs p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }
 

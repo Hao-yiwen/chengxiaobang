@@ -1,4 +1,7 @@
-import { CornerDownLeft, MessageSquare } from "lucide-react";
+import {
+  ArrowBendDownLeftIcon as CornerDownLeft,
+  ChatCircleIcon as MessageSquare
+} from "@phosphor-icons/react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";

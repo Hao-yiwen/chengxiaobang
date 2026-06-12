@@ -39,6 +39,7 @@
       "bun",
       "electron",
       "esbuild",
+      "node-pty",
       "protobufjs",
       "sharp"
     ]

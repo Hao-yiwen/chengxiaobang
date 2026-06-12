@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { accessModeSchema } from "./access-mode";
+import { reasoningModeSchema } from "./model";
 
 export const sessionSchema = z.object({
   id: z.string().min(1),
@@ -19,6 +20,12 @@ export const sessionSchema = z.object({
   forkMessageId: z.string().min(1).optional(),
   /** Set on sessions driven by a Feishu chat (one session per chat). */
   feishuChatId: z.string().min(1).optional(),
+  /** 会话级模型记忆；为空时使用 provider.model。 */
+  model: z.string().min(1).optional(),
+  /** 会话级推理模式记忆；为空时不覆盖 provider/平台默认。 */
+  reasoningMode: reasoningModeSchema.optional(),
+  /** 置顶时间；存在即置顶，侧边栏置顶区按其降序排列。 */
+  pinnedAt: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -35,7 +42,11 @@ export type SessionInput = z.infer<typeof sessionInputSchema>;
 export const sessionUpdateSchema = z.object({
   title: z.string().min(1).optional(),
   providerId: z.string().min(1).nullable().optional(),
-  accessMode: accessModeSchema.optional()
+  accessMode: accessModeSchema.optional(),
+  model: z.string().min(1).nullable().optional(),
+  reasoningMode: reasoningModeSchema.nullable().optional(),
+  /** 置顶开关：true 置顶、false 取消置顶（开关语义，非 nullable 的"显式清空"模式）。 */
+  pinned: z.boolean().optional()
 });
 export type SessionUpdate = z.infer<typeof sessionUpdateSchema>;
 

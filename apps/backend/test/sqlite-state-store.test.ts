@@ -72,6 +72,41 @@ describe("SqliteStateStore", () => {
     await store.close();
   });
 
+  it("置顶/取消置顶不触碰 updated_at 且跨重启持久化", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const project = await first.createProject({ name: "demo", path: join(dir, "p") });
+    const session = await first.createSession({
+      projectId: project.id,
+      title: "置顶会话",
+      accessMode: "approval"
+    });
+
+    const pinnedSession = await first.setSessionPinned(session.id, true);
+    expect(pinnedSession.pinnedAt).toEqual(expect.any(String));
+    // 置顶不 bump updated_at，否则会把会话顶到普通列表最前。
+    expect(pinnedSession.updatedAt).toBe(session.updatedAt);
+    const pinnedProject = await first.setProjectPinned(project.id, true);
+    expect(pinnedProject.pinnedAt).toEqual(expect.any(String));
+    expect(pinnedProject.updatedAt).toBe(project.updatedAt);
+    await first.close();
+
+    // 重开覆盖 ensureColumn 迁移与行映射。
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    expect((await second.listSessions(project.id))[0]?.pinnedAt).toBe(pinnedSession.pinnedAt);
+    expect((await second.listProjects())[0]?.pinnedAt).toBe(pinnedProject.pinnedAt);
+
+    // 防回归：updateSession 不得清掉置顶状态。
+    const renamed = await second.updateSession(session.id, { title: "改名" });
+    expect(renamed.pinnedAt).toBe(pinnedSession.pinnedAt);
+
+    expect((await second.setSessionPinned(session.id, false)).pinnedAt).toBeUndefined();
+    expect((await second.setProjectPinned(project.id, false)).pinnedAt).toBeUndefined();
+    await second.close();
+  });
+
   it("persists assistant reasoning and its duration across restarts", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);
@@ -304,6 +339,108 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
+  it("updateToolCall 持久化 args 变更（propose_plan editedSteps 写回，跨重启可恢复）", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const session = await first.createSession({
+      projectId: null,
+      title: "计划确认",
+      accessMode: "approval"
+    });
+    await first.createRun({ id: "run_1", sessionId: session.id, status: "running" });
+    const createdAt = nowIso();
+    await first.insertToolCall({
+      id: "tool_plan",
+      runId: "run_1",
+      name: "propose_plan",
+      args: { title: "计划", steps: [{ id: "s1", title: "原步骤" }] },
+      status: "pending_approval",
+      createdAt,
+      updatedAt: createdAt
+    });
+    // 用户确认时携带 editedSteps：args 与状态在同一次 update 中写回（§2.3）。
+    await first.updateToolCall({
+      id: "tool_plan",
+      runId: "run_1",
+      name: "propose_plan",
+      args: { title: "计划", steps: [{ id: "s1", title: "编辑后的步骤", status: "pending" }] },
+      status: "completed",
+      result: "{}",
+      createdAt,
+      updatedAt: nowIso()
+    });
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    const [reloaded] = await second.listToolCallsForSession(session.id);
+    expect(reloaded.status).toBe("completed");
+    expect((reloaded.args.steps as Array<{ title: string }>)[0].title).toBe("编辑后的步骤");
+    await second.close();
+  });
+
+  it("migrates sessions model fields and round-trips session model/reasoning memory（§6.2）", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    // 旧库：先建一个不含 model 列语义的会话（列由 ensureColumn 迁移补上）。
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    await seedProviders(first);
+    const legacy = await first.createSession({
+      projectId: null,
+      title: "旧会话",
+      providerId: "deepseek",
+      accessMode: "approval"
+    });
+    expect(legacy).not.toHaveProperty("model");
+    expect(legacy).not.toHaveProperty("reasoningMode");
+    await first.close();
+
+    // 重新打开（触发迁移路径）：旧数据不丢，新会话可带 model。
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    expect(await second.getSession(legacy.id)).toMatchObject({ title: "旧会话" });
+    expect(await second.getSession(legacy.id)).not.toHaveProperty("model");
+    expect(await second.getSession(legacy.id)).not.toHaveProperty("reasoningMode");
+
+    const withModel = await second.createSession({
+      projectId: null,
+      title: "带模型",
+      providerId: "deepseek",
+      accessMode: "approval",
+      model: "deepseek-reasoner",
+      reasoningMode: "high"
+    });
+    expect(withModel.model).toBe("deepseek-reasoner");
+    expect(withModel.reasoningMode).toBe("high");
+
+    // updateSession：undefined 保留、字符串覆盖、null 清空。
+    const untouched = await second.updateSession(withModel.id, { accessMode: "full_access" });
+    expect(untouched.model).toBe("deepseek-reasoner");
+    expect(untouched.reasoningMode).toBe("high");
+    const switched = await second.updateSession(withModel.id, {
+      model: "deepseek-chat",
+      reasoningMode: "xhigh"
+    });
+    expect(switched.model).toBe("deepseek-chat");
+    expect(switched.reasoningMode).toBe("xhigh");
+    await second.close();
+
+    const third = new SqliteStateStore(dbPath);
+    await third.initialize();
+    expect((await third.getSession(withModel.id))?.model).toBe("deepseek-chat");
+    expect((await third.getSession(withModel.id))?.reasoningMode).toBe("xhigh");
+    const cleared = await third.updateSession(withModel.id, {
+      model: null,
+      reasoningMode: null
+    });
+    expect(cleared.model).toBeUndefined();
+    expect(cleared.reasoningMode).toBeUndefined();
+    expect(await third.getSession(withModel.id)).not.toHaveProperty("model");
+    expect(await third.getSession(withModel.id)).not.toHaveProperty("reasoningMode");
+    await third.close();
+  });
+
   it("deletes a message and everything after it on rewind", async () => {
     const store = new SqliteStateStore(join(dir, "state.sqlite"));
     await store.initialize();
@@ -504,6 +641,33 @@ describe("SqliteStateStore", () => {
     await store.close();
   });
 
+  it("round-trips provider reasoning defaults", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const timestamp = nowIso();
+    await first.upsertProvider({
+      id: "deepseek",
+      kind: "deepseek",
+      name: "DeepSeek",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-pro",
+      reasoningMode: "xhigh",
+      apiKeyRef: "memory:deepseek",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    await expect(second.getProvider("deepseek")).resolves.toMatchObject({
+      model: "deepseek-v4-pro",
+      reasoningMode: "xhigh"
+    });
+    await second.close();
+  });
+
   it("migrates legacy built-in provider presets to current official models", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);
@@ -545,6 +709,79 @@ describe("SqliteStateStore", () => {
     });
 
     await second.close();
+  });
+
+  it("persists scheduled tasks across restarts and supports partial updates", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const session = await first.createSession({
+      projectId: null,
+      title: "会话",
+      accessMode: "approval"
+    });
+    const task = await first.createScheduledTask({
+      sessionId: session.id,
+      name: "AI 日报",
+      prompt: "生成今天的 AI 日报",
+      cron: "0 9 * * *",
+      fullAccess: false,
+      nextRunAt: "2026-06-13T01:00:00.000Z"
+    });
+    expect(task).toMatchObject({ enabled: true, fullAccess: false, cron: "0 9 * * *" });
+
+    const updated = await first.updateScheduledTask(task.id, {
+      enabled: false,
+      lastRunAt: "2026-06-13T01:00:05.000Z",
+      lastStatus: "failed",
+      lastError: "无可用模型"
+    });
+    expect(updated).toMatchObject({
+      enabled: false,
+      lastStatus: "failed",
+      lastError: "无可用模型",
+      // 未指定的字段保持原值
+      name: "AI 日报",
+      nextRunAt: "2026-06-13T01:00:00.000Z"
+    });
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    const tasks = await second.listScheduledTasks();
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]).toMatchObject({ id: task.id, enabled: false, lastStatus: "failed" });
+    // null 显式清空 lastError
+    const cleared = await second.updateScheduledTask(task.id, {
+      lastStatus: "completed",
+      lastError: null
+    });
+    expect(cleared?.lastError).toBeUndefined();
+    await second.close();
+  });
+
+  it("updateScheduledTask is a no-op for missing rows and delete cascades with the session", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    expect(await store.updateScheduledTask("task_missing", { enabled: false })).toBeUndefined();
+
+    const session = await store.createSession({
+      projectId: null,
+      title: "会话",
+      accessMode: "approval"
+    });
+    const task = await store.createScheduledTask({
+      sessionId: session.id,
+      name: "巡检",
+      prompt: "检查仓库状态",
+      cron: "*/5 * * * *",
+      fullAccess: true,
+      nextRunAt: "2026-06-13T01:00:00.000Z"
+    });
+    expect(await store.deleteSession(session.id)).toBe(true);
+    expect(await store.getScheduledTask(task.id)).toBeUndefined();
+    expect(await store.deleteScheduledTask(task.id)).toBe(false);
+    await store.close();
   });
 });
 

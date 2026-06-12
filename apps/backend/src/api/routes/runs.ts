@@ -22,11 +22,11 @@ export function runRoutes(context: AppContext): Hono {
 
   app.post("/approvals/:toolCallId", async (c) => {
     const decision = approvalDecisionSchema.parse(await c.req.json());
+    console.info(
+      `[run-routes] 收到审批决议 toolCallId=${c.req.param("toolCallId")} approved=${decision.approved}`
+    );
     return c.json({
-      accepted: context.runner.approvals.decide(
-        c.req.param("toolCallId"),
-        decision.approved
-      )
+      accepted: context.runner.approvals.decide(c.req.param("toolCallId"), decision)
     });
   });
 

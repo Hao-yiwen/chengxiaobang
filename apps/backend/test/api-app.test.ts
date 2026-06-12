@@ -13,6 +13,7 @@ import { createApp } from "../src/api/app";
 import { ProviderService } from "../src/model/provider-service";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 import { MemorySecretStore } from "../src/secrets/secret-store";
+import { runCommand } from "../src/tools/shell";
 import { SlashCommandService } from "../src/tools/slash-command-service";
 import { scriptedStreamFn } from "./helpers/scripted-stream";
 
@@ -91,6 +92,63 @@ describe("createApp", () => {
     await expect(deleted.json()).resolves.toEqual({ deleted: true });
   });
 
+  it("pins a session via PATCH without bumping updated_at", async () => {
+    const created = await app(
+      jsonRequest("/api/sessions", "POST", {
+        title: "置顶会话",
+        projectId: null,
+        accessMode: "approval"
+      })
+    );
+    const { session } = (await created.json()) as {
+      session: { id: string; updatedAt: string };
+    };
+
+    const pinned = await app(
+      jsonRequest(`/api/sessions/${session.id}`, "PATCH", { pinned: true })
+    );
+    expect(pinned.status).toBe(200);
+    const pinnedBody = (await pinned.json()) as {
+      session: { pinnedAt?: string; updatedAt: string };
+    };
+    expect(pinnedBody.session.pinnedAt).toEqual(expect.any(String));
+    // 置顶不 bump updated_at，避免扰动按 updated_at 排序的会话列表。
+    expect(pinnedBody.session.updatedAt).toBe(session.updatedAt);
+
+    const unpinned = await app(
+      jsonRequest(`/api/sessions/${session.id}`, "PATCH", { pinned: false })
+    );
+    const unpinnedBody = (await unpinned.json()) as { session: { pinnedAt?: string } };
+    expect(unpinnedBody.session.pinnedAt).toBeUndefined();
+  });
+
+  it("renames or pins a project via PATCH", async () => {
+    const created = await app(
+      jsonRequest("/api/projects", "POST", { path: join(dir, "pin-proj"), name: "demo" })
+    );
+    const { project } = (await created.json()) as { project: { id: string } };
+
+    const pinned = await app(
+      jsonRequest(`/api/projects/${project.id}`, "PATCH", { pinned: true })
+    );
+    expect(pinned.status).toBe(200);
+    const pinnedBody = (await pinned.json()) as { project: { pinnedAt?: string } };
+    expect(pinnedBody.project.pinnedAt).toEqual(expect.any(String));
+
+    // rename 兼容回归：旧客户端只发 name，置顶状态保留。
+    const renamed = await app(
+      jsonRequest(`/api/projects/${project.id}`, "PATCH", { name: "新名" })
+    );
+    const renamedBody = (await renamed.json()) as {
+      project: { name: string; pinnedAt?: string };
+    };
+    expect(renamedBody.project.name).toBe("新名");
+    expect(renamedBody.project.pinnedAt).toBe(pinnedBody.project.pinnedAt);
+
+    const empty = await app(jsonRequest(`/api/projects/${project.id}`, "PATCH", {}));
+    expect(empty.status).toBe(400);
+  });
+
   it("rewinds a session to a message over HTTP", async () => {
     const session = await store.createSession({
       projectId: null,
@@ -134,6 +192,52 @@ describe("createApp", () => {
     );
     expect(missing.status).toBe(404);
   });
+
+  it("reports lightweight git repository info for right-panel menu filtering", async () => {
+    const plainRoot = join(dir, "plain-info");
+    const repoRoot = join(dir, "repo-info");
+    await mkdir(plainRoot, { recursive: true });
+    await mkdir(repoRoot, { recursive: true });
+    const plain = await store.createProject({ name: "plain", path: plainRoot });
+    const repo = await store.createProject({ name: "repo", path: repoRoot });
+    const init = await runCommand("git init", repoRoot);
+    expect(init.exitCode).toBe(0);
+
+    const plainResponse = await app(
+      new Request(`http://local/api/projects/${plain.id}/git/info`, { method: "GET" })
+    );
+    expect(plainResponse.status).toBe(200);
+    await expect(plainResponse.json()).resolves.toEqual({ info: { isRepo: false } });
+
+    const repoResponse = await app(
+      new Request(`http://local/api/projects/${repo.id}/git/info`, { method: "GET" })
+    );
+    expect(repoResponse.status).toBe(200);
+    await expect(repoResponse.json()).resolves.toEqual({ info: { isRepo: true } });
+
+    const missing = await app(
+      new Request("http://local/api/projects/nope/git/info", { method: "GET" })
+    );
+    expect(missing.status).toBe(404);
+  }, 20_000);
+
+  it("reports git changes for a project directory", async () => {
+    await mkdir(join(dir, "plain"), { recursive: true });
+    const project = await store.createProject({ name: "plain", path: join(dir, "plain") });
+
+    const response = await app(
+      new Request(`http://local/api/projects/${project.id}/git/changes`, { method: "GET" })
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      changes: { isRepo: false, files: [] }
+    });
+
+    const missing = await app(
+      new Request("http://local/api/projects/nope/git/changes", { method: "GET" })
+    );
+    expect(missing.status).toBe(404);
+  }, 20_000);
 
   it("forks a session over HTTP", async () => {
     const session = await store.createSession({
@@ -451,6 +555,114 @@ describe("createApp", () => {
     expect(body.commands).toEqual(expect.arrayContaining([expect.objectContaining({ name: "/ls" })]));
     expect(body.diagnostics.length).toBeGreaterThan(0);
     expect(body.diagnostics[0]?.source).toBe("global");
+  });
+
+  it("passes full approval decisions through HTTP API", async () => {
+    const runner = new AgentRunner(store, secrets);
+    const decideSpy = vi.spyOn(runner.approvals, "decide");
+    const localApp = createApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner
+    });
+
+    const response = await localApp(
+      jsonRequest("/api/approvals/tool_plan", "POST", {
+        approved: true,
+        editedSteps: [{ id: "s1", title: "确认后的步骤" }]
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(decideSpy).toHaveBeenCalledWith("tool_plan", {
+      approved: true,
+      editedSteps: [{ id: "s1", title: "确认后的步骤", status: "pending" }]
+    });
+  });
+
+  it("lists provider models through HTTP API", async () => {
+    const listModels = vi.fn(async () => ["deepseek-v4-flash", "deepseek-chat"]);
+    const localApp = createApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn(), listModels),
+      runner: new AgentRunner(store, secrets)
+    });
+
+    const response = await localApp(
+      new Request("http://local/api/settings/providers/deepseek/models", { method: "GET" })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      models: ["deepseek-v4-flash", "deepseek-chat"]
+    });
+    expect(listModels).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "deepseek" }),
+      "test-key"
+    );
+  });
+
+  it("manages scheduled tasks through HTTP API", async () => {
+    const session = await store.createSession({
+      projectId: null,
+      title: "会话",
+      accessMode: "approval"
+    });
+    const task = await store.createScheduledTask({
+      sessionId: session.id,
+      name: "AI 日报",
+      prompt: "生成日报",
+      cron: "0 9 * * *",
+      fullAccess: false,
+      nextRunAt: "2020-01-01T00:00:00.000Z"
+    });
+
+    const listed = await app(new Request("http://local/api/tasks", { method: "GET" }));
+    expect(listed.status).toBe(200);
+    await expect(listed.json()).resolves.toMatchObject({
+      tasks: [{ id: task.id, name: "AI 日报", enabled: true }]
+    });
+
+    // 非法 cron 拒绝
+    const badCron = await app(
+      jsonRequest(`/api/tasks/${task.id}`, "PATCH", { cron: "0 0 9 * * *" })
+    );
+    expect(badCron.status).toBe(400);
+
+    // 停用再启用：重新启用必须重算 nextRunAt，不得立刻补跑陈旧时间点。
+    const disabled = await app(jsonRequest(`/api/tasks/${task.id}`, "PATCH", { enabled: false }));
+    expect(disabled.status).toBe(200);
+    const reEnabled = await app(jsonRequest(`/api/tasks/${task.id}`, "PATCH", { enabled: true }));
+    const reEnabledBody = (await reEnabled.json()) as { task: { nextRunAt: string } };
+    expect(Date.parse(reEnabledBody.task.nextRunAt)).toBeGreaterThan(Date.now());
+
+    const missing = await app(jsonRequest("/api/tasks/task_missing", "PATCH", { enabled: false }));
+    expect(missing.status).toBe(404);
+
+    // 未注入调度器时立即运行返回 503（AppContext.taskScheduler 可选）。
+    const runWithoutScheduler = await app(
+      new Request(`http://local/api/tasks/${task.id}/run`, { method: "POST" })
+    );
+    expect(runWithoutScheduler.status).toBe(503);
+
+    const runNow = vi.fn(async () => {});
+    const schedulerApp = createApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets),
+      taskScheduler: { runNow } as never
+    });
+    const ran = await schedulerApp(
+      new Request(`http://local/api/tasks/${task.id}/run`, { method: "POST" })
+    );
+    expect(ran.status).toBe(202);
+    expect(runNow).toHaveBeenCalledWith(task.id);
+
+    const deleted = await app(
+      new Request(`http://local/api/tasks/${task.id}`, { method: "DELETE" })
+    );
+    expect(deleted.status).toBe(200);
+    await expect(deleted.json()).resolves.toEqual({ deleted: true });
   });
 });
 

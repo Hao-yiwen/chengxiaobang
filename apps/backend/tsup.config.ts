@@ -7,6 +7,7 @@ export default defineConfig({
   dts: true,
   outDir: "dist",
   noExternal: [
+    "croner",
     "sql.js",
     "@earendil-works/pi-ai",
     "@earendil-works/pi-agent-core",

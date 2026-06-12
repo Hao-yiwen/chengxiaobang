@@ -1,6 +1,6 @@
 import { type DialogProps } from "@radix-ui/react-dialog";
 import { Command as CommandPrimitive } from "cmdk";
-import { Search } from "lucide-react";
+import { MagnifyingGlassIcon as Search } from "@phosphor-icons/react";
 import * as React from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";

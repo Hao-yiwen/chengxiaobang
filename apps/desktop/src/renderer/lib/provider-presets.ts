@@ -18,7 +18,7 @@ export const PROVIDER_PRESETS: Record<ProviderInput["kind"], Omit<ProviderInput,
     kind: "minimax",
     name: "MiniMax",
     baseURL: "https://api.minimaxi.com/v1",
-    model: "MiniMax-M2.1"
+    model: "MiniMax-M3"
   },
   doubao: {
     kind: "doubao",
@@ -42,7 +42,8 @@ export const PROVIDER_PRESETS: Record<ProviderInput["kind"], Omit<ProviderInput,
     kind: "custom",
     name: "Custom",
     baseURL: "https://api.example.com/v1",
-    model: "model-name"
+    // 自定义供应商没有可预知的模型，留空由用户自行添加。
+    model: ""
   }
 };
 

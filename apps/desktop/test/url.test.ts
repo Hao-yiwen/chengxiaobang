@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeBrowserUrl } from "../src/renderer/lib/url";
+import { localPathFromFileUrl, normalizeBrowserUrl } from "../src/renderer/lib/url";
 
 describe("normalizeBrowserUrl", () => {
   it("prefixes https for scheme-less input", () => {
@@ -18,5 +18,13 @@ describe("normalizeBrowserUrl", () => {
     expect(normalizeBrowserUrl("file:///etc/passwd")).toBeUndefined();
     expect(normalizeBrowserUrl("javascript:alert(1)")).toBeUndefined();
     expect(normalizeBrowserUrl("   ")).toBeUndefined();
+  });
+});
+
+describe("localPathFromFileUrl", () => {
+  it("returns decoded local paths and rejects non-local URLs", () => {
+    expect(localPathFromFileUrl("file:///tmp/demo/page%20one.html")).toBe("/tmp/demo/page one.html");
+    expect(localPathFromFileUrl("file://remote-host/tmp/page.html")).toBeUndefined();
+    expect(localPathFromFileUrl("https://example.com")).toBeUndefined();
   });
 });

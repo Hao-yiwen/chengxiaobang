@@ -2,14 +2,14 @@ import { useTranslation } from "react-i18next";
 import type { DiffLine } from "@/lib/diff";
 import { cn } from "@/lib/utils";
 
-// DESIGN.md washes: pale-green for additions, quiet muted for removals.
+// Vercel 语义色：新增行用链接蓝淡底，删除行用错误红淡底。
 const LINE_STYLES: Record<DiffLine["type"], string> = {
-  added: "bg-pale-green text-ink",
-  removed: "bg-muted text-muted-foreground/70",
+  added: "bg-link-bg-soft/55 text-ink",
+  removed: "bg-error-soft/70 text-muted-foreground",
   context: "text-muted-foreground"
 };
 
-/** Line-based diff rendering for edit_file / write_file tool calls. */
+/** edit_file / write_file 工具结果的逐行 diff 渲染。 */
 export function DiffView({ lines }: { lines: DiffLine[] }) {
   const { t } = useTranslation();
   return (

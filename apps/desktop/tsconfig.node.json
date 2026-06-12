@@ -5,5 +5,12 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "test/backend-process.test.ts", "test/paths.test.ts"]
+  "include": [
+    "src/main/**/*.ts",
+    "src/preload/**/*.ts",
+    "test/backend-process.test.ts",
+    "test/logging.test.ts",
+    "test/paths.test.ts",
+    "test/terminal-session.test.ts"
+  ]
 }

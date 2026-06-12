@@ -1,451 +1,331 @@
 ---
-version: alpha
-name: Cohere-design-analysis
-description: Cohere's 2026 web system is a controlled enterprise AI interface built from stark white editorial space, deep green-black product bands, soft mineral surfaces, rounded media cards, and a distinctive type split between monospaced-feeling display headlines and precise Unica77 UI text.
+version: beta
+name: Vercel-developer-platform-theme
+description: A stark developer-platform interface built from near-white canvases, ink-near-black text, deliberate gray steps, subtle stacked elevation, Geist-like typography, and a hero-scale blue / teal / violet / pink / amber mesh gradient reserved for atmospheric moments.
 
 colors:
-  primary: "#17171c"
-  cohere-black: "#000000"
-  ink: "#212121"
-  deep-green: "#003c33"
-  dark-navy: "#071829"
+  primary: "#171717"
+  ink: "#171717"
+  body: "#4d4d4d"
+  mute: "#888888"
   canvas: "#ffffff"
-  soft-stone: "#eeece7"
-  pale-green: "#edfce9"
-  pale-blue: "#f1f5ff"
-  hairline: "#d9d9dd"
-  border-light: "#e5e7eb"
-  card-border: "#f2f2f2"
-  muted: "#93939f"
-  slate: "#75758a"
-  body-muted: "#616161"
-  action-blue: "#1863dc"
-  focus-blue: "#4c6ee6"
-  coral: "#ff7759"
-  coral-soft: "#ffad9b"
-  form-focus: "#9b60aa"
+  canvas-soft: "#fafafa"
+  canvas-soft-2: "#f5f5f5"
+  surface-hover: "#ececec"
+  hairline: "#ebebeb"
+  hairline-strong: "#a1a1a1"
+  cyan: "#50e3c2"
+  highlight-pink: "#ff0080"
+  violet: "#7928ca"
+  link: "#0070f3"
+  link-deep: "#0761d1"
+  link-bg-soft: "#d3e5ff"
+  error: "#ee0000"
+  error-soft: "#f7d4d6"
+  error-deep: "#c50000"
+  warning: "#f5a623"
+  warning-soft: "#ffefcf"
+  warning-deep: "#ab570a"
+  gradient-develop-start: "#007cf0"
+  gradient-develop-end: "#00dfd8"
+  gradient-preview-start: "#7928ca"
+  gradient-preview-end: "#ff0080"
+  gradient-ship-start: "#ff4d4d"
+  gradient-ship-end: "#f9cb28"
   on-primary: "#ffffff"
-  on-dark: "#ffffff"
-  error: "#b30000"
 
 typography:
-  hero-display:
-    fontFamily: CohereText
-    fontSize: 96px
-    fontWeight: 400
-    lineHeight: 1
-    letterSpacing: -1.92px
-  product-display:
-    fontFamily: CohereText
-    fontSize: 72px
-    fontWeight: 400
-    lineHeight: 1
-    letterSpacing: -1.44px
-  section-display:
-    fontFamily: Unica77 Cohere Web
-    fontSize: 60px
-    fontWeight: 400
-    lineHeight: 1
-    letterSpacing: -1.2px
-  section-heading:
-    fontFamily: Unica77 Cohere Web
+  display-xl:
+    fontFamily: Geist
     fontSize: 48px
-    fontWeight: 400
-    lineHeight: 1.2
-    letterSpacing: -0.48px
-  card-heading:
-    fontFamily: Unica77 Cohere Web
+    fontWeight: 600
+    lineHeight: 48px
+    letterSpacing: -2.4px
+  display-lg:
+    fontFamily: Geist
     fontSize: 32px
-    fontWeight: 400
-    lineHeight: 1.2
-    letterSpacing: -0.32px
-  feature-heading:
-    fontFamily: Unica77 Cohere Web
+    fontWeight: 600
+    lineHeight: 40px
+    letterSpacing: -1.28px
+  display-md:
+    fontFamily: Geist
     fontSize: 24px
-    fontWeight: 400
-    lineHeight: 1.3
-    letterSpacing: 0
-  body-large:
-    fontFamily: Unica77 Cohere Web
+    fontWeight: 600
+    lineHeight: 32px
+    letterSpacing: -0.96px
+  display-sm:
+    fontFamily: Geist
+    fontSize: 20px
+    fontWeight: 600
+    lineHeight: 28px
+    letterSpacing: -0.6px
+  body-lg:
+    fontFamily: Geist
     fontSize: 18px
     fontWeight: 400
-    lineHeight: 1.4
+    lineHeight: 28px
     letterSpacing: 0
-  body:
-    fontFamily: Unica77 Cohere Web
+  body-md:
+    fontFamily: Geist
     fontSize: 16px
     fontWeight: 400
-    lineHeight: 1.5
+    lineHeight: 24px
     letterSpacing: 0
-  button:
-    fontFamily: Unica77 Cohere Web
+  body-sm:
+    fontFamily: Geist
     fontSize: 14px
-    fontWeight: 500
-    lineHeight: 1.71
-    letterSpacing: 0
+    fontWeight: 400
+    lineHeight: 20px
+    letterSpacing: -0.28px
+  body-xs:
+    fontFamily: Geist
+    fontSize: 13px
+    fontWeight: 400
+    lineHeight: 18px
+    letterSpacing: -0.26px
   caption:
-    fontFamily: Unica77 Cohere Web
-    fontSize: 14px
-    fontWeight: 400
-    lineHeight: 1.4
-    letterSpacing: 0
-  mono-label:
-    fontFamily: CohereMono
-    fontSize: 14px
-    fontWeight: 400
-    lineHeight: 1.4
-    letterSpacing: 0.28px
-  micro:
-    fontFamily: Unica77 Cohere Web
+    fontFamily: Geist
     fontSize: 12px
     fontWeight: 400
-    lineHeight: 1.4
+    lineHeight: 16px
+    letterSpacing: 0
+  caption-mono:
+    fontFamily: Geist Mono
+    fontSize: 12px
+    fontWeight: 400
+    lineHeight: 16px
+    letterSpacing: 0
+  code:
+    fontFamily: Geist Mono
+    fontSize: 13px
+    fontWeight: 400
+    lineHeight: 20px
+    letterSpacing: 0
+  button-md:
+    fontFamily: Geist
+    fontSize: 14px
+    fontWeight: 500
+    lineHeight: 20px
+    letterSpacing: 0
+  button-lg:
+    fontFamily: Geist
+    fontSize: 16px
+    fontWeight: 500
+    lineHeight: 24px
     letterSpacing: 0
 
 rounded:
+  none: 0px
   xs: 4px
-  sm: 8px
-  md: 16px
-  lg: 22px
-  xl: 30px
-  pill: 32px
+  sm: 6px
+  md: 8px
+  lg: 12px
+  xl: 16px
+  pill-sm: 64px
+  pill: 100px
   full: 9999px
 
 spacing:
-  xxs: 2px
-  xs: 6px
-  sm: 8px
-  md: 12px
-  lg: 16px
-  xl: 24px
-  xxl: 32px
-  section: 80px
+  xxs: 4px
+  xs: 8px
+  sm: 12px
+  md: 16px
+  lg: 24px
+  xl: 32px
+  2xl: 40px
+  3xl: 48px
+  4xl: 64px
+  5xl: 96px
+  6xl: 128px
+  section: 192px
 
 components:
   button-primary:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.on-primary}"
-    typography: "{typography.button}"
+    typography: "{typography.button-lg}"
     rounded: "{rounded.pill}"
-    padding: 12px 24px
   button-secondary:
-    backgroundColor: transparent
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.xs}"
-    padding: 8px 0
-  button-pill-outline:
-    backgroundColor: transparent
-    textColor: "{colors.primary}"
-    typography: "{typography.button}"
-    rounded: "{rounded.xl}"
-    padding: 6px 12px
-  announcement-bar:
-    backgroundColor: "{colors.cohere-black}"
-    textColor: "{colors.on-dark}"
-    typography: "{typography.micro}"
-    height: 36px
-  hero-photo-card:
     backgroundColor: "{colors.canvas}"
-    rounded: "{rounded.lg}"
-  agent-console-card:
+    textColor: "{colors.ink}"
+    borderColor: "{colors.hairline}"
+    typography: "{typography.button-lg}"
+    rounded: "{rounded.pill}"
+  nav-button:
     backgroundColor: "{colors.primary}"
-    textColor: "{colors.on-dark}"
+    textColor: "{colors.on-primary}"
+    typography: "{typography.button-md}"
     rounded: "{rounded.sm}"
-    padding: 24px
-  trust-logo-strip:
+  form-input:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
-    typography: "{typography.caption}"
-  capability-card:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.xs}"
-    padding: 24px
-  dark-feature-band:
-    backgroundColor: "{colors.deep-green}"
-    textColor: "{colors.on-dark}"
-    rounded: "{rounded.lg}"
-    padding: 80px
-  product-card:
-    backgroundColor: "{colors.soft-stone}"
-    textColor: "{colors.ink}"
+    borderColor: "{colors.hairline}"
+    typography: "{typography.body-sm}"
     rounded: "{rounded.sm}"
-    padding: 32px
-  blog-filter-chip:
-    backgroundColor: transparent
-    textColor: "{colors.coral}"
-    typography: "{typography.card-heading}"
-    rounded: "{rounded.sm}"
-    padding: 8px 14px
-  research-table:
+  card:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
-    typography: "{typography.body-large}"
-  contact-form-card:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.lg}"
-    padding: 32px
-  footer-newsletter:
+    borderColor: "{colors.hairline}"
+    rounded: "{rounded.md}"
+  code-editor-mockup:
     backgroundColor: "{colors.primary}"
-    textColor: "{colors.on-dark}"
-    typography: "{typography.micro}"
+    textColor: "{colors.on-primary}"
+    typography: "{typography.code}"
+    rounded: "{rounded.md}"
+  banner:
+    backgroundColor: "{colors.canvas-soft}"
+    textColor: "{colors.body}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.full}"
 ---
 
 ## Overview
 
-Cohere's current web presence feels like a sober enterprise AI command center with editorial restraint. The home page opens on a huge typographic declaration over a white canvas, then uses photography, dark product mockups, trust logos, and generous empty space to make AI infrastructure feel controlled rather than speculative. Product pages invert the tone into deep green-black or dark navy bands, while blog and research pages move toward publishing-system clarity: large filters, thin rules, dense lists, and pale technical backgrounds.
+程小帮当前主题以 Vercel 的 developer-platform 品牌系统为视觉事实源。这个系统不靠单一彩色主题取胜，而靠高精度黑白灰、清晰开发者语气、极少量语义蓝，以及只在大面积背景中出现的 mesh gradient 建立品牌识别。
 
-What makes the system distinctive is the mix of austere black-and-white UI with bursts of tactile brand imagery. The site avoids decorative chrome in the normal interface; color arrives through photography, abstract 3D media, coral blog taxonomy chips, blue research links, and dark product environments. Cards are rounded but not cute. Type is large, tight, and almost monospaced in spirit, creating a research-lab cadence across marketing, product, and editorial surfaces.
+界面主体应该像部署控制台的工作台：`canvas-soft` 是页面底色，`canvas` 是卡片/弹层/输入面，`primary` 是近黑主操作与代码预览面板。灰阶负责层级，蓝色负责链接、成功或信息语义。青色、紫色、粉色、橙红、琥珀只属于品牌渐变，不应该被拆成小色块到处使用。
 
-**Key Characteristics:**
-- Monumental display headlines with very tight line height and negative tracking.
-- White editorial canvases interrupted by deep green, dark navy, and image-led CTA bands.
-- Rounded media cards and product cards, usually 8px to 22px.
-- Pill CTAs in near-black or white, with most secondary actions rendered as underlined text links.
-- Trust-logo strips with monochrome partner marks and very wide vertical spacing.
-- Agent-console mockups using dark panels, small status chips, and product integration badges.
-- Blog and research surfaces with prominent taxonomy chips, long rule-separated lists, and search fields.
+**关键特征：**
+
+- 近白页面背景与纯白卡片，边界靠 `#ebebeb` hairline 和极弱 stacked shadow。
+- 近黑 `#171717` 是文字和主 CTA，而不是绿色、黄色或大面积彩色。
+- Vercel mesh gradient 是唯一装饰性视觉资产，只用于 hero 级或大背景级氛围。
+- 字体以 Geist 为目标；本项目用 Inter 400 / 500 / 600 作为开源替代，技术层使用 JetBrains Mono / SF Mono。
+- 标题使用 sentence-case、600 字重、明显负字距；不要 all-caps 标题，只有 mono 小标签可以 uppercase。
+- 卡片半径克制：6px 用于应用控件，8px 用于常规卡片，12px 到 16px 用于更大展示容器，100px 用于 CTA 胶囊。
 
 ## Colors
 
-### Brand & Accent
+### Core
 
-- **Cohere Black** (`#000000`): Announcement bar, highest-contrast text, and the global brand anchor.
-- **Near-Black Primary** (`#17171c`): Primary CTA buttons, dark footer, and deep UI cards.
-- **Deep Enterprise Green** (`#003c33`): Product hero bands for North and Command-style dark sections.
-- **Dark Navy** (`#071829`): Financial-services and security-oriented solution bands.
-- **Action Blue** (`#1863dc`): Editorial links, pagination, and secondary action emphasis.
-- **Coral** (`#ff7759`): Blog category chips, taxonomy outlines, and warm product markers.
-- **Soft Coral** (`#ffad9b`): Pale chip borders and segmented article-label details.
+- **Primary / Ink** `#171717`：主按钮、主要文字、深色代码预览面板、极性翻转区域。
+- **Canvas** `#ffffff`：卡片、弹窗、输入框、菜单。
+- **Canvas Soft** `#fafafa`：页面背景。
+- **Canvas Soft 2** `#f5f5f5`：嵌入式区域、代码块内层背景，以及轻量控件的 hover。
+- **Surface Hover** `#ececec`：侧边栏等列表项的 hover / 选中态背景，比 Canvas Soft 2 深一档，呈 macOS 风格的轻盈苹果灰。
+- **Hairline** `#ebebeb`：默认边框、分隔线、表格线。
+- **Hairline Strong** `#a1a1a1`：更强的分隔线、低优先级文字。
 
-### Surface & Background
+### Text
 
-- **Canvas White** (`#ffffff`): Dominant page background and form/card surface.
-- **Soft Stone** (`#eeece7`): Product cards, testimonial placeholders, and warm neutral surface blocks.
-- **Pale Green Wash** (`#edfce9`): North page section backdrop behind stacked dark capability panels.
-- **Pale Blue Wash** (`#f1f5ff`): Blog CTA surface behind abstract 3D imagery.
-- **Card Border** (`#f2f2f2`): Softest card containment line.
-
-### Text & Rules
-
-- **Ink** (`#212121`): Default body text and most link text on light backgrounds.
-- **Muted Slate** (`#93939f`): Footer links, dates, metadata, and de-emphasized labels.
-- **Slate** (`#75758a`): Research separators and tertiary text.
-- **Hairline** (`#d9d9dd`): Standard list rules and section dividers.
-- **Border Light** (`#e5e7eb`): Secondary divider and utility rule.
+- **Ink** `#171717`：标题、正文高优先级文字。
+- **Body** `#4d4d4d`：副标题、次级正文、导航非激活状态。
+- **Mute** `#888888`：占位符、脚注、低优先级说明。
+- **On Primary** `#ffffff`：近黑主按钮或深色面板上的文字。
 
 ### Semantic
 
-- **Focus Blue** (`#4c6ee6`): Keyboard focus and ring color.
-- **Form Focus Violet** (`#9b60aa`): Focus border for text inputs.
-- **Error Red** (`#b30000`): Extracted ring/shadow color associated with validation-like states.
+- **Link / Success** `#0070f3`：链接、成功/连接状态、信息态。Vercel 的 legacy success 语义与 link blue 合并。
+- **Link Deep** `#0761d1`：链接按下或更深状态。
+- **Link Bg Soft** `#d3e5ff`：信息提示和轻量高亮底色。
+- **Error** `#ee0000`：错误与危险动作。
+- **Error Soft** `#f7d4d6`：错误淡底。
+- **Warning** `#f5a623`：警示、待处理状态。
+- **Warning Soft** `#ffefcf`：警示淡底。
 
-### Gradient System
+### Brand Gradient
 
-Cohere does not use gradients as a generic UI fill. Gradients and color fields are media-led: abstract 3D hero imagery, deep blue open-science particle fields, red-orange product video posters, and dark green-to-black product environments. Keep UI surfaces flat; reserve gradient richness for large media panels and CTA image bands.
+品牌渐变由三组 stop 组成：
+
+- **Develop** `#007cf0` → `#00dfd8`
+- **Preview** `#7928ca` → `#ff0080`
+- **Ship** `#ff4d4d` → `#f9cb28`
+
+把它当成一个整体对象使用。不要把其中某个 stop 单独抽出来做大面积 UI 色，不要把渐变缩成小图标或小徽章。它只适合 hero 级氛围、大背景、展示带。
 
 ## Typography
 
 ### Font Family
 
-- **Display**: `CohereText`, falling back to `Space Grotesk`, `Inter`, `ui-sans-serif`, and `system-ui`.
-- **Body/UI**: `Unica77 Cohere Web`, falling back to `Inter`, `Arial`, `ui-sans-serif`, and `system-ui`.
-- **Technical labels**: `CohereMono`, falling back to `Arial`, `ui-sans-serif`, and `system-ui`.
-- **Icons**: Cohere uses custom icon fonts and thin-line geometric illustrations.
+- **Display / Body / Button**：目标是 Geist；本项目使用 Inter 作为替代。
+- **Technical labels / Code**：目标是 Geist Mono；本项目使用 JetBrains Mono、SF Mono、Menlo 作为替代。
 
 ### Hierarchy
 
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
-|---|---|---:|---:|---:|---:|---|
-| Hero Display | CohereText | 96px | 400 | 1.00 | -1.92px | Home page declaration scale. |
-| Product Display | CohereText | 72px | 400 | 1.00 | -1.44px | Product and research hero headlines. |
-| Section Display | Unica77 | 60px | 400 | 1.00 | -1.2px | Large product-page headings. |
-| Section Heading | Unica77 | 48px | 400 | 1.20 | -0.48px | Split hero and CTA headings. |
-| Card Heading | Unica77 | 32px | 400 | 1.20 | -0.32px | Feature card and list section titles. |
-| Feature Heading | Unica77 | 24px | 400 | 1.30 | 0 | Cards, filters, and article titles. |
-| Body Large | Unica77 | 18px | 400 | 1.40 | 0 | Lead text and larger paragraphs. |
-| Body | Unica77 | 16px | 400 | 1.50 | 0 | Default copy and link text. |
-| Button | Unica77 | 14px | 500 | 1.71 | 0 | Compact CTA labels. |
-| Caption | Unica77 | 14px | 400 | 1.40 | 0 | Metadata and small explanatory text. |
-| Mono Label | CohereMono | 14px | 400 | 1.40 | 0.28px | Uppercase technical labels. |
-| Micro | Unica77 | 12px | 400 | 1.40 | 0 | Footer, nav microcopy, and small links. |
+| Token | Size | Weight | Line Height | Letter Spacing | Use |
+|---|---:|---:|---:|---:|---|
+| `display-xl` | 48px | 600 | 48px | -2.4px | 首页主标题、关键空状态标题 |
+| `display-lg` | 32px | 600 | 40px | -1.28px | 页面/区域标题 |
+| `display-md` | 24px | 600 | 32px | -0.96px | 卡片组标题、重要面板标题 |
+| `display-sm` | 20px | 600 | 28px | -0.6px | 小型标题 |
+| `body-lg` | 18px | 400 | 28px | 0 | 引导说明 |
+| `body-md` | 16px | 400 | 24px | 0 | 默认正文 |
+| `body-sm` | 14px | 400 | 20px | -0.28px | 导航、按钮、小正文 |
+| `body-xs` | 13px | 400 | 18px | -0.26px | 侧边栏导航、区块标签 |
+| `caption` | 12px | 400 | 16px | 0 | 说明、脚注、徽章 |
+| `caption-mono` | 12px | 400 | 16px | 0 | 技术标签、路径、状态小标签 |
+| `code` | 13px | 400 | 20px | 0 | 代码、终端、命令 |
+| `button-md` | 14px | 500 | 20px | 0 | 应用级按钮 |
+| `button-lg` | 16px | 500 | 24px | 0 | 营销级主 CTA |
 
-### Principles
+### Rules
 
-- Use massive type sparingly; Cohere pages often have one oversized headline and then settle into restrained 16px-24px UI copy.
-- Keep display type tight. Hero copy should feel compact and carved, not airy.
-- Avoid heavy bold weights. Size, spacing, and surface contrast do most of the hierarchy work.
-- Use uppercase mono labels for category and system markers, especially on product and research pages.
-- Editorial pages can use coral chips and blue links, but the base typography remains black and measured.
+- 标题最多 600 字重，不使用 700 或更粗。
+- 标题使用强负字距，正文不额外加字距。
+- 技术标签和代码使用 mono，正文不要使用 mono。
+- 除 mono 小标签外，不要把标题或正文设成全大写。
 
 ## Layout
 
-### Spacing System
+- 基础单位是 4px，所有间距尽量落在 4px 倍数。
+- 应用工作区以密度和清晰扫描为优先，不做营销落地页式大 hero。
+- 页面背景 `canvas-soft`，卡片/弹层 `canvas`，hover/选中 `canvas-soft-2`。
+- 卡片内部紧凑，区块之间留白更大。Vercel 的秩序感来自大间距与极细边界。
+- 桌面容器最大宽度可保持 1400px；聊天正文维持可读版心，不要横向铺满。
 
-The system uses an 8px base with many one-off alignment values: `2px`, `6px`, `8px`, `10px`, `12px`, `16px`, `20px`, `22px`, `24px`, `28px`, `32px`, `36px`, `40px`, `56px`, `60px`, `64px`, and `80px`.
+## Elevation
 
-Large sections rely on dramatic vertical breathing room. The home page places a trust-logo strip far below the hero media. Product pages often hold dark panels inside fields of empty white space, then transition to dense forms or footers only near the end.
+Vercel 的阴影是 stacked shadow：
 
-### Grid & Container
+- **hairline**：仅 inset 1px 边界。
+- **subtle**：1px / 2px 小阴影 + inset hairline。
+- **stack**：2px + 8px 弱阴影 + inset hairline。
+- **float**：适合较突出的卡片。
+- **modal / overlay**：弹层、菜单、通知。
 
-- Global nav uses a three-zone layout: logo left, menu centered, sign-in/CTA right.
-- Home hero is centered text above a two-card media composition: a wide product mockup card beside a narrower photography card.
-- Feature sections commonly use 3-column cards on desktop.
-- Product pages alternate centered hero blocks, trust-logo strips, large single-feature bands, and 2- or 3-column card grids.
-- Research pages use full-width lists with date and chip columns instead of decorative cards.
-- Forms use two-column input rows inside a rounded white card on dark or stone section backgrounds.
-
-### Whitespace Philosophy
-
-Cohere uses whitespace as a trust signal. Large empty intervals separate the brand claim, customer proof, product proof, and CTA. Dense content appears only where it serves the information architecture: research paper rows, blog card grids, and contact form fields.
-
-## Elevation & Depth
-
-Cohere is mostly flat. Depth comes from surface alternation, media contrast, rounded corners, and thin borders rather than drop shadows.
-
-| Level | Treatment | Use |
-|---|---|---|
-| Flat | No shadow, white or dark field | Hero copy, research lists, editorial surfaces |
-| Bordered | 1px `#d9d9dd`, `#e5e7eb`, or dark translucent rules | Research rows, forms, pale cards, footer inputs |
-| Media Lift | Rounded image or video over contrasting section color | Hero photo cards, product videos, CTA imagery |
-| Dark Product Field | Deep green or navy full-width band | Command, North, financial services, security sections |
-
-## Shapes
-
-### Radius Scale
-
-| Token | Value | Role |
-|---|---:|---|
-| `xs` | 4px | Small images, search fields, article thumbnails, utility elements |
-| `sm` | 8px | Blog chips, cards, small media, dialogs |
-| `md` | 16px | Medium product cards and grouped blocks |
-| `lg` | 22px | Signature media-card and soft placeholder radius |
-| `xl` | 30px | Research/topic filter pills |
-| `pill` | 32px | Primary CTA buttons |
-| `full` | 9999px | Round status elements and fully pill-shaped controls |
-
-### Image Treatment
-
-Images are not decorative backdrops for text except in CTA bands. Most imagery sits as rounded cards with visible corners: product videos, enterprise photography, article thumbnails, and abstract 3D renders. The dominant radii are 8px and 22px.
+不要使用单个大 blur 投影，不要彩色辉光，不要玻璃拟态。
 
 ## Components
 
-### **`button-primary`**
+### Buttons
 
-Near-black or white pill CTA, depending on surface contrast. Uses 14px-16px Unica77, 12px 24px padding, and a 32px pill radius. This is the primary action style for "Request a demo", "Submit", and hero CTAs.
+- **button-primary**：黑色 100px 胶囊，白字，承载最重要动作。
+- **button-secondary**：白色 100px 胶囊，黑字，hairline 边框，与 primary 配对。
+- **nav/app button**：6px 半径，28-40px 高度，适合工具型界面。
+- **link button**：使用 link blue，hover 下划线。
 
-### **`button-secondary`**
+### Cards
 
-Text-only action link, usually underlined or rule-aligned, with no filled background. Used for "Explore products", "Try the Playground", newsletter signup, and secondary hero actions.
+- 默认卡片：白底、hairline、8px 半径。
+- 大卡片：白底、12px 半径、stacked shadow。
+- 代码/终端卡片：`primary` 近黑底，mono 文字，8px 半径。
 
-### **`button-pill-outline`**
+### Inputs
 
-Outlined pill control with transparent fill, 1px dark border, and 30px radius. Used for research filters, topic tags, and lightweight taxonomy controls.
+- 白底、hairline、6px 半径。
+- focus 使用 link blue ring / border。
+- placeholder 使用 mute。
 
-### **`announcement-bar`**
+### Badges
 
-Full-width black strip above the nav, 36px tall, centered microcopy with an underlined "Learn more" link and a close control at the far right.
+- 默认徽章使用黑底白字。
+- 次级徽章使用 `canvas-soft-2` 灰底和 body 文本。
+- 高亮粉、紫、青、琥珀仅用于状态或渐变，不用于铺开背景主题。
 
-### **`hero-photo-card`**
+## Do
 
-Rounded media card used in the home hero and solution pages. It combines photography or abstract imagery with an overlaid dark agent-console module. Radius is usually 22px on large cards and 8px on smaller thumbnails.
+- 用 `primary` 作为主操作和主要深色面。
+- 用灰阶区分层级，不用暖黄色或绿色填充界面。
+- 链接、成功、信息态统一用 `link` 蓝。
+- 把 mesh gradient 留给大面积视觉氛围。
+- 使用 stacked shadow 与 hairline 组合建立深度。
+- 代码、终端、路径、技术标签使用 mono。
 
-### **`agent-console-card`**
+## Don't
 
-Dark product mockup panel showing agent names, status chips, integration badges, prompt fields, and generated response cards. Background is near-black, text is white or muted, and small accent chips use product colors.
-
-### **`trust-logo-strip`**
-
-Centered copy above a row of monochrome customer logos. It is intentionally quiet: no cards, no borders, just large horizontal spacing and black or white logos depending on the background.
-
-### **`capability-card`**
-
-Content block with thin-line geometric illustration, 24px heading, body copy, and a text link. On light backgrounds, cards often have only a top rule or a subtle image/card relationship rather than full boxing.
-
-### **`dark-feature-band`**
-
-Deep green or navy full-width section used for product capabilities, security claims, and feature breakdowns. Text turns white; cards use darker translucent surfaces, pale borders, and abstract line illustrations.
-
-### **`product-card`**
-
-Warm stone card used for product/model summaries. Typically 3-column on desktop, with 8px radius, generous padding, a small pill button, a divider line, and checkmark bullet rows.
-
-### **`blog-filter-chip`**
-
-Large coral taxonomy chip used on the blog index. Active chips invert to coral fill with dark text; inactive chips use coral outline and pale fill. Typography is oversized relative to typical filters, making the taxonomy a hero-level control.
-
-### **`research-table`**
-
-Rule-separated publication list with title left, topic pills centered, and date right. Rows are tall, white, and border-driven; filters above use many compact outlined pills.
-
-### **`contact-form-card`**
-
-Rounded white form panel set against dark green or warm stone sections. Inputs are rectangular with thin gray borders, 12px-16px padding, and compact labels/placeholders. Submit uses the same near-black pill style as primary CTAs.
-
-### **`footer-newsletter`**
-
-Dark footer subscription block with coral "AI moves fast" label, white headline, muted legal microcopy, a single-line email field, and arrow submit marker. Footer columns use white section labels and muted links.
-
-## Do's and Don'ts
-
-### Do
-
-- Use white canvas as the default surface; introduce dark green or navy as full-width product bands.
-- Keep primary CTAs pill-shaped and near-black on light surfaces.
-- Use 22px radius on major media cards and placeholders.
-- Use coral for editorial taxonomy and small warm accents, not as the main CTA system.
-- Use monochrome trust logos with wide spacing.
-- Use thin-line geometric illustrations for research and capability icons.
-- Let photography and product mockups carry color, while the UI shell stays restrained.
-
-### Don't
-
-- Do not turn coral or blue into broad decorative surface colors.
-- Do not add heavy drop shadows to cards.
-- Do not make every section card-based; Cohere often uses unframed rows, rules, and open space.
-- Do not use rounded cards below 8px for major media.
-- Do not replace the display/body type split with one generic sans-serif voice.
-- Do not render undocumented interaction variants in documentation or previews.
-- Do not use saturated gradients as normal UI backgrounds; keep gradients media-led.
-
-## Responsive Behavior
-
-### Breakpoints
-
-| Name | Width | Key Changes |
-|---|---:|---|
-| Small Mobile | <425px | Single-column cards, compact nav, reduced hero headline scale |
-| Mobile | 425-640px | Hero media stacks, card grids become one column, form rows stack |
-| Large Mobile | 640-768px | Wider one-column layouts with larger media cards |
-| Tablet | 768-1024px | Two-column cards begin, nav spacing tightens |
-| Desktop | 1024-1440px | Full nav, 3-column card grids, split hero compositions |
-| Large Desktop | 1440-2560px | Wide containers and large empty vertical intervals |
-
-### Touch Targets
-
-Primary CTAs and pills meet comfortable touch sizing through 12px-24px padding and pill radii. Research filter chips and blog category chips are larger than standard tags, making dense taxonomy surfaces usable on touch devices.
-
-### Collapsing Strategy
-
-- Nav collapses from full horizontal links to a compact mobile menu.
-- Hero media moves from split cards to stacked cards.
-- Product and capability grids collapse from 3 columns to 2 and then 1.
-- Form fields collapse from paired rows to a single column.
-- Research rows preserve their rule-separated structure but stack metadata below titles on smaller widths.
-
-## Iteration Guide
-
-1. Start from a white canvas or a full-width dark green/navy band; avoid mid-tone page backgrounds unless the screenshot shows a specific CTA/form section.
-2. Use `button-primary` for the single highest-priority action and `button-secondary` for the companion action.
-3. Use `hero-photo-card` or `agent-console-card` when a page needs visual energy; avoid invented dashboard data.
-4. For editorial pages, combine `blog-filter-chip`, `button-pill-outline`, and `research-table` instead of generic marketing cards.
-5. Keep component examples structurally honest: placeholder product frames are better than invented product content.
-
-## Known Gaps
-
-- Exact proprietary font files are not bundled; use the documented fallbacks when implementing externally.
-- Mobile screenshots were not regenerated in this public update, so mobile behavior is documented from the desktop system and existing responsive patterns.
-- Some live pages lazy-load content blocks late; blank testimonial placeholders are documented as placeholder skeleton surfaces rather than filled testimonial cards.
+- 不要把绿色、黄色、珊瑚色作为全局主题色。
+- 不要把渐变拆成小图标、小按钮或小徽章。
+- 不要使用重投影、彩色辉光、玻璃拟态。
+- 不要用 700/800 字重。
+- 不要在普通正文中使用 mono。
+- 不要在标题中使用全大写。

@@ -8,11 +8,19 @@ import type {
   ToolResultMessage,
   Usage
 } from "@earendil-works/pi-ai";
-import { nowIso, type AccessMode, type StreamEvent, type ToolCall } from "@chengxiaobang/shared";
+import {
+  nowIso,
+  proposePlanArgsSchema,
+  type AccessMode,
+  type AskUserAnswer,
+  type ProposePlanArgs,
+  type StreamEvent,
+  type ToolCall
+} from "@chengxiaobang/shared";
 import type { StateStore } from "../repository/state-store";
 import { toTokenUsage } from "../model/pi-model";
 import { requiresApproval } from "../tools/registry";
-import type { ApprovalQueue } from "./approval-queue";
+import { normalizeDecision, type ApprovalQueue } from "./approval-queue";
 import type { AsyncEventQueue } from "./async-queue";
 
 export const MAX_TOOL_ITERATIONS = 25;
@@ -51,8 +59,16 @@ export class RunEventTranslator {
       sessionId: string;
       accessMode: AccessMode;
       signal: AbortSignal;
+      planMode?: boolean;
+      planConfirmed?: boolean;
+      onPlanApproved?: (toolCallId: string, args: ProposePlanArgs) => void;
+      onAskUserAnswered?: (toolCallId: string, answer: AskUserAnswer) => void;
     }
   ) {}
+
+  isPlanConfirmed(): boolean {
+    return Boolean(this.options.planConfirmed);
+  }
 
   /** The AgentEventSink passed to runAgentLoopContinue. */
   readonly emit = async (event: AgentEvent): Promise<void> => {
@@ -115,8 +131,11 @@ export class RunEventTranslator {
     if (!entity || entity.status !== "pending_approval") {
       return undefined;
     }
-    const approved = await this.options.approvals.wait(entity.id, this.options.signal);
-    if (!approved) {
+    const decision = normalizeDecision(
+      entity.name,
+      await this.options.approvals.wait(entity.id, this.options.signal)
+    );
+    if (!decision.approved) {
       const rejected = await this.saveToolCall({
         ...entity,
         status: "rejected",
@@ -126,8 +145,39 @@ export class RunEventTranslator {
       this.push({ type: "tool_call", runId: this.options.runId, toolCall: rejected });
       return { block: true, reason: REJECTED_MODEL_HINT };
     }
+
+    let args = entity.args;
+    if (entity.name === "propose_plan") {
+      args = decision.editedSteps ? { ...entity.args, steps: decision.editedSteps } : entity.args;
+      const parsed = proposePlanArgsSchema.safeParse(args);
+      if (!parsed.success) {
+        console.warn("[pi-events] 用户确认后的计划参数非法，阻止执行", {
+          toolCallId: entity.id,
+          error: parsed.error.message
+        });
+        const failed = await this.saveToolCall({
+          ...entity,
+          args,
+          status: "failed",
+          result: "计划参数非法，无法继续执行",
+          updatedAt: nowIso()
+        });
+        this.push({ type: "tool_call", runId: this.options.runId, toolCall: failed });
+        return { block: true, reason: "计划参数非法，无法继续执行。" };
+      }
+      this.options.planConfirmed = true;
+      this.options.onPlanApproved?.(entity.id, parsed.data);
+      console.info(`[pi-events] 计划已确认 toolCallId=${entity.id} steps=${parsed.data.steps.length}`);
+    }
+
+    if (entity.name === "ask_user" && decision.answer) {
+      this.options.onAskUserAnswered?.(entity.id, decision.answer);
+      console.info(`[pi-events] 用户已回答 ask_user toolCallId=${entity.id}`);
+    }
+
     const running = await this.saveToolCall({
       ...entity,
+      args,
       status: "running",
       startedAt: nowIso(),
       updatedAt: nowIso()
@@ -181,7 +231,10 @@ export class RunEventTranslator {
         : {}),
       payload: JSON.stringify(message)
     });
-    if (text.trim()) {
+    // Reasoning-only turns (think → straight to tools) are pushed too: the
+    // message row anchors the reasoning panel at its true place in the
+    // timeline, before the tool calls it preceded.
+    if (text.trim() || reasoning) {
       this.push({ type: "message", runId: this.options.runId, message: stripPayload(persisted) });
     }
   }
@@ -201,7 +254,12 @@ export class RunEventTranslator {
     args: unknown
   ): Promise<void> {
     const needsApproval =
-      requiresApproval(toolName) && this.options.accessMode === "approval";
+      toolName === "propose_plan" ||
+      toolName === "ask_user" ||
+      (requiresApproval(toolName) && this.options.accessMode === "approval");
+    // Single clock read: separate nowIso() calls can straddle a millisecond
+    // tick and yield startedAt < createdAt.
+    const at = nowIso();
     const toolCall: ToolCall = {
       id: toolCallId,
       runId: this.options.runId,
@@ -209,9 +267,9 @@ export class RunEventTranslator {
       args: normalizeArgs(args),
       status: needsApproval ? "pending_approval" : "running",
       // startedAt marks actual execution start, so approval wait is excluded.
-      ...(needsApproval ? {} : { startedAt: nowIso() }),
-      createdAt: nowIso(),
-      updatedAt: nowIso()
+      ...(needsApproval ? {} : { startedAt: at }),
+      createdAt: at,
+      updatedAt: at
     };
     this.toolCalls.set(toolCallId, toolCall);
     await this.options.store.insertToolCall(toolCall);

@@ -1,7 +1,13 @@
 import type { ToolCall } from "@chengxiaobang/shared";
+import {
+  basenameOf,
+  extensionOf,
+  previewKindForPath,
+  type PreviewKind
+} from "../../common/file-preview";
 
-/** How a generated artifact opens in the right panel. */
-export type ArtifactKind = "html" | "text" | "office";
+/** 生成物在右侧文件预览工作台里的分类。 */
+export type ArtifactKind = PreviewKind;
 
 export interface Artifact {
   /** Path as the tool received it (relative to the project, or absolute). */
@@ -19,34 +25,56 @@ const ARTIFACT_TOOLS = new Set<ToolCall["name"]>([
   "write_file"
 ]);
 
-const OFFICE_EXTENSIONS = new Set(["pptx", "ppt", "docx", "doc", "xlsx", "xls", "pdf"]);
-const HTML_EXTENSIONS = new Set(["html", "htm", "svg"]);
 // write_file is only treated as an artifact for these "deliverable" types —
 // editing code (.ts/.py/…) stays a plain tool row, not a preview card.
 const WRITE_FILE_ARTIFACT_EXTENSIONS = new Set([
-  ...OFFICE_EXTENSIONS,
-  ...HTML_EXTENSIONS,
+  "pptx",
+  "ppt",
+  "docx",
+  "doc",
+  "xlsx",
+  "xls",
+  "xlsm",
+  "pdf",
+  "html",
+  "htm",
+  "svg",
   "md",
   "markdown",
-  "csv"
+  "csv",
+  "tsv",
+  "json",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "mp3",
+  "wav",
+  "mp4",
+  "webm",
+  "mov"
 ]);
 
-function extensionOf(path: string): string {
-  const base = path.split(/[\\/]/).pop() ?? "";
-  const dot = base.lastIndexOf(".");
-  return dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
+/** Right-panel target for a file extension. Kept as the artifact-facing alias. */
+export function artifactKind(path: string): ArtifactKind {
+  return previewKindForPath(path);
 }
 
-/** Right-panel target for a file extension. */
-export function artifactKind(path: string): ArtifactKind {
-  const ext = extensionOf(path);
-  if (HTML_EXTENSIONS.has(ext)) {
-    return "html";
+/**
+ * Whether this call targets a deliverable file, regardless of status.
+ * Grouping uses this so a running create_* or write_file stays out of tool
+ * groups instead of splitting one when it completes into an ArtifactCard.
+ */
+export function isDeliverableToolCall(toolCall: ToolCall): boolean {
+  if (!ARTIFACT_TOOLS.has(toolCall.name)) {
+    return false;
   }
-  if (OFFICE_EXTENSIONS.has(ext)) {
-    return "office";
+  const path = typeof toolCall.args.path === "string" ? toolCall.args.path : undefined;
+  if (!path) {
+    return false;
   }
-  return "text";
+  return toolCall.name !== "write_file" || WRITE_FILE_ARTIFACT_EXTENSIONS.has(extensionOf(path));
 }
 
 /**
@@ -55,15 +83,9 @@ export function artifactKind(path: string): ArtifactKind {
  * file types (so ordinary code edits stay plain rows).
  */
 export function artifactFromToolCall(toolCall: ToolCall): Artifact | undefined {
-  if (toolCall.status !== "completed" || !ARTIFACT_TOOLS.has(toolCall.name)) {
+  if (toolCall.status !== "completed" || !isDeliverableToolCall(toolCall)) {
     return undefined;
   }
-  const path = typeof toolCall.args.path === "string" ? toolCall.args.path : undefined;
-  if (!path) {
-    return undefined;
-  }
-  if (toolCall.name === "write_file" && !WRITE_FILE_ARTIFACT_EXTENSIONS.has(extensionOf(path))) {
-    return undefined;
-  }
-  return { path, name: path.split(/[\\/]/).pop() ?? path, kind: artifactKind(path) };
+  const path = toolCall.args.path as string;
+  return { path, name: basenameOf(path), kind: artifactKind(path) };
 }

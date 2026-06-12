@@ -10,23 +10,29 @@ export default {
       padding: "2rem",
       screens: { "2xl": "1400px" }
     },
-    // DESIGN.md radius scale — full override, the spec ladder is the only one.
+    // Vercel 半径刻度：6px 是应用控件基准，100px 是品牌 CTA 胶囊。
     borderRadius: {
       none: "0px",
       xs: "4px",
-      sm: "8px",
-      DEFAULT: "8px",
-      md: "16px",
-      lg: "22px",
-      xl: "30px",
-      pill: "32px",
+      sm: "6px",
+      DEFAULT: "6px",
+      md: "8px",
+      lg: "12px",
+      xl: "16px",
+      "pill-sm": "64px",
+      pill: "100px",
       full: "9999px"
     },
-    // Cohere is flat: containment comes from hairline borders. The single
-    // overlay shadow is reserved for transient floating layers.
+    // Vercel 的深度来自 inset hairline 与多层弱阴影，而不是单个重投影。
     boxShadow: {
       none: "none",
-      overlay: "0 12px 32px -16px rgb(7 24 41 / 0.18)"
+      hairline: "inset 0 0 0 1px rgb(0 0 0 / 0.08)",
+      subtle: "0 1px 1px rgb(0 0 0 / 0.02), 0 2px 2px rgb(0 0 0 / 0.04), inset 0 0 0 1px rgb(0 0 0 / 0.08)",
+      stack: "0 2px 2px rgb(0 0 0 / 0.04), 0 8px 8px -8px rgb(0 0 0 / 0.04), inset 0 0 0 1px rgb(0 0 0 / 0.08)",
+      float: "0 2px 2px rgb(0 0 0 / 0.04), 0 8px 16px -4px rgb(0 0 0 / 0.04), inset 0 0 0 1px rgb(0 0 0 / 0.08)",
+      modal: "0 1px 1px rgb(0 0 0 / 0.02), 0 8px 16px -4px rgb(0 0 0 / 0.04), 0 24px 32px -8px rgb(0 0 0 / 0.06), inset 0 0 0 1px rgb(0 0 0 / 0.08)",
+      // overlay 用于弹层/菜单：无 inset hairline 的环绕柔和投影，弹层不再叠加实体边框。
+      overlay: "0 0 8px rgb(0 0 0 / 0.07), 0 2px 6px -2px rgb(0 0 0 / 0.08), 0 8px 24px -6px rgb(0 0 0 / 0.12)"
     },
     extend: {
       colors: {
@@ -37,8 +43,42 @@ export default {
         background: "rgb(var(--background) / <alpha-value>)",
         foreground: "rgb(var(--foreground) / <alpha-value>)",
         surface: "rgb(var(--surface) / <alpha-value>)",
+        "surface-hover": "rgb(var(--surface-hover) / <alpha-value>)",
         canvas: "rgb(var(--canvas) / <alpha-value>)",
+        "canvas-soft": "rgb(var(--canvas-soft) / <alpha-value>)",
+        "canvas-soft-2": "rgb(var(--canvas-soft-2) / <alpha-value>)",
         ink: "rgb(var(--ink) / <alpha-value>)",
+        body: "rgb(var(--body) / <alpha-value>)",
+        mute: "rgb(var(--mute) / <alpha-value>)",
+        cyan: "rgb(var(--cyan) / <alpha-value>)",
+        "highlight-pink": "rgb(var(--highlight-pink) / <alpha-value>)",
+        violet: "rgb(var(--violet) / <alpha-value>)",
+        link: "rgb(var(--link) / <alpha-value>)",
+        "link-deep": "rgb(var(--link-deep) / <alpha-value>)",
+        "link-bg-soft": "rgb(var(--link-bg-soft) / <alpha-value>)",
+        success: "rgb(var(--success) / <alpha-value>)",
+        warning: "rgb(var(--warning) / <alpha-value>)",
+        "warning-soft": "rgb(var(--warning-soft) / <alpha-value>)",
+        "warning-deep": "rgb(var(--warning-deep) / <alpha-value>)",
+        "error-soft": "rgb(var(--error-soft) / <alpha-value>)",
+        "error-deep": "rgb(var(--error-deep) / <alpha-value>)",
+        "gradient-develop-start": "rgb(var(--gradient-develop-start) / <alpha-value>)",
+        "gradient-develop-end": "rgb(var(--gradient-develop-end) / <alpha-value>)",
+        "gradient-preview-start": "rgb(var(--gradient-preview-start) / <alpha-value>)",
+        "gradient-preview-end": "rgb(var(--gradient-preview-end) / <alpha-value>)",
+        "gradient-ship-start": "rgb(var(--gradient-ship-start) / <alpha-value>)",
+        "gradient-ship-end": "rgb(var(--gradient-ship-end) / <alpha-value>)",
+        "hairline-strong": "rgb(var(--hairline-strong) / <alpha-value>)",
+        "line": "var(--line)",
+        "line-weak": "var(--line-weak)",
+        "line-strong": "var(--line-strong)",
+        "ink-3": "rgb(var(--ink-3) / <alpha-value>)",
+        "ink-4": "rgb(var(--ink-4) / <alpha-value>)",
+        cinnabar: "rgb(var(--cinnabar) / <alpha-value>)",
+        "cinnabar-soft": "rgb(var(--cinnabar-soft) / <alpha-value>)",
+        moss: "rgb(var(--moss) / <alpha-value>)",
+        ochre: "rgb(var(--ochre) / <alpha-value>)",
+        indigo: "rgb(var(--indigo) / <alpha-value>)",
         "deep-green": "rgb(var(--deep-green) / <alpha-value>)",
         "dark-navy": "rgb(var(--dark-navy) / <alpha-value>)",
         "soft-stone": "rgb(var(--soft-stone) / <alpha-value>)",
@@ -85,9 +125,8 @@ export default {
         }
       },
       fontFamily: {
-        // Display ≈ CohereText; body ≈ Unica77 — bundled fallbacks per DESIGN.md.
+        // Geist 的开源替代使用 Inter，技术层使用 JetBrains Mono / SF Mono。
         display: [
-          "Space Grotesk",
           "Inter",
           "-apple-system",
           "PingFang SC",
@@ -107,22 +146,34 @@ export default {
           "ui-sans-serif",
           "sans-serif"
         ],
-        mono: ["SF Mono", "ui-monospace", "JetBrains Mono", "Menlo", "Consolas", "monospace"]
+        mono: ["JetBrains Mono", "SF Mono", "ui-monospace", "Menlo", "Consolas", "monospace"]
       },
-      // DESIGN.md 12-role type ladder.
+      // Vercel 字体层级；保留旧 role 名作为组件兼容入口。
       fontSize: {
-        hero: ["96px", { lineHeight: "1", letterSpacing: "-1.92px" }],
-        display: ["72px", { lineHeight: "1", letterSpacing: "-1.44px" }],
-        "section-display": ["60px", { lineHeight: "1", letterSpacing: "-1.2px" }],
-        section: ["48px", { lineHeight: "1.2", letterSpacing: "-0.48px" }],
-        "card-heading": ["32px", { lineHeight: "1.2", letterSpacing: "-0.32px" }],
-        feature: ["24px", { lineHeight: "1.3" }],
-        "body-lg": ["18px", { lineHeight: "1.4" }],
-        body: ["16px", { lineHeight: "1.5" }],
-        button: ["14px", { lineHeight: "1.71", fontWeight: "500" }],
-        caption: ["14px", { lineHeight: "1.4" }],
-        "mono-label": ["14px", { lineHeight: "1.4", letterSpacing: "0.28px" }],
-        micro: ["12px", { lineHeight: "1.4" }]
+        hero: ["48px", { lineHeight: "48px", letterSpacing: "-2.4px", fontWeight: "600" }],
+        display: ["32px", { lineHeight: "40px", letterSpacing: "-1.28px", fontWeight: "600" }],
+        "section-display": ["32px", { lineHeight: "40px", letterSpacing: "-1.28px", fontWeight: "600" }],
+        section: ["48px", { lineHeight: "48px", letterSpacing: "-2.4px", fontWeight: "600" }],
+        "card-heading": ["24px", { lineHeight: "32px", letterSpacing: "-0.96px", fontWeight: "600" }],
+        feature: ["20px", { lineHeight: "28px", letterSpacing: "-0.6px", fontWeight: "600" }],
+        "display-xl": ["48px", { lineHeight: "48px", letterSpacing: "-2.4px", fontWeight: "600" }],
+        "display-lg": ["32px", { lineHeight: "40px", letterSpacing: "-1.28px", fontWeight: "600" }],
+        "display-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.96px", fontWeight: "600" }],
+        "display-sm": ["20px", { lineHeight: "28px", letterSpacing: "-0.6px", fontWeight: "600" }],
+        "body-lg": ["18px", { lineHeight: "28px" }],
+        body: ["16px", { lineHeight: "24px" }],
+        "body-md": ["16px", { lineHeight: "24px" }],
+        "body-md-strong": ["16px", { lineHeight: "24px", fontWeight: "500" }],
+        "body-sm": ["14px", { lineHeight: "20px", letterSpacing: "-0.28px" }],
+        "body-xs": ["13px", { lineHeight: "18px", letterSpacing: "-0.26px" }],
+        "body-sm-strong": ["14px", { lineHeight: "20px", letterSpacing: "-0.28px", fontWeight: "500" }],
+        button: ["14px", { lineHeight: "20px", fontWeight: "500" }],
+        "button-md": ["14px", { lineHeight: "20px", fontWeight: "500" }],
+        "button-lg": ["16px", { lineHeight: "24px", fontWeight: "500" }],
+        caption: ["12px", { lineHeight: "16px" }],
+        "mono-label": ["12px", { lineHeight: "16px" }],
+        code: ["13px", { lineHeight: "20px" }],
+        micro: ["12px", { lineHeight: "16px" }]
       },
       keyframes: {
         "accordion-down": {

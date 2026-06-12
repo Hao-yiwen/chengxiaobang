@@ -200,7 +200,7 @@ describe("AgentRunner agentic loop (pi)", () => {
         transitions.push(event.toolCall.status);
         if (event.toolCall.status === "pending_approval") {
           pendingHadNoStart = event.toolCall.startedAt === undefined;
-          runner.approvals.decide(event.toolCall.id, true);
+          runner.approvals.decide(event.toolCall.id, { approved: true });
         }
         if (event.toolCall.status === "running") {
           runningStartedAt = event.toolCall.startedAt;
@@ -232,7 +232,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     })) {
       events.push(event);
       if (event.type === "tool_call" && event.toolCall.status === "pending_approval") {
-        runner.approvals.decide(event.toolCall.id, false);
+        runner.approvals.decide(event.toolCall.id, { approved: false });
       }
     }
 

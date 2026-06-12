@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
-import type { Message, ProviderConfig, Session } from "@chengxiaobang/shared";
+import type { Message, ProviderConfig, Session, ToolCall } from "@chengxiaobang/shared";
 
 const provider: ProviderConfig = {
   id: "deepseek",
@@ -53,6 +53,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     listProjectFiles: vi.fn(async () => []),
     updateSession: vi.fn() as never,
     deleteSession: vi.fn() as never,
+    getGitChanges: vi.fn(async () => ({ isRepo: false, files: [] })),
     listMessages: vi.fn(async () => [userMessage, assistantMessage]),
     rewindSession: vi.fn(async () => [] as Message[]),
     forkSession: vi.fn() as never,
@@ -76,6 +77,8 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
+  // 这些用例都在操作一个已打开的对话，模拟用户停在对话视图（刷新会保留该视图）。
+  useAppStore.setState({ view: "chat" });
 });
 
 describe("MessageActions", () => {
@@ -179,7 +182,62 @@ describe("MessageActions", () => {
     expect(
       screen.queryByRole("button", { name: "从这条消息创建分支" })
     ).not.toBeInTheDocument();
-    // Copy stays available — it doesn't mutate the session.
+    // 复制不会改动会话，历史消息在运行中也可以复制。
     expect(screen.getAllByRole("button", { name: "复制" })).toHaveLength(2);
+  });
+
+  it("hides actions for assistant messages produced by the active run", async () => {
+    render(<App client={createClient()} />);
+    await screen.findByText("答案是 42");
+
+    act(() => {
+      useAppStore.setState({
+        isRunning: true,
+        activeRunId: "run_1",
+        events: [{ type: "message", runId: "run_1", message: assistantMessage }]
+      });
+    });
+
+    // 运行中的本轮 assistant 回复可能只是中间过程，先只保留用户消息复制。
+    expect(screen.getAllByRole("button", { name: "复制" })).toHaveLength(1);
+  });
+
+  it("hides actions for interim assistant messages followed by a tool call", async () => {
+    const interimMessage: Message = {
+      id: "a_interim",
+      sessionId: session.id,
+      role: "assistant",
+      content: "好的，我先创建 HTML 文件。",
+      createdAt: "2026-06-08T00:00:01.000Z"
+    };
+    const finalMessage: Message = {
+      id: "a_final",
+      sessionId: session.id,
+      role: "assistant",
+      content: "HTML 已经生成。",
+      createdAt: "2026-06-08T00:00:03.000Z"
+    };
+    const htmlToolCall: ToolCall = {
+      id: "tool_1",
+      runId: "run_1",
+      name: "write_file",
+      args: { path: "beautiful-page.html", content: "<!doctype html>" },
+      status: "completed",
+      result: "已写入 beautiful-page.html",
+      createdAt: "2026-06-08T00:00:02.000Z",
+      updatedAt: "2026-06-08T00:00:02.000Z"
+    };
+    const client = createClient({
+      listMessages: vi.fn(async () => [userMessage, interimMessage, finalMessage]),
+      listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [htmlToolCall] }))
+    });
+
+    render(<App client={client} />);
+
+    expect(await screen.findByText("好的，我先创建 HTML 文件。")).toBeInTheDocument();
+    expect(await screen.findByText("HTML 已经生成。")).toBeInTheDocument();
+    expect(screen.getByText("beautiful-page.html")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "复制" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "从这条消息创建分支" })).toHaveLength(2);
   });
 });

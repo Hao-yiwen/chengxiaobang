@@ -19,7 +19,7 @@ const REHYPE_PLUGINS: Options["rehypePlugins"] = [
   rehypeMarkCodeBlocks
 ];
 
-const HEADING_SIZES = ["text-body-lg", "text-body", "text-body"];
+const HEADING_SIZES = ["text-body", "text-body-sm", "text-body-sm"];
 
 function headingClass(level: number): string {
   return cn("font-medium tracking-tight", HEADING_SIZES[level - 1] ?? HEADING_SIZES[2]);
@@ -39,7 +39,7 @@ const COMPONENTS: Components = {
         href={href}
         target="_blank"
         rel="noreferrer noopener"
-        className="font-medium text-action-blue underline decoration-action-blue/40 underline-offset-2 transition-colors hover:decoration-action-blue"
+        className="font-medium text-link underline decoration-link/40 underline-offset-2 transition-colors hover:decoration-link"
       >
         {children}
       </a>
@@ -106,7 +106,7 @@ const COMPONENTS: Components = {
     </div>
   ),
   th: ({ children }) => (
-    <th className="border bg-soft-stone/50 px-3 py-1.5 text-left font-medium">{children}</th>
+    <th className="border bg-canvas-soft-2/70 px-3 py-1.5 text-left font-medium">{children}</th>
   ),
   td: ({ children }) => <td className="border px-3 py-1.5 align-top">{children}</td>,
   del: ({ children }) => <del className="text-muted-foreground line-through">{children}</del>,
@@ -114,11 +114,8 @@ const COMPONENTS: Components = {
 };
 
 /**
- * Renders the assistant's Markdown output via react-markdown + GFM, styled to
- * DESIGN.md: action-blue editorial links, hairline rules, and the system code
- * palette (`.hljs-*` rules in global.css). Memoized: settled messages keep
- * referential identity in the store, so per-delta re-renders only re-parse the
- * streaming tail.
+ * 通过 react-markdown + GFM 渲染 assistant 输出，链接、细线与代码高亮遵循 DESIGN.md。
+ * 已落库消息在 store 中保持引用稳定，流式阶段只会重复解析尾部内容。
  */
 export const Markdown = memo(function Markdown({
   text,
@@ -128,7 +125,7 @@ export const Markdown = memo(function Markdown({
   className?: string;
 }) {
   return (
-    <div className={cn("space-y-3 text-body", className)}>
+    <div className={cn("space-y-3 text-body-sm", className)}>
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={REHYPE_PLUGINS}

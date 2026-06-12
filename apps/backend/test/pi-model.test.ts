@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { streamSimple } from "@earendil-works/pi-ai";
 import { nowIso, type ProviderConfig } from "@chengxiaobang/shared";
-import { buildModel, testProvider, toTokenUsage } from "../src/model/pi-model";
+import {
+  buildModel,
+  buildModelStreamOptions,
+  testProvider,
+  toTokenUsage
+} from "../src/model/pi-model";
 
 const originalFetch = globalThis.fetch;
 
@@ -43,6 +48,14 @@ describe("buildModel", () => {
     });
     // Unknown kinds pass through so baseUrl-based compat detection still applies.
     expect(buildModel(provider({ kind: "custom" }))).toMatchObject({ provider: "custom" });
+  });
+
+  it("enables DeepSeek reasoning only when a mode is selected", () => {
+    expect(buildModel(provider())).toMatchObject({ reasoning: false });
+    expect(buildModel(provider({ reasoningMode: "high" }))).toMatchObject({
+      reasoning: true,
+      compat: { thinkingFormat: "deepseek", supportsReasoningEffort: true }
+    });
   });
 });
 
@@ -99,6 +112,103 @@ describe("testProvider", () => {
 
     globalThis.fetch = (async () => new Response("nope", { status: 401, statusText: "Unauthorized" })) as typeof fetch;
     await expect(testProvider(provider(), "sk-bad")).rejects.toThrow("连接失败 401");
+  });
+});
+
+describe("reasoning wire options", () => {
+  it("maps DeepSeek high/xhigh/off to thinking and reasoning_effort", async () => {
+    await expect(expectRequestBody(provider({ reasoningMode: "high" }))).resolves.toMatchObject({
+      thinking: { type: "enabled" },
+      reasoning_effort: "high"
+    });
+    await expect(expectRequestBody(provider({ reasoningMode: "xhigh" }))).resolves.toMatchObject({
+      thinking: { type: "enabled" },
+      reasoning_effort: "max"
+    });
+    const off = await expectRequestBody(provider({ reasoningMode: "off" }));
+    expect(off).toMatchObject({ thinking: { type: "disabled" } });
+    expect(off).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("maps Qwen auto/off to enable_thinking", async () => {
+    await expect(
+      expectRequestBody(
+        provider({
+          id: "qwen",
+          kind: "qwen",
+          name: "千问",
+          baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          model: "qwen-plus",
+          reasoningMode: "auto"
+        })
+      )
+    ).resolves.toMatchObject({ enable_thinking: true });
+    await expect(
+      expectRequestBody(
+        provider({
+          id: "qwen",
+          kind: "qwen",
+          name: "千问",
+          baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          model: "qwen-plus",
+          reasoningMode: "off"
+        })
+      )
+    ).resolves.toMatchObject({ enable_thinking: false });
+  });
+
+  it("maps Doubao effort modes through Ark-compatible thinking fields", async () => {
+    await expect(
+      expectRequestBody(
+        provider({
+          id: "doubao",
+          kind: "doubao",
+          name: "豆包",
+          baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+          model: "doubao-seed-1-6-250615",
+          reasoningMode: "medium"
+        })
+      )
+    ).resolves.toMatchObject({
+      thinking: { type: "enabled" },
+      reasoning_effort: "medium"
+    });
+  });
+
+  it("patches Kimi and MiniMax vendor-specific thinking payloads", async () => {
+    const kimi = provider({
+      id: "kimi",
+      kind: "kimi",
+      name: "Kimi",
+      baseURL: "https://api.moonshot.ai/v1",
+      model: "kimi-k2.6",
+      reasoningMode: "off"
+    });
+    await expect(
+      Promise.resolve(
+        buildModelStreamOptions(kimi).onPayload?.({ model: kimi.model }, buildModel(kimi))
+      )
+    ).resolves.toMatchObject({ thinking: { type: "disabled" } });
+
+    const minimax = provider({
+      id: "minimax",
+      kind: "minimax",
+      name: "MiniMax",
+      baseURL: "https://api.minimaxi.com/v1",
+      model: "MiniMax-M3",
+      reasoningMode: "auto"
+    });
+    await expect(
+      Promise.resolve(
+        buildModelStreamOptions(minimax).onPayload?.(
+          { model: minimax.model },
+          buildModel(minimax)
+        )
+      )
+    ).resolves.toMatchObject({
+      thinking: { type: "adaptive" },
+      reasoning_split: true
+    });
   });
 });
 
@@ -177,3 +287,42 @@ describe("deepseek wire format through pi", () => {
     expect(requestBody).toMatchObject({ model: "deepseek-v4-flash", stream: true });
   });
 });
+
+async function expectRequestBody(config: ProviderConfig): Promise<Record<string, unknown>> {
+  const sse = [
+    `data: ${JSON.stringify({
+      id: "x",
+      choices: [{ index: 0, delta: { role: "assistant", content: "好" } }]
+    })}`,
+    `data: ${JSON.stringify({
+      id: "x",
+      choices: [{ index: 0, delta: {}, finish_reason: "stop" }]
+    })}`,
+    `data: ${JSON.stringify({
+      id: "x",
+      choices: [],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+    })}`,
+    "data: [DONE]",
+    ""
+  ].join("\n\n");
+  let requestBody: Record<string, unknown> | undefined;
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    requestBody = JSON.parse(String(init?.body));
+    return new Response(sse, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" }
+    });
+  }) as typeof fetch;
+
+  const stream = streamSimple(
+    buildModel(config),
+    { messages: [{ role: "user", content: "你好", timestamp: Date.now() }] },
+    { apiKey: "sk-test", ...buildModelStreamOptions(config) }
+  );
+  for await (const _event of stream) {
+    // 消费完整流，确保 pi 已经构造并发送请求体。
+  }
+  await stream.result();
+  return requestBody ?? {};
+}

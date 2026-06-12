@@ -1,103 +1,113 @@
-import { Check, ChevronRight, FileText, Loader2, X } from "lucide-react";
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
+import {
+  CheckIcon as Check,
+  CircleNotchIcon as Loader2,
+  XIcon as X
+} from "@phosphor-icons/react";
 import type { ToolCall } from "@chengxiaobang/shared";
 import { ArtifactCard } from "@/components/ArtifactCard";
-import { DiffView } from "@/components/DiffView";
-import { artifactFromToolCall, artifactKind } from "@/lib/artifact";
-import {
-  buildToolCallDiff,
-  formatDurationMs,
-  shortenPath,
-  toolCallDurationMs
-} from "@/lib/tool-call";
-import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store";
+import { ToolCallLine } from "@/components/ToolCallLine";
+import { artifactFromToolCall, type ArtifactKind } from "@/lib/artifact";
 
-const TOOL_STATUS_KEYS = {
-  completed: "chat.toolStatus.completed",
-  failed: "chat.toolStatus.failed",
-  rejected: "chat.toolStatus.rejected",
-  running: "chat.toolStatus.running",
-  pending_approval: "chat.toolStatus.pendingApproval"
-} as const satisfies Record<ToolCall["status"], string>;
-
-/** File tools whose `path` argument can be opened in the right-panel preview. */
-const FILE_PREVIEW_TOOLS = new Set<ToolCall["name"]>(["read_file", "write_file", "edit_file"]);
+interface ToolCallRowProps {
+  toolCall: ToolCall;
+  onOpenFile?: (path: string, kind: ArtifactKind) => void;
+}
 
 /**
- * One tool invocation in the timeline. Generated deliverables render as an
- * ArtifactCard (clickable → right preview); every other tool is a compact
- * single-line row — icon + name + status + duration — that expands on click
- * to its raw result or, for edit/write, a diff. No noisy collapsed preview.
+ * One standalone tool invocation in the timeline. Generated deliverables
+ * render as an ArtifactCard (clickable → right preview); ask_user/use_skill
+ * keep their dedicated shapes; every other tool is a borderless ToolCallLine
+ * (icon + muted description, expandable to its raw result or diff), aligned
+ * with the reasoning panel headers.
  */
-export function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const openArtifact = useAppStore((state) => state.openArtifact);
-
+export function ToolCallRow({ toolCall, onOpenFile }: ToolCallRowProps) {
   const artifact = artifactFromToolCall(toolCall);
   if (artifact) {
     return <ArtifactCard artifact={artifact} toolName={toolCall.name} />;
   }
 
+  if (toolCall.name === "ask_user") {
+    return <AskUserReceipt toolCall={toolCall} />;
+  }
+
+  if (toolCall.name === "use_skill") {
+    return <UseSkillChip toolCall={toolCall} />;
+  }
+
+  return (
+    <div className="mb-4 max-w-full self-stretch">
+      <ToolCallLine toolCall={toolCall} onOpenFile={onOpenFile} />
+    </div>
+  );
+}
+
+function textArg(toolCall: ToolCall, key: string): string | undefined {
+  const value = toolCall.args[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function ToolStatusIcon({ toolCall }: { toolCall: ToolCall }) {
   const isRunning = toolCall.status === "running" || toolCall.status === "pending_approval";
   const isError = toolCall.status === "failed" || toolCall.status === "rejected";
-  const filePath =
-    FILE_PREVIEW_TOOLS.has(toolCall.name) && typeof toolCall.args.path === "string"
-      ? toolCall.args.path
-      : undefined;
-  const durationMs = toolCallDurationMs(toolCall);
-  const diff = toolCall.status === "completed" ? buildToolCallDiff(toolCall) : undefined;
-  const expandable = Boolean(toolCall.result || diff);
+
+  if (isRunning) {
+    return <Loader2 className="size-3.5 flex-none animate-spin text-muted-foreground" />;
+  }
+  if (isError) {
+    return <X className="size-3.5 flex-none text-destructive" />;
+  }
+  return <Check className="size-3.5 flex-none text-muted-foreground" />;
+}
+
+function AskUserReceipt({ toolCall }: { toolCall: ToolCall }) {
+  const question = textArg(toolCall, "question") ?? "问题";
+  const answer =
+    toolCall.status === "completed" && toolCall.result ? toolCall.result : answerTextFor(toolCall.status);
+
   return (
     <div className="mb-1.5 max-w-full self-start overflow-hidden rounded-sm border bg-card">
-      <div className="flex items-center">
-        <button
-          type="button"
-          onClick={() => expandable && setOpen((value) => !value)}
-          className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left font-mono text-micro",
-            expandable && "transition-colors hover:bg-accent/60"
-          )}
-        >
-          {isRunning ? (
-            <Loader2 className="size-3.5 flex-none animate-spin text-muted-foreground" />
-          ) : isError ? (
-            <X className="size-3.5 flex-none text-destructive" />
-          ) : (
-            <Check className="size-3.5 flex-none text-muted-foreground" />
-          )}
-          <span className="font-medium uppercase tracking-[0.28px] text-foreground">{toolCall.name}</span>
-          <span className="text-muted-slate">{t(TOOL_STATUS_KEYS[toolCall.status])}</span>
-          {durationMs !== undefined ? (
-            <span className="text-muted-slate/70">{formatDurationMs(durationMs)}</span>
-          ) : null}
-          {expandable ? (
-            <ChevronRight
-              className={cn(
-                "ml-auto size-3.5 flex-none text-muted-foreground transition-transform",
-                open && "rotate-90"
-              )}
-            />
-          ) : null}
-        </button>
-        {filePath ? (
-          <button
-            type="button"
-            title={t("chat.previewFile")}
-            onClick={() => openArtifact(filePath, artifactKind(filePath))}
-            className="mr-2.5 flex max-w-[220px] flex-none items-center gap-1 font-mono text-micro text-muted-foreground transition-colors hover:text-action-blue hover:underline"
-          >
-            <FileText className="size-3 flex-none" />
-            <span className="truncate">{shortenPath(filePath)}</span>
-          </button>
-        ) : null}
+      <div className="flex min-w-0 items-center gap-2 px-3 py-1.5 font-mono text-micro">
+        <ToolStatusIcon toolCall={toolCall} />
+        <span className="font-medium uppercase tracking-[0.28px] text-foreground">{toolCall.name}</span>
       </div>
-      {open && diff ? (
-        <DiffView lines={diff} />
-      ) : open && toolCall.result ? (
-        <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words border-t bg-background px-3 py-2 font-mono text-micro leading-relaxed text-muted-foreground">
+      <div className="space-y-1 border-t bg-background px-3 py-2 text-micro leading-relaxed text-muted-foreground">
+        <p className="min-w-0 break-words">问：{question}</p>
+        <p className="min-w-0 break-words">答：{answer}</p>
+      </div>
+    </div>
+  );
+}
+
+function answerTextFor(status: ToolCall["status"]): string {
+  if (status === "rejected") {
+    return "用户跳过了该问题";
+  }
+  if (status === "pending_approval" || status === "running") {
+    return "问题未回答（运行已结束）";
+  }
+  return "无回答";
+}
+
+function UseSkillChip({ toolCall }: { toolCall: ToolCall }) {
+  const skillName = textArg(toolCall, "name") ?? "unknown";
+  const failed = toolCall.status === "failed";
+  const label =
+    toolCall.status === "running" || toolCall.status === "pending_approval"
+      ? "正在加载技能"
+      : failed
+        ? "加载技能失败"
+        : "已加载技能";
+
+  return (
+    <div className="mb-4 max-w-full self-stretch">
+      <div className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
+        <ToolStatusIcon toolCall={toolCall} />
+        <span className="min-w-0 truncate">
+          {label} {skillName}
+        </span>
+      </div>
+      {failed && toolCall.result ? (
+        <pre className="mt-1 max-h-[220px] overflow-auto whitespace-pre-wrap break-words rounded-sm bg-muted/50 px-3 py-2 font-mono text-micro leading-relaxed text-destructive">
           {toolCall.result}
         </pre>
       ) : null}

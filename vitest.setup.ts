@@ -1,3 +1,12 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// 后端测试若未显式注入 sessionWorkspacePath,AgentRunner 会落到
+// ~/.chengxiaobang/<sessionId> 创建工作目录;统一重定向到临时目录,
+// 避免测试在用户真实 home 下堆积孤儿 session 目录。
+process.env.CHENGXIAOBANG_HOME = mkdtempSync(join(tmpdir(), "chengxiaobang-test-"));
+
 function createLocalStorageMock(): Storage {
   const values = new Map<string, string>();
   return {

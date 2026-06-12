@@ -1,0 +1,145 @@
+import { Type } from "@earendil-works/pi-ai";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { Cron } from "croner";
+import type { StateStore } from "../repository/state-store";
+import { computeNextRunAt, validateCron } from "../tasks/schedule";
+import { textResult } from "./tool-result";
+
+const createParams = Type.Object({
+  name: Type.String({ description: "任务名称，简短易认，例如「AI 日报」" }),
+  cron: Type.String({
+    description:
+      "5 字段 cron 表达式（分 时 日 月 周），按本地时区解释。例如：每天 9 点 = 0 9 * * *，每 5 分钟 = */5 * * * *，工作日 8:30 = 30 8 * * 1-5"
+  }),
+  prompt: Type.String({
+    description: "每次执行时喂给模型的完整提示词；执行发生在当前会话中，可以依赖已有上下文"
+  }),
+  full_access: Type.Optional(
+    Type.Boolean({
+      description:
+        "默认 false：执行时为只读，写文件/执行命令等操作会被自动拒绝。仅当任务确实需要修改文件或执行命令、且用户明确同意时才设为 true"
+    })
+  )
+});
+
+const cancelParams = Type.Object({
+  id: Type.String({ description: "要取消的定时任务 ID（可用 schedule_list 查询）" })
+});
+
+const listParams = Type.Object({});
+
+export interface ScheduleToolRuntime {
+  store: StateStore;
+  /** 任务绑定的会话：到点后在该会话中追加执行。 */
+  sessionId: string;
+  /** 飞书绑定会话不支持创建（执行结果不会回发飞书，会成为静默黑洞）。 */
+  feishuChatId?: string;
+}
+
+/** 本地时间字符串，给模型/用户复述用。 */
+function formatLocal(iso: string): string {
+  return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+}
+
+/** 接下来 count 次触发时间（本地格式），创建后让模型复述以自检 cron 正确性。 */
+function previewRuns(cron: string, count: number): string[] {
+  const job = new Cron(cron, { paused: true });
+  const result: string[] = [];
+  let from = new Date();
+  for (let index = 0; index < count; index += 1) {
+    const next = job.nextRun(from);
+    if (!next) {
+      break;
+    }
+    result.push(next.toLocaleString("zh-CN", { hour12: false }));
+    from = next;
+  }
+  return result;
+}
+
+export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any>[] {
+  const scheduleCreate: AgentTool<typeof createParams> = {
+    name: "schedule_create",
+    label: "创建定时任务",
+    description:
+      "创建一个定时任务：按 cron 周期在当前会话中自动执行指定提示词。适用于「每天/每周/每隔一段时间做某事」类需求。创建前先把用户的时间表达换算成 5 字段 cron。",
+    parameters: createParams,
+    execute: async (_toolCallId, params) => {
+      if (runtime.feishuChatId) {
+        console.warn(
+          `[schedule-tools] 飞书会话拒绝创建定时任务 sessionId=${runtime.sessionId}`
+        );
+        throw new Error("飞书会话暂不支持定时任务（执行结果无法回发飞书），请在桌面端会话中创建。");
+      }
+      const cronError = validateCron(params.cron);
+      if (cronError) {
+        console.warn(`[schedule-tools] cron 校验失败 cron=${params.cron}: ${cronError}`);
+        throw new Error(cronError);
+      }
+      const task = await runtime.store.createScheduledTask({
+        sessionId: runtime.sessionId,
+        name: params.name,
+        prompt: params.prompt,
+        cron: params.cron,
+        fullAccess: params.full_access ?? false,
+        nextRunAt: computeNextRunAt(params.cron, new Date())
+      });
+      const upcoming = previewRuns(params.cron, 2);
+      console.info(
+        `[schedule-tools] 已创建定时任务 id=${task.id} sessionId=${runtime.sessionId} cron=${params.cron} fullAccess=${task.fullAccess}`
+      );
+      return textResult(
+        [
+          `已创建定时任务「${task.name}」（id: ${task.id}）。`,
+          `cron: ${task.cron}（${task.fullAccess ? "完全访问" : "只读执行"}）`,
+          upcoming.length > 0 ? `接下来的触发时间：${upcoming.join("、")}` : "",
+          "请向用户复述触发时间以确认理解一致；可在侧边栏「定时任务」页查看和管理。"
+        ]
+          .filter(Boolean)
+          .join("\n")
+      );
+    }
+  };
+
+  const scheduleList: AgentTool<typeof listParams> = {
+    name: "schedule_list",
+    label: "查看定时任务",
+    description: "列出当前所有定时任务（含 ID、cron、启用状态、下次/上次执行时间）。",
+    parameters: listParams,
+    execute: async () => {
+      const tasks = await runtime.store.listScheduledTasks();
+      if (tasks.length === 0) {
+        return textResult("当前没有定时任务。");
+      }
+      const lines = tasks.map((task) => {
+        const parts = [
+          `- ${task.name}（id: ${task.id}）cron: ${task.cron}`,
+          task.enabled ? "已启用" : "已停用",
+          task.sessionId === runtime.sessionId ? "本会话" : `会话 ${task.sessionId}`,
+          task.nextRunAt ? `下次 ${formatLocal(task.nextRunAt)}` : "",
+          task.lastRunAt ? `上次 ${formatLocal(task.lastRunAt)}（${task.lastStatus ?? "未知"}）` : ""
+        ];
+        return parts.filter(Boolean).join("，");
+      });
+      return textResult(lines.join("\n"));
+    }
+  };
+
+  const scheduleCancel: AgentTool<typeof cancelParams> = {
+    name: "schedule_cancel",
+    label: "取消定时任务",
+    description: "按 ID 删除一个定时任务（不可恢复）。",
+    parameters: cancelParams,
+    execute: async (_toolCallId, params) => {
+      const deleted = await runtime.store.deleteScheduledTask(params.id);
+      if (!deleted) {
+        console.warn(`[schedule-tools] 取消定时任务失败：不存在 id=${params.id}`);
+        throw new Error(`定时任务不存在：${params.id}`);
+      }
+      console.info(`[schedule-tools] 已取消定时任务 id=${params.id}`);
+      return textResult(`已取消定时任务 ${params.id}。`);
+    }
+  };
+
+  return [scheduleCreate, scheduleList, scheduleCancel];
+}

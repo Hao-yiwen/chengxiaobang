@@ -47,6 +47,18 @@ export function settingsRoutes(context: AppContext): Hono {
     return c.json({ ok: true });
   });
 
+  app.get("/providers/:providerId/models", async (c) => {
+    const providerId = c.req.param("providerId");
+    console.info(`[settings-routes] 拉取 provider 模型列表 providerId=${providerId}`);
+    return c.json({ models: await context.providerService.listModels(providerId) });
+  });
+
+  app.get("/providers/:providerId/model-options", async (c) => {
+    const providerId = c.req.param("providerId");
+    console.info(`[settings-routes] 拉取 provider 模型选项 providerId=${providerId}`);
+    return c.json({ models: await context.providerService.listModelOptions(providerId) });
+  });
+
   app.delete("/providers/:providerId", async (c) => {
     return c.json({
       deleted: await context.providerService.deleteProvider(c.req.param("providerId"))

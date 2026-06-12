@@ -1,7 +1,12 @@
-import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from "lucide-react";
+import {
+  ArrowClockwiseIcon as RotateCw,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  ArrowSquareOutIcon as ExternalLink
+} from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { normalizeBrowserUrl } from "@/lib/url";
+import { localPathFromFileUrl, normalizeBrowserUrl } from "@/lib/url";
 import { useAppStore } from "@/store";
 
 /** The subset of Electron's <webview> API the toolbar drives. */
@@ -22,6 +27,7 @@ export function BrowserPanel() {
   const { t } = useTranslation();
   const url = useAppStore((state) => state.browserUrl);
   const setBrowserUrl = useAppStore((state) => state.setBrowserUrl);
+  const setNotice = useAppStore((state) => state.setNotice);
   const [address, setAddress] = useState(url);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
@@ -70,6 +76,22 @@ export function BrowserPanel() {
     }
   }
 
+  async function openExternal(): Promise<void> {
+    if (!url) {
+      return;
+    }
+    const localPath = localPathFromFileUrl(url);
+    if (localPath) {
+      const result = await window.chengxiaobang?.openPath?.(localPath);
+      if (result && !result.ok) {
+        console.warn("[BrowserPanel] 本地文件外部打开失败", { localPath, error: result.error });
+        setNotice(result.error ? `打开文件失败：${result.error}` : t("rightPanel.fileLoadFailed"));
+      }
+      return;
+    }
+    window.open(url, "_blank");
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex flex-none items-center gap-1 border-b px-3 py-2">
@@ -114,7 +136,7 @@ export function BrowserPanel() {
           type="button"
           title={t("rightPanel.openExternal")}
           disabled={!url}
-          onClick={() => url && window.open(url, "_blank")}
+          onClick={() => void openExternal()}
           className={NAV_BUTTON_CLASS}
         >
           <ExternalLink className="size-3.5" />

@@ -12,6 +12,7 @@ import { existsSync, watch } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { cleanupStaleDevBackends } from "./dev-process-cleanup.mjs";
 
 const desktopDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(desktopDir, "../..");
@@ -22,6 +23,10 @@ const VITE_PORT = 5173;
 const VITE_URL = `http://${VITE_HOST}:${VITE_PORT}`;
 const distDir = resolve(desktopDir, "dist");
 const mainEntry = resolve(distDir, "main/main.js");
+const devEnv = {
+  ...process.env,
+  CHENGXIAOBANG_LOG_LEVEL: process.env.CHENGXIAOBANG_LOG_LEVEL ?? "debug"
+};
 
 /** @type {import("node:child_process").ChildProcess[]} */
 const children = [];
@@ -66,7 +71,7 @@ const electronBin = resolve(desktopDir, "node_modules/.bin/electron");
 
 function startElectron() {
   electron = run(electronBin, ["."], {
-    env: { ...process.env, VITE_DEV_SERVER_URL: VITE_URL }
+    env: { ...devEnv, VITE_DEV_SERVER_URL: VITE_URL }
   });
   electron.on("exit", (code) => {
     if (!shuttingDown) shutdown(code ?? 0); // closing the window ends dev
@@ -84,11 +89,15 @@ function restartElectron() {
 }
 
 async function main() {
+  await cleanupStaleDevBackends({ repoRoot });
+
   // 1) Rebuild main + preload on change.
-  run(bin("tsup"), ["--config", "tsup.config.ts", "--watch"]);
+  run(bin("tsup"), ["--config", "tsup.config.ts", "--watch"], { env: devEnv });
 
   // 2) Vite dev server (renderer HMR).
-  run(bin("vite"), ["--host", VITE_HOST, "--port", String(VITE_PORT), "--strictPort"]);
+  run(bin("vite"), ["--host", VITE_HOST, "--port", String(VITE_PORT), "--strictPort"], {
+    env: devEnv
+  });
 
   // 3) Wait for the first main build and for Vite to answer.
   await waitFor(() => existsSync(mainEntry), { timeout: 30_000, label: "main build" });

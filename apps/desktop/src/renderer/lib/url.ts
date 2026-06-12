@@ -23,3 +23,15 @@ export function normalizeBrowserUrl(input: string): string | undefined {
     return undefined;
   }
 }
+
+export function localPathFromFileUrl(input: string): string | undefined {
+  try {
+    const url = new URL(input);
+    if (url.protocol !== "file:" || url.host) {
+      return undefined;
+    }
+    return decodeURIComponent(url.pathname);
+  } catch {
+    return undefined;
+  }
+}

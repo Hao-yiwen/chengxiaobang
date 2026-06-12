@@ -6,5 +6,6 @@ allowBuilds:
   bun: true
   electron: true
   esbuild: true
+  node-pty: true
   protobufjs: true
   sharp: true

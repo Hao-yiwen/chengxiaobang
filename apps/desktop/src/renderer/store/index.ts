@@ -3,13 +3,18 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { createId } from "@chengxiaobang/shared";
 import type {
   AccessMode,
+  ApprovalDecision,
   FeishuConfig,
   FeishuConfigInput,
   FeishuStatus,
   Message,
   Project,
+  ProjectFileEntry,
   ProviderConfig,
   ProviderInput,
+  ReasoningMode,
+  ScheduledTask,
+  ScheduledTaskUpdate,
   Session,
   SlashCommand,
   StreamEvent,
@@ -23,8 +28,8 @@ import { buildSessionMarkdown, exportFilename } from "../lib/session-export";
 import i18n, { DEFAULT_LOCALE, type Locale } from "../i18n";
 
 export type Theme = "light" | "dark" | "system";
-export type View = "home" | "chat" | "settings";
-export type RightPanelMode = "terminal" | "browser" | "files";
+export type View = "home" | "chat" | "settings" | "tasks";
+export type RightPanelMode = "changes" | "terminal" | "browser" | "files" | "chat";
 
 export interface Attachment {
   path: string;
@@ -39,6 +44,20 @@ export interface TerminalEntry {
   command: string;
   output?: string;
   exitCode?: number;
+}
+
+export interface PreviewFileState {
+  path: string;
+  projectPath?: string;
+  sessionId?: string;
+}
+
+interface RightPanelSessionState {
+  open: boolean;
+  mode: RightPanelMode | null;
+  width: number;
+  previewFile?: PreviewFileState;
+  browserUrl: string;
 }
 
 const RIGHT_PANEL_MIN_WIDTH = 300;
@@ -61,6 +80,9 @@ interface AppState {
   activeSessionId?: string;
   activeProjectId?: string;
   providerId?: string;
+  model?: string;
+  reasoningMode?: ReasoningMode;
+  planMode: boolean;
   accessMode: AccessMode;
   // ui
   view: View;
@@ -83,16 +105,34 @@ interface AppState {
   isRunning: boolean;
   activeRunId?: string;
   lastUsage?: TokenUsage;
-  // right workspace panel (mode + width persisted, content transient)
+  lastRunModel?: { providerId?: string; model: string; reasoningMode?: ReasoningMode };
+  runMeta: Record<
+    string,
+    {
+      durationMs: number;
+      promptTokens: number;
+      completionTokens: number;
+      model: string;
+      reasoningMode?: ReasoningMode;
+    }
+  >;
+  // left sidebar (persisted)
+  sidebarOpen: boolean;
+  // right workspace panel (current session state + per-session memory)
+  rightPanelOpen: boolean;
+  /** null = the panel's menu page (pick a tool). */
   rightPanelMode: RightPanelMode | null;
   rightPanelWidth: number;
-  previewFile?: { path: string };
+  previewFile?: PreviewFileState;
   browserUrl: string;
+  rightPanelBySession: Record<string, RightPanelSessionState>;
   terminalEntries: TerminalEntry[];
   terminalRunning: boolean;
   // feishu integration (transient; loaded when the settings section opens)
   feishuConfig?: FeishuConfig;
   feishuStatus?: FeishuStatus;
+  // scheduled tasks (transient; loaded when the tasks view opens)
+  tasks: ScheduledTask[];
   // theme (persisted)
   theme: Theme;
   // language (persisted)
@@ -107,15 +147,24 @@ interface AppState {
   setOnboardingOpen(open: boolean): void;
   setNotice(notice: string | undefined): void;
   setProviderId(id: string | undefined): void;
+  setModel(model: string | undefined): void;
+  setReasoningMode(reasoningMode: ReasoningMode | undefined): void;
+  setPlanMode(enabled: boolean): void;
   setAccessMode(mode: AccessMode): void;
   setActiveProjectId(id: string | undefined): void;
   setTheme(theme: Theme): void;
   setLocale(locale: Locale): void;
-  toggleRightPanel(mode: RightPanelMode): void;
+  /** 折叠/展开左侧边栏。 */
+  toggleSidebar(): void;
+  /** Closed -> opens on the menu page; open -> closes. */
+  toggleRightPanel(): void;
+  /** Opens the panel on a tool page, or back on the menu page with null. */
+  openRightPanel(mode: RightPanelMode | null): void;
+  closeRightPanel(): void;
   setRightPanelWidth(width: number): void;
   setBrowserUrl(url: string): void;
   openFilePreview(path: string): void;
-  /** Opens a generated artifact by kind: html→browser, office→system app, else→file panel. */
+  /** 打开生成物：统一进入右侧文件预览工作台，由预览器按类型处理。 */
   openArtifact(path: string, kind: ArtifactKind): void;
   runTerminalCommand(command: string): Promise<void>;
 
@@ -127,18 +176,27 @@ interface AppState {
   refresh(): Promise<void>;
   refreshSlashCommands(projectId?: string): Promise<void>;
   loadFileSuggestions(query: string): Promise<void>;
+  listProjectDirectory(path?: string): Promise<ProjectFileEntry[]>;
   restoreInitialState(): Promise<void>;
-  loadSessionDetail(id: string): Promise<void>;
+  loadSessionDetail(id: string, view?: View): Promise<void>;
   selectSession(id: string): Promise<void>;
   renameSession(id: string, title: string): Promise<void>;
+  /** 置顶/取消置顶会话（侧边栏置顶区）。 */
+  setSessionPinned(id: string, pinned: boolean): Promise<void>;
   deleteSession(id: string): Promise<void>;
   /** Downloads any session (active or not) as a Markdown document. */
   exportSession(id: string): Promise<void>;
   /** Branches the active session at a message and switches to the new branch. */
   forkSession(messageId: string): Promise<void>;
+  /** Renames a project (the folder on disk is untouched). */
+  renameProject(id: string, name: string): Promise<void>;
+  /** 置顶/取消置顶项目（侧边栏置顶区）。 */
+  setProjectPinned(id: string, pinned: boolean): Promise<void>;
   /** Deletes a project and everything in it (sessions, messages, runs). */
   deleteProject(id: string): Promise<void>;
   newChat(): void;
+  /** Starts a new chat already scoped to the given project (home view, project preselected). */
+  newChatInProject(projectId: string): void;
   openFolder(): Promise<void>;
   addContext(): Promise<void>;
   removeAttachment(path: string): void;
@@ -150,13 +208,18 @@ interface AppState {
   /** Rewinds to the given user message and re-runs it with edited content. */
   editAndResend(messageId: string, content: string): Promise<void>;
   abortRun(): Promise<void>;
-  approve(toolCallId: string, approved: boolean): void;
+  approve(toolCallId: string, decision: ApprovalDecision | boolean): void;
   saveProvider(input: ProviderInput): Promise<void>;
   deleteProvider(id: string): Promise<void>;
   testProvider(id: string): Promise<void>;
   loadFeishuConfig(): Promise<void>;
   saveFeishuConfig(input: FeishuConfigInput): Promise<void>;
   refreshFeishuStatus(): Promise<void>;
+  loadTasks(): Promise<void>;
+  updateTask(id: string, input: ScheduledTaskUpdate): Promise<void>;
+  deleteTask(id: string): Promise<void>;
+  /** 立即触发一次执行（后端异步跑），随后重拉任务列表带回状态。 */
+  runTaskNow(id: string): Promise<void>;
   clearRunState(): void;
 }
 
@@ -170,6 +233,9 @@ const initialState = {
   activeSessionId: undefined as string | undefined,
   activeProjectId: undefined as string | undefined,
   providerId: undefined as string | undefined,
+  model: undefined as string | undefined,
+  reasoningMode: undefined as ReasoningMode | undefined,
+  planMode: false,
   accessMode: "approval" as AccessMode,
   view: "home" as View,
   paletteOpen: false,
@@ -186,14 +252,31 @@ const initialState = {
   isRunning: false,
   activeRunId: undefined as string | undefined,
   lastUsage: undefined as TokenUsage | undefined,
+  lastRunModel: undefined as
+    | { providerId?: string; model: string; reasoningMode?: ReasoningMode }
+    | undefined,
+  runMeta: {} as Record<
+    string,
+    {
+      durationMs: number;
+      promptTokens: number;
+      completionTokens: number;
+      model: string;
+      reasoningMode?: ReasoningMode;
+    }
+  >,
+  sidebarOpen: true,
+  rightPanelOpen: false,
   rightPanelMode: null as RightPanelMode | null,
   rightPanelWidth: 380,
-  previewFile: undefined as { path: string } | undefined,
+  previewFile: undefined as PreviewFileState | undefined,
   browserUrl: "",
+  rightPanelBySession: {} as Record<string, RightPanelSessionState>,
   terminalEntries: [] as TerminalEntry[],
   terminalRunning: false,
   feishuConfig: undefined as FeishuConfig | undefined,
   feishuStatus: undefined as FeishuStatus | undefined,
+  tasks: [] as ScheduledTask[],
   theme: "system" as Theme,
   locale: DEFAULT_LOCALE as Locale,
   clientReady: false
@@ -213,6 +296,14 @@ function upsertToolCall(toolCalls: ToolCall[], toolCall: ToolCall): ToolCall[] {
   return [...toolCalls, toolCall];
 }
 
+function upsertSession(sessions: Session[], session: Session): Session[] {
+  if (sessions.some((item) => item.id === session.id)) {
+    return sessions.map((item) => (item.id === session.id ? session : item));
+  }
+  // First run of a brand-new session: it isn't in the sidebar list yet.
+  return [session, ...sessions];
+}
+
 function isConfiguredProvider(provider: ProviderConfig | undefined): provider is ProviderConfig {
   return Boolean(provider?.apiKeyRef);
 }
@@ -221,8 +312,134 @@ function firstConfiguredProvider(providers: ProviderConfig[]): ProviderConfig | 
   return providers.find(isConfiguredProvider);
 }
 
+function sanitizePersistedAppState(state: Partial<AppState>): Partial<AppState> {
+  if (state.view !== "home") {
+    return state;
+  }
+  return {
+    ...state,
+    activeSessionId: undefined,
+    rightPanelOpen: false,
+    rightPanelMode: null,
+    previewFile: undefined,
+    browserUrl: ""
+  };
+}
+
+function migrateRightPanelMemory(state: Partial<AppState>): Partial<AppState> {
+  const rightPanelBySession = state.rightPanelBySession ?? {};
+  const activeSessionId = state.activeSessionId;
+  if (!activeSessionId || rightPanelBySession[activeSessionId]) {
+    return { ...state, rightPanelBySession };
+  }
+  if (!state.rightPanelOpen && !state.rightPanelMode && !state.browserUrl && !state.previewFile) {
+    return { ...state, rightPanelBySession };
+  }
+  return {
+    ...state,
+    rightPanelBySession: {
+      ...rightPanelBySession,
+      [activeSessionId]: {
+        open: Boolean(state.rightPanelOpen),
+        mode: state.rightPanelMode ?? null,
+        width: state.rightPanelWidth ?? initialState.rightPanelWidth,
+        browserUrl: state.browserUrl ?? "",
+        ...(state.previewFile ? { previewFile: state.previewFile } : {})
+      }
+    }
+  };
+}
+
+type RightPanelPatch = Partial<
+  Pick<AppState, "rightPanelOpen" | "rightPanelMode" | "rightPanelWidth" | "previewFile" | "browserUrl">
+>;
+
+function hasPatchKey<K extends keyof RightPanelPatch>(
+  patch: RightPanelPatch,
+  key: K
+): patch is RightPanelPatch & Required<Pick<RightPanelPatch, K>> {
+  return Object.prototype.hasOwnProperty.call(patch, key);
+}
+
+function rightPanelSnapshot(state: AppState, patch: RightPanelPatch = {}): RightPanelSessionState {
+  return {
+    open: patch.rightPanelOpen ?? state.rightPanelOpen,
+    mode: patch.rightPanelMode ?? state.rightPanelMode,
+    width: patch.rightPanelWidth ?? state.rightPanelWidth,
+    browserUrl: patch.browserUrl ?? state.browserUrl,
+    ...(hasPatchKey(patch, "previewFile")
+      ? patch.previewFile
+        ? { previewFile: patch.previewFile }
+        : {}
+      : state.previewFile
+        ? { previewFile: state.previewFile }
+        : {})
+  };
+}
+
+function rememberRightPanel(
+  state: AppState,
+  sessionId = state.activeSessionId,
+  patch: RightPanelPatch = {}
+): Record<string, RightPanelSessionState> {
+  if (!sessionId) {
+    return state.rightPanelBySession;
+  }
+  const snapshot = rightPanelSnapshot(state, patch);
+  console.debug("[store] 保存会话右侧面板状态", {
+    sessionId,
+    open: snapshot.open,
+    mode: snapshot.mode,
+    previewPath: snapshot.previewFile?.path
+  });
+  return { ...state.rightPanelBySession, [sessionId]: snapshot };
+}
+
+function restoredRightPanel(
+  state: AppState,
+  sessionId: string | undefined
+): Pick<AppState, "rightPanelOpen" | "rightPanelMode" | "rightPanelWidth" | "previewFile" | "browserUrl"> {
+  const snapshot = sessionId ? state.rightPanelBySession[sessionId] : undefined;
+  if (!snapshot) {
+    console.debug("[store] 目标会话没有右侧面板记忆，默认关闭", { sessionId });
+    return {
+      rightPanelOpen: false,
+      rightPanelMode: null,
+      rightPanelWidth: state.rightPanelWidth,
+      previewFile: undefined,
+      browserUrl: ""
+    };
+  }
+  console.debug("[store] 恢复会话右侧面板状态", {
+    sessionId,
+    open: snapshot.open,
+    mode: snapshot.mode,
+    previewPath: snapshot.previewFile?.path
+  });
+  return {
+    rightPanelOpen: snapshot.open,
+    rightPanelMode: snapshot.mode,
+    rightPanelWidth: snapshot.width,
+    previewFile: snapshot.previewFile,
+    browserUrl: snapshot.browserUrl
+  };
+}
+
+function dropRightPanelMemory(
+  state: AppState,
+  sessionIds: string[]
+): Record<string, RightPanelSessionState> {
+  if (sessionIds.length === 0) {
+    return state.rightPanelBySession;
+  }
+  const remove = new Set(sessionIds);
+  return Object.fromEntries(
+    Object.entries(state.rightPanelBySession).filter(([sessionId]) => !remove.has(sessionId))
+  );
+}
+
 /** The provider a run would use: the selected one if configured, else the first configured. */
-function resolveRunProvider(state: AppState): ProviderConfig | undefined {
+export function resolveRunProvider(state: AppState): ProviderConfig | undefined {
   const selected =
     state.providers.find((provider) => provider.id === state.providerId) ??
     firstConfiguredProvider(state.providers);
@@ -240,9 +457,13 @@ export const useAppStore = create<AppState>()(
       setOnboardingOpen: (onboardingOpen) => set({ onboardingOpen }),
       setNotice: (notice) => set({ notice }),
       setProviderId: (providerId) => set({ providerId }),
+      setModel: (model) => set({ model }),
+      setReasoningMode: (reasoningMode) => set({ reasoningMode }),
+      setPlanMode: (planMode) => set({ planMode }),
       setAccessMode: (accessMode) => set({ accessMode }),
       setActiveProjectId: (activeProjectId) => {
-        set({
+        set((state) => ({
+          rightPanelBySession: rememberRightPanel(state),
           activeProjectId,
           activeSessionId: undefined,
           messages: [],
@@ -253,52 +474,96 @@ export const useAppStore = create<AppState>()(
           events: [],
           pendingTool: undefined,
           activeRunId: undefined,
+          rightPanelOpen: false,
+          rightPanelMode: null,
+          previewFile: undefined,
+          browserUrl: "",
           view: "home"
-        });
+        }));
         void get().refreshSlashCommands(activeProjectId);
       },
       setTheme: (theme) => set({ theme }),
       setLocale: (locale) => set({ locale }),
-      toggleRightPanel: (mode) =>
-        set((state) => ({ rightPanelMode: state.rightPanelMode === mode ? null : mode })),
+      toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      toggleRightPanel: () =>
+        set((state) => {
+          const patch: RightPanelPatch = state.rightPanelOpen
+            ? { rightPanelOpen: false }
+            : { rightPanelOpen: true, rightPanelMode: null };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        }),
+      openRightPanel: (mode) =>
+        set((state) => {
+          const patch: RightPanelPatch = { rightPanelOpen: true, rightPanelMode: mode };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        }),
+      closeRightPanel: () =>
+        set((state) => {
+          const patch: RightPanelPatch = { rightPanelOpen: false };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        }),
       setRightPanelWidth: (width) =>
-        set({
-          rightPanelWidth: Math.min(
+        set((state) => {
+          const nextWidth = Math.min(
             RIGHT_PANEL_MAX_WIDTH,
             Math.max(RIGHT_PANEL_MIN_WIDTH, Math.round(width))
-          )
+          );
+          const patch: RightPanelPatch = { rightPanelWidth: nextWidth };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
         }),
-      setBrowserUrl: (browserUrl) => set({ browserUrl }),
+      setBrowserUrl: (browserUrl) =>
+        set((state) => {
+          const patch: RightPanelPatch = { browserUrl };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        }),
 
       openFilePreview(path) {
-        const absolute = resolveProjectPath(get(), path);
-        set((state) => ({
-          previewFile: { path: absolute },
-          rightPanelMode: "files",
-          rightPanelWidth: Math.max(state.rightPanelWidth, RIGHT_PANEL_FILE_WIDTH)
-        }));
+        const state = get();
+        const project = selectActiveProject(state);
+        const session = selectActiveSession(state);
+        const sessionId = session?.id ?? state.activeSessionId;
+        const absolute = resolveProjectPath(state, path);
+        console.info("[store] 打开文件预览", {
+          path,
+          absolute,
+          projectPath: project?.path,
+          sessionId
+        });
+        set((state) => {
+          const patch: RightPanelPatch = {
+            previewFile: {
+              path: absolute,
+              ...(project?.path ? { projectPath: project.path } : {}),
+              ...(sessionId ? { sessionId } : {})
+            },
+            rightPanelOpen: true,
+            rightPanelMode: "files",
+            rightPanelWidth: Math.max(state.rightPanelWidth, RIGHT_PANEL_FILE_WIDTH)
+          };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        });
       },
 
       openArtifact(path, kind) {
-        const absolute = resolveProjectPath(get(), path);
-        if (kind === "html") {
-          // True render in the browser panel via a file URL.
-          set((state) => ({
-            browserUrl: `file://${absolute}`,
-            rightPanelMode: "browser",
-            rightPanelWidth: Math.max(state.rightPanelWidth, RIGHT_PANEL_FILE_WIDTH)
-          }));
-          return;
-        }
-        if (kind === "office") {
-          // Binary docs can't render in-app — hand off to the system app.
-          if (window.chengxiaobang?.openPath) {
-            void window.chengxiaobang.openPath(absolute);
-          } else {
-            set({ notice: i18n.t("notice.openArtifactDesktopOnly") });
-          }
-          return;
-        }
+        console.info("[store] 打开生成物预览", { path, kind });
         get().openFilePreview(path);
       },
 
@@ -347,22 +612,31 @@ export const useAppStore = create<AppState>()(
           apiClient.listSessions(),
           apiClient.listProviders()
         ]);
-        const { activeSessionId } = get();
         const configuredProvider = firstConfiguredProvider(nextProviders);
-        set((state) => ({
-          projects: nextProjects,
-          sessions: nextSessions,
-          providers: nextProviders,
-          providerId:
-            state.providerId &&
-            isConfiguredProvider(nextProviders.find((p) => p.id === state.providerId))
-              ? state.providerId
-              : configuredProvider?.id,
-          activeProjectId:
-            state.activeProjectId && nextProjects.some((p) => p.id === state.activeProjectId)
-              ? state.activeProjectId
-              : (nextSessions.find((s) => s.id === activeSessionId)?.projectId ?? undefined)
-        }));
+        set((state) => {
+          const activeSessionId = state.view === "home" ? undefined : state.activeSessionId;
+          const liveSessionIds = new Set(nextSessions.map((session) => session.id));
+          return {
+            projects: nextProjects,
+            sessions: nextSessions,
+            providers: nextProviders,
+            rightPanelBySession: Object.fromEntries(
+              Object.entries(state.rightPanelBySession).filter(([sessionId]) =>
+                liveSessionIds.has(sessionId)
+              )
+            ),
+            activeSessionId,
+            providerId:
+              state.providerId &&
+              isConfiguredProvider(nextProviders.find((p) => p.id === state.providerId))
+                ? state.providerId
+                : configuredProvider?.id,
+            activeProjectId:
+              state.activeProjectId && nextProjects.some((p) => p.id === state.activeProjectId)
+                ? state.activeProjectId
+                : (nextSessions.find((s) => s.id === activeSessionId)?.projectId ?? undefined)
+          };
+        });
         return { projects: nextProjects, sessions: nextSessions, providers: nextProviders };
       },
 
@@ -400,6 +674,19 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      async listProjectDirectory(path = ".") {
+        const project = selectActiveProject(get());
+        if (!apiClient || !project) {
+          console.warn("[store] 文件树目录读取失败：缺少 ApiClient 或当前项目", {
+            hasClient: Boolean(apiClient),
+            path
+          });
+          return [];
+        }
+        console.debug("[store] 读取项目文件树目录", { projectId: project.id, path });
+        return apiClient.listProjectDirectory(project.id, path);
+      },
+
       async restoreInitialState() {
         const data = await get().loadData();
         if (!data) {
@@ -415,22 +702,69 @@ export const useAppStore = create<AppState>()(
             messages: [],
             toolHistory: [],
             view: "home",
+            rightPanelOpen: false,
+            rightPanelMode: null,
+            previewFile: undefined,
+            browserUrl: "",
             onboardingOpen: true
           });
           return;
         }
+        const restoredView = get().view;
         const storedSessionId = get().activeSessionId;
-        const targetSession =
-          data.sessions.find((session) => session.id === storedSessionId) ?? data.sessions[0];
-        if (!targetSession) {
-          set({ activeSessionId: undefined, messages: [], toolHistory: [], view: "home" });
+        const storedSession = storedSessionId
+          ? data.sessions.find((session) => session.id === storedSessionId)
+          : undefined;
+        const fallbackSession =
+          !storedSessionId && restoredView !== "home" ? data.sessions[0] : undefined;
+        const targetSession = storedSession ?? fallbackSession;
+        if (restoredView === "home") {
+          console.debug("[store] 首页恢复：跳过会话选中", {
+            activeProjectId: get().activeProjectId,
+            storedSessionId
+          });
+          set({
+            activeSessionId: undefined,
+            messages: [],
+            toolHistory: [],
+            rightPanelOpen: false,
+            rightPanelMode: null,
+            previewFile: undefined,
+            browserUrl: "",
+            view: "home"
+          });
           await get().refreshSlashCommands();
           return;
         }
+        if (!targetSession) {
+          if (storedSessionId) {
+            console.warn("[store] 持久化会话已不存在，回到首页", { storedSessionId });
+          } else {
+            console.debug("[store] 没有持久化会话，停留首页", { restoredView });
+          }
+          set({
+            activeSessionId: undefined,
+            messages: [],
+            toolHistory: [],
+            rightPanelOpen: false,
+            rightPanelMode: null,
+            previewFile: undefined,
+            browserUrl: "",
+            view: "home"
+          });
+          await get().refreshSlashCommands();
+          return;
+        }
+        console.debug("[store] 恢复启动会话", {
+          sessionId: targetSession.id,
+          restoredView,
+          source: storedSession ? "持久化" : "最新会话"
+        });
         set((state) => ({
           activeSessionId: targetSession.id,
           activeProjectId: targetSession.projectId ?? undefined,
           accessMode: targetSession.accessMode,
+          ...restoredRightPanel(state, targetSession.id),
           providerId:
             targetSession.providerId &&
             isConfiguredProvider(data.providers.find((p) => p.id === targetSession.providerId))
@@ -441,10 +775,11 @@ export const useAppStore = create<AppState>()(
                 : configuredProvider.id
         }));
         await get().refreshSlashCommands();
-        await get().loadSessionDetail(targetSession.id);
+        // 预加载活跃会话让对话视图就绪，但保留用户离开时所在的视图。
+        await get().loadSessionDetail(targetSession.id, restoredView);
       },
 
-      async loadSessionDetail(id) {
+      async loadSessionDetail(id, view = "chat") {
         if (!apiClient) {
           return;
         }
@@ -452,7 +787,7 @@ export const useAppStore = create<AppState>()(
           apiClient.listMessages(id),
           apiClient.listSessionRuns(id)
         ]);
-        set({ messages, toolHistory: history.toolCalls, view: "chat" });
+        set({ messages, toolHistory: history.toolCalls, view });
       },
 
       async selectSession(id) {
@@ -460,12 +795,17 @@ export const useAppStore = create<AppState>()(
           return;
         }
         const session = get().sessions.find((item) => item.id === id);
-        set((state) => ({
-          activeSessionId: id,
-          activeProjectId: session?.projectId ?? undefined,
-          providerId: session?.providerId ?? state.providerId,
-          accessMode: session ? session.accessMode : state.accessMode
-        }));
+        set((state) => {
+          const rightPanelBySession = rememberRightPanel(state);
+          return {
+            rightPanelBySession,
+            activeSessionId: id,
+            activeProjectId: session?.projectId ?? undefined,
+            providerId: session?.providerId ?? state.providerId,
+            accessMode: session ? session.accessMode : state.accessMode,
+            ...restoredRightPanel({ ...state, rightPanelBySession }, id)
+          };
+        });
         get().clearRunState();
         await get().refreshSlashCommands(session?.projectId ?? undefined);
         await get().loadSessionDetail(id);
@@ -481,6 +821,18 @@ export const useAppStore = create<AppState>()(
         }));
       },
 
+      async setSessionPinned(id, pinned) {
+        if (!apiClient) {
+          return;
+        }
+        console.debug("[store] 更新会话置顶", { id, pinned });
+        // 整体替换返回实体：取消置顶时返回对象不含 pinnedAt，merge 会残留旧值。
+        const updated = await apiClient.updateSession(id, { pinned });
+        set((state) => ({
+          sessions: state.sessions.map((session) => (session.id === id ? updated : session))
+        }));
+      },
+
       async deleteSession(id) {
         if (!apiClient) {
           return;
@@ -491,17 +843,46 @@ export const useAppStore = create<AppState>()(
         }
         set((state) => {
           const sessions = state.sessions.filter((session) => session.id !== id);
+          const rightPanelBySession = dropRightPanelMemory(state, [id]);
           if (state.activeSessionId === id) {
             return {
               sessions,
+              rightPanelBySession,
               activeSessionId: undefined,
               messages: [],
               toolHistory: [],
+              rightPanelOpen: false,
+              rightPanelMode: null,
+              previewFile: undefined,
+              browserUrl: "",
               view: "home" as View
             };
           }
-          return { sessions };
+          return { sessions, rightPanelBySession };
         });
+      },
+
+      async renameProject(id, name) {
+        if (!apiClient) {
+          return;
+        }
+        console.debug("[store] 重命名项目", { id, name });
+        const updated = await apiClient.renameProject(id, name);
+        set((state) => ({
+          projects: state.projects.map((project) => (project.id === id ? updated : project))
+        }));
+      },
+
+      async setProjectPinned(id, pinned) {
+        if (!apiClient) {
+          return;
+        }
+        console.debug("[store] 更新项目置顶", { id, pinned });
+        // 整体替换返回实体：取消置顶时返回对象不含 pinnedAt，merge 会残留旧值。
+        const updated = await apiClient.setProjectPinned(id, pinned);
+        set((state) => ({
+          projects: state.projects.map((project) => (project.id === id ? updated : project))
+        }));
       },
 
       async deleteProject(id) {
@@ -515,6 +896,10 @@ export const useAppStore = create<AppState>()(
         set((state) => {
           const projects = state.projects.filter((project) => project.id !== id);
           const sessions = state.sessions.filter((session) => session.projectId !== id);
+          const removedSessionIds = state.sessions
+            .filter((session) => session.projectId === id)
+            .map((session) => session.id);
+          const rightPanelBySession = dropRightPanelMemory(state, removedSessionIds);
           const activeGone =
             state.activeProjectId === id ||
             (state.activeSessionId &&
@@ -523,14 +908,19 @@ export const useAppStore = create<AppState>()(
             return {
               projects,
               sessions,
+              rightPanelBySession,
               activeProjectId: undefined,
               activeSessionId: undefined,
               messages: [],
               toolHistory: [],
+              rightPanelOpen: false,
+              rightPanelMode: null,
+              previewFile: undefined,
+              browserUrl: "",
               view: "home" as View
             };
           }
-          return { projects, sessions };
+          return { projects, sessions, rightPanelBySession };
         });
       },
 
@@ -576,14 +966,40 @@ export const useAppStore = create<AppState>()(
           set({ onboardingOpen: true });
         }
         get().clearRunState();
-        set({
+        set((state) => ({
+          rightPanelBySession: rememberRightPanel(state),
           activeProjectId: undefined,
           activeSessionId: undefined,
           messages: [],
           toolHistory: [],
+          rightPanelOpen: false,
+          rightPanelMode: null,
+          previewFile: undefined,
+          browserUrl: "",
           view: "home"
-        });
+        }));
         void get().refreshSlashCommands();
+      },
+
+      newChatInProject(projectId) {
+        console.debug("[store] 在项目下新建会话", { projectId });
+        if (!firstConfiguredProvider(get().providers)) {
+          set({ onboardingOpen: true });
+        }
+        get().clearRunState();
+        set((state) => ({
+          rightPanelBySession: rememberRightPanel(state),
+          activeProjectId: projectId,
+          activeSessionId: undefined,
+          messages: [],
+          toolHistory: [],
+          rightPanelOpen: false,
+          rightPanelMode: null,
+          previewFile: undefined,
+          browserUrl: "",
+          view: "home"
+        }));
+        void get().refreshSlashCommands(projectId);
       },
 
       async openFolder() {
@@ -601,14 +1017,19 @@ export const useAppStore = create<AppState>()(
         const project = await apiClient.createProject({ path: dir, name: dir.split("/").pop() });
         await get().refresh();
         get().clearRunState();
-        set({
+        set((state) => ({
+          rightPanelBySession: rememberRightPanel(state),
           activeProjectId: project.id,
           activeSessionId: undefined,
           messages: [],
           toolHistory: [],
+          rightPanelOpen: false,
+          rightPanelMode: null,
+          previewFile: undefined,
+          browserUrl: "",
           notice: undefined,
           view: "home"
-        });
+        }));
         await get().refreshSlashCommands(project.id);
       },
 
@@ -645,6 +1066,13 @@ export const useAppStore = create<AppState>()(
       async submit() {
         const state = get();
         if (!apiClient || state.input.trim().length === 0) {
+          return;
+        }
+        if (state.isRunning && state.pendingTool?.name === "ask_user") {
+          const answer = state.input.trim();
+          console.info(`[store] 将输入框内容作为 ask_user 回答 toolCallId=${state.pendingTool.id}`);
+          get().approve(state.pendingTool.id, { approved: true, answer: { text: answer } });
+          set({ input: "" });
           return;
         }
         if (!resolveRunProvider(state)) {
@@ -713,11 +1141,15 @@ export const useAppStore = create<AppState>()(
         }
         set({ isRunning: true });
         get().clearRunState();
-        const { activeSessionId, accessMode } = state;
+        const { activeSessionId, accessMode, planMode, model, reasoningMode } = state;
         const providerId = selectedProvider.id;
         const activeProject = selectActiveProject(get());
         set({ view: "chat" });
         let runSessionId = activeSessionId;
+        let lastAssistantMessage: Message | undefined;
+        let runModel:
+          | { providerId?: string; model: string; reasoningMode?: ReasoningMode }
+          | undefined;
         try {
           await apiClient.streamRun(
             {
@@ -725,14 +1157,29 @@ export const useAppStore = create<AppState>()(
               projectId: activeProject?.id ?? null,
               prompt,
               providerId,
-              accessMode
+              accessMode,
+              planMode,
+              ...(model ? { model } : {}),
+              ...(reasoningMode ? { reasoningMode } : {})
             },
             (event) => {
               set((current) => ({ events: [...current.events, event] }));
               switch (event.type) {
                 case "run_started":
                   runSessionId = event.sessionId;
-                  set({ activeRunId: event.runId, activeSessionId: event.sessionId, view: "chat" });
+                  runModel = event.model
+                    ? {
+                        providerId: event.providerId,
+                        model: event.model,
+                        reasoningMode: event.reasoningMode
+                      }
+                    : undefined;
+                  set({
+                    activeRunId: event.runId,
+                    activeSessionId: event.sessionId,
+                    view: "chat",
+                    ...(runModel ? { lastRunModel: runModel } : {})
+                  });
                   break;
                 case "delta":
                   if (event.channel === "text") {
@@ -755,6 +1202,9 @@ export const useAppStore = create<AppState>()(
                       ? { streamText: "", thinking: "", thinkingStartedAt: undefined }
                       : {})
                   }));
+                  if (event.message.role === "assistant") {
+                    lastAssistantMessage = event.message;
+                  }
                   break;
                 case "tool_call":
                   // The status field carries the state machine: pending_approval
@@ -768,15 +1218,41 @@ export const useAppStore = create<AppState>()(
                     }));
                   }
                   break;
+                case "session_updated":
+                  // The AI-generated title lands mid-run — update the sidebar
+                  // immediately instead of waiting for the post-run refresh.
+                  set((current) => ({
+                    sessions: upsertSession(current.sessions, event.session)
+                  }));
+                  break;
                 case "run_end":
-                  set({
+                  set((current) => ({
                     activeRunId: undefined,
                     pendingTool: undefined,
                     streamText: "",
                     thinking: "",
                     thinkingStartedAt: undefined,
-                    ...(event.status === "completed" ? { lastUsage: event.usage } : {})
-                  });
+                    ...(event.status === "completed" ? { lastUsage: event.usage } : {}),
+                    ...(event.status === "completed" &&
+                    event.usage &&
+                    runModel &&
+                    lastAssistantMessage?.durationMs !== undefined
+                      ? {
+                          runMeta: {
+                            ...current.runMeta,
+                            [lastAssistantMessage.id]: {
+                              durationMs: lastAssistantMessage.durationMs,
+                              promptTokens: event.usage.promptTokens,
+                              completionTokens: event.usage.completionTokens,
+                              model: runModel.model,
+                              ...(runModel.reasoningMode
+                                ? { reasoningMode: runModel.reasoningMode }
+                                : {})
+                            }
+                          }
+                        }
+                      : {})
+                  }));
                   break;
               }
             }
@@ -812,8 +1288,9 @@ export const useAppStore = create<AppState>()(
         await apiClient.abort(activeRunId);
       },
 
-      approve(toolCallId, approved) {
-        void apiClient?.approve(toolCallId, approved);
+      approve(toolCallId, decision) {
+        const normalized = typeof decision === "boolean" ? { approved: decision } : decision;
+        void apiClient?.approve(toolCallId, normalized);
       },
 
       async saveProvider(input) {
@@ -823,7 +1300,13 @@ export const useAppStore = create<AppState>()(
         const saved = await apiClient.saveProvider(input);
         await get().refresh();
         if (isConfiguredProvider(saved)) {
-          set({ providerId: saved.id, notice: undefined, onboardingOpen: false });
+          set({
+            providerId: saved.id,
+            model: saved.model,
+            reasoningMode: saved.reasoningMode,
+            notice: undefined,
+            onboardingOpen: false
+          });
         }
       },
 
@@ -883,6 +1366,48 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      async loadTasks() {
+        if (!apiClient) {
+          return;
+        }
+        try {
+          set({ tasks: await apiClient.listTasks() });
+        } catch (error) {
+          console.warn("加载定时任务失败", error);
+        }
+      },
+
+      async updateTask(id, input) {
+        if (!apiClient) {
+          return;
+        }
+        const task = await apiClient.updateTask(id, input);
+        set((state) => ({
+          tasks: state.tasks.map((item) => (item.id === id ? task : item))
+        }));
+      },
+
+      async deleteTask(id) {
+        if (!apiClient) {
+          return;
+        }
+        const ok = await apiClient.deleteTask(id);
+        if (!ok) {
+          return;
+        }
+        set((state) => ({ tasks: state.tasks.filter((item) => item.id !== id) }));
+      },
+
+      async runTaskNow(id) {
+        if (!apiClient) {
+          return;
+        }
+        await apiClient.runTaskNow(id);
+        // 执行是异步的，立刻重拉一次拿到 lastRunAt 的推进；
+        // 终态由任务页的轮询带回。
+        await get().loadTasks();
+      },
+
       clearRunState() {
         set({
           streamText: "",
@@ -897,18 +1422,38 @@ export const useAppStore = create<AppState>()(
     {
       name: "chengxiaobang.app",
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 3,
       partialize: (state) => ({
-        activeSessionId: state.activeSessionId,
+        view: state.view,
+        activeSessionId: state.view === "home" ? undefined : state.activeSessionId,
         activeProjectId: state.activeProjectId,
         providerId: state.providerId,
+        model: state.model,
+        reasoningMode: state.reasoningMode,
+        planMode: state.planMode,
         accessMode: state.accessMode,
+        sidebarOpen: state.sidebarOpen,
+        rightPanelOpen: state.rightPanelOpen,
         rightPanelMode: state.rightPanelMode,
         rightPanelWidth: state.rightPanelWidth,
+        rightPanelBySession: state.rightPanelBySession,
         theme: state.theme,
         locale: state.locale
       }),
       migrate: (persisted, version) => {
+        if (version === 1 && persisted) {
+          // v1 had no rightPanelOpen: a non-null mode meant "panel visible".
+          const previous = persisted as Partial<AppState>;
+          return migrateRightPanelMemory(sanitizePersistedAppState({
+            ...previous,
+            rightPanelOpen: previous.rightPanelMode != null
+          }));
+        }
+        if (version === 2 && persisted) {
+          return migrateRightPanelMemory(
+            sanitizePersistedAppState(persisted as Partial<AppState>)
+          );
+        }
         if (version < 1 || !persisted) {
           // Migrate from the previous per-key localStorage layout.
           const read = (key: string) => localStorage.getItem(key) ?? undefined;
@@ -922,8 +1467,12 @@ export const useAppStore = create<AppState>()(
             locale: DEFAULT_LOCALE
           } satisfies Partial<AppState>;
         }
-        return persisted as Partial<AppState>;
-      }
+        return migrateRightPanelMemory(sanitizePersistedAppState(persisted as Partial<AppState>));
+      },
+      merge: (persisted, current) => ({
+        ...current,
+        ...migrateRightPanelMemory(sanitizePersistedAppState((persisted ?? {}) as Partial<AppState>))
+      })
     }
   )
 );
@@ -934,10 +1483,24 @@ function resolveProjectPath(state: AppState, path: string): string {
   return path.startsWith("/") || !project ? path : `${project.path}/${path}`;
 }
 
+/** The shared ApiClient for components that talk to the backend outside the global run state. */
+export function getApiClient(): ApiClient | undefined {
+  return apiClient;
+}
+
 /** Reset the singleton store (used by tests). */
 export function resetAppStore(): void {
   apiClient = undefined;
   useAppStore.setState({ ...initialState });
+}
+
+// store 是全局单例：dev 下若被部分热更，新组件会接到旧 store 实例上（拿不到新
+// 增的 action，点击静默失效）。改动本模块时直接整页刷新，杜绝新旧实例错位。
+if (import.meta.hot) {
+  import.meta.hot.accept(() => {
+    console.info("[store] 模块热更，强制整页刷新以避免 store 双实例");
+    import.meta.hot?.invalidate();
+  });
 }
 
 // ---- Derived selectors ----
@@ -953,15 +1516,4 @@ export function selectActiveProject(state: AppState): Project | undefined {
   }
   const projectId = activeSession?.projectId ?? state.activeProjectId;
   return state.projects.find((project) => project.id === projectId);
-}
-
-export function selectHeading(state: AppState): string {
-  const project = selectActiveProject(state);
-  // Reads `lng` so callers that subscribe to language changes recompute.
-  // Without an explicitly selected project/directory, show a neutral prompt
-  // instead of pretending we're working inside some project.
-  if (!project) {
-    return i18n.t("home.headingNoProject", { lng: state.locale });
-  }
-  return i18n.t("home.heading", { name: project.name, lng: state.locale });
 }

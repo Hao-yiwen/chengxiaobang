@@ -5,6 +5,10 @@ export function defaultDataDir(): string {
   return join(homedir(), ".chengxiaobang", "data");
 }
 
+export function defaultLogDir(dataDir = defaultDataDir()): string {
+  return join(dataDir, "logs");
+}
+
 /** The 1024px PNG used as the dev dock icon (packaged builds use the .icns). */
 export function devDockIconPath(appPath: string): string {
   return join(appPath, "build", "icon.png");

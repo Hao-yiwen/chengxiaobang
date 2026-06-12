@@ -1,57 +1,49 @@
 import {
-  Bug,
-  FileCode2,
-  FileText,
-  FlaskConical,
-  Presentation,
-  Wand2,
-  type LucideIcon
-} from "lucide-react";
+  FileCodeIcon as FileCode2,
+  FileTextIcon as FileText,
+  FlaskIcon as FlaskConical,
+  PresentationChartIcon as Presentation,
+  type Icon
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/store";
 
 /**
- * Quick-start prompt chips shown on the empty home screen. Clicking one seeds
- * the composer with a starter prompt and focuses it, so the welcome view feels
- * inviting instead of blank. Purely a launcher — the user edits before sending.
+ * Quick-start task chips shown on the empty home screen. Each starter is a
+ * complete, self-contained task; clicking one fills the composer and submits it
+ * straight away, so the run starts and completes without further editing.
  */
 const STARTERS: {
-  key: "ppt" | "doc" | "explain" | "test" | "refactor" | "debug";
-  icon: LucideIcon;
+  key: "ppt" | "doc" | "explain" | "test";
+  icon: Icon;
 }[] = [
   { key: "ppt", icon: Presentation },
   { key: "doc", icon: FileText },
   { key: "explain", icon: FileCode2 },
-  { key: "test", icon: FlaskConical },
-  { key: "refactor", icon: Wand2 },
-  { key: "debug", icon: Bug }
+  { key: "test", icon: FlaskConical }
 ];
 
 export function HomeStarters() {
   const { t } = useTranslation();
   const setInput = useAppStore((state) => state.setInput);
+  const submit = useAppStore((state) => state.submit);
 
   function pick(prompt: string): void {
+    // 直接把完整任务写入输入框并提交运行；未配置模型时 submit 会弹出配置弹窗并保留输入。
     setInput(prompt);
-    window.requestAnimationFrame(() => {
-      const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
-      if (textarea) {
-        textarea.focus();
-        textarea.setSelectionRange(prompt.length, prompt.length);
-      }
-    });
+    void submit();
   }
 
   return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="flex flex-wrap justify-center gap-2">
       {STARTERS.map(({ key, icon: Icon }) => (
         <button
           key={key}
           type="button"
           onClick={() => pick(t(`home.starters.${key}Prompt` as const))}
-          className="flex items-center gap-2 rounded-sm border border-border bg-background px-3.5 py-2.5 text-left text-caption text-foreground transition-colors hover:border-primary hover:bg-soft-stone"
+          className="inline-flex items-center gap-1.5 rounded-pill border border-border bg-card px-3.5 py-1.5 text-caption text-foreground transition-colors hover:border-hairline-strong hover:bg-canvas-soft-2"
         >
-          <Icon className="size-4" />
+          <Icon className="size-3.5 flex-none stroke-[1.75]" />
           {t(`home.starters.${key}Title` as const)}
         </button>
       ))}

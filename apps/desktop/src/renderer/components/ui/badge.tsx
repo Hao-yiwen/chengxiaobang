@@ -8,11 +8,11 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default: "border-transparent bg-primary text-primary-foreground",
-        secondary: "border-transparent bg-soft-stone text-ink",
+        secondary: "border-transparent bg-canvas-soft-2 text-body",
         destructive: "border-transparent bg-destructive text-destructive-foreground",
         outline: "border-hairline text-foreground",
-        /* DESIGN.md blog-filter-chip lineage: coral taxonomy marker */
-        coral: "border-coral-soft bg-coral/10 text-coral"
+        /* Vercel 高亮粉只作为小型状态标记，不扩大成背景主题。 */
+        coral: "border-highlight-pink/30 bg-highlight-pink/10 text-highlight-pink"
       }
     },
     defaultVariants: {

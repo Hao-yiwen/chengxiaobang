@@ -39,8 +39,7 @@ function session(id: string, title: string, projectId: string | null = null): Se
   };
 }
 
-// 9 project sessions so the match sits past the per-group cap of 8, plus
-// two standalone conversations for the basic filter case.
+// 9 个项目会话用于验证分组默认只展示前 8 个，再加两个独立对话覆盖基础侧边栏渲染。
 const projectSessions = Array.from({ length: 8 }, (_, index) =>
   session(`p${index}`, `项目会话${index}`, project.id)
 ).concat([session("p-target", "唯一目标", project.id)]);
@@ -55,6 +54,7 @@ function createClient(): ApiClient {
     listProjectFiles: vi.fn(async () => []),
     updateSession: vi.fn() as never,
     deleteSession: vi.fn() as never,
+    getGitChanges: vi.fn(async () => ({ isRepo: false, files: [] })),
     listMessages: vi.fn(async () => []),
     rewindSession: vi.fn(async () => []),
     forkSession: vi.fn() as never,
@@ -79,32 +79,31 @@ beforeEach(() => {
   resetAppStore();
 });
 
-describe("sidebar session filter", () => {
-  it("filters sessions by title and reveals matches past the group cap", async () => {
+describe("sidebar sessions", () => {
+  it("renders sessions without the brand mark or sidebar filter input", async () => {
     render(<App client={createClient()} />);
-    // The active session title also shows in the chat header now — scope all
-    // sidebar assertions to the sidebar itself.
+    // 当前会话标题也会出现在聊天头部，侧边栏断言需要限制在 sidebar 内部。
     const sidebar = within(await screen.findByTestId("app-sidebar"));
     await sidebar.findByText("旧标题A");
 
-    // The 9th project session is hidden by the per-group display cap.
-    expect(sidebar.queryByText("唯一目标")).not.toBeInTheDocument();
-
-    const input = sidebar.getByLabelText("搜索对话");
-    fireEvent.change(input, { target: { value: "唯一" } });
-
-    expect(await sidebar.findByText("唯一目标")).toBeInTheDocument();
-    expect(sidebar.queryByText("旧标题A")).not.toBeInTheDocument();
-    expect(sidebar.queryByText("另一个B")).not.toBeInTheDocument();
-
-    // Clearing restores the full list (and re-hides the capped session).
-    fireEvent.click(sidebar.getByTitle("清除搜索"));
-    expect(await sidebar.findByText("旧标题A")).toBeInTheDocument();
+    expect(sidebar.queryByText("程小帮")).not.toBeInTheDocument();
+    expect(sidebar.queryByLabelText("搜索对话")).not.toBeInTheDocument();
+    expect(sidebar.queryByPlaceholderText("搜索对话")).not.toBeInTheDocument();
     expect(sidebar.getByText("另一个B")).toBeInTheDocument();
+    // 未分组会话不再包一层"独立对话"分组，直接平铺在"对话"区块下。
+    expect(sidebar.queryByText("独立对话")).not.toBeInTheDocument();
+    expect(sidebar.getByText("demo").closest("button")?.querySelector("svg")).toBeTruthy();
+    // 项目区块固定在对话区块上方。
+    expect(
+      sidebar.getByText("项目").compareDocumentPosition(sidebar.getByText("对话")) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(sidebar.getByText("对话")).not.toHaveClass("border-t");
+    // 第 9 个项目会话仍受每组最多展示 8 条的限制。
     expect(sidebar.queryByText("唯一目标")).not.toBeInTheDocument();
   });
 
-  it("exports a non-active session as markdown from its hover action", async () => {
+  it("exports a non-active session as markdown from its context menu", async () => {
     const createObjectURL = vi.fn(() => "blob:mock");
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL }));
@@ -116,7 +115,8 @@ describe("sidebar session filter", () => {
     render(<App client={client} />);
     const row = (await screen.findByText("另一个B")).closest("div");
 
-    fireEvent.click(within(row as HTMLElement).getByTitle("导出为 Markdown"));
+    fireEvent.contextMenu(row as HTMLElement);
+    fireEvent.click(await screen.findByText("导出为 Markdown"));
 
     await waitFor(() => expect(client.listMessages).toHaveBeenCalledWith("s2"));
     expect(client.listSessionRuns).toHaveBeenCalledWith("s2");
@@ -125,20 +125,5 @@ describe("sidebar session filter", () => {
 
     click.mockRestore();
     vi.unstubAllGlobals();
-  });
-
-  it("shows a no-matches hint and clears with Escape", async () => {
-    render(<App client={createClient()} />);
-    const sidebar = within(await screen.findByTestId("app-sidebar"));
-    await sidebar.findByText("旧标题A");
-
-    const input = sidebar.getByLabelText("搜索对话");
-    fireEvent.change(input, { target: { value: "zzz不存在" } });
-
-    expect(await sidebar.findByText("没有匹配的对话")).toBeInTheDocument();
-
-    fireEvent.keyDown(input, { key: "Escape" });
-    await waitFor(() => expect(sidebar.getByText("旧标题A")).toBeInTheDocument());
-    expect(input).toHaveValue("");
   });
 });

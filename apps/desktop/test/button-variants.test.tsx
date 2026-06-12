@@ -10,34 +10,34 @@ function classesOf(ui: React.ReactElement): string {
 }
 
 /**
- * The Button variant API is consumed across ~20 call sites; these assertions
- * pin each variant to its DESIGN.md role so a style rewrite that breaks the
- * mapping fails loudly instead of silently restyling every consumer.
+ * Button variant API 被多个调用点复用；这些断言把 variant 固定到 DESIGN.md 角色，
+ * 避免主题调整时悄悄改坏全局按钮语义。
  */
 describe("Button variants (DESIGN.md roles)", () => {
-  it("default = button-primary: near-black pill", () => {
+  it("default = button-primary: black Vercel pill", () => {
     const className = classesOf(<Button>主操作</Button>);
     expect(className).toContain("rounded-pill");
     expect(className).toContain("bg-primary");
     expect(className).toContain("text-button");
   });
 
-  it("outline = button-pill-outline: 30px outlined pill", () => {
+  it("outline = button-secondary: white pill with hairline", () => {
     const className = classesOf(<Button variant="outline">筛选</Button>);
-    expect(className).toContain("rounded-xl");
-    expect(className).toContain("border-primary");
+    expect(className).toContain("rounded-pill");
+    expect(className).toContain("border-hairline");
+    expect(className).toContain("bg-canvas");
   });
 
-  it("secondary = button-secondary: text-only underlined link", () => {
+  it("secondary = paired white pill", () => {
     const className = classesOf(<Button variant="secondary">次操作</Button>);
-    expect(className).toContain("underline");
-    expect(className).toContain("bg-transparent");
-    expect(className).toContain("px-0");
+    expect(className).toContain("border-hairline");
+    expect(className).toContain("bg-canvas");
+    expect(className).toContain("text-ink");
   });
 
-  it("link uses the editorial action-blue", () => {
+  it("link uses Vercel link blue", () => {
     const className = classesOf(<Button variant="link">链接</Button>);
-    expect(className).toContain("text-action-blue");
+    expect(className).toContain("text-link");
   });
 
   it("ghost stays a quiet hover affordance", () => {

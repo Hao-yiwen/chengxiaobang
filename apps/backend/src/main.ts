@@ -10,6 +10,7 @@ import { ProviderService } from "./model/provider-service";
 import { SqliteStateStore } from "./repository/sqlite-state-store";
 import { createSecretStore } from "./secrets/secret-store";
 import { startServer } from "./server";
+import { TaskScheduler } from "./tasks/task-scheduler";
 import { createAgentTools } from "./tools/registry";
 import { SlashCommandService } from "./tools/slash-command-service";
 import { defaultDataDir } from "./paths";
@@ -44,6 +45,8 @@ export async function startBackend(config: BackendConfig) {
   });
   feishuServiceRef = feishuService;
   await feishuService.start();
+  const taskScheduler = new TaskScheduler({ store, runner });
+  taskScheduler.start();
 
   const server = await startServer({
     port: config.port,
@@ -54,12 +57,15 @@ export async function startBackend(config: BackendConfig) {
       runner,
       slashCommandService,
       feishuConfigService,
-      feishuService
+      feishuService,
+      taskScheduler
     })
   });
   return {
     port: server.port,
     close: async () => {
+      // 先停调度器并中止在飞行的调度 run，避免向已关闭的 store 写入。
+      taskScheduler.stop();
       await feishuService.stop();
       await server.close();
       await store.close();

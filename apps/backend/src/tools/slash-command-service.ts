@@ -136,6 +136,32 @@ export class SlashCommandService {
     return { prompt, matched: false };
   }
 
+  /**
+   * 模型可自主发现的技能清单（§5.3）：仅 name+description（正文经 use_skill 按需拉取），
+   * 过滤 disableModelInvocation，同名按 project > global > builtin 去重。
+   */
+  async listSkills(project?: Project): Promise<Array<{ name: string; description: string }>> {
+    const resources = await this.loadResources(project, []);
+    const byName = new Map<string, { skill: Skill; source: SlashCommandSource }>();
+    for (const resource of modelVisibleSkills(resources)) {
+      const existing = byName.get(resource.skill.name);
+      if (existing && sourceRank(existing.source) >= sourceRank(resource.source)) {
+        continue;
+      }
+      byName.set(resource.skill.name, { skill: resource.skill, source: resource.source });
+    }
+    return [...byName.values()].map(({ skill }) => ({
+      name: skill.name,
+      description: skill.description
+    }));
+  }
+
+  /** 按名称查找模型可调用的技能（§5.3）：复用 findResource 的优先级，尊重 disableModelInvocation。 */
+  async findSkill(name: string, project?: Project): Promise<Skill | undefined> {
+    const resources = await this.loadResources(project, []);
+    return findResource(modelVisibleSkills(resources), name)?.skill;
+  }
+
   private async loadResources(
     project: Project | undefined,
     diagnostics: SlashCommandDiagnostic[]
@@ -218,6 +244,18 @@ function mergeCommands(resources: LoadedResource[]): SlashCommand[] {
     byName.set(command.name, command);
   }
   return [...byName.values()].sort(compareCommands);
+}
+
+type SkillResource = LoadedResource & { kind: "skill"; skill: Skill };
+
+/** kind==="skill" 且未禁用模型调用的资源（listSkills / findSkill 共用过滤，§5.3）。 */
+function modelVisibleSkills(resources: LoadedResource[]): SkillResource[] {
+  return resources.filter(
+    (resource): resource is SkillResource =>
+      resource.kind === "skill" &&
+      resource.skill !== undefined &&
+      resource.skill.disableModelInvocation !== true
+  );
 }
 
 function findResource(resources: LoadedResource[], rawName: string): LoadedResource | undefined {

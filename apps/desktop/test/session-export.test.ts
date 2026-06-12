@@ -95,6 +95,27 @@ describe("buildSessionMarkdown", () => {
     expect(markdown).not.toContain("raw tool output row");
   });
 
+  it("exports reasoning-only turns as a quote alone, and skips them without reasoning", () => {
+    const reasoningOnly = message({
+      id: "a2",
+      role: "assistant",
+      content: "",
+      reasoning: "先想清楚",
+      createdAt: "2026-06-08T00:00:03.000Z"
+    });
+
+    const markdown = buildSessionMarkdown(session, [reasoningOnly], [], labels);
+    expect(markdown).toContain("> 先想清楚");
+    // 没有正文段落,引用块后不应跟空行正文。
+    expect(markdown).not.toMatch(/> 先想清楚\n\n\n/);
+
+    const without = buildSessionMarkdown(session, [reasoningOnly], [], labels, {
+      includeReasoning: false
+    });
+    // 关掉思考导出后,这一轮没有任何可见内容,整节跳过。
+    expect(without).not.toContain("## 程小帮");
+  });
+
   it("truncates long tool results", () => {
     const longResult = "x".repeat(500);
     const markdown = buildSessionMarkdown(

@@ -18,7 +18,7 @@ import { useAppStore } from "@/store";
 
 const STATUS_POLL_MS = 3000;
 
-/** Settings section for the Feishu bot: credentials, switches, live status. */
+/** 飞书机器人设置区：凭据、开关与实时连接状态。 */
 export function FeishuSection() {
   const { t } = useTranslation();
   const feishuConfig = useAppStore((state) => state.feishuConfig);
@@ -41,7 +41,7 @@ export function FeishuSection() {
     return () => window.clearInterval(timer);
   }, [loadFeishuConfig, refreshFeishuStatus]);
 
-  // Sync the form when the persisted config arrives (the secret never echoes).
+  // 持久化配置到达后同步表单；密钥不会回显。
   useEffect(() => {
     if (feishuConfig) {
       setAppId(feishuConfig.appId);
@@ -180,7 +180,7 @@ function StatusRow({ status }: { status?: FeishuStatus }) {
       <span
         className={cn(
           "size-2.5 flex-none rounded-full",
-          state === "connected" && "bg-coral",
+          state === "connected" && "bg-success",
           state === "connecting" && "animate-pulse bg-muted-foreground",
           state === "disconnected" && "bg-muted-foreground/40",
           state === "error" && "bg-destructive"

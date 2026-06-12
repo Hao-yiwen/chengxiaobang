@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolCall } from "@chengxiaobang/shared";
 import { ToolCallRow } from "../src/renderer/components/ToolCallRow";
 import { setupI18n } from "../src/renderer/i18n";
@@ -44,13 +44,26 @@ describe("ToolCallRow", () => {
     expect(screen.queryByText(/^\d+(\.\d+)?(ms|s)$/)).not.toBeInTheDocument();
   });
 
-  it("renders localized statuses instead of raw enums", () => {
+  it("renders a human-readable description instead of the raw tool name", () => {
+    render(
+      <ToolCallRow
+        toolCall={toolCall({ name: "read_file", args: { path: "apps/desktop/src/index.ts" } })}
+      />
+    );
+    expect(screen.getByText("读取 …/src/index.ts")).toBeInTheDocument();
+    expect(screen.queryByText("read_file")).not.toBeInTheDocument();
+  });
+
+  it("shows localized status only for pending and error states", () => {
     const { rerender } = render(<ToolCallRow toolCall={toolCall({ result: "ok" })} />);
-    expect(screen.getByText("已完成")).toBeInTheDocument();
     expect(screen.queryByText("completed")).not.toBeInTheDocument();
+    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
 
     rerender(<ToolCallRow toolCall={toolCall({ status: "failed", result: "boom" })} />);
     expect(screen.getByText("失败")).toBeInTheDocument();
+
+    rerender(<ToolCallRow toolCall={toolCall({ status: "rejected" })} />);
+    expect(screen.getByText("已拒绝")).toBeInTheDocument();
 
     rerender(<ToolCallRow toolCall={toolCall({ status: "pending_approval" })} />);
     expect(screen.getByText("待批准")).toBeInTheDocument();
@@ -67,7 +80,7 @@ describe("ToolCallRow", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("edit_file"));
+    fireEvent.click(screen.getByText("编辑 a.ts"));
 
     const diff = screen.getByLabelText("变更对比");
     expect(diff).toHaveTextContent("x = 1");
@@ -87,7 +100,7 @@ describe("ToolCallRow", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("write_file"));
+    fireEvent.click(screen.getByText("写入 a.txt"));
 
     const diff = screen.getByLabelText("变更对比");
     expect(diff).toHaveTextContent("hello");
@@ -95,11 +108,114 @@ describe("ToolCallRow", () => {
   });
 
   it("keeps the raw result for non-file tools", () => {
-    render(<ToolCallRow toolCall={toolCall({ name: "shell", result: "total 0" })} />);
+    render(
+      <ToolCallRow
+        toolCall={toolCall({ name: "shell", args: { command: "ls -la" }, result: "total 0" })}
+      />
+    );
 
-    fireEvent.click(screen.getByText("shell"));
+    fireEvent.click(screen.getByText("运行 ls -la"));
 
     expect(screen.queryByLabelText("变更对比")).not.toBeInTheDocument();
     expect(screen.getByText("total 0")).toBeInTheDocument();
+  });
+
+  it("renders a completed ask_user as a static question and answer receipt", () => {
+    render(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "ask_user",
+          args: { question: "用哪种方式处理旧的 API 兼容层？" },
+          result: "保留并标记 deprecated"
+        })}
+      />
+    );
+
+    expect(screen.getByText(/问：用哪种方式处理旧的 API 兼容层？/)).toBeInTheDocument();
+    expect(screen.getByText(/答：保留并标记 deprecated/)).toBeInTheDocument();
+  });
+
+  it("renders rejected and residual ask_user rows as historical receipts", () => {
+    const { rerender } = render(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "ask_user",
+          status: "rejected",
+          args: { question: "继续吗？" }
+        })}
+      />
+    );
+
+    expect(screen.getByText("答：用户跳过了该问题")).toBeInTheDocument();
+
+    rerender(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "ask_user",
+          status: "pending_approval",
+          args: { question: "继续吗？" }
+        })}
+      />
+    );
+
+    expect(screen.getByText("答：问题未回答（运行已结束）")).toBeInTheDocument();
+  });
+
+  it("renders use_skill as a compact chip without exposing the loaded skill body", () => {
+    render(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "use_skill",
+          args: { name: "excel" },
+          result: "# excel 技能\n这里是最长 32KB 的技能正文"
+        })}
+      />
+    );
+
+    expect(screen.getByText("已加载技能 excel")).toBeInTheDocument();
+    expect(screen.queryByText(/技能正文/)).not.toBeInTheDocument();
+  });
+
+  it("shows use_skill loading and failure details without expanding the skill body", () => {
+    const { rerender } = render(
+      <ToolCallRow toolCall={toolCall({ name: "use_skill", args: { name: "ppt" }, status: "running" })} />
+    );
+
+    expect(screen.getByText("正在加载技能 ppt")).toBeInTheDocument();
+
+    rerender(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "use_skill",
+          args: { name: "excel" },
+          status: "failed",
+          result: "读取技能文件失败"
+        })}
+      />
+    );
+
+    expect(screen.getByText("加载技能失败 excel")).toBeInTheDocument();
+    expect(screen.getByText("读取技能文件失败")).toBeInTheDocument();
+  });
+
+  it("opens file rows through the injected preview callback", () => {
+    const onOpenFile = vi.fn();
+    render(
+      <ToolCallRow
+        toolCall={toolCall({ name: "read_file", args: { path: "src/index.ts" }, result: "x" })}
+        onOpenFile={onOpenFile}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle("预览文件"));
+    expect(onOpenFile).toHaveBeenCalledWith("src/index.ts", "code");
+  });
+
+  it("hides the file preview button when no callback is wired", () => {
+    render(
+      <ToolCallRow toolCall={toolCall({ name: "read_file", args: { path: "src/index.ts" }, result: "x" })} />
+    );
+
+    expect(screen.queryByTitle("预览文件")).not.toBeInTheDocument();
   });
 });

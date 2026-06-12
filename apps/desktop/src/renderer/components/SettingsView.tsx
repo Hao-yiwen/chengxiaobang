@@ -1,26 +1,36 @@
 import {
-  ArrowLeft,
-  Boxes,
-  ExternalLink,
-  FolderOpen,
-  Globe,
-  Languages,
-  Laptop,
-  LockKeyhole,
-  MessageSquareText,
-  Moon,
-  Search,
-  ShieldCheck,
-  SlidersHorizontal,
-  Sparkles,
-  Sun,
-  SunMoon,
-  Trash2
-} from "lucide-react";
+  ArrowLeftIcon as ArrowLeft,
+  ArrowSquareOutIcon as ExternalLink,
+  ChatCenteredTextIcon as MessageSquareText,
+  CircleHalfTiltIcon as SunMoon,
+  FolderOpenIcon as FolderOpen,
+  GlobeIcon as Globe,
+  LaptopIcon as Laptop,
+  LockKeyIcon as LockKeyhole,
+  MagnifyingGlassIcon as Search,
+  MoonIcon as Moon,
+  ShieldCheckIcon as ShieldCheck,
+  SlidersHorizontalIcon as SlidersHorizontal,
+  SparkleIcon as Sparkles,
+  StackIcon as Boxes,
+  SunIcon as Sun,
+  TranslateIcon as Languages,
+  TrashIcon as Trash2,
+  XIcon as X,
+  type Icon
+} from "@phosphor-icons/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { ProviderInput } from "@chengxiaobang/shared";
+import {
+  mergeProviderModelOptions,
+  resolveProviderModelOption,
+  type ProviderConfig,
+  type ProviderInput,
+  type ProviderKind,
+  type ProviderModelOption
+} from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,9 +44,19 @@ import {
 import { FeishuSection } from "@/components/settings/FeishuSection";
 import { OptionCard } from "@/components/settings/OptionCard";
 import { SectionShell, SettingBlock } from "@/components/settings/SectionShell";
+import {
+  ReasoningModeSelect,
+  reasoningModeSummary,
+  supportedReasoningMode
+} from "@/components/ProviderModelControls";
 import { API_KEY_URLS, PROVIDER_KIND_OPTIONS, PROVIDER_PRESETS } from "@/lib/provider-presets";
+import {
+  isCatalogProvider,
+  validateProviderDraft,
+  type ProviderDraftErrors
+} from "@/lib/provider-validation";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store";
+import { getApiClient, useAppStore } from "@/store";
 
 type SectionId = "appearance" | "general" | "providers" | "skills" | "feishu";
 
@@ -48,14 +68,14 @@ interface NavDef {
     | "settings.nav.providers"
     | "settings.nav.skills"
     | "settings.nav.feishu";
-  icon: typeof Sun;
+  icon: Icon;
   groupKey: "settings.groupPersonal" | "settings.groupModel" | "settings.groupIntegrations";
 }
 
 interface NavItem {
   id: SectionId;
   label: string;
-  icon: typeof Sun;
+  icon: Icon;
   group: string;
 }
 
@@ -118,7 +138,7 @@ export function SettingsView() {
   }, [filtered]);
 
   return (
-    <div className="grid h-screen min-h-0 min-w-0 flex-1 grid-cols-[232px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden bg-background">
+    <div className="grid h-screen min-h-0 min-w-0 flex-1 grid-cols-[272px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden bg-background">
       {/* Settings nav */}
       <aside className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto border-r border-border bg-background px-3 pb-4">
         <div className="h-10 flex-none [-webkit-app-region:drag]" />
@@ -155,8 +175,8 @@ export function SettingsView() {
                   className={cn(
                     "group flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left text-caption transition-colors",
                     section === item.id
-                      ? "bg-soft-stone font-medium text-foreground"
-                      : "text-foreground hover:bg-soft-stone/70"
+                      ? "bg-canvas-soft-2 font-medium text-foreground"
+                      : "text-foreground hover:bg-canvas-soft-2/80"
                   )}
                 >
                   <Icon
@@ -176,7 +196,7 @@ export function SettingsView() {
         ) : null}
       </aside>
 
-      {/* Content — flat white Cohere surface; the nav border carries containment */}
+      {/* 内容区保持 Vercel 式近白平面，主要靠导航边线建立层级。 */}
       <div className="h-screen min-h-0 overflow-y-auto bg-background px-12 pb-16 pt-16">
         <div className="mx-auto max-w-[820px]">
           {section === "appearance" ? <AppearanceSection /> : null}
@@ -282,22 +302,156 @@ function GeneralSection() {
   );
 }
 
-const EMPTY_DRAFT: ProviderInput = { ...PROVIDER_PRESETS.deepseek, apiKey: "" };
-
 function ProvidersSection() {
   const { t } = useTranslation();
   const providers = useAppStore(useShallow((state) => state.providers));
+  const activeProviderId = useAppStore((state) => state.providerId);
   const saveProvider = useAppStore((state) => state.saveProvider);
   const deleteProvider = useAppStore((state) => state.deleteProvider);
   const testProvider = useAppStore((state) => state.testProvider);
 
-  const [draft, setDraft] = useState<ProviderInput>(EMPTY_DRAFT);
+  // draft 为空 = 新建的「先选类型」阶段；选好类型或点击列表项后才展开表单。
+  const [draft, setDraft] = useState<ProviderInput>();
+  const [errors, setErrors] = useState<ProviderDraftErrors>({});
   const [status, setStatus] = useState("");
+  const [remoteOptions, setRemoteOptions] = useState<ProviderModelOption[]>([]);
+
+  const editingProvider = draft?.id
+    ? providers.find((provider) => provider.id === draft.id)
+    : undefined;
+  const hasStoredKey = Boolean(editingProvider?.apiKeyRef);
+  // 「使用中」与输入框实际使用的供应商一致：选中的优先，否则第一个已配 Key 的。
+  const configuredProviders = providers.filter((provider) => provider.apiKeyRef);
+  const activeProvider =
+    configuredProviders.find((provider) => provider.id === activeProviderId) ??
+    configuredProviders[0];
+
+  const draftId = draft?.id;
+  useEffect(() => {
+    let cancelled = false;
+    setRemoteOptions([]);
+    if (!draftId) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    const client = getApiClient();
+    if (!client) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    void client
+      .listProviderModelOptions(draftId)
+      .then((options) => {
+        if (!cancelled) {
+          setRemoteOptions(options);
+        }
+      })
+      .catch((error) => {
+        console.warn("[settings] 拉取模型选项失败，使用静态目录", {
+          providerId: draftId,
+          error
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [draftId]);
+
+  const modelOptions = useMemo(() => {
+    if (!draft) {
+      return [];
+    }
+    const base =
+      remoteOptions.length > 0
+        ? remoteOptions
+        : mergeProviderModelOptions(draft.kind, [], draft.model);
+    return withDraftModels(draft.kind, base, draft);
+  }, [draft, remoteOptions]);
+
+  const resetForm = () => {
+    setDraft(undefined);
+    setErrors({});
+    setStatus("");
+  };
+
+  const startCreate = (kind: ProviderKind) => {
+    const preset = PROVIDER_PRESETS[kind];
+    setDraft({
+      ...preset,
+      apiKey: "",
+      // 目录型默认勾选全部内置模型；自定义型不内置假模型，由用户自行添加。
+      models: isCatalogProvider(kind)
+        ? mergeProviderModelOptions(kind, [], preset.model).map((option) => option.id)
+        : preset.model
+          ? [preset.model]
+          : []
+    });
+    setErrors({});
+    setStatus("");
+  };
+
+  const startEdit = (provider: ProviderConfig) => {
+    setDraft({
+      id: provider.id,
+      kind: provider.kind,
+      name: provider.name,
+      baseURL: provider.baseURL,
+      model: provider.model,
+      models:
+        provider.models ??
+        (isCatalogProvider(provider.kind)
+          ? mergeProviderModelOptions(provider.kind, [], provider.model).map(
+              (option) => option.id
+            )
+          : [provider.model]),
+      reasoningMode: provider.reasoningMode,
+      apiKey: ""
+    });
+    setErrors({});
+    setStatus("");
+  };
+
+  // 自定义供应商手填模型列表；默认模型跟随列表第一个（若原默认被移除）。
+  const setCustomModels = (models: string[]) => {
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      const model = models.includes(current.model) ? current.model : models[0] ?? "";
+      return {
+        ...current,
+        models,
+        model,
+        reasoningMode: supportedReasoningMode(current.kind, model, current.reasoningMode)
+      };
+    });
+  };
+
+  // 勾选/取消模型；默认模型被取消时回退到剩余的第一个。
+  const toggleModel = (modelId: string) => {
+    setDraft((current) => {
+      if (!current?.models) {
+        return current;
+      }
+      const models = current.models.includes(modelId)
+        ? current.models.filter((id) => id !== modelId)
+        : [...current.models, modelId];
+      const model = models.includes(current.model) ? current.model : models[0] ?? current.model;
+      return {
+        ...current,
+        models,
+        model,
+        reasoningMode: supportedReasoningMode(current.kind, model, current.reasoningMode)
+      };
+    });
+  };
 
   return (
     <SectionShell title={t("settings.providers.title")}>
-      {providers.every((provider) => !provider.apiKeyRef) ? (
-        <div className="rounded-sm border bg-pale-blue px-4 py-3 text-caption text-ink">
+      {configuredProviders.length === 0 ? (
+        <div className="rounded-sm border bg-link-bg-soft px-4 py-3 text-ink text-caption">
           {t("settings.providers.required")}
         </div>
       ) : null}
@@ -311,150 +465,275 @@ function ProvidersSection() {
               {t("settings.providers.empty")}
             </div>
           ) : (
-            providers.map((provider) => (
-              <button
-                key={provider.id}
-                type="button"
-                onClick={() => {
-                  setDraft({
-                    id: provider.id,
-                    kind: provider.kind,
-                    name: provider.name,
-                    baseURL: provider.baseURL,
-                    model: provider.model,
-                    apiKey: ""
-                  });
-                  setStatus("");
-                }}
-                className="flex w-full flex-col gap-0.5 px-4 py-3 text-left transition-colors hover:bg-soft-stone/60"
-              >
-                <span className="text-caption font-medium">{provider.name}</span>
-                <span className="text-micro text-muted-foreground">{provider.model}</span>
-              </button>
-            ))
+            providers.map((provider) => {
+              const selected = draft?.id === provider.id;
+              const inUse = provider.id === activeProvider?.id;
+              const configured = Boolean(provider.apiKeyRef);
+              const option = resolveProviderModelOption(provider.kind, provider.model);
+              const subtitle =
+                provider.models && provider.models.length > 1
+                  ? t("settings.providers.modelsSummary", { count: provider.models.length })
+                  : `${provider.model} · ${reasoningModeSummary(t, option, provider.reasoningMode)}`;
+              return (
+                <div
+                  key={provider.id}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-3 transition-colors",
+                    selected ? "bg-canvas-soft-2" : "hover:bg-canvas-soft-2/70"
+                  )}
+                >
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => startEdit(provider)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="truncate text-caption font-medium">{provider.name}</span>
+                        {inUse ? (
+                          <span className="flex-none rounded-xs bg-primary px-1.5 py-0.5 text-micro text-primary-foreground">
+                            {t("settings.providers.inUse")}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="block truncate text-micro text-muted-foreground">
+                        {subtitle}
+                      </span>
+                    </span>
+                    <span
+                      className={cn(
+                        "flex-none rounded-xs border px-1.5 py-0.5 text-micro",
+                        configured
+                          ? "text-muted-foreground"
+                          : "border-warning text-warning-deep"
+                      )}
+                    >
+                      {configured
+                        ? t("settings.providers.statusConfigured")
+                        : t("settings.providers.statusMissing")}
+                    </span>
+                  </button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t("settings.providers.deleteNamed", { name: provider.name })}
+                    title={t("settings.providers.delete")}
+                    className="size-8 flex-none rounded-xs text-muted-foreground hover:text-destructive"
+                    onClick={async () => {
+                      if (!window.confirm(t("settings.providers.deleteConfirm"))) {
+                        return;
+                      }
+                      await deleteProvider(provider.id);
+                      if (draft?.id === provider.id) {
+                        resetForm();
+                      }
+                      setStatus(t("settings.providers.deleted"));
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              );
+            })
           )}
         </div>
       </SettingBlock>
 
       <SettingBlock
-        title={draft.id ? t("settings.providers.edit") : t("settings.providers.create")}
+        title={draft?.id ? t("settings.providers.edit") : t("settings.providers.create")}
       >
         <div data-testid="settings-provider-form" className="rounded-sm border bg-background p-6">
-          <form
-            className="grid gap-4"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              await saveProvider(draft);
-              setStatus(t("settings.providers.saved"));
-            }}
-          >
-            <Field label={t("settings.providers.type")}>
-              <Select
-                value={draft.kind}
-                onValueChange={(value) => {
-                  const kind = value as ProviderInput["kind"];
-                  setDraft({ ...PROVIDER_PRESETS[kind], id: draft.id, apiKey: draft.apiKey });
-                }}
+          {!draft ? (
+            <div className="grid gap-4">
+              <p className="text-caption text-muted-foreground">
+                {t("settings.providers.chooseTypeDesc")}
+              </p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {PROVIDER_KIND_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => startCreate(option.value)}
+                    className="rounded-sm border bg-canvas px-4 py-3 text-left text-caption font-medium transition-colors hover:bg-canvas-soft-2"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <form
+              className="grid gap-4"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const validation = validateProviderDraft(draft, { hasStoredKey });
+                setErrors(validation);
+                if (Object.values(validation).some(Boolean)) {
+                  console.warn("[settings] 供应商表单校验未通过", validation);
+                  return;
+                }
+                try {
+                  await saveProvider({
+                    ...draft,
+                    name: draft.name.trim(),
+                    baseURL: draft.baseURL.trim()
+                  });
+                  setStatus(t("settings.providers.saved"));
+                  if (draft.id) {
+                    setDraft({ ...draft, apiKey: "" });
+                  } else {
+                    // 新建成功后回到「先选类型」阶段。
+                    setDraft(undefined);
+                  }
+                } catch (cause) {
+                  console.error("[settings] 保存供应商失败", cause);
+                  setStatus(cause instanceof Error ? cause.message : String(cause));
+                }
+              }}
+            >
+              <Field label={t("settings.providers.type")}>
+                <Select
+                  value={draft.kind}
+                  onValueChange={(value) => {
+                    const kind = value as ProviderKind;
+                    const preset = PROVIDER_PRESETS[kind];
+                    setDraft({
+                      ...preset,
+                      id: draft.id,
+                      apiKey: draft.apiKey,
+                      models: isCatalogProvider(kind)
+                        ? mergeProviderModelOptions(kind, [], preset.model).map(
+                            (option) => option.id
+                          )
+                        : preset.model
+                          ? [preset.model]
+                          : [],
+                      reasoningMode: undefined
+                    });
+                    setErrors({});
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PROVIDER_KIND_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field
+                label={t("settings.providers.name")}
+                error={errors.name ? t(errors.name) : undefined}
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROVIDER_KIND_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label={t("settings.providers.name")}>
-              <Input
-                value={draft.name}
-                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              />
-            </Field>
-            <Field label="Base URL">
-              <Input
-                value={draft.baseURL}
-                onChange={(event) => setDraft({ ...draft, baseURL: event.target.value })}
-              />
-            </Field>
-            <Field label={t("settings.providers.model")}>
-              <Input
-                value={draft.model}
-                onChange={(event) => setDraft({ ...draft, model: event.target.value })}
-              />
-            </Field>
-            <Field label="API Key">
-              <div className="flex gap-2">
                 <Input
-                  type="password"
-                  value={draft.apiKey ?? ""}
-                  onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })}
+                  aria-label={t("settings.providers.name")}
+                  value={draft.name}
+                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                 />
-                {API_KEY_URLS[draft.kind] ? (
-                  <Button variant="outline" asChild>
-                    <a
-                      href={API_KEY_URLS[draft.kind]}
-                      target="_blank"
-                      rel="noreferrer"
-                      title={t("settings.providers.getApiKey")}
-                    >
-                      <ExternalLink className="size-4" />
-                      {t("settings.providers.getApiKey")}
-                    </a>
+              </Field>
+              <Field label="Base URL" error={errors.baseURL ? t(errors.baseURL) : undefined}>
+                <Input
+                  aria-label="Base URL"
+                  value={draft.baseURL}
+                  onChange={(event) => setDraft({ ...draft, baseURL: event.target.value })}
+                />
+              </Field>
+              <Field
+                label={t("settings.providers.includedModels")}
+                error={errors.model ? t(errors.model) : undefined}
+              >
+                {isCatalogProvider(draft.kind) ? (
+                  <ModelChecklist
+                    options={modelOptions}
+                    selected={draft.models ?? []}
+                    onToggle={toggleModel}
+                  />
+                ) : (
+                  <ModelTagEditor models={draft.models ?? []} onChange={setCustomModels} />
+                )}
+              </Field>
+              <Field label={t("settings.providers.reasoning")}>
+                <ReasoningModeSelect
+                  kind={draft.kind}
+                  model={draft.model}
+                  value={supportedReasoningMode(draft.kind, draft.model, draft.reasoningMode)}
+                  onValueChange={(reasoningMode) => setDraft({ ...draft, reasoningMode })}
+                />
+              </Field>
+              <Field label="API Key" error={errors.apiKey ? t(errors.apiKey) : undefined}>
+                <div className="flex gap-2">
+                  <Input
+                    type="password"
+                    aria-label="API Key"
+                    value={draft.apiKey ?? ""}
+                    placeholder={hasStoredKey ? t("settings.providers.keepKey") : undefined}
+                    onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })}
+                  />
+                  {API_KEY_URLS[draft.kind] ? (
+                    <Button variant="outline" asChild>
+                      <a
+                        href={API_KEY_URLS[draft.kind]}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={t("settings.providers.getApiKey")}
+                      >
+                        <ExternalLink className="size-4" />
+                        {t("settings.providers.getApiKey")}
+                      </a>
+                    </Button>
+                  ) : null}
+                </div>
+              </Field>
+              <div className="flex items-center gap-3 pt-1">
+                <Button type="submit">{t("settings.providers.save")}</Button>
+                {draft.id ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await testProvider(draft.id!);
+                        setStatus(t("settings.providers.connectionOk"));
+                      } catch (cause) {
+                        console.error("[settings] 测试连接失败", cause);
+                        setStatus(cause instanceof Error ? cause.message : String(cause));
+                      }
+                    }}
+                  >
+                    {t("settings.providers.test")}
                   </Button>
                 ) : null}
+                <Button type="button" variant="ghost" onClick={resetForm}>
+                  {t("settings.providers.cancel")}
+                </Button>
+                {draft.id ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-destructive hover:text-destructive"
+                    onClick={async () => {
+                      if (!window.confirm(t("settings.providers.deleteConfirm"))) {
+                        return;
+                      }
+                      await deleteProvider(draft.id!);
+                      resetForm();
+                      setStatus(t("settings.providers.deleted"));
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                    {t("settings.providers.delete")}
+                  </Button>
+                ) : null}
+                <span className="text-caption text-muted-foreground">{status}</span>
               </div>
-            </Field>
-            <div className="flex items-center gap-3 pt-1">
-              <Button type="submit">{t("settings.providers.save")}</Button>
-              {draft.id ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={async () => {
-                    await testProvider(draft.id!);
-                    setStatus(t("settings.providers.connectionOk"));
-                  }}
-                >
-                  {t("settings.providers.test")}
-                </Button>
-              ) : null}
-              {draft.id ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setDraft(EMPTY_DRAFT);
-                    setStatus("");
-                  }}
-                >
-                  {t("settings.providers.new")}
-                </Button>
-              ) : null}
-              {draft.id ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="text-destructive hover:text-destructive"
-                  onClick={async () => {
-                    if (!window.confirm(t("settings.providers.deleteConfirm"))) {
-                      return;
-                    }
-                    await deleteProvider(draft.id!);
-                    setDraft(EMPTY_DRAFT);
-                    setStatus(t("settings.providers.deleted"));
-                  }}
-                >
-                  <Trash2 className="size-4" />
-                  {t("settings.providers.delete")}
-                </Button>
-              ) : null}
-              <span className="text-caption text-muted-foreground">{status}</span>
-            </div>
-          </form>
+            </form>
+          )}
         </div>
       </SettingBlock>
     </SectionShell>
@@ -530,11 +809,124 @@ function SkillsSection() {
   );
 }
 
-function Field(props: { label: string; children: React.ReactNode }) {
+/** 多选模型清单：一个 API Key 下勾选要启用的模型。 */
+function ModelChecklist(props: {
+  options: ProviderModelOption[];
+  selected: string[];
+  onToggle(id: string): void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="rounded-sm border bg-canvas">
+      <div className="max-h-[240px] divide-y overflow-y-auto">
+        {props.options.map((option) => (
+          <label
+            key={option.id}
+            className="flex cursor-pointer items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-canvas-soft-2/70"
+          >
+            <input
+              type="checkbox"
+              checked={props.selected.includes(option.id)}
+              onChange={() => props.onToggle(option.id)}
+              className="size-4 flex-none accent-primary"
+            />
+            <span className="min-w-0 flex-1 truncate text-caption font-medium">
+              {modelOptionLabel(option)}
+            </span>
+          </label>
+        ))}
+      </div>
+      <div className="border-t px-3 py-2 text-micro text-muted-foreground">
+        {t("settings.providers.selectedCount", { count: props.selected.length })}
+      </div>
+    </div>
+  );
+}
+
+/** 自定义供应商的模型清单：手动输入模型 ID，可增删，同一个 API Key 下生效。 */
+function ModelTagEditor(props: { models: string[]; onChange(models: string[]): void }) {
+  const { t } = useTranslation();
+  const [value, setValue] = useState("");
+  const addModel = () => {
+    const id = value.trim();
+    if (!id) {
+      return;
+    }
+    if (!props.models.includes(id)) {
+      props.onChange([...props.models, id]);
+    }
+    setValue("");
+  };
+  return (
+    <div className="grid gap-2">
+      {props.models.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {props.models.map((model) => (
+            <Badge
+              key={model}
+              variant="secondary"
+              className="gap-1.5 py-1 pl-2.5 pr-1 font-normal"
+            >
+              <span className="font-mono text-micro">{model}</span>
+              <button
+                type="button"
+                aria-label={t("settings.providers.removeModel", { model })}
+                onClick={() => props.onChange(props.models.filter((id) => id !== model))}
+                className="flex size-4 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              >
+                <X className="size-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+      <div className="flex gap-2">
+        <Input
+          value={value}
+          placeholder={t("settings.providers.modelPlaceholder")}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter 直接添加，避免触发表单提交。
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addModel();
+            }
+          }}
+        />
+        <Button type="button" variant="outline" onClick={addModel}>
+          {t("settings.providers.addModel")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function Field(props: { label: string; error?: string; children: React.ReactNode }) {
   return (
     <div className="grid gap-2">
       <Label className="text-muted-foreground">{props.label}</Label>
       {props.children}
+      {props.error ? <p className="text-micro text-destructive">{props.error}</p> : null}
     </div>
   );
+}
+
+/** 把草稿中已勾选/默认的模型补进选项列表，避免目录之外的模型丢失。 */
+function withDraftModels(
+  kind: ProviderKind,
+  options: ProviderModelOption[],
+  draft: ProviderInput
+): ProviderModelOption[] {
+  const known = new Set(options.map((option) => option.id));
+  const extras = [...new Set([...(draft.models ?? []), draft.model])].filter(
+    (model) => model && !known.has(model)
+  );
+  if (extras.length === 0) {
+    return options;
+  }
+  return [...options, ...extras.map((model) => resolveProviderModelOption(kind, model))];
+}
+
+function modelOptionLabel(option: ProviderModelOption): string {
+  return option.label ?? option.id;
 }

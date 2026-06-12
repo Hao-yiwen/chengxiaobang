@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
+import type { ProjectFileEntry } from "@chengxiaobang/shared";
 
 /** Build-output and dependency dirs that file walks always skip. */
 const IGNORED_DIRS = new Set([
@@ -65,6 +66,41 @@ export async function listProjectFiles(
       return left.localeCompare(right);
     })
     .slice(0, cappedLimit);
+}
+
+/** Direct children for the project file tree. Directories are listed before files. */
+export async function listProjectDirectoryEntries(
+  basePath: string,
+  directory = "."
+): Promise<ProjectFileEntry[]> {
+  const root = resolve(basePath);
+  const current = safeResolve(root, directory || ".");
+  const info = await stat(current);
+  if (!info.isDirectory()) {
+    throw new Error("路径不是目录");
+  }
+  const entries = await readdir(current, { withFileTypes: true });
+  return entries
+    .filter((entry) => {
+      if (entry.isDirectory()) {
+        return !IGNORED_DIRS.has(entry.name);
+      }
+      return entry.isFile();
+    })
+    .map((entry) => {
+      const absolutePath = join(current, entry.name);
+      return {
+        name: entry.name,
+        path: relative(root, absolutePath).split(sep).join("/"),
+        type: entry.isDirectory() ? "directory" as const : "file" as const
+      };
+    })
+    .sort((left, right) => {
+      if (left.type !== right.type) {
+        return left.type === "directory" ? -1 : 1;
+      }
+      return left.name.localeCompare(right.name);
+    });
 }
 
 async function walkFiles(

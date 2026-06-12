@@ -15,9 +15,22 @@ export const toolNameSchema = z.enum([
   "create_pptx",
   "create_docx",
   "create_xlsx",
-  "feishu_send_message"
+  "feishu_send_message",
+  "propose_plan",
+  "update_plan",
+  "ask_user",
+  "btw",
+  "use_skill"
 ]);
 export type ToolName = z.infer<typeof toolNameSchema>;
+
+/** 模型在 OpenAI-compatible tool_calls 中请求的一次工具调用。 */
+export interface AssistantToolCall {
+  id: string;
+  name: string;
+  /** 模型原样输出的 JSON 参数字符串。 */
+  arguments: string;
+}
 
 export const toolCallSchema = z.object({
   id: z.string().min(1),

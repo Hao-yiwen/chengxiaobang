@@ -4,6 +4,7 @@ import {
   accessModeSchema,
   defaultFeishuConfig,
   defaultProviders,
+  mergeProviderModelOptions,
   providerInputSchema,
   type StreamEvent
 } from "../src/index";
@@ -21,8 +22,16 @@ describe("shared public API", () => {
     expect(accessModeSchema.parse("approval")).toBe("approval");
     expect(defaultProviders(timestamp).map((provider) => provider.id)).toEqual([
       "deepseek",
-      "kimi"
+      "kimi",
+      "minimax",
+      "doubao",
+      "qwen"
     ]);
+    expect(
+      mergeProviderModelOptions("deepseek", ["deepseek-v4-pro"], "deepseek-custom").map(
+        (model) => model.id
+      )
+    ).toEqual(["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-custom"]);
     expect(defaultFeishuConfig()).toEqual({
       enabled: false,
       appId: "",
@@ -34,7 +43,8 @@ describe("shared public API", () => {
         kind: "custom",
         name: "自定义",
         baseURL: "https://example.com/v1",
-        model: "model"
+        model: "model",
+        reasoningMode: "high"
       }).kind
     ).toBe("custom");
     expect(event.type).toBe("delta");

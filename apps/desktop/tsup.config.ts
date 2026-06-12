@@ -1,6 +1,6 @@
 import { defineConfig } from "tsup";
 
-const external = ["electron"];
+const external = ["electron", "node-pty", "pino"];
 
 export default defineConfig([
   {

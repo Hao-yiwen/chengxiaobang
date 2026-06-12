@@ -34,11 +34,18 @@ export function buildSessionMarkdown(
       if (message.role === "user") {
         parts.push(`## ${labels.user}`, message.content);
       } else if (message.role === "assistant") {
-        parts.push(`## ${labels.assistant}`);
+        // Reasoning-only turns export their reasoning quote alone; with
+        // reasoning excluded they would be empty, so skip them entirely.
+        const body: string[] = [];
         if (includeReasoning && message.reasoning) {
-          parts.push(quoted(`**${labels.reasoning}**\n${message.reasoning}`));
+          body.push(quoted(`**${labels.reasoning}**\n${message.reasoning}`));
         }
-        parts.push(message.content);
+        if (message.content.trim()) {
+          body.push(message.content);
+        }
+        if (body.length > 0) {
+          parts.push(`## ${labels.assistant}`, ...body);
+        }
       }
     } else {
       const toolCall = item.toolCall;

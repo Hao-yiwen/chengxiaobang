@@ -11,6 +11,7 @@ import {
   type Project,
   type ProviderConfig,
   type RunRecord,
+  type ScheduledTask,
   type Session,
   type ToolCall
 } from "@chengxiaobang/shared";
@@ -18,9 +19,11 @@ import type {
   CreateMessageInput,
   CreateProjectInput,
   CreateRunInput,
+  CreateScheduledTaskInput,
   CreateSessionInput,
   StateStore,
   StoredMessage,
+  UpdateScheduledTaskInput,
   UpdateSessionInput
 } from "./state-store";
 
@@ -59,6 +62,8 @@ export class SqliteStateStore implements StateStore {
         title text not null,
         provider_id text,
         access_mode text not null,
+        model text,
+        reasoning_mode text,
         created_at text not null,
         updated_at text not null,
         foreign key (project_id) references projects(id) on delete set null,
@@ -105,9 +110,26 @@ export class SqliteStateStore implements StateStore {
         name text not null,
         base_url text not null,
         model text not null,
+        reasoning_mode text,
         api_key_ref text,
         created_at text not null,
         updated_at text not null
+      );
+      create table if not exists scheduled_tasks (
+        id text primary key,
+        session_id text not null,
+        name text not null,
+        prompt text not null,
+        cron text not null,
+        full_access integer not null default 0,
+        enabled integer not null default 1,
+        next_run_at text,
+        last_run_at text,
+        last_status text,
+        last_error text,
+        created_at text not null,
+        updated_at text not null,
+        foreign key (session_id) references sessions(id) on delete cascade
       );
       create index if not exists idx_projects_path on projects(path);
       create index if not exists idx_sessions_project_updated
@@ -118,6 +140,10 @@ export class SqliteStateStore implements StateStore {
         on runs(session_id, updated_at desc);
       create index if not exists idx_tool_calls_run_updated
         on tool_calls(run_id, updated_at desc);
+      create index if not exists idx_scheduled_tasks_enabled_next
+        on scheduled_tasks(enabled, next_run_at);
+      create index if not exists idx_scheduled_tasks_session
+        on scheduled_tasks(session_id);
     `);
     // Older databases predate the reasoning/duration columns — add them in place.
     this.ensureColumn("messages", "reasoning", "text");
@@ -130,6 +156,15 @@ export class SqliteStateStore implements StateStore {
     this.ensureColumn("sessions", "parent_session_id", "text");
     this.ensureColumn("sessions", "fork_message_id", "text");
     this.ensureColumn("sessions", "feishu_chat_id", "text");
+    // 会话级模型记忆（§6.2）：解析优先级 run > session > provider 默认。
+    this.ensureColumn("sessions", "model", "text");
+    this.ensureColumn("sessions", "reasoning_mode", "text");
+    this.ensureColumn("providers", "reasoning_mode", "text");
+    // 一个供应商可启用多个模型（JSON 数组），共用同一个 API Key。
+    this.ensureColumn("providers", "models", "text");
+    // 侧边栏置顶：存在 pinned_at 即视为置顶，置顶区按其降序排列。
+    this.ensureColumn("projects", "pinned_at", "text");
+    this.ensureColumn("sessions", "pinned_at", "text");
     await this.migrateProviderPresets();
     await this.flush();
   }
@@ -191,6 +226,37 @@ export class SqliteStateStore implements StateStore {
     return project;
   }
 
+  async renameProject(id: string, name: string): Promise<Project> {
+    const current = await this.getProject(id);
+    if (!current) {
+      console.warn("[sqlite-state-store] 重命名项目失败：项目不存在", id);
+      throw new Error("项目不存在");
+    }
+    const next: Project = { ...current, name, updatedAt: nowIso() };
+    this.run("update projects set name = ?, updated_at = ? where id = ?", [
+      next.name,
+      next.updatedAt,
+      id
+    ]);
+    await this.flush();
+    console.log("[sqlite-state-store] 已重命名项目:", id, "->", name);
+    return next;
+  }
+
+  async setProjectPinned(id: string, pinned: boolean): Promise<Project> {
+    const current = await this.getProject(id);
+    if (!current) {
+      console.warn("[sqlite-state-store] 置顶项目失败：项目不存在", id);
+      throw new Error("项目不存在");
+    }
+    // 刻意不写 updated_at：置顶不应把项目顶到普通列表最前。
+    this.run("update projects set pinned_at = ? where id = ?", [pinned ? nowIso() : null, id]);
+    await this.flush();
+    console.log("[sqlite-state-store] 已更新项目置顶:", id, "->", pinned);
+    // 重读返回：取消置顶时 {...current} 会残留旧 pinnedAt。
+    return (await this.getProject(id))!;
+  }
+
   async listSessions(projectId?: string | null): Promise<Session[]> {
     const rows =
       projectId === undefined
@@ -239,6 +305,8 @@ export class SqliteStateStore implements StateStore {
       title: input.title,
       providerId: input.providerId,
       accessMode: input.accessMode,
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.reasoningMode ? { reasoningMode: input.reasoningMode } : {}),
       ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
       ...(input.forkMessageId ? { forkMessageId: input.forkMessageId } : {}),
       ...(input.feishuChatId ? { feishuChatId: input.feishuChatId } : {}),
@@ -247,15 +315,17 @@ export class SqliteStateStore implements StateStore {
     };
     this.run(
       `insert into sessions
-       (id, project_id, title, provider_id, access_mode, parent_session_id, fork_message_id,
-        feishu_chat_id, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, project_id, title, provider_id, access_mode, model, reasoning_mode, parent_session_id,
+        fork_message_id, feishu_chat_id, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         session.id,
         session.projectId,
         session.title,
         session.providerId ?? null,
         session.accessMode,
+        session.model ?? null,
+        session.reasoningMode ?? null,
         session.parentSessionId ?? null,
         session.forkMessageId ?? null,
         session.feishuChatId ?? null,
@@ -331,6 +401,13 @@ export class SqliteStateStore implements StateStore {
       providerId:
         input.providerId === null ? undefined : input.providerId ?? current.providerId,
       accessMode: input.accessMode ?? current.accessMode,
+      // undefined 保留会话模型记忆（run 起始的 providerId/accessMode 更新不得清掉它）；
+      // null 显式清空（§6.2）。
+      model: input.model === null ? undefined : input.model ?? current.model,
+      reasoningMode:
+        input.reasoningMode === null
+          ? undefined
+          : input.reasoningMode ?? current.reasoningMode,
       // undefined must preserve the pointer — the run-start updateSession call
       // (providerId/accessMode only) would otherwise clobber it on every run.
       compactedUpToMessageId:
@@ -341,12 +418,15 @@ export class SqliteStateStore implements StateStore {
     };
     this.run(
       `update sessions
-       set title = ?, provider_id = ?, access_mode = ?, compacted_up_to_message_id = ?, updated_at = ?
+       set title = ?, provider_id = ?, access_mode = ?, model = ?, reasoning_mode = ?,
+           compacted_up_to_message_id = ?, updated_at = ?
        where id = ?`,
       [
         next.title,
         next.providerId ?? null,
         next.accessMode,
+        next.model ?? null,
+        next.reasoningMode ?? null,
         next.compactedUpToMessageId ?? null,
         next.updatedAt,
         id
@@ -354,6 +434,20 @@ export class SqliteStateStore implements StateStore {
     );
     await this.flush();
     return next;
+  }
+
+  async setSessionPinned(id: string, pinned: boolean): Promise<Session> {
+    const current = await this.getSession(id);
+    if (!current) {
+      console.warn("[sqlite-state-store] 置顶会话失败：会话不存在", id);
+      throw new Error("会话不存在");
+    }
+    // 刻意不写 updated_at：置顶不应把会话顶到普通列表最前。
+    this.run("update sessions set pinned_at = ? where id = ?", [pinned ? nowIso() : null, id]);
+    await this.flush();
+    console.log("[sqlite-state-store] 已更新会话置顶:", id, "->", pinned);
+    // 重读返回：取消置顶时 {...current} 会残留旧 pinnedAt。
+    return (await this.getSession(id))!;
   }
 
   async deleteProject(id: string): Promise<boolean> {
@@ -383,6 +477,7 @@ export class SqliteStateStore implements StateStore {
     }
     this.run("delete from runs where session_id = ?", [id]);
     this.run("delete from messages where session_id = ?", [id]);
+    this.run("delete from scheduled_tasks where session_id = ?", [id]);
     this.run("delete from sessions where id = ?", [id]);
     await this.flush();
     return true;
@@ -524,13 +619,15 @@ export class SqliteStateStore implements StateStore {
   async upsertProvider(provider: ProviderConfig): Promise<ProviderConfig> {
     this.run(
       `insert into providers
-       (id, kind, name, base_url, model, api_key_ref, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?)
+       (id, kind, name, base_url, model, models, reasoning_mode, api_key_ref, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        on conflict(id) do update set
          kind = excluded.kind,
          name = excluded.name,
          base_url = excluded.base_url,
          model = excluded.model,
+         models = excluded.models,
+         reasoning_mode = excluded.reasoning_mode,
          api_key_ref = excluded.api_key_ref,
          updated_at = excluded.updated_at`,
       [
@@ -539,6 +636,8 @@ export class SqliteStateStore implements StateStore {
         provider.name,
         provider.baseURL,
         provider.model,
+        provider.models && provider.models.length > 0 ? JSON.stringify(provider.models) : null,
+        provider.reasoningMode ?? null,
         provider.apiKeyRef ?? null,
         provider.createdAt,
         provider.updatedAt
@@ -622,11 +721,14 @@ export class SqliteStateStore implements StateStore {
 
   async updateToolCall(toolCall: ToolCall): Promise<ToolCall> {
     await this.assertToolCallExists(toolCall.id);
+    // args 一并更新：propose_plan 确认时 editedSteps 写回 args（§2.3），
+    // 跨 run 的 derivePlanState 依赖落库后的最终版本。
     this.run(
       `update tool_calls
-       set status = ?, result = ?, started_at = ?, updated_at = ?
+       set args_json = ?, status = ?, result = ?, started_at = ?, updated_at = ?
        where id = ?`,
       [
+        JSON.stringify(toolCall.args),
         toolCall.status,
         toolCall.result ?? null,
         toolCall.startedAt ?? null,
@@ -636,6 +738,114 @@ export class SqliteStateStore implements StateStore {
     );
     await this.flush();
     return toolCall;
+  }
+
+  async listScheduledTasks(): Promise<ScheduledTask[]> {
+    return this.query("select * from scheduled_tasks order by created_at asc").map(
+      mapScheduledTask
+    );
+  }
+
+  async getScheduledTask(id: string): Promise<ScheduledTask | undefined> {
+    return this.query("select * from scheduled_tasks where id = ?", [id]).map(
+      mapScheduledTask
+    )[0];
+  }
+
+  async createScheduledTask(input: CreateScheduledTaskInput): Promise<ScheduledTask> {
+    await this.assertSessionExists(input.sessionId);
+    const timestamp = nowIso();
+    const task: ScheduledTask = {
+      id: createId("task"),
+      sessionId: input.sessionId,
+      name: input.name,
+      prompt: input.prompt,
+      cron: input.cron,
+      fullAccess: input.fullAccess,
+      enabled: true,
+      nextRunAt: input.nextRunAt,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    this.run(
+      `insert into scheduled_tasks
+       (id, session_id, name, prompt, cron, full_access, enabled, next_run_at, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        task.id,
+        task.sessionId,
+        task.name,
+        task.prompt,
+        task.cron,
+        task.fullAccess ? 1 : 0,
+        1,
+        task.nextRunAt ?? null,
+        task.createdAt,
+        task.updatedAt
+      ]
+    );
+    await this.flush();
+    console.log(
+      `[sqlite-state-store] 已创建定时任务 id=${task.id} sessionId=${task.sessionId} cron=${task.cron}`
+    );
+    return task;
+  }
+
+  async updateScheduledTask(
+    id: string,
+    input: UpdateScheduledTaskInput
+  ): Promise<ScheduledTask | undefined> {
+    const current = await this.getScheduledTask(id);
+    if (!current) {
+      // 任务可能在执行途中被删除：no-op 而非抛错，调度器收尾写状态时容忍。
+      console.warn("[sqlite-state-store] 更新定时任务跳过：任务不存在", id);
+      return undefined;
+    }
+    const next: ScheduledTask = {
+      ...current,
+      name: input.name ?? current.name,
+      cron: input.cron ?? current.cron,
+      prompt: input.prompt ?? current.prompt,
+      enabled: input.enabled ?? current.enabled,
+      fullAccess: input.fullAccess ?? current.fullAccess,
+      nextRunAt: input.nextRunAt ?? current.nextRunAt,
+      lastRunAt: input.lastRunAt ?? current.lastRunAt,
+      lastStatus: input.lastStatus ?? current.lastStatus,
+      lastError: input.lastError === null ? undefined : input.lastError ?? current.lastError,
+      updatedAt: nowIso()
+    };
+    this.run(
+      `update scheduled_tasks
+       set name = ?, cron = ?, prompt = ?, enabled = ?, full_access = ?, next_run_at = ?,
+           last_run_at = ?, last_status = ?, last_error = ?, updated_at = ?
+       where id = ?`,
+      [
+        next.name,
+        next.cron,
+        next.prompt,
+        next.enabled ? 1 : 0,
+        next.fullAccess ? 1 : 0,
+        next.nextRunAt ?? null,
+        next.lastRunAt ?? null,
+        next.lastStatus ?? null,
+        next.lastError ?? null,
+        next.updatedAt,
+        id
+      ]
+    );
+    await this.flush();
+    return next;
+  }
+
+  async deleteScheduledTask(id: string): Promise<boolean> {
+    const exists = await this.getScheduledTask(id);
+    if (!exists) {
+      return false;
+    }
+    this.run("delete from scheduled_tasks where id = ?", [id]);
+    await this.flush();
+    console.log("[sqlite-state-store] 已删除定时任务:", id);
+    return true;
   }
 
   private async assertProjectExists(projectId: string | null | undefined): Promise<void> {
@@ -732,6 +942,9 @@ function mapProject(row: Row): Project {
     id: String(row.id),
     name: String(row.name),
     path: String(row.path),
+    ...(row.pinned_at === null || row.pinned_at === undefined
+      ? {}
+      : { pinnedAt: String(row.pinned_at) }),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -744,6 +957,10 @@ function mapSession(row: Row): Session {
     title: String(row.title),
     providerId: row.provider_id === null ? undefined : String(row.provider_id),
     accessMode: row.access_mode === "full_access" ? "full_access" : "approval",
+    ...(row.model === null || row.model === undefined ? {} : { model: String(row.model) }),
+    ...(row.reasoning_mode === null || row.reasoning_mode === undefined
+      ? {}
+      : { reasoningMode: row.reasoning_mode as Session["reasoningMode"] }),
     ...(row.compacted_up_to_message_id === null || row.compacted_up_to_message_id === undefined
       ? {}
       : { compactedUpToMessageId: String(row.compacted_up_to_message_id) }),
@@ -756,6 +973,35 @@ function mapSession(row: Row): Session {
     ...(row.feishu_chat_id === null || row.feishu_chat_id === undefined
       ? {}
       : { feishuChatId: String(row.feishu_chat_id) }),
+    ...(row.pinned_at === null || row.pinned_at === undefined
+      ? {}
+      : { pinnedAt: String(row.pinned_at) }),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
+  };
+}
+
+function mapScheduledTask(row: Row): ScheduledTask {
+  return {
+    id: String(row.id),
+    sessionId: String(row.session_id),
+    name: String(row.name),
+    prompt: String(row.prompt),
+    cron: String(row.cron),
+    fullAccess: Number(row.full_access) === 1,
+    enabled: Number(row.enabled) === 1,
+    ...(row.next_run_at === null || row.next_run_at === undefined
+      ? {}
+      : { nextRunAt: String(row.next_run_at) }),
+    ...(row.last_run_at === null || row.last_run_at === undefined
+      ? {}
+      : { lastRunAt: String(row.last_run_at) }),
+    ...(row.last_status === null || row.last_status === undefined
+      ? {}
+      : { lastStatus: row.last_status as ScheduledTask["lastStatus"] }),
+    ...(row.last_error === null || row.last_error === undefined
+      ? {}
+      : { lastError: String(row.last_error) }),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -822,8 +1068,32 @@ function mapProvider(row: Row): ProviderConfig {
     name: String(row.name),
     baseURL: String(row.base_url),
     model: String(row.model),
+    ...(row.models === null || row.models === undefined
+      ? {}
+      : { models: parseProviderModels(String(row.models), String(row.id)) }),
+    ...(row.reasoning_mode === null || row.reasoning_mode === undefined
+      ? {}
+      : { reasoningMode: row.reasoning_mode as ProviderConfig["reasoningMode"] }),
     apiKeyRef: row.api_key_ref === null ? undefined : String(row.api_key_ref),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
+}
+
+function parseProviderModels(raw: string, providerId: string): string[] | undefined {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+      return parsed;
+    }
+    console.warn(`[sqlite-state-store] providers.models 不是字符串数组 providerId=${providerId}`);
+    return undefined;
+  } catch (error) {
+    console.warn(
+      `[sqlite-state-store] 解析 providers.models 失败 providerId=${providerId} error=${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    return undefined;
+  }
 }

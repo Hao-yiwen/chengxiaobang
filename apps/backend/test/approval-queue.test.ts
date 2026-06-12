@@ -1,0 +1,105 @@
+import { describe, expect, it } from "vitest";
+import type { ApprovalDecision } from "@chengxiaobang/shared";
+import { ApprovalQueue, normalizeDecision } from "../src/agent/approval-queue";
+
+describe("ApprovalQueue（泛化决议）", () => {
+  it("wait→decide 携带 payload round-trip", async () => {
+    const queue = new ApprovalQueue();
+    const controller = new AbortController();
+    const pending = queue.wait("tool_1", controller.signal);
+
+    const decision: ApprovalDecision = {
+      approved: true,
+      answer: { optionLabel: "方案 A" }
+    };
+    expect(queue.decide("tool_1", decision)).toBe(true);
+    await expect(pending).resolves.toEqual(decision);
+  });
+
+  it("earlyDecision 带 payload 不丢", async () => {
+    const queue = new ApprovalQueue();
+    const controller = new AbortController();
+    const decision: ApprovalDecision = {
+      approved: true,
+      editedSteps: [{ id: "s1", title: "第一步", status: "pending" }]
+    };
+    // decide 先于 wait 到达。
+    expect(queue.decide("tool_2", decision)).toBe(true);
+    await expect(queue.wait("tool_2", controller.signal)).resolves.toEqual(decision);
+  });
+
+  it("abort 时 resolve {approved:false}", async () => {
+    const queue = new ApprovalQueue();
+    const controller = new AbortController();
+    const pending = queue.wait("tool_3", controller.signal);
+    controller.abort();
+    await expect(pending).resolves.toEqual({ approved: false });
+  });
+
+  it("信号已中止时 wait 立即 resolve {approved:false}（pending 事件与 wait 注册之间的中止竞态）", async () => {
+    const queue = new ApprovalQueue();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(queue.wait("tool_pre_aborted", controller.signal)).resolves.toEqual({
+      approved: false
+    });
+  });
+
+  it("decide 后 pending 清空（重复 decide 变为下一次 wait 的早到决议）", async () => {
+    const queue = new ApprovalQueue();
+    const controller = new AbortController();
+    const first = queue.wait("tool_4", controller.signal);
+    queue.decide("tool_4", { approved: true });
+    await expect(first).resolves.toEqual({ approved: true });
+
+    // pending 已清空：再次 decide 进入 earlyDecisions，被下一次 wait 消费。
+    queue.decide("tool_4", { approved: false });
+    await expect(queue.wait("tool_4", controller.signal)).resolves.toEqual({
+      approved: false
+    });
+  });
+});
+
+describe("normalizeDecision（按工具名裁决 payload）", () => {
+  it("ask_user approved 缺 answer 视为拒绝", () => {
+    expect(normalizeDecision("ask_user", { approved: true })).toEqual({ approved: false });
+  });
+
+  it("ask_user approved 带 answer 原样保留", () => {
+    expect(
+      normalizeDecision("ask_user", { approved: true, answer: { text: "自由回答" } })
+    ).toEqual({ approved: true, answer: { text: "自由回答" } });
+  });
+
+  it("ask_user 拒绝时不要求 answer", () => {
+    expect(normalizeDecision("ask_user", { approved: false })).toEqual({
+      approved: false,
+      answer: undefined
+    });
+  });
+
+  it("editedSteps 仅 propose_plan 保留", () => {
+    const steps = [{ id: "s1", title: "第一步", status: "pending" as const }];
+    expect(normalizeDecision("propose_plan", { approved: true, editedSteps: steps })).toEqual({
+      approved: true,
+      editedSteps: steps
+    });
+    // ask_user 决议中的 editedSteps 被裁掉。
+    const askResult = normalizeDecision("ask_user", {
+      approved: true,
+      answer: { text: "好" },
+      editedSteps: steps
+    });
+    expect(askResult.editedSteps).toBeUndefined();
+  });
+
+  it("普通工具多余 payload 被剥除", () => {
+    expect(
+      normalizeDecision("write_file", {
+        approved: true,
+        answer: { text: "无关" },
+        editedSteps: [{ id: "s1", title: "x", status: "pending" }]
+      })
+    ).toEqual({ approved: true });
+  });
+});

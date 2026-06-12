@@ -2,78 +2,100 @@ import { describe, expect, it } from "vitest";
 import tailwindConfig from "../tailwind.config";
 
 /**
- * DESIGN.md token contract: the Tailwind theme is the single place the spec's
- * radius ladder, type roles, palette names, and flat-shadow rule are encoded.
- * These assertions keep a future refactor from silently dropping them.
+ * DESIGN.md token 契约：Tailwind theme 是半径、字体层级、调色板和阴影的落地点。
+ * 这些断言用来防止后续重构悄悄偏离 Vercel 主题。
  */
 describe("design tokens (DESIGN.md)", () => {
   const theme = tailwindConfig.theme;
 
-  it("uses the spec radius ladder (4/8/16/22/30/32)", () => {
+  it("uses the Vercel radius ladder (4/6/8/12/16/64/100)", () => {
     expect(theme.borderRadius).toMatchObject({
       xs: "4px",
-      sm: "8px",
-      md: "16px",
-      lg: "22px",
-      xl: "30px",
-      pill: "32px",
+      sm: "6px",
+      md: "8px",
+      lg: "12px",
+      xl: "16px",
+      "pill-sm": "64px",
+      pill: "100px",
       full: "9999px"
     });
   });
 
-  it("is flat: only none/overlay shadows exist", () => {
-    expect(Object.keys(theme.boxShadow).sort()).toEqual(["none", "overlay"]);
+  it("uses stacked Vercel elevation tokens", () => {
+    expect(Object.keys(theme.boxShadow).sort()).toEqual([
+      "float",
+      "hairline",
+      "modal",
+      "none",
+      "overlay",
+      "stack",
+      "subtle"
+    ]);
   });
 
-  it("exposes the spec accent and surface colors", () => {
+  it("exposes the Vercel surface, semantic, and gradient colors", () => {
     const colors = theme.extend.colors as Record<string, unknown>;
     for (const name of [
-      "coral",
-      "action-blue",
-      "focus-blue",
-      "form-focus",
-      "deep-green",
-      "dark-navy",
-      "soft-stone",
-      "pale-green",
-      "pale-blue",
-      "hairline",
-      "muted-slate",
+      "canvas",
+      "canvas-soft",
+      "canvas-soft-2",
       "ink",
-      "canvas"
+      "body",
+      "mute",
+      "link",
+      "link-deep",
+      "link-bg-soft",
+      "cyan",
+      "highlight-pink",
+      "violet",
+      "success",
+      "warning",
+      "error-soft",
+      "gradient-develop-start",
+      "gradient-preview-end",
+      "gradient-ship-end",
+      "hairline",
+      "line",
+      "cinnabar",
+      "moss",
+      "ochre",
+      "indigo"
     ]) {
       expect(colors[name], `missing color token: ${name}`).toBeDefined();
     }
-    expect(colors.brand).toBeUndefined();
     expect(colors.amber).toBeUndefined();
   });
 
-  it("defines the 12-role type ladder with the mono-label tracking", () => {
+  it("defines the Vercel type ladder and compatibility aliases", () => {
     const fontSize = theme.extend.fontSize as Record<string, [string, Record<string, string>]>;
     for (const role of [
-      "hero",
-      "display",
-      "section-display",
-      "section",
-      "card-heading",
-      "feature",
+      "display-xl",
+      "display-lg",
+      "display-md",
+      "display-sm",
       "body-lg",
+      "body-md",
+      "body-sm",
       "body",
       "button",
+      "button-lg",
       "caption",
       "mono-label",
+      "code",
       "micro"
     ]) {
       expect(fontSize[role], `missing type role: ${role}`).toBeDefined();
     }
-    expect(fontSize["mono-label"][1].letterSpacing).toBe("0.28px");
+    expect(fontSize["display-xl"][1].letterSpacing).toBe("-2.4px");
+    expect(fontSize["display-xl"][1].fontWeight).toBe("600");
+    expect(fontSize["mono-label"][1].letterSpacing).toBeUndefined();
     expect(fontSize.body[0]).toBe("16px");
-    expect(fontSize.hero[0]).toBe("96px");
+    expect(fontSize.hero[0]).toBe("48px");
   });
 
-  it("splits display and body font stacks (Space Grotesk / Inter)", () => {
+  it("uses Inter as the Geist substitute for display and body", () => {
     const fontFamily = theme.extend.fontFamily as Record<string, string[]>;
-    expect(fontFamily.display[0]).toBe("Space Grotesk");
+    expect(fontFamily.display[0]).toBe("Inter");
     expect(fontFamily.sans[0]).toBe("Inter");
     expect(fontFamily.display).toContain("PingFang SC");
     expect(fontFamily.sans).toContain("PingFang SC");

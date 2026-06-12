@@ -5,6 +5,7 @@ import { runRoutes } from "./runs";
 import { sessionRoutes } from "./sessions";
 import { settingsRoutes } from "./settings";
 import { slashCommandRoutes } from "./slash-commands";
+import { taskRoutes } from "./tasks";
 import { terminalRoutes } from "./terminal";
 
 export function registerRoutes(app: Hono, context: AppContext): void {
@@ -12,6 +13,7 @@ export function registerRoutes(app: Hono, context: AppContext): void {
   app.route("/api/sessions", sessionRoutes(context));
   app.route("/api", slashCommandRoutes(context));
   app.route("/api", runRoutes(context));
+  app.route("/api/tasks", taskRoutes(context));
   app.route("/api/terminal", terminalRoutes(context));
   app.route("/api/settings", settingsRoutes(context));
 }

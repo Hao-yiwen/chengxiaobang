@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   defaultDataDir,
+  defaultLogDir,
   devDockIconPath,
   preloadPath,
   rendererIndexPath
@@ -11,6 +12,11 @@ import {
 describe("main process paths", () => {
   it("defaults data dir to ~/.chengxiaobang/data", () => {
     expect(defaultDataDir()).toBe(join(homedir(), ".chengxiaobang", "data"));
+  });
+
+  it("defaults log dir to the logs folder inside the data dir", () => {
+    expect(defaultLogDir()).toBe(join(defaultDataDir(), "logs"));
+    expect(defaultLogDir("/tmp/cxb-data")).toBe("/tmp/cxb-data/logs");
   });
 
   it("resolves the dev dock icon inside the app's build directory", () => {

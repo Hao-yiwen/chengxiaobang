@@ -27,6 +27,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     listProjectFiles: vi.fn(async () => []),
     updateSession: vi.fn() as never,
     deleteSession: vi.fn() as never,
+    getGitChanges: vi.fn(async () => ({ isRepo: false, files: [] })),
     listMessages: vi.fn(async () => []),
     rewindSession: vi.fn(async () => []),
     forkSession: vi.fn() as never,

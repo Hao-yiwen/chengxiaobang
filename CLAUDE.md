@@ -77,6 +77,13 @@
 - 一个模块一个关注点;函数小而单一职责。文件超出主题宁可新建,不要继续膨胀。副作用(IO、IPC、网络、模型调用)收在边缘,中间保持纯逻辑以便单测。
 - 先复用已有的 helper,再考虑新写。
 
+### 日志与排查
+
+- 开发新功能或修改关键路径时必须补充适当日志,尤其是错误分支、重要业务入口/出口、网络请求/响应、跨进程 IPC、状态变更和长任务调度。日志要包含足够上下文(如 id、路径、参数摘要、错误信息),避免只写"失败了"这类无诊断价值的内容。
+- 运行态日志由 Electron main 进程统一持久化到 `~/.chengxiaobang/data/logs/`,按来源拆成 `main.log`、`renderer.log`、`backend.log`。本地 `pnpm dev` 默认注入 `CHENGXIAOBANG_LOG_LEVEL=debug`,因此开发时会记录 debug 日志;打包运行未显式设置时仍默认记录 `info` 及以上级别。
+- 排查问题时优先按当前日志链路定位:主进程/启动/窗口/IPC 问题看 `main.log`;前端白屏、组件报错和渲染层 `console` 输出看 `renderer.log`;后端启动、Bun 进程 stdout/stderr、API/agent/tool 执行问题看 `backend.log`。
+- 不要只依赖终端临时输出。遇到用户反馈"跑起来后出错""前端没反应""后端超时"等问题时,先读取上述日志文件,再结合代码和复现步骤判断根因。
+
 ### UI 实现必须遵循 DESIGN.md
 
 - 任何 UI 实现/改动(组件、样式、配色、字体、布局、交互态)动手前**必须先阅读根目录 `DESIGN.md`**,并以其中的设计系统(色板、字体层级、间距、组件形态)为唯一视觉事实源。
@@ -100,7 +107,7 @@
 
 **`packages/shared`** — API/IPC 契约的唯一事实源。所有实体(Provider、Project、Session、Message、ToolCall、RunRequest)都是 Zod schema + 推导类型;后端用它们 `.parse()` 请求,渲染层导入同一份类型。还拥有 `StreamEvent` 联合类型与 SSE codec(`encodeSseEvent`/`parseSseChunk`)。改这里的契约,两端必须跟随。它必须**先 build**,backend/desktop 的 typecheck 才能过(跨包消费其 `dist/` 类型)。
 
-**`apps/backend`** — 无头本地 HTTP 服务,**不是** Electron 进程。Hono 风格的 `fetch` handler(`api/app.ts`)由 `Bun.serve` 提供服务(`server.ts`,强制 Bun;dev 与生产分别用 `node_modules/.bin/bun` 和捆绑的 Bun binary 启动)。agent 循环是 **pi 的 `runAgentLoopContinue`**(`@earendil-works/pi-agent-core`),由 `agent/agent-runner.ts` 驱动:pi 事件经 `agent/pi-events.ts`(`RunEventTranslator`,同时独占 run 级持久化)翻译为 `StreamEvent`,经 `POST /api/runs/stream` 以 SSE 流出。状态经 sql.js 落 SQLite(`repository/sqlite-state-store.ts`,藏在 `StateStore` 接口后);assistant/tool 消息行带 backend-only 的 `payload` 列(pi 原始消息 JSON),多轮工具调用历史得以无损回放(`agent/history.ts`)。密钥在 darwin 用 macOS Keychain(`security` CLI),其他平台内存实现(`secrets/secret-store.ts`)。模型调用走 **pi-ai**(`streamSimple`);`model/pi-model.ts` 把 `ProviderConfig` 映射为 pi `Model`(provider 兼容差异——DeepSeek `reasoning_content`、Moonshot 怪癖——按 slug/baseUrl 自动探测)。内置 provider 为 DeepSeek 和 Kimi(shared 的 `defaultProviders`)。工具是 TypeBox schema 的 pi `AgentTool`(`tools/registry.ts` 汇集 fs/shell/web/office/feishu 工具工厂)。
+**`apps/backend`** — 无头本地 HTTP 服务,**不是** Electron 进程。Hono 风格的 `fetch` handler(`api/app.ts`)由 `Bun.serve` 提供服务(`server.ts`,强制 Bun;dev 与生产分别用 `node_modules/.bin/bun` 和捆绑的 Bun binary 启动)。agent 循环是 **pi 的 `runAgentLoopContinue`**(`@earendil-works/pi-agent-core`),由 `agent/agent-runner.ts` 驱动:pi 事件经 `agent/pi-events.ts`(`RunEventTranslator`,同时独占 run 级持久化)翻译为 `StreamEvent`,经 `POST /api/runs/stream` 以 SSE 流出。状态经 sql.js 落 SQLite(`repository/sqlite-state-store.ts`,藏在 `StateStore` 接口后);assistant/tool 消息行带 backend-only 的 `payload` 列(pi 原始消息 JSON),多轮工具调用历史得以无损回放(`agent/history.ts`)。密钥在 darwin 用 macOS Keychain(`security` CLI),其他平台内存实现(`secrets/secret-store.ts`)。模型调用走 **pi-ai**(`streamSimple`);`model/pi-model.ts` 把 `ProviderConfig` 映射为 pi `Model`(provider 兼容差异——DeepSeek `reasoning_content`、Moonshot 怪癖——按 slug/baseUrl 自动探测)。内置 provider 为 DeepSeek 和 Kimi(shared 的 `defaultProviders`)。工具是 TypeBox schema 的 pi `AgentTool`(`tools/registry.ts` 汇集 fs/shell/web/office/feishu 工具工厂)。**定时任务**:模型在会话中经 `tools/schedule-tools.ts`(`schedule_create/list/cancel`,5 字段 cron,croner 解析)创建,任务绑定创建它的会话;`tasks/task-scheduler.ts` 轮询到期任务并在原会话中追加 headless run(`stream()` 的进程内 `headless` 参数:隐藏 `ask_user`、不覆写会话设置,待审批工具一律自动拒绝),先推进 `nextRunAt` 再执行(at-most-once,重启后补跑一次)。
 
 **`apps/desktop`** — Electron 应用。**main 进程拉起并监督后端**(`main/backend-process.ts`):随机端口 + 随机 token,轮询 `/api/health` 就绪后经 `backend-info` IPC 把 `{baseURL, token}` 暴露给渲染层。每次启动应用 = 新端口上的全新后端。渲染层(React + Vite + Tailwind)是沙箱的;`preload/index.ts` 只暴露最小的 `window.chengxiaobang` bridge(backend info、原生文件/目录选择器、读文件)。`renderer/lib/api.ts` 据 bridge 的 baseURL/token 构建类型化 `ApiClient` 并消费 SSE 流。main 进程在 dev 加载 `VITE_DEV_SERVER_URL`,打包后加载 `dist/renderer/index.html`。
 
@@ -110,7 +117,7 @@
 
 1. 解析/创建会话,落库 user 消息,发 `run_started` + `message`。
 2. **直接斜杠命令**:以 `/ls`、`/read`、`/write`、`/shell`、`/git status`、`/git diff` 开头的输入(`tools/direct-commands.ts`)在模型循环之前先执行恰好一个内置工具;`/compact` 走仅总结的模型调用(`agent/compaction.ts`)。
-3. 从持久化行重建 pi 对话(`agent/history.ts`),交给 `runAgentLoopContinue`(`toolExecution: "sequential"`)。`RunEventTranslator` 把 pi 事件映射到 5 事件 `StreamEvent` 契约:`delta`(text/thinking 通道)、`message`(已持久化的 user 回显 / assistant 轮次)、`tool_call`(每次状态迁移一个事件:`pending_approval → running → completed | failed | rejected`)、最终的 `run_end`(completed/failed/aborted,带 usage)。
+3. 从持久化行重建 pi 对话(`agent/history.ts`),交给 `runAgentLoopContinue`(`toolExecution: "sequential"`)。`RunEventTranslator` 把 pi 事件映射到 `StreamEvent` 契约:`delta`(text/thinking 通道)、`message`(已持久化的 user 回显 / assistant 轮次)、`tool_call`(每次状态迁移一个事件:`pending_approval → running → completed | failed | rejected`)、最终的 `run_end`(completed/failed/aborted,带 usage)。与模型循环并行,新会话的 AI 标题(`agent/session-title.ts`)生成后经 `session_updated` 事件即时推送(失败时回退为用户首句)。
 4. **审批门控**在 pi 的 `beforeToolCall` 钩子:`approval` 模式会话中的 mutating 工具先落 `pending_approval` 的 ToolCall,阻塞在 `ApprovalQueue.wait()` 直到 `POST /api/approvals/:toolCallId`;拒绝时返回 `{block: true}`,pi 把拒绝作为错误工具结果喂回模型(run 继续)。
 5. `POST /api/runs/:runId/abort` 经以 runId 为键的 `AbortController` 取消;部分回答先落库并发出,再 `run_end(aborted)`。
 

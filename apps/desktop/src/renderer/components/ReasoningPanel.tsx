@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { CaretDownIcon as ChevronDown } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
