@@ -162,18 +162,22 @@ export class FeishuService {
         prompt,
         accessMode: fullAccess ? "full_access" : "approval"
       })) {
-        if (event.type === "tool_call_pending" && !fullAccess) {
+        if (
+          event.type === "tool_call" &&
+          event.toolCall.status === "pending_approval" &&
+          !fullAccess
+        ) {
           // Read-only enforcement: nobody is around to approve, so mutating
           // tools are denied and the model gets the standard rejection text.
           this.options.runner.approvals.decide(event.toolCall.id, false);
-        } else if (event.type === "assistant_done") {
+        } else if (event.type === "message" && event.message.role === "assistant") {
           const content = event.message.content.trim();
           if (content) {
             texts.push(content);
           }
-        } else if (event.type === "run_error") {
-          errorText = event.error;
-        } else if (event.type === "run_aborted") {
+        } else if (event.type === "run_end" && event.status === "failed") {
+          errorText = event.error ?? "未知错误";
+        } else if (event.type === "run_end" && event.status === "aborted") {
           aborted = true;
         }
       }

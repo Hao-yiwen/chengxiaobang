@@ -4,6 +4,10 @@ import { App } from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { setupI18n } from "./i18n";
 import { useAppStore } from "./store";
+import "@fontsource/space-grotesk/400.css";
+import "@fontsource/space-grotesk/500.css";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
 import "./styles/global.css";
 
 // Seed i18next with the persisted locale before the first render.

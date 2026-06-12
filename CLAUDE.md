@@ -1,67 +1,124 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件为 Claude Code(claude.ai/code)及其他编码 agent 在本仓库工作时提供指引(`AGENTS.md` 是指向本文件的软链)。
 
-程小帮 is a macOS Electron AI assistant desktop app (an agentic coding companion). pnpm + TypeScript monorepo, ESM throughout.
+程小帮是一个 macOS Electron AI 助手桌面应用(agentic coding companion)。pnpm + TypeScript monorepo,全仓 ESM。
 
-## Engineering guidelines
+## 工程准则
 
-Bias toward caution over speed. For trivial tasks, use judgment.
+### 1. 写码前先思考
 
-### Tests are required
-- Every behavioral change ships with unit tests. Frame the task as "write the test that proves it, then make it pass." For a bug, first write a failing test that reproduces it, then fix.
-- Tests live in each package's `test/` dir and run via Vitest. Keep `pnpm test` green before calling work done; run one file with `pnpm test <path>`, filter by name with `pnpm test -t "<name>"`.
-- Match existing patterns: backend logic is tested directly against its modules; the renderer uses `@testing-library/react` + jsdom with a mocked `ApiClient` (see `apps/desktop/test/app.test.tsx`). Extract pure functions so they're testable without a running app.
-- Never weaken or delete a test just to go green. If a test blocks you, understand why first.
+**不要假设,不要隐藏困惑,主动暴露取舍。**
 
-### Modular by default
-- Respect the three-layer boundary (see Architecture): contracts/types live only in `packages/shared`; backend logic sits behind interfaces (`StateStore`, `ModelClient`, `SecretStore`); the renderer splits into `store/` (state), `components/` (view), `lib/` (IO). Don't reach across layers or re-declare the shared contract.
-- One concern per module; keep functions small and single-purpose. Prefer a new file over growing one past its theme. Keep side effects (IO, IPC, network, model calls) at the edges and logic pure in the middle so it can be unit-tested.
-- Reuse existing helpers before writing new ones.
+动手实现之前:
+- 显式陈述你的假设;不确定就先问。
+- 如果存在多种解读,把它们摆出来——不要悄悄选一种。
+- 如果有更简单的方案,直说;该反驳时要反驳。
+- 如果有不清楚的地方,停下来,点名说出困惑点,再提问。
 
-### Think before coding
-- State assumptions explicitly. If multiple interpretations exist, surface them instead of silently picking one. If something is unclear, ask.
-- Prefer the simplest solution that solves the actual request — no speculative features, no abstractions for single-use code, no configurability nobody asked for. If 200 lines could be 50, rewrite.
+### 2. 简单优先
 
-### Surgical changes
-- Every changed line should trace directly to the request. Don't refactor, reformat, or "improve" adjacent code that isn't broken; match the surrounding style.
-- Remove only the imports/variables/functions your own change orphaned. Flag unrelated dead code rather than deleting it.
+**用解决问题的最少代码,不写任何投机性的东西。**
 
-## Commands
+- 不做需求之外的功能。
+- 不为一次性代码做抽象。
+- 不加没人要求的"灵活性"或"可配置性"。
+- 不为不可能发生的场景写错误处理。
+- 如果写了 200 行而 50 行能解决,重写。
 
-Run from the repo root unless noted.
+自问:"资深工程师会不会觉得这过度复杂了?"——会,就简化。
 
-- `pnpm dev` — one-command dev: starts Vite (renderer HMR), `tsup --watch` (main/preload), and Electron. Electron spawns the backend itself via `bun --watch`, so **all three layers hot-reload on save** (renderer = HMR, backend = bun restart on same port, main/preload = recompile + Electron auto-restart). Closing the window or Ctrl+C tears everything down. See `apps/desktop/scripts/dev.mjs`.
-- `pnpm build` — builds in order: shared → backend → desktop. Required before packaging because desktop bundles the backend's `dist/` as an extra resource.
-- `pnpm package:mac` — `pnpm build` then `electron-builder --mac` (dmg + zip).
-- `pnpm typecheck` — builds shared first (other packages import its types), then `tsc --noEmit` across the workspace.
-- `pnpm test` — Vitest (config: `vitest.config.ts`). Run a single file: `pnpm test apps/backend/test/agent-runner.test.ts`. Filter by name: `pnpm test -t "approval"`. Tests live in `test/` dirs per package; `@chengxiaobang/*` import aliases are resolved by the Vitest config.
+### 3. 外科手术式修改
 
-Backend can also run standalone: `pnpm --filter @chengxiaobang/backend dev` → `tsx src/main.ts --port <n> --data-dir <dir> --token <t>`.
+**只动必须动的,只清理自己制造的烂摊子。**
 
-## Architecture
+修改既有代码时:
+- 不"顺手改进"相邻的代码、注释或格式。
+- 不重构没坏的东西。
+- 匹配现有风格,哪怕你自己会换种写法。
+- 注意到无关的死代码,提一句即可——不要删。
 
-Three layers, with `@chengxiaobang/shared` as the contract between them.
+你的修改产生孤儿时:
+- 删除**因你的修改**而失去引用的 import/变量/函数。
+- 不删既有的死代码,除非被要求。
 
-**`packages/shared`** — single source of truth for the API/IPC contract. All entities (Provider, Project, Session, Message, ToolCall, RunRequest) are Zod schemas with inferred types; the backend `.parse()`s requests with them and the renderer imports the same types. Also owns the `StreamEvent` union and the SSE codec (`encodeSseEvent`/`parseSseChunk`). Change a contract here and both sides must follow. It must be **built** before backend/desktop typecheck (its `dist/` types are consumed across packages).
+检验标准:每一行改动都能直接追溯到用户的请求。
 
-**`apps/backend`** — headless local HTTP server, **not** an Electron-aware process. It's a plain `fetch`-style handler (`api/app.ts`) served by either Bun's `Bun.serve` or Node's `http` server, transparently — see `server.ts`. Runtime selection: launched with **Bun** when available (the bundled `bun.exe` in production, `node_modules/.bin/bun` in dev), else falls back to `tsx`/`node`. The agent loop (`agent/agent-runner.ts`) is an async generator that yields `StreamEvent`s streamed to the client as SSE over `POST /api/runs/stream`. State persists to SQLite via `sql.js` (`repository/sqlite-state-store.ts`, behind the `StateStore` interface). Secrets use the macOS Keychain (`security` CLI) on darwin, in-memory elsewhere (`secrets/secret-store.ts`). Model calls go through an OpenAI-compatible streaming client (`model/openai-compatible.ts`); built-in providers are DeepSeek and Kimi (`defaultProviders` in shared).
+### 4. 目标驱动执行
 
-**`apps/desktop`** — Electron app. The **main process spawns and supervises the backend** (`main/backend-process.ts`): it picks a random port + random token, waits on `/api/health`, and exposes `{baseURL, token}` to the renderer over the `backend-info` IPC channel. Each app launch = a fresh backend on a new port. The renderer (React + Vite + Tailwind) is sandboxed; `preload/index.ts` exposes a minimal `window.chengxiaobang` bridge (backend info, native file/dir pickers, file read). `renderer/lib/api.ts` builds a typed `ApiClient` from the bridged baseURL/token and consumes the SSE stream. The main process loads the renderer from `VITE_DEV_SERVER_URL` in dev, or `dist/renderer/index.html` when packaged.
+**先定义成功标准,然后循环直到验证通过。**
 
-### Agent run flow (the core loop)
+把任务转化为可验证的目标:
+- "加校验" → "先为非法输入写测试,再让它通过"
+- "修 bug" → "先写一个能复现它的失败测试,再修到通过"
+- "重构 X" → "确保重构前后测试都通过"
+
+多步任务先列简短计划:
+```
+1. [步骤] → 验证:[检查方式]
+2. [步骤] → 验证:[检查方式]
+3. [步骤] → 验证:[检查方式]
+```
+
+强成功标准让你能独立循环推进;弱标准("能跑就行")会导致反复返工确认。
+
+> 这些准则在起作用的标志:diff 里的无关改动更少、因过度复杂而返工更少、澄清问题发生在动手之前而不是出错之后。
+
+### 测试是硬性要求
+
+- 每个行为变更都要带单元测试。把任务表述为"先写出能证明它的测试,再让它通过";修 bug 先写复现的失败测试。
+- 测试放在各包的 `test/` 目录,用 Vitest 运行。收工前保持 `pnpm test` 全绿;单文件 `pnpm test <path>`,按名过滤 `pnpm test -t "<name>"`。
+- 遵循既有模式:后端逻辑直接针对模块测试;渲染层用 `@testing-library/react` + jsdom + mock 的 `ApiClient`(见 `apps/desktop/test/app.test.tsx`);agent 循环的模型测试缝是注入 pi `StreamFn`(见 `test/helpers/scripted-stream.ts`),**不要 mock 循环本身**。把纯函数抽出来,让它们不依赖运行中的应用即可测试。
+- 绝不为了变绿而削弱或删除测试。测试挡路时,先搞清楚为什么。
+
+### 默认模块化
+
+- 尊重三层边界(见"架构"):契约/类型只存在于 `packages/shared`;后端逻辑藏在接口之后(`StateStore`、`SecretStore`、pi `StreamFn`);渲染层拆为 `store/`(状态)、`components/`(视图)、`lib/`(IO)。不跨层伸手,不重复声明 shared 契约。
+- 一个模块一个关注点;函数小而单一职责。文件超出主题宁可新建,不要继续膨胀。副作用(IO、IPC、网络、模型调用)收在边缘,中间保持纯逻辑以便单测。
+- 先复用已有的 helper,再考虑新写。
+
+### UI 实现必须遵循 DESIGN.md
+
+- 任何 UI 实现/改动(组件、样式、配色、字体、布局、交互态)动手前**必须先阅读根目录 `DESIGN.md`**,并以其中的设计系统(色板、字体层级、间距、组件形态)为唯一视觉事实源。
+- 不要凭感觉引入 DESIGN.md 之外的颜色、字号或圆角;确有缺口时先在 DESIGN.md 中补充定义,再实现。
+
+## 常用命令
+
+除特别说明外,均在仓库根目录运行。
+
+- `pnpm dev` — 一条命令起全套开发环境:Vite(渲染层 HMR)+ `tsup --watch`(main/preload)+ Electron。Electron 自己经 `bun --watch` 拉起后端,所以**三层保存即热更新**(渲染层 = HMR,后端 = bun 同端口重启,main/preload = 重编译 + Electron 自动重启)。关窗或 Ctrl+C 全部收掉。见 `apps/desktop/scripts/dev.mjs`。
+- `pnpm build` — 按序构建:shared → backend → desktop。打包前必须执行,因为 desktop 把后端 `dist/` 作为 extra resource 打入。
+- `pnpm package:mac` — `pnpm build` 后 `electron-builder --mac`(dmg + zip)。
+- `pnpm typecheck` — 先构建 shared(其他包消费它的类型),再全仓 `tsc --noEmit`。
+- `pnpm test` — Vitest(配置:`vitest.config.ts`)。单文件:`pnpm test apps/backend/test/agent-runner.test.ts`;按名过滤:`pnpm test -t "approval"`。测试在各包 `test/` 目录;`@chengxiaobang/*` 导入别名由 Vitest 配置解析。
+
+后端也可独立运行:`pnpm --filter @chengxiaobang/backend dev` → `bun --watch src/main.ts --port <n> --data-dir <dir> --token <t>`(**必须 Bun 运行时**,`server.ts` 只接受 `Bun.serve`)。
+
+## 架构
+
+三层架构,`@chengxiaobang/shared` 是层间契约。完整设计文档见 `docs/architecture.md`。
+
+**`packages/shared`** — API/IPC 契约的唯一事实源。所有实体(Provider、Project、Session、Message、ToolCall、RunRequest)都是 Zod schema + 推导类型;后端用它们 `.parse()` 请求,渲染层导入同一份类型。还拥有 `StreamEvent` 联合类型与 SSE codec(`encodeSseEvent`/`parseSseChunk`)。改这里的契约,两端必须跟随。它必须**先 build**,backend/desktop 的 typecheck 才能过(跨包消费其 `dist/` 类型)。
+
+**`apps/backend`** — 无头本地 HTTP 服务,**不是** Electron 进程。Hono 风格的 `fetch` handler(`api/app.ts`)由 `Bun.serve` 提供服务(`server.ts`,强制 Bun;dev 与生产分别用 `node_modules/.bin/bun` 和捆绑的 Bun binary 启动)。agent 循环是 **pi 的 `runAgentLoopContinue`**(`@earendil-works/pi-agent-core`),由 `agent/agent-runner.ts` 驱动:pi 事件经 `agent/pi-events.ts`(`RunEventTranslator`,同时独占 run 级持久化)翻译为 `StreamEvent`,经 `POST /api/runs/stream` 以 SSE 流出。状态经 sql.js 落 SQLite(`repository/sqlite-state-store.ts`,藏在 `StateStore` 接口后);assistant/tool 消息行带 backend-only 的 `payload` 列(pi 原始消息 JSON),多轮工具调用历史得以无损回放(`agent/history.ts`)。密钥在 darwin 用 macOS Keychain(`security` CLI),其他平台内存实现(`secrets/secret-store.ts`)。模型调用走 **pi-ai**(`streamSimple`);`model/pi-model.ts` 把 `ProviderConfig` 映射为 pi `Model`(provider 兼容差异——DeepSeek `reasoning_content`、Moonshot 怪癖——按 slug/baseUrl 自动探测)。内置 provider 为 DeepSeek 和 Kimi(shared 的 `defaultProviders`)。工具是 TypeBox schema 的 pi `AgentTool`(`tools/registry.ts` 汇集 fs/shell/web/office/feishu 工具工厂)。
+
+**`apps/desktop`** — Electron 应用。**main 进程拉起并监督后端**(`main/backend-process.ts`):随机端口 + 随机 token,轮询 `/api/health` 就绪后经 `backend-info` IPC 把 `{baseURL, token}` 暴露给渲染层。每次启动应用 = 新端口上的全新后端。渲染层(React + Vite + Tailwind)是沙箱的;`preload/index.ts` 只暴露最小的 `window.chengxiaobang` bridge(backend info、原生文件/目录选择器、读文件)。`renderer/lib/api.ts` 据 bridge 的 baseURL/token 构建类型化 `ApiClient` 并消费 SSE 流。main 进程在 dev 加载 `VITE_DEV_SERVER_URL`,打包后加载 `dist/renderer/index.html`。
+
+### Agent 运行流程(核心循环)
+
 `POST /api/runs/stream` → `AgentRunner.stream()`:
-1. Resolve/create the session, persist the user message, emit `run_started`.
-2. **Slash-command tools**: prompts beginning with `/ls`, `/read`, `/write`, `/shell`, `/git status`, `/git diff` are parsed by `tools/tool-executor.ts` into a `ToolCall`. Mutating tools (`write_file`, `edit_file`, `shell`) require approval when the session's `accessMode` is `approval` — the run blocks on `ApprovalQueue.wait()` until the client calls `POST /api/approvals/:toolCallId`. Tools run relative to the session's project path.
-3. Stream the model completion, emitting `thinking_delta`/`assistant_delta`, persist the assistant message, emit `assistant_done`.
-4. `POST /api/runs/:runId/abort` cancels via an `AbortController` keyed by runId.
 
-Every step is a `StreamEvent` (see the union in shared); the renderer drives its UI entirely off these events.
+1. 解析/创建会话,落库 user 消息,发 `run_started` + `message`。
+2. **直接斜杠命令**:以 `/ls`、`/read`、`/write`、`/shell`、`/git status`、`/git diff` 开头的输入(`tools/direct-commands.ts`)在模型循环之前先执行恰好一个内置工具;`/compact` 走仅总结的模型调用(`agent/compaction.ts`)。
+3. 从持久化行重建 pi 对话(`agent/history.ts`),交给 `runAgentLoopContinue`(`toolExecution: "sequential"`)。`RunEventTranslator` 把 pi 事件映射到 5 事件 `StreamEvent` 契约:`delta`(text/thinking 通道)、`message`(已持久化的 user 回显 / assistant 轮次)、`tool_call`(每次状态迁移一个事件:`pending_approval → running → completed | failed | rejected`)、最终的 `run_end`(completed/failed/aborted,带 usage)。
+4. **审批门控**在 pi 的 `beforeToolCall` 钩子:`approval` 模式会话中的 mutating 工具先落 `pending_approval` 的 ToolCall,阻塞在 `ApprovalQueue.wait()` 直到 `POST /api/approvals/:toolCallId`;拒绝时返回 `{block: true}`,pi 把拒绝作为错误工具结果喂回模型(run 继续)。
+5. `POST /api/runs/:runId/abort` 经以 runId 为键的 `AbortController` 取消;部分回答先落库并发出,再 `run_end(aborted)`。
 
-## Conventions & gotchas
+每一步都是 `StreamEvent`(见 shared 中的联合类型);渲染层完全由这些事件驱动 UI。测试中用注入 pi `StreamFn` 替换模型(`AgentRunner` 的 `streamFn` 选项——见 `test/helpers/scripted-stream.ts`),**绝不 mock 循环本身**。
 
-- **ESM only.** When configuring `tsup`/bundlers, mark `electron` as `--external` — bundling it produces a `Dynamic require of "fs" is not supported` crash at Electron startup.
-- The backend `main.js` is bundled into the desktop app under `extraResources/backend`; `pi-ai`, `pi-agent-core`, and `sql.js` are force-bundled (`noExternal` in `apps/backend/tsup.config.ts`).
-- `bun`, `electron`, `esbuild`, `sharp`, `@google/genai`, `protobufjs` are in `onlyBuiltDependencies` / `allowBuilds` — native/postinstall builds are gated.
-- `@earendil-works/pi-agent-core` and `@earendil-works/pi-ai` (`model/pi-runtime.ts`) are loaded but not yet wired into the agent loop.
-- UI strings and many error messages are in Chinese; keep that consistent.
+## 约定与陷阱
+
+- **只用 ESM。**配置 `tsup`/打包器时把 `electron` 标为 `--external`——打进去会在 Electron 启动时报 `Dynamic require of "fs" is not supported` 崩溃。
+- 后端 `main.js` 打入桌面应用的 `extraResources/backend`;`pi-ai`、`pi-agent-core`、`sql.js` 等被强制打包(`apps/backend/tsup.config.ts` 的 `noExternal`)。打包产物**只能用 Bun 运行**,纯 node 会因动态 require 崩溃。
+- `bun`、`electron`、`esbuild`、`sharp`、`@google/genai`、`protobufjs` 在 `onlyBuiltDependencies` / `allowBuilds` 中——原生/postinstall 构建是受控的。
+- UI 文案与多数错误信息为中文,保持一致。

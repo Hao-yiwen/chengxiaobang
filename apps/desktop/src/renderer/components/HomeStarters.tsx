@@ -43,13 +43,13 @@ export function HomeStarters() {
   }
 
   return (
-    <div className="mt-4 flex flex-wrap justify-center gap-2">
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
       {STARTERS.map(({ key, icon: Icon }) => (
         <button
           key={key}
           type="button"
           onClick={() => pick(t(`home.starters.${key}Prompt` as const))}
-          className="flex items-center gap-2 rounded-full border px-3.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="flex items-center gap-2 rounded-sm border border-border bg-background px-3.5 py-2.5 text-left text-caption text-foreground transition-colors hover:border-primary hover:bg-soft-stone"
         >
           <Icon className="size-4" />
           {t(`home.starters.${key}Title` as const)}

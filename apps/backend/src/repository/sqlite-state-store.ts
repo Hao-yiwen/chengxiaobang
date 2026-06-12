@@ -20,6 +20,7 @@ import type {
   CreateRunInput,
   CreateSessionInput,
   StateStore,
+  StoredMessage,
   UpdateSessionInput
 } from "./state-store";
 
@@ -123,6 +124,7 @@ export class SqliteStateStore implements StateStore {
     this.ensureColumn("messages", "reasoning_ms", "integer");
     this.ensureColumn("messages", "duration_ms", "integer");
     this.ensureColumn("messages", "kind", "text");
+    this.ensureColumn("messages", "payload", "text");
     this.ensureColumn("tool_calls", "started_at", "text");
     this.ensureColumn("sessions", "compacted_up_to_message_id", "text");
     this.ensureColumn("sessions", "parent_session_id", "text");
@@ -291,8 +293,8 @@ export class SqliteStateStore implements StateStore {
       idMap.set(message.id, newId);
       this.run(
         `insert into messages
-         (id, session_id, role, kind, content, reasoning, reasoning_ms, duration_ms, created_at)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, session_id, role, kind, content, reasoning, reasoning_ms, duration_ms, payload, created_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newId,
           fork.id,
@@ -302,6 +304,7 @@ export class SqliteStateStore implements StateStore {
           message.reasoning ?? null,
           message.reasoningMs ?? null,
           message.durationMs ?? null,
+          message.payload ?? null,
           message.createdAt
         ]
       );
@@ -400,9 +403,9 @@ export class SqliteStateStore implements StateStore {
     await this.flush();
   }
 
-  async addMessage(input: CreateMessageInput): Promise<Message> {
+  async addMessage(input: CreateMessageInput): Promise<StoredMessage> {
     await this.assertSessionExists(input.sessionId);
-    const message: Message = {
+    const message: StoredMessage = {
       id: createId("msg"),
       sessionId: input.sessionId,
       role: input.role,
@@ -411,12 +414,13 @@ export class SqliteStateStore implements StateStore {
       ...(input.reasoning ? { reasoning: input.reasoning } : {}),
       ...(input.reasoningMs !== undefined ? { reasoningMs: input.reasoningMs } : {}),
       ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+      ...(input.payload !== undefined ? { payload: input.payload } : {}),
       createdAt: nowIso()
     };
     this.run(
       `insert into messages
-       (id, session_id, role, kind, content, reasoning, reasoning_ms, duration_ms, created_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, session_id, role, kind, content, reasoning, reasoning_ms, duration_ms, payload, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         message.id,
         message.sessionId,
@@ -426,6 +430,7 @@ export class SqliteStateStore implements StateStore {
         message.reasoning ?? null,
         message.reasoningMs ?? null,
         message.durationMs ?? null,
+        message.payload ?? null,
         message.createdAt
       ]
     );
@@ -434,7 +439,7 @@ export class SqliteStateStore implements StateStore {
     return message;
   }
 
-  async listMessages(sessionId: string): Promise<Message[]> {
+  async listMessages(sessionId: string): Promise<StoredMessage[]> {
     await this.assertSessionExists(sessionId);
     return this.query("select * from messages where session_id = ? order by created_at asc", [
       sessionId
@@ -756,7 +761,7 @@ function mapSession(row: Row): Session {
   };
 }
 
-function mapMessage(row: Row): Message {
+function mapMessage(row: Row): StoredMessage {
   const kind = row.kind === "compaction_summary" ? ("compaction_summary" as const) : undefined;
   const reasoning =
     row.reasoning === null || row.reasoning === undefined ? undefined : String(row.reasoning);
@@ -768,6 +773,8 @@ function mapMessage(row: Row): Message {
     row.duration_ms === null || row.duration_ms === undefined
       ? undefined
       : Number(row.duration_ms);
+  const payload =
+    row.payload === null || row.payload === undefined ? undefined : String(row.payload);
   return {
     id: String(row.id),
     sessionId: String(row.session_id),
@@ -777,6 +784,7 @@ function mapMessage(row: Row): Message {
     ...(reasoning !== undefined ? { reasoning } : {}),
     ...(reasoningMs !== undefined ? { reasoningMs } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(payload !== undefined ? { payload } : {}),
     createdAt: String(row.created_at)
   };
 }

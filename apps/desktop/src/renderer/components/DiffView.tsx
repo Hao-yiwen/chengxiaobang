@@ -2,9 +2,9 @@ import { useTranslation } from "react-i18next";
 import type { DiffLine } from "@/lib/diff";
 import { cn } from "@/lib/utils";
 
-// Monochrome by design: +/- glyphs plus neutral shading, no red/green.
+// DESIGN.md washes: pale-green for additions, quiet muted for removals.
 const LINE_STYLES: Record<DiffLine["type"], string> = {
-  added: "bg-accent/70 text-foreground",
+  added: "bg-pale-green text-ink",
   removed: "bg-muted text-muted-foreground/70",
   context: "text-muted-foreground"
 };
@@ -15,7 +15,7 @@ export function DiffView({ lines }: { lines: DiffLine[] }) {
   return (
     <div
       aria-label={t("chat.diffView")}
-      className="max-h-[220px] overflow-auto border-t bg-background py-1 font-mono text-xs leading-relaxed"
+      className="max-h-[220px] overflow-auto border-t bg-background py-1 font-mono text-micro leading-relaxed"
     >
       {lines.map((line, index) => (
         <div key={index} className={cn("flex px-3", LINE_STYLES[line.type])}>

@@ -2,23 +2,28 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { nowIso, type ProviderConfig } from "@chengxiaobang/shared";
-import { AgentRunner } from "../src/agent/agent-runner";
-import type { ModelClient } from "../src/model/openai-compatible";
+import { nowIso, type ProviderConfig, type StreamEvent } from "@chengxiaobang/shared";
+import { AgentRunner, type AgentRunnerOptions } from "../src/agent/agent-runner";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 import { MemorySecretStore } from "../src/secrets/secret-store";
 import { SlashCommandService } from "../src/tools/slash-command-service";
+import { scriptedStreamFn, type ScriptedTurn } from "./helpers/scripted-stream";
+
+function runnerWith(
+  store: SqliteStateStore,
+  secrets: MemorySecretStore,
+  turns: ScriptedTurn[],
+  options: Omit<AgentRunnerOptions, "streamFn"> = {}
+) {
+  const scripted = scriptedStreamFn(turns);
+  const runner = new AgentRunner(store, secrets, { ...options, streamFn: scripted.streamFn });
+  return { runner, calls: scripted.calls };
+}
 
 describe("AgentRunner", () => {
   let dir: string;
   let store: SqliteStateStore;
   let secrets: MemorySecretStore;
-  const modelClient: ModelClient = {
-    async *streamCompletion() {
-      yield { type: "text", delta: "完成" };
-    },
-    async testProvider() {}
-  };
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "cxb-agent-"));
@@ -34,8 +39,8 @@ describe("AgentRunner", () => {
   });
 
   it("waits for approval before mutating tools", async () => {
-    const runner = new AgentRunner(store, secrets, modelClient);
-    const events: string[] = [];
+    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    const events: StreamEvent[] = [];
     const stream = runner.stream({
       prompt: "/shell pwd",
       projectId: null,
@@ -45,28 +50,32 @@ describe("AgentRunner", () => {
     const first = await stream.next();
     expect(first.value?.type).toBe("run_started");
     const userMessage = await stream.next();
-    expect(userMessage.value?.type).toBe("user_message");
-    const pending = await stream.next();
-    expect(pending.value?.type).toBe("thinking_delta");
+    expect(userMessage.value?.type).toBe("message");
+    const preparing = await stream.next();
+    expect(preparing.value?.type).toBe("delta");
     const approval = await stream.next();
-    expect(approval.value?.type).toBe("tool_call_pending");
-    if (approval.value?.type === "tool_call_pending") {
+    expect(approval.value?.type).toBe("tool_call");
+    if (approval.value?.type === "tool_call") {
+      expect(approval.value.toolCall.status).toBe("pending_approval");
       // Execution hasn't begun while awaiting approval, so no startedAt yet.
       expect(approval.value.toolCall.startedAt).toBeUndefined();
       expect(runner.approvals.decide(approval.value.toolCall.id, false)).toBe(true);
     }
 
     for await (const event of stream) {
-      events.push(event.type);
+      events.push(event);
     }
-    expect(events).toContain("tool_result");
-    expect(events).toContain("run_aborted");
+    expect(
+      events.some((event) => event.type === "tool_call" && event.toolCall.status === "rejected")
+    ).toBe(true);
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "aborted" });
   });
 
   it("runs tools automatically in full access mode", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
-    const runner = new AgentRunner(store, secrets, modelClient);
-    const events: string[] = [];
+    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    const events: StreamEvent[] = [];
+    const transitions: string[] = [];
     let result: { startedAt?: string; createdAt: string } | undefined;
 
     for await (const event of runner.stream({
@@ -74,15 +83,18 @@ describe("AgentRunner", () => {
       projectId: project.id,
       accessMode: "full_access"
     })) {
-      events.push(event.type);
-      if (event.type === "tool_result") {
+      events.push(event);
+      if (event.type === "tool_call") {
+        transitions.push(event.toolCall.status);
         result = event.toolCall;
       }
     }
 
-    expect(events).toContain("tool_call_started");
-    expect(events).toContain("tool_result");
-    expect(events).toContain("assistant_done");
+    expect(transitions).toEqual(["running", "completed"]);
+    expect(events.some((event) => event.type === "message" && event.message.role === "assistant")).toBe(
+      true
+    );
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
     // Auto-approved tools stamp startedAt when execution begins.
     expect(result?.startedAt).toBeDefined();
     expect(Date.parse(result!.startedAt!)).toBeGreaterThanOrEqual(
@@ -92,13 +104,7 @@ describe("AgentRunner", () => {
 
   it("uses a per-session workspace for standalone chats", async () => {
     const sessionWorkspacePath = (sessionId: string) => join(dir, "sessions", sessionId);
-    const runner = new AgentRunner(
-      store,
-      secrets,
-      modelClient,
-      undefined,
-      sessionWorkspacePath
-    );
+    const { runner } = runnerWith(store, secrets, [{ text: "完成" }], { sessionWorkspacePath });
     let sessionId: string | undefined;
     let toolOutput = "";
 
@@ -112,7 +118,7 @@ describe("AgentRunner", () => {
         await rm(sessionWorkspacePath(sessionId), { recursive: true, force: true });
         await mkdir(sessionWorkspacePath(sessionId), { recursive: true });
       }
-      if (event.type === "tool_result") {
+      if (event.type === "tool_call" && event.toolCall.status === "completed") {
         toolOutput = event.toolCall.result ?? "";
       }
     }
@@ -124,9 +130,9 @@ describe("AgentRunner", () => {
     );
   });
 
-  it("emits persisted user messages before assistant output", async () => {
-    const runner = new AgentRunner(store, secrets, modelClient);
-    const events = [];
+  it("emits the persisted user message before assistant output", async () => {
+    const { runner } = runnerWith(store, secrets, [{ text: "你好！" }]);
+    const events: StreamEvent[] = [];
 
     for await (const event of runner.stream({
       prompt: "你好",
@@ -137,26 +143,21 @@ describe("AgentRunner", () => {
     }
 
     const started = events.find((event) => event.type === "run_started");
-    const userMessage = events.find((event) => event.type === "user_message");
+    const userMessage = events.find(
+      (event) => event.type === "message" && event.message.role === "user"
+    );
     expect(started?.type).toBe("run_started");
-    expect(userMessage?.type).toBe("user_message");
+    expect(userMessage).toBeDefined();
     if (started?.type === "run_started") {
       const messages = await store.listMessages(started.sessionId);
       expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
     }
   });
 
-  it("persists the model's streamed reasoning on the assistant message", async () => {
-    const reasoningModel: ModelClient = {
-      async *streamCompletion() {
-        yield { type: "thinking", delta: "先想想" };
-        yield { type: "thinking", delta: "再回答" };
-        yield { type: "text", delta: "答案" };
-      },
-      async testProvider() {}
-    };
-    const runner = new AgentRunner(store, secrets, reasoningModel);
+  it("persists the model's streamed reasoning and pi payload on the assistant message", async () => {
+    const { runner } = runnerWith(store, secrets, [{ thinking: "先想想再回答", text: "答案" }]);
     let sessionId: string | undefined;
+    let sawThinkingDelta = false;
 
     for await (const event of runner.stream({
       prompt: "你好",
@@ -166,8 +167,12 @@ describe("AgentRunner", () => {
       if (event.type === "run_started") {
         sessionId = event.sessionId;
       }
+      if (event.type === "delta" && event.channel === "thinking") {
+        sawThinkingDelta = true;
+      }
     }
 
+    expect(sawThinkingDelta).toBe(true);
     expect(sessionId).toBeDefined();
     const assistant = (await store.listMessages(sessionId!)).find(
       (message) => message.role === "assistant"
@@ -177,18 +182,18 @@ describe("AgentRunner", () => {
     expect(assistant?.reasoningMs).toBeGreaterThanOrEqual(0);
     // Turn timing (model start → answer complete) is persisted alongside.
     expect(assistant?.durationMs).toBeGreaterThanOrEqual(0);
+    // The raw pi message rides along for lossless history replay.
+    expect(JSON.parse(assistant!.payload!)).toMatchObject({
+      role: "assistant",
+      stopReason: "stop"
+    });
   });
 
   it("compacts older history into a summary and moves the session pointer", async () => {
-    const captured: Array<Array<{ role: string; content: string }>> = [];
-    const compactionModel: ModelClient = {
-      async *streamCompletion(input) {
-        captured.push(input.messages.map(({ role, content }) => ({ role, content })));
-        yield { type: "text", delta: "这是压缩摘要" };
-      },
-      async testProvider() {}
-    };
-    const runner = new AgentRunner(store, secrets, compactionModel);
+    const { runner, calls } = runnerWith(store, secrets, [
+      { text: "这是压缩摘要" },
+      { text: "继续聊" }
+    ]);
     const session = await store.createSession({
       projectId: null,
       title: "长对话",
@@ -200,23 +205,25 @@ describe("AgentRunner", () => {
       await store.addMessage({ sessionId: session.id, role: "assistant", content: `回答${index}` });
     }
 
-    const events: string[] = [];
+    const events: StreamEvent[] = [];
     for await (const event of runner.stream({
       sessionId: session.id,
       prompt: "/compact",
       projectId: null,
       accessMode: "approval"
     })) {
-      events.push(event.type);
+      events.push(event);
     }
 
-    expect(events).toContain("thinking_delta");
-    expect(events).toContain("assistant_done");
-    expect(events).toContain("run_completed");
-    // /compact itself never becomes a chat message.
-    expect(events).not.toContain("user_message");
+    // The summary streams live on the thinking channel.
+    expect(events.some((event) => event.type === "delta" && event.channel === "thinking")).toBe(
+      true
+    );
+    expect(events.some((event) => event.type === "message")).toBe(true);
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
 
     const messages = await store.listMessages(session.id);
+    // /compact itself never becomes a chat message.
     expect(messages.some((message) => message.content.includes("/compact"))).toBe(false);
     const summary = messages.find((message) => message.kind === "compaction_summary");
     expect(summary?.content).toBe("这是压缩摘要");
@@ -225,7 +232,6 @@ describe("AgentRunner", () => {
     expect(updated?.compactedUpToMessageId).toBe(messages[3].id);
 
     // A follow-up run sends [summary + recent] instead of the full history.
-    captured.length = 0;
     for await (const event of runner.stream({
       sessionId: session.id,
       prompt: "继续",
@@ -234,8 +240,10 @@ describe("AgentRunner", () => {
     })) {
       void event;
     }
-    const followUp = captured[0] ?? [];
-    const joined = followUp.map((message) => message.content).join("\n");
+    const followUp = calls.at(-1)!.context.messages;
+    const joined = followUp
+      .map((message) => (typeof message.content === "string" ? message.content : ""))
+      .join("\n");
     expect(joined).toContain("【此前对话的摘要】");
     expect(joined).toContain("这是压缩摘要");
     expect(joined).not.toContain("问题1");
@@ -243,15 +251,7 @@ describe("AgentRunner", () => {
   });
 
   it("skips compaction for short sessions without calling the model", async () => {
-    let modelCalls = 0;
-    const spyModel: ModelClient = {
-      async *streamCompletion() {
-        modelCalls += 1;
-        yield { type: "text", delta: "不应该被调用" };
-      },
-      async testProvider() {}
-    };
-    const runner = new AgentRunner(store, secrets, spyModel);
+    const { runner, calls } = runnerWith(store, secrets, [{ text: "不应该被调用" }]);
     const session = await store.createSession({
       projectId: null,
       title: "短对话",
@@ -260,26 +260,26 @@ describe("AgentRunner", () => {
     });
     await store.addMessage({ sessionId: session.id, role: "user", content: "你好" });
 
-    const events: string[] = [];
+    const events: StreamEvent[] = [];
     for await (const event of runner.stream({
       sessionId: session.id,
       prompt: "/compact",
       projectId: null,
       accessMode: "approval"
     })) {
-      events.push(event.type);
+      events.push(event);
     }
 
-    expect(modelCalls).toBe(0);
-    expect(events).toContain("assistant_done");
+    expect(calls).toHaveLength(0);
+    expect(events.some((event) => event.type === "message")).toBe(true);
     const messages = await store.listMessages(session.id);
     expect(messages.at(-1)?.content).toContain("无需压缩");
     expect((await store.getSession(session.id))?.compactedUpToMessageId).toBeUndefined();
   });
 
-  it("persists failed tool calls before reporting run errors", async () => {
-    const runner = new AgentRunner(store, secrets, modelClient);
-    const events = [];
+  it("persists failed direct tool calls and ends the run as failed", async () => {
+    const { runner, calls } = runnerWith(store, secrets, [{ text: "不应该被调用" }]);
+    const events: StreamEvent[] = [];
 
     for await (const event of runner.stream({
       prompt: "/read missing.txt",
@@ -289,13 +289,16 @@ describe("AgentRunner", () => {
       events.push(event);
     }
 
-    const toolResult = events.find((event) => event.type === "tool_result");
-    expect(toolResult?.type).toBe("tool_result");
-    if (toolResult?.type === "tool_result") {
-      expect(toolResult.toolCall.status).toBe("failed");
-      expect(toolResult.toolCall.result).toContain("missing.txt");
+    const failed = events.find(
+      (event) => event.type === "tool_call" && event.toolCall.status === "failed"
+    );
+    expect(failed?.type).toBe("tool_call");
+    if (failed?.type === "tool_call") {
+      expect(failed.toolCall.result).toContain("missing.txt");
     }
-    expect(events.some((event) => event.type === "run_error")).toBe(true);
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "failed" });
+    // The model is never consulted after a failed direct command.
+    expect(calls).toHaveLength(0);
   });
 
   it("expands pi prompt template slash commands before model streaming", async () => {
@@ -307,25 +310,9 @@ describe("AgentRunner", () => {
       "utf8"
     );
     const project = await store.createProject({ name: "project", path: projectPath });
-    let modelMessages: Array<{ role: string; content: string }> = [];
-    const model: ModelClient = {
-      async *streamCompletion(input) {
-        modelMessages = input.messages.map((message) => ({
-          role: message.role,
-          content: message.content
-        }));
-        yield { type: "text", delta: "完成" };
-      },
-      async testProvider() {}
-    };
-    const runner = new AgentRunner(
-      store,
-      secrets,
-      model,
-      undefined,
-      undefined,
-      new SlashCommandService(join(dir, "global"))
-    );
+    const { runner, calls } = runnerWith(store, secrets, [{ text: "完成" }], {
+      slashCommandService: new SlashCommandService(join(dir, "global"))
+    });
 
     for await (const _event of runner.stream({
       prompt: "/review src/index.ts",
@@ -335,29 +322,26 @@ describe("AgentRunner", () => {
       // drain stream
     }
 
-    expect(modelMessages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ role: "user", content: "请 review src/index.ts" })
-      ])
-    );
+    const userContents = calls[0].context.messages
+      .filter((message) => message.role === "user")
+      .map((message) => message.content);
+    expect(userContents).toContain("请 review src/index.ts");
   });
 
   it("requires at least one model with an API key before creating a run", async () => {
     const emptyStore = new SqliteStateStore(join(dir, "empty-state.sqlite"));
     await emptyStore.initialize();
-    const runner = new AgentRunner(emptyStore, new MemorySecretStore(), modelClient);
+    const { runner } = runnerWith(emptyStore, new MemorySecretStore(), []);
 
-    await expect(
-      async () => {
-        for await (const _event of runner.stream({
-          prompt: "你好",
-          projectId: null,
-          accessMode: "approval"
-        })) {
-          // no-op
-        }
+    await expect(async () => {
+      for await (const _event of runner.stream({
+        prompt: "你好",
+        projectId: null,
+        accessMode: "approval"
+      })) {
+        // no-op
       }
-    ).rejects.toThrow("请先配置至少一个模型");
+    }).rejects.toThrow("请先配置至少一个模型");
     expect(await emptyStore.listSessions()).toEqual([]);
 
     await emptyStore.close();

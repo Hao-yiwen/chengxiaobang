@@ -81,9 +81,28 @@ describe("App", () => {
 
     expect(await screen.findByText("今天想做点什么？")).toBeInTheDocument();
     expect(screen.getByLabelText("输入消息")).toBeInTheDocument();
+    expect(screen.getByTestId("composer-shell")).toHaveClass("rounded-lg");
+    expect(screen.getByTestId("composer-shell")).not.toHaveClass("rounded-pill");
     // The model picker shows just the model name, without the provider prefix.
     expect(await screen.findByText("deepseek-v4-flash")).toBeInTheDocument();
     expect(screen.queryByText("DeepSeek · deepseek-v4-flash")).not.toBeInTheDocument();
+  });
+
+  it("uses rule-driven settings panels instead of nested cards", async () => {
+    const client = createClient();
+
+    render(<App client={client} />);
+
+    fireEvent.click(await screen.findByText("设置"));
+    fireEvent.click(await screen.findByText("供应商"));
+
+    expect(await screen.findByTestId("settings-provider-list")).toHaveClass(
+      "rounded-sm",
+      "border"
+    );
+    expect(screen.getByTestId("settings-provider-form")).toHaveClass("rounded-sm", "border");
+    expect(screen.getByTestId("settings-provider-list")).not.toHaveClass("rounded-md");
+    expect(screen.getByTestId("settings-provider-form")).not.toHaveClass("rounded-md");
   });
 
   it("stays on home and opens the setup dialog when no provider has an API key", async () => {
@@ -245,7 +264,7 @@ describe("App", () => {
     let emit: ((event: Parameters<ApiClient["streamRun"]>[1] extends (event: infer E) => void ? E : never) => void) | undefined;
     let resolveStream: (() => void) | undefined;
     const abort = vi.fn(async () => {
-      emit?.({ type: "run_aborted", runId: "run_1" });
+      emit?.({ type: "run_end", runId: "run_1", status: "aborted" });
       resolveStream?.();
     });
     const client = createClient({
@@ -554,12 +573,12 @@ describe("App", () => {
       listMessages: vi.fn(async () => [userMessage, assistantMessage]),
       streamRun: vi.fn(async (_input, onEvent) => {
         onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
-        onEvent({ type: "user_message", runId: "run_1", message: userMessage });
-        onEvent({ type: "thinking_delta", runId: "run_1", delta: "先拆解" });
-        onEvent({ type: "thinking_delta", runId: "run_1", delta: "问题" });
-        onEvent({ type: "assistant_delta", runId: "run_1", delta: "答案是 42" });
-        onEvent({ type: "assistant_done", runId: "run_1", message: assistantMessage });
-        onEvent({ type: "run_completed", runId: "run_1" });
+        onEvent({ type: "message", runId: "run_1", message: userMessage });
+        onEvent({ type: "delta", channel: "thinking", runId: "run_1", delta: "先拆解" });
+        onEvent({ type: "delta", channel: "thinking", runId: "run_1", delta: "问题" });
+        onEvent({ type: "delta", channel: "text", runId: "run_1", delta: "答案是 42" });
+        onEvent({ type: "message", runId: "run_1", message: assistantMessage });
+        onEvent({ type: "run_end", runId: "run_1", status: "completed" });
       }) as never
     });
 

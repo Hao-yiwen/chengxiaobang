@@ -80,7 +80,7 @@ function ActionButton({
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="rounded-xs p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
       {children}
     </button>
@@ -102,7 +102,7 @@ export function MessageEditor({
   const canSend = value.trim().length > 0;
 
   return (
-    <div className="w-full rounded-xl border bg-card p-2 shadow-soft">
+    <div className="w-full rounded-md border bg-card p-2">
       <Textarea
         autoFocus
         value={value}
@@ -117,7 +117,7 @@ export function MessageEditor({
           }
         }}
         aria-label={t("chat.edit")}
-        className="min-h-[56px] border-none shadow-none focus-visible:ring-0"
+        className="min-h-[56px] border-none focus-visible:ring-0"
       />
       <div className="flex justify-end gap-2 pt-1.5">
         <Button size="sm" variant="ghost" onClick={onCancel}>

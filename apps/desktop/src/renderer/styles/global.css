@@ -4,69 +4,88 @@
 
 @layer base {
   :root {
-    /* Classic black & white ChatGPT-style palette. Pure neutral greys —
-       the only chromatic colors in the app are destructive red states. */
-    --background: 0 0% 100%;
-    --foreground: 0 0% 5%;
-    /* Sidebar / recessed panels */
-    --surface: 0 0% 97.6%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 5%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 5%;
-    /* Primary action = black button, white text (ChatGPT send button) */
-    --primary: 0 0% 5%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 95%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 94.5%;
-    --muted-foreground: 0 0% 36%;
-    --accent: 0 0% 92.5%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89%;
-    --input: 0 0% 86%;
-    --ring: 0 0% 5%;
-    /* Legacy aliases kept neutral so nothing in the tree renders color. */
-    --brand: 0 0% 5%;
-    --brand-foreground: 0 0% 100%;
-    --brand-soft: 0 0% 94.5%;
-    --accent-amber: 0 0% 36%;
-    --radius: 0.75rem;
-    --shadow-color: 0 0% 0%;
-    /* User message bubble (light grey, like ChatGPT) */
-    --bubble-user: 0 0% 94.5%;
+    /* ── DESIGN.md palette (Cohere system) — RGB channel triplets of the
+       spec hex values, consumed as rgb(var(--x) / <alpha-value>). ── */
+    --canvas: 255 255 255; /* #ffffff */
+    --ink: 33 33 33; /* #212121 */
+    --cohere-black: 0 0 0; /* #000000 */
+    --near-black: 23 23 28; /* #17171c primary */
+    --deep-green: 0 60 51; /* #003c33 */
+    --dark-navy: 7 24 41; /* #071829 */
+    --soft-stone: 238 236 231; /* #eeece7 */
+    --pale-green: 237 252 233; /* #edfce9 */
+    --pale-blue: 241 245 255; /* #f1f5ff */
+    --coral: 255 119 89; /* #ff7759 */
+    --coral-soft: 255 173 155; /* #ffad9b */
+    --action-blue: 24 99 220; /* #1863dc */
+    --focus-blue: 76 110 230; /* #4c6ee6 */
+    --form-focus: 155 96 170; /* #9b60aa */
+    --muted-slate: 147 147 159; /* #93939f */
+    --slate: 117 117 138; /* #75758a */
+    --body-muted: 97 97 97; /* #616161 */
+    --card-border: 242 242 242; /* #f2f2f2 */
+    --border-light: 229 231 235; /* #e5e7eb */
+    --error: 179 0 0; /* #b30000 */
+
+    /* ── Semantic layer — shadcn names, values strictly from the spec. ── */
+    --background: var(--canvas);
+    --foreground: var(--ink);
+    /* Sidebar / recessed panels: warm stone surface */
+    --surface: var(--soft-stone);
+    --card: 255 255 255;
+    --card-foreground: var(--ink);
+    --popover: 255 255 255;
+    --popover-foreground: var(--ink);
+    /* Primary action = near-black pill CTA */
+    --primary: var(--near-black);
+    --primary-foreground: 255 255 255;
+    --secondary: var(--soft-stone);
+    --secondary-foreground: var(--ink);
+    --muted: var(--card-border);
+    --muted-foreground: var(--body-muted);
+    --accent: var(--border-light);
+    --accent-foreground: var(--ink);
+    --destructive: var(--error);
+    --destructive-foreground: 255 255 255;
+    /* Hairline #d9d9dd — standard rules and thin input borders */
+    --border: 217 217 221;
+    --input: 217 217 221;
+    --ring: var(--focus-blue);
+    /* User message bubble: soft stone */
+    --bubble-user: var(--soft-stone);
   }
 
   .dark {
-    /* ChatGPT dark: #212121 canvas, #171717 sidebar, #303030 elevated. */
-    --background: 0 0% 13%;
-    --foreground: 0 0% 93%;
-    --surface: 0 0% 9%;
-    --card: 0 0% 17%;
-    --card-foreground: 0 0% 93%;
-    --popover: 0 0% 19%;
-    --popover-foreground: 0 0% 93%;
-    --primary: 0 0% 100%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 19%;
-    --secondary-foreground: 0 0% 93%;
-    --muted: 0 0% 19%;
-    --muted-foreground: 0 0% 65%;
-    --accent: 0 0% 22%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62% 52%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 24%;
-    --input: 0 0% 28%;
-    --ring: 0 0% 93%;
-    --brand: 0 0% 100%;
-    --brand-foreground: 0 0% 9%;
-    --brand-soft: 0 0% 19%;
-    --accent-amber: 0 0% 65%;
-    --shadow-color: 0 0% 0%;
-    --bubble-user: 0 0% 19%;
+    /* Derived Cohere dark: #17171c canvas, near-black sidebar, white pill CTA.
+       coral / deep-green / dark-navy / pale-* stay literal brand constants. */
+    --background: 23 23 28; /* #17171c */
+    --foreground: 236 236 238; /* #ececee */
+    --surface: 16 16 20; /* #101014 */
+    --card: 30 30 36; /* #1e1e24 */
+    --card-foreground: 236 236 238;
+    --popover: 34 34 41; /* #222229 */
+    --popover-foreground: 236 236 238;
+    --primary: 255 255 255;
+    --primary-foreground: 23 23 28;
+    --secondary: 40 40 47; /* #28282f */
+    --secondary-foreground: 236 236 238;
+    --muted: 36 36 43; /* #24242b */
+    --muted-foreground: 154 154 165; /* #9a9aa5 */
+    --accent: 44 44 52; /* #2c2c34 */
+    --accent-foreground: 245 245 246;
+    --destructive: 229 72 77; /* #e5484d — error lifted for dark */
+    --destructive-foreground: 255 255 255;
+    --border: 46 46 54; /* #2e2e36 */
+    --input: 56 56 65; /* #383841 */
+    --ring: 110 140 240; /* #6e8cf0 */
+    --action-blue: 94 142 242; /* #5e8ef2 — links lifted for contrast */
+    --focus-blue: 110 140 240;
+    --muted-slate: 154 154 165;
+    --slate: 138 138 150;
+    --body-muted: 178 178 186;
+    --card-border: 40 40 47;
+    --border-light: 52 52 60;
+    --bubble-user: 40 40 47; /* #28282f */
   }
 }
 
@@ -89,7 +108,6 @@
     text-rendering: optimizeLegibility;
     font-synthesis: none;
     font-feature-settings: "rlig" 1, "calt" 1;
-    letter-spacing: -0.004em;
   }
 
   #root {
@@ -98,7 +116,7 @@
   }
 
   ::selection {
-    background: hsl(var(--foreground) / 0.14);
+    background: rgb(var(--foreground) / 0.12);
   }
 
   :focus-visible {
@@ -128,7 +146,7 @@
     margin-left: 3px;
     border-radius: 99px;
     vertical-align: text-bottom;
-    background: hsl(var(--foreground));
+    background: rgb(var(--foreground));
     animation: caret 1s steps(2) infinite;
   }
 
@@ -136,9 +154,9 @@
   .shimmer-text {
     background: linear-gradient(
       100deg,
-      hsl(var(--muted-foreground) / 0.5) 30%,
-      hsl(var(--foreground) / 0.95) 50%,
-      hsl(var(--muted-foreground) / 0.5) 70%
+      rgb(var(--muted-foreground) / 0.5) 30%,
+      rgb(var(--foreground) / 0.95) 50%,
+      rgb(var(--muted-foreground) / 0.5) 70%
     );
     background-size: 200% 100%;
     -webkit-background-clip: text;
@@ -164,37 +182,38 @@
   }
 }
 
-/* Syntax highlighting (rehype-highlight). The one place colour is allowed:
-   low-saturation tones inside code blocks; all other UI stays monochrome. */
+/* Syntax highlighting (rehype-highlight) — DESIGN.md system colors:
+   action-blue keywords, deep-green strings, dark-navy titles, focus-blue
+   attributes, a contrast-darkened coral for numerics, slate metadata. */
 .hljs-comment,
 .hljs-quote {
-  color: hsl(215 12% 52%);
+  color: #93939f;
   font-style: italic;
 }
 
 .hljs-keyword,
 .hljs-selector-tag,
 .hljs-doctag {
-  color: hsl(255 32% 54%);
+  color: #1863dc;
 }
 
 .hljs-string,
 .hljs-regexp,
 .hljs-addition {
-  color: hsl(150 28% 37%);
+  color: #003c33;
 }
 
 .hljs-number,
 .hljs-literal,
 .hljs-symbol,
 .hljs-bullet {
-  color: hsl(25 45% 44%);
+  color: #d05a3d;
 }
 
 .hljs-title,
 .hljs-section,
 .hljs-name {
-  color: hsl(215 45% 46%);
+  color: #071829;
 }
 
 .hljs-attr,
@@ -203,12 +222,12 @@
 .hljs-template-variable,
 .hljs-type,
 .hljs-built_in {
-  color: hsl(190 35% 36%);
+  color: #4c6ee6;
 }
 
 .hljs-meta,
 .hljs-deletion {
-  color: hsl(215 12% 52%);
+  color: #75758a;
 }
 
 .hljs-emphasis {
@@ -216,39 +235,39 @@
 }
 
 .hljs-strong {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .dark .hljs-comment,
 .dark .hljs-quote,
 .dark .hljs-meta,
 .dark .hljs-deletion {
-  color: hsl(215 10% 58%);
+  color: #8a8a96;
 }
 
 .dark .hljs-keyword,
 .dark .hljs-selector-tag,
 .dark .hljs-doctag {
-  color: hsl(255 42% 76%);
+  color: #7ea6f4;
 }
 
 .dark .hljs-string,
 .dark .hljs-regexp,
 .dark .hljs-addition {
-  color: hsl(150 28% 62%);
+  color: #7fc8a9;
 }
 
 .dark .hljs-number,
 .dark .hljs-literal,
 .dark .hljs-symbol,
 .dark .hljs-bullet {
-  color: hsl(25 52% 66%);
+  color: #ff9d80;
 }
 
 .dark .hljs-title,
 .dark .hljs-section,
 .dark .hljs-name {
-  color: hsl(215 58% 70%);
+  color: #d6e2ff;
 }
 
 .dark .hljs-attr,
@@ -257,7 +276,7 @@
 .dark .hljs-template-variable,
 .dark .hljs-type,
 .dark .hljs-built_in {
-  color: hsl(190 38% 60%);
+  color: #9db1f0;
 }
 
 /* macOS-style overlay scrollbars — slim, unobtrusive */
@@ -274,12 +293,12 @@
   border: 3px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
-  background-color: hsl(0 0% 0% / 0.18);
+  background-color: rgb(0 0 0 / 0.18);
   transition: background-color 0.15s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(0 0% 0% / 0.32);
+  background-color: rgb(0 0 0 / 0.32);
 }
 
 ::-webkit-scrollbar-corner {
@@ -287,9 +306,9 @@
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background-color: hsl(0 0% 100% / 0.16);
+  background-color: rgb(255 255 255 / 0.16);
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(0 0% 100% / 0.3);
+  background-color: rgb(255 255 255 / 0.3);
 }

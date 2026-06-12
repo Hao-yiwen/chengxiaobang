@@ -13,7 +13,8 @@ export default defineConfig({
     "pptxgenjs",
     "docx",
     "exceljs",
-    "@larksuiteoapi/node-sdk"
+    "@larksuiteoapi/node-sdk",
+    "hono"
   ],
   // Optional native peers of ws (pulled in via the lark SDK); ws degrades
   // gracefully at runtime when they're absent, but esbuild must not resolve them.

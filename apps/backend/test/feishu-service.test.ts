@@ -3,31 +3,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nowIso, type ProviderConfig } from "@chengxiaobang/shared";
+import type { Message as PiMessage } from "@earendil-works/pi-ai";
 import { AgentRunner } from "../src/agent/agent-runner";
 import { FeishuConfigService } from "../src/feishu/feishu-config-service";
 import { FeishuService } from "../src/feishu/feishu-service";
 import { chunkFeishuText } from "../src/feishu/feishu-text";
-import type { ModelClient, ModelDelta, ModelMessage } from "../src/model/openai-compatible";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 import { MemorySecretStore } from "../src/secrets/secret-store";
 import { FakeFeishuBridge, inbound } from "./helpers/fake-feishu-bridge";
+import { scriptedStreamFn, type ScriptedTurn } from "./helpers/scripted-stream";
 
-/** A scripted model that records what it was asked and replays baked turns. */
-function scriptedModel(turns: ModelDelta[][]): ModelClient & { seen: ModelMessage[][] } {
-  let index = 0;
-  const seen: ModelMessage[][] = [];
-  return {
-    seen,
-    async *streamCompletion(input) {
-      seen.push(input.messages);
-      const turn = turns[Math.min(index, turns.length - 1)];
-      index += 1;
-      for (const delta of turn) {
-        yield delta;
+/** Flatten a captured pi message to plain text for content assertions. */
+function flattenContent(message: PiMessage): string {
+  if (typeof message.content === "string") {
+    return message.content;
+  }
+  return message.content
+    .map((block) => {
+      if (block.type === "text") {
+        return block.text;
       }
-    },
-    async testProvider() {}
-  };
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 describe("FeishuService", () => {
@@ -62,9 +61,9 @@ describe("FeishuService", () => {
   });
 
   async function createService(
-    model: ModelClient,
+    turns: ScriptedTurn[],
     options: { fullAccess?: boolean } = {}
-  ): Promise<FeishuService> {
+  ): Promise<{ service: FeishuService; calls: ReturnType<typeof scriptedStreamFn>["calls"] }> {
     const configService = new FeishuConfigService(store, secrets);
     await configService.save({
       enabled: true,
@@ -73,13 +72,11 @@ describe("FeishuService", () => {
       domain: "feishu",
       fullAccess: options.fullAccess ?? false
     });
-    const runner = new AgentRunner(
-      store,
-      secrets,
-      model,
-      undefined,
-      (sessionId) => join(dir, "sessions", sessionId)
-    );
+    const scripted = scriptedStreamFn(turns);
+    const runner = new AgentRunner(store, secrets, {
+      streamFn: scripted.streamFn,
+      sessionWorkspacePath: (sessionId) => join(dir, "sessions", sessionId)
+    });
     const service = new FeishuService({
       configService,
       store,
@@ -87,12 +84,12 @@ describe("FeishuService", () => {
       bridgeFactory: () => bridge
     });
     await service.start();
-    return service;
+    return { service, calls: scripted.calls };
   }
 
   it("stays disconnected when not enabled", async () => {
     const configService = new FeishuConfigService(store, secrets);
-    const runner = new AgentRunner(store, secrets, scriptedModel([[]]));
+    const runner = new AgentRunner(store, secrets);
     const service = new FeishuService({
       configService,
       store,
@@ -106,8 +103,7 @@ describe("FeishuService", () => {
   });
 
   it("answers a DM in a dedicated session bound to the chat", async () => {
-    const model = scriptedModel([[{ type: "text", delta: "你好，我是程小帮。" }]]);
-    const service = await createService(model);
+    const { service } = await createService([{ text: "你好，我是程小帮。" }]);
     expect(service.getStatus()).toMatchObject({ status: "connected", botName: "测试机器人" });
 
     bridge.emit(inbound({ text: "你是谁" }));
@@ -120,9 +116,7 @@ describe("FeishuService", () => {
 
   it("falls back to an id-based title when name resolution fails", async () => {
     bridge.chatTitle = undefined;
-    const model = scriptedModel([[{ type: "text", delta: "好的" }]]);
-    const service = await createService(model);
-    void service;
+    await createService([{ text: "好的" }]);
 
     bridge.emit(inbound({ chatId: "oc_abcdef123456", chatType: "group", mentionedBot: true }));
     await vi.waitFor(() => expect(bridge.replied).toHaveLength(1));
@@ -132,8 +126,7 @@ describe("FeishuService", () => {
   });
 
   it("ignores group messages that do not mention the bot", async () => {
-    const model = scriptedModel([[{ type: "text", delta: "不该出现" }]]);
-    await createService(model);
+    await createService([{ text: "不该出现" }]);
 
     bridge.emit(inbound({ chatType: "group", mentionedBot: false }));
     // Give the async handler a beat; nothing should happen.
@@ -145,8 +138,7 @@ describe("FeishuService", () => {
   });
 
   it("answers group messages when the bot is mentioned", async () => {
-    const model = scriptedModel([[{ type: "text", delta: "在的" }]]);
-    await createService(model);
+    await createService([{ text: "在的" }]);
 
     bridge.emit(inbound({ chatType: "group", mentionedBot: true }));
     await vi.waitFor(() => expect(bridge.replied).toHaveLength(1));
@@ -154,11 +146,7 @@ describe("FeishuService", () => {
   });
 
   it("reuses the chat session so the model sees prior turns", async () => {
-    const model = scriptedModel([
-      [{ type: "text", delta: "第一答" }],
-      [{ type: "text", delta: "第二答" }]
-    ]);
-    await createService(model);
+    const { calls } = await createService([{ text: "第一答" }, { text: "第二答" }]);
 
     bridge.emit(inbound({ text: "第一问", messageId: "om_1" }));
     await vi.waitFor(() => expect(bridge.replied).toHaveLength(1));
@@ -166,30 +154,18 @@ describe("FeishuService", () => {
     await vi.waitFor(() => expect(bridge.replied).toHaveLength(2));
 
     expect((await store.listSessions()).filter((s) => s.feishuChatId)).toHaveLength(1);
-    const secondCall = model.seen[1] ?? [];
-    const joined = secondCall.map((message) => message.content).join("\n");
+    const secondCall = calls[1]?.context.messages ?? [];
+    const joined = secondCall.map(flattenContent).join("\n");
     expect(joined).toContain("第一问");
     expect(joined).toContain("第一答");
     expect(joined).toContain("第二问");
   });
 
   it("auto-denies mutating tools in read-only mode and the model recovers", async () => {
-    const model = scriptedModel([
-      [
-        {
-          type: "tool_calls",
-          toolCalls: [
-            {
-              id: "call_1",
-              name: "write_file",
-              arguments: JSON.stringify({ path: "a.txt", content: "x" })
-            }
-          ]
-        }
-      ],
-      [{ type: "text", delta: "好的，那我只说结论。" }]
+    const { calls } = await createService([
+      { toolCalls: [{ id: "call_1", name: "write_file", arguments: { path: "a.txt", content: "x" } }] },
+      { text: "好的，那我只说结论。" }
     ]);
-    await createService(model);
 
     bridge.emit(inbound({ text: "写个文件" }));
     await vi.waitFor(() => expect(bridge.replied).toHaveLength(1));
@@ -199,27 +175,22 @@ describe("FeishuService", () => {
     const toolCalls = await store.listToolCallsForSession(session!.id);
     expect(toolCalls[0]).toMatchObject({ name: "write_file", status: "rejected" });
     // The rejection text was fed back to the model.
-    const secondCall = model.seen[1] ?? [];
-    expect(secondCall.map((m) => m.content).join("\n")).toContain("用户拒绝");
+    const secondCall = calls[1]?.context.messages ?? [];
+    expect(secondCall.map(flattenContent).join("\n")).toContain("用户拒绝");
   });
 
   it("executes mutating tools when full access is enabled", async () => {
-    const model = scriptedModel([
+    await createService(
       [
         {
-          type: "tool_calls",
           toolCalls: [
-            {
-              id: "call_1",
-              name: "write_file",
-              arguments: JSON.stringify({ path: "a.txt", content: "x" })
-            }
+            { id: "call_1", name: "write_file", arguments: { path: "a.txt", content: "x" } }
           ]
-        }
+        },
+        { text: "已写入。" }
       ],
-      [{ type: "text", delta: "已写入。" }]
-    ]);
-    await createService(model, { fullAccess: true });
+      { fullAccess: true }
+    );
 
     bridge.emit(inbound({ text: "写个文件" }));
     await vi.waitFor(() => expect(bridge.replied).toHaveLength(1));
@@ -234,8 +205,7 @@ describe("FeishuService", () => {
       { length: 300 },
       (_, i) => `第${i}行：${"内容".repeat(12)}`
     ).join("\n");
-    const model = scriptedModel([[{ type: "text", delta: longAnswer }]]);
-    await createService(model);
+    await createService([{ text: longAnswer }]);
 
     bridge.emit(inbound({ text: "长回答" }));
     await vi.waitFor(() => expect(bridge.replied.length + bridge.sent.length).toBeGreaterThan(1));
@@ -251,14 +221,7 @@ describe("FeishuService", () => {
   });
 
   it("reports run errors back to the chat", async () => {
-    const model: ModelClient = {
-      // eslint-disable-next-line require-yield
-      async *streamCompletion() {
-        throw new Error("模型挂了");
-      },
-      async testProvider() {}
-    };
-    await createService(model);
+    await createService([{ error: "模型挂了" }]);
 
     bridge.emit(inbound({ text: "你好" }));
     await vi.waitFor(() => expect(bridge.replied).toHaveLength(1));
@@ -271,14 +234,7 @@ describe("FeishuService", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const model: ModelClient = {
-      async *streamCompletion() {
-        await gate;
-        yield { type: "text", delta: "慢吞吞的回答" };
-      },
-      async testProvider() {}
-    };
-    await createService(model);
+    await createService([{ text: "慢吞吞的回答", onStart: () => gate }]);
 
     bridge.emit(inbound({ text: "第一条", messageId: "om_1" }));
     // Wait until the first run is in flight (session exists), then send another.
@@ -296,8 +252,7 @@ describe("FeishuService", () => {
   });
 
   it("politely declines non-text messages", async () => {
-    const model = scriptedModel([[{ type: "text", delta: "不该出现" }]]);
-    await createService(model);
+    await createService([{ text: "不该出现" }]);
 
     bridge.emit(inbound({ messageType: "image", text: "" }));
     await vi.waitFor(() => expect(bridge.replied).toHaveLength(1));

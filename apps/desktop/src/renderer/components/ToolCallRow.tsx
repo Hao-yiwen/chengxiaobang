@@ -51,13 +51,13 @@ export function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
   const diff = toolCall.status === "completed" ? buildToolCallDiff(toolCall) : undefined;
   const expandable = Boolean(toolCall.result || diff);
   return (
-    <div className="mb-1.5 max-w-full self-start overflow-hidden rounded-lg border bg-surface/60">
+    <div className="mb-1.5 max-w-full self-start overflow-hidden rounded-sm border bg-card">
       <div className="flex items-center">
         <button
           type="button"
           onClick={() => expandable && setOpen((value) => !value)}
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left font-mono text-xs",
+            "flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left font-mono text-micro",
             expandable && "transition-colors hover:bg-accent/60"
           )}
         >
@@ -68,10 +68,10 @@ export function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
           ) : (
             <Check className="size-3.5 flex-none text-muted-foreground" />
           )}
-          <span className="font-semibold text-foreground">{toolCall.name}</span>
-          <span className="text-muted-foreground">{t(TOOL_STATUS_KEYS[toolCall.status])}</span>
+          <span className="font-medium uppercase tracking-[0.28px] text-foreground">{toolCall.name}</span>
+          <span className="text-muted-slate">{t(TOOL_STATUS_KEYS[toolCall.status])}</span>
           {durationMs !== undefined ? (
-            <span className="text-muted-foreground/60">{formatDurationMs(durationMs)}</span>
+            <span className="text-muted-slate/70">{formatDurationMs(durationMs)}</span>
           ) : null}
           {expandable ? (
             <ChevronRight
@@ -87,7 +87,7 @@ export function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
             type="button"
             title={t("chat.previewFile")}
             onClick={() => openArtifact(filePath, artifactKind(filePath))}
-            className="mr-2.5 flex max-w-[220px] flex-none items-center gap-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+            className="mr-2.5 flex max-w-[220px] flex-none items-center gap-1 font-mono text-micro text-muted-foreground transition-colors hover:text-action-blue hover:underline"
           >
             <FileText className="size-3 flex-none" />
             <span className="truncate">{shortenPath(filePath)}</span>
@@ -97,7 +97,7 @@ export function ToolCallRow({ toolCall }: { toolCall: ToolCall }) {
       {open && diff ? (
         <DiffView lines={diff} />
       ) : open && toolCall.result ? (
-        <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words border-t bg-background px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground">
+        <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words border-t bg-background px-3 py-2 font-mono text-micro leading-relaxed text-muted-foreground">
           {toolCall.result}
         </pre>
       ) : null}

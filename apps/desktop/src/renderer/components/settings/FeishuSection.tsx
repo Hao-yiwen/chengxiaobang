@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { FeishuDomain, FeishuStatus } from "@chengxiaobang/shared";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -70,7 +69,7 @@ export function FeishuSection() {
         title={t("settings.feishu.connTitle")}
         description={t("settings.feishu.connDesc")}
       >
-        <Card className="space-y-4 p-4">
+        <div data-testid="settings-feishu-form" className="space-y-4 rounded-sm border bg-background p-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="feishu-app-id">{t("settings.feishu.appId")}</Label>
@@ -113,8 +112,8 @@ export function FeishuSection() {
           </div>
           <div className="flex items-center justify-between gap-4 border-t pt-4">
             <div>
-              <div className="text-sm font-medium">{t("settings.feishu.enable")}</div>
-              <p className="text-xs text-muted-foreground">{t("settings.feishu.enableDesc")}</p>
+              <div className="text-caption font-medium">{t("settings.feishu.enable")}</div>
+              <p className="text-micro text-muted-foreground">{t("settings.feishu.enableDesc")}</p>
             </div>
             <Switch
               aria-label={t("settings.feishu.enable")}
@@ -124,8 +123,8 @@ export function FeishuSection() {
           </div>
           <div className="flex items-center justify-between gap-4 border-t pt-4">
             <div>
-              <div className="text-sm font-medium">{t("settings.feishu.fullAccess")}</div>
-              <p className="text-xs text-muted-foreground">
+              <div className="text-caption font-medium">{t("settings.feishu.fullAccess")}</div>
+              <p className="text-micro text-muted-foreground">
                 {t("settings.feishu.fullAccessDesc")}
               </p>
             </div>
@@ -136,13 +135,13 @@ export function FeishuSection() {
             />
           </div>
           {fullAccess ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <p className="rounded-sm border border-destructive/30 bg-destructive/5 px-3 py-2 text-micro text-destructive">
               {t("settings.feishu.fullAccessWarning")}
             </p>
           ) : null}
           <div className="flex items-center justify-end gap-3 border-t pt-4">
             {saved ? (
-              <span className="text-xs text-muted-foreground">
+              <span className="text-micro text-muted-foreground">
                 {t("settings.feishu.saved")}
               </span>
             ) : null}
@@ -150,7 +149,7 @@ export function FeishuSection() {
               {t("settings.feishu.save")}
             </Button>
           </div>
-        </Card>
+        </div>
       </SettingBlock>
 
       <SettingBlock title={t("settings.feishu.statusTitle")}>
@@ -161,7 +160,7 @@ export function FeishuSection() {
         title={t("settings.feishu.guideTitle")}
         description={t("settings.feishu.guideDesc")}
       >
-        <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
+        <ol className="list-decimal space-y-1.5 pl-5 text-caption text-muted-foreground">
           <li>{t("settings.feishu.guide1")}</li>
           <li>{t("settings.feishu.guide2")}</li>
           <li>{t("settings.feishu.guide3")}</li>
@@ -177,11 +176,11 @@ function StatusRow({ status }: { status?: FeishuStatus }) {
   const { t } = useTranslation();
   const state = status?.status ?? "disconnected";
   return (
-    <div className="flex items-center gap-2.5 text-sm">
+    <div className="flex items-center gap-2.5 text-caption">
       <span
         className={cn(
           "size-2.5 flex-none rounded-full",
-          state === "connected" && "bg-foreground",
+          state === "connected" && "bg-coral",
           state === "connecting" && "animate-pulse bg-muted-foreground",
           state === "disconnected" && "bg-muted-foreground/40",
           state === "error" && "bg-destructive"
@@ -192,7 +191,7 @@ function StatusRow({ status }: { status?: FeishuStatus }) {
         <span className="text-muted-foreground">{status.botName}</span>
       ) : null}
       {status?.error ? (
-        <span className="min-w-0 truncate text-xs text-destructive" title={status.error}>
+        <span className="min-w-0 truncate text-micro text-destructive" title={status.error}>
           {status.error}
         </span>
       ) : null}

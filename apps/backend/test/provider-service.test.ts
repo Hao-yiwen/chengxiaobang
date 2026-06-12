@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProviderService } from "../src/model/provider-service";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 import { MemorySecretStore } from "../src/secrets/secret-store";
-import type { ModelClient } from "../src/model/openai-compatible";
 
 describe("ProviderService", () => {
   let dir: string;
@@ -24,11 +23,7 @@ describe("ProviderService", () => {
 
   it("stores API keys in secret store, not provider config", async () => {
     const secrets = new MemorySecretStore();
-    const modelClient: ModelClient = {
-      streamCompletion: vi.fn() as never,
-      testProvider: vi.fn()
-    };
-    const service = new ProviderService(store, secrets, modelClient);
+    const service = new ProviderService(store, secrets, vi.fn());
 
     const provider = await service.saveProvider({
       kind: "deepseek",
@@ -41,5 +36,27 @@ describe("ProviderService", () => {
     expect(JSON.stringify(provider)).not.toContain("secret-key");
     expect(provider.apiKeyRef).toMatch(/^memory:/);
     expect(await secrets.getSecret(provider.apiKeyRef ?? "")).toBe("secret-key");
+  });
+
+  it("resolves the stored key and delegates connectivity tests", async () => {
+    const secrets = new MemorySecretStore();
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const service = new ProviderService(store, secrets, probe);
+    const provider = await service.saveProvider({
+      id: "deepseek",
+      kind: "deepseek",
+      name: "DeepSeek",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+      apiKey: "secret-key"
+    });
+
+    await service.testProvider(provider.id);
+
+    expect(probe).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "deepseek" }),
+      "secret-key"
+    );
+    await expect(service.testProvider("missing")).rejects.toThrow("模型配置不存在");
   });
 });

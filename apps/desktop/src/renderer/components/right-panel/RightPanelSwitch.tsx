@@ -14,7 +14,7 @@ export function RightPanelSwitch() {
     { mode: "files" as const, icon: FileCode, label: t("rightPanel.files") }
   ];
   return (
-    <div className="absolute right-4 top-9 z-20 flex items-center gap-1.5 max-[840px]:hidden">
+    <div className="absolute right-6 top-3 z-20 flex items-center gap-1 max-[840px]:hidden">
       {panes.map((pane) => (
         <button
           key={pane.mode}
@@ -22,8 +22,9 @@ export function RightPanelSwitch() {
           title={pane.label}
           onClick={() => toggleRightPanel(pane.mode)}
           className={cn(
-            "flex size-8 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-soft transition-colors hover:bg-muted hover:text-foreground",
-            mode === pane.mode && "bg-muted text-foreground"
+            "flex size-8 items-center justify-center rounded-xs border border-transparent bg-transparent text-muted-foreground transition-colors hover:bg-soft-stone hover:text-foreground",
+            mode === pane.mode &&
+              "border-primary bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground"
           )}
         >
           <pane.icon className="size-4" />

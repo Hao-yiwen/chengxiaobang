@@ -6,15 +6,13 @@ import { createApp } from "./api/app";
 import { createLarkBridge } from "./feishu/feishu-bridge";
 import { FeishuConfigService } from "./feishu/feishu-config-service";
 import { FeishuService } from "./feishu/feishu-service";
-import { OpenAICompatibleModelClient } from "./model/openai-compatible";
-import { loadPiRuntime } from "./model/pi-runtime";
 import { ProviderService } from "./model/provider-service";
 import { SqliteStateStore } from "./repository/sqlite-state-store";
 import { createSecretStore } from "./secrets/secret-store";
 import { startServer } from "./server";
+import { createAgentTools } from "./tools/registry";
 import { SlashCommandService } from "./tools/slash-command-service";
-import { ToolExecutor } from "./tools/tool-executor";
-import { defaultDataDir, defaultSessionDir } from "./paths";
+import { defaultDataDir } from "./paths";
 
 export interface BackendConfig {
   port: number;
@@ -27,25 +25,16 @@ export async function startBackend(config: BackendConfig) {
   const store = new SqliteStateStore(join(config.dataDir, "chengxiaobang.sqlite"));
   await store.initialize();
   const secrets = createSecretStore();
-  const modelClient = new OpenAICompatibleModelClient();
-  const providerService = new ProviderService(store, secrets, modelClient);
+  const providerService = new ProviderService(store, secrets);
   const slashCommandService = new SlashCommandService();
   // Lazily resolved: the FeishuService is constructed after the runner
-  // (it consumes the runner), so the executor reaches it through a closure.
+  // (it consumes the runner), so the tools reach it through a closure.
   let feishuServiceRef: FeishuService | undefined;
-  const toolExecutor = new ToolExecutor(() => feishuServiceRef?.getSender());
-  const runner = new AgentRunner(
-    store,
-    secrets,
-    modelClient,
-    toolExecutor,
-    defaultSessionDir,
+  const runner = new AgentRunner(store, secrets, {
+    createTools: (workspacePath) =>
+      createAgentTools(workspacePath, () => feishuServiceRef?.getSender()),
     slashCommandService
-  );
-  const piRuntime = await loadPiRuntime();
-  if (!piRuntime.available) {
-    console.warn(`[chengxiaobang] pi runtime adapter unavailable: ${piRuntime.error}`);
-  }
+  });
   const feishuConfigService = new FeishuConfigService(store, secrets);
   const feishuService = new FeishuService({
     configService: feishuConfigService,

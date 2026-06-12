@@ -65,7 +65,7 @@ export function FilePreviewPanel() {
 
   if (preview.status !== "ready") {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-[13px] text-muted-foreground">
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-caption text-muted-foreground">
         <p>
           {preview.status === "error"
             ? `${t("rightPanel.fileLoadFailed")}${preview.error ? `：${preview.error}` : ""}`
@@ -75,7 +75,7 @@ export function FilePreviewPanel() {
           <button
             type="button"
             onClick={() => void pickFile()}
-            className="flex items-center gap-1.5 rounded-lg border bg-card px-3 py-1.5 text-xs text-foreground shadow-soft transition-colors hover:bg-muted"
+            className="flex items-center gap-1.5 rounded-sm border bg-card px-3 py-1.5 text-micro text-foreground transition-colors hover:bg-muted"
           >
             <FolderOpen className="size-3.5" />
             {t("rightPanel.pickFile")}
@@ -89,15 +89,15 @@ export function FilePreviewPanel() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex-none border-b px-4 py-2">
-        <p className="truncate font-mono text-xs font-semibold">{preview.name}</p>
-        <p className="truncate font-mono text-[11px] text-muted-foreground" title={path}>
+        <p className="truncate font-mono text-micro font-medium">{preview.name}</p>
+        <p className="truncate font-mono text-micro text-muted-foreground" title={path}>
           {path}
         </p>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto py-2 font-mono text-xs leading-relaxed">
+      <div className="min-h-0 flex-1 overflow-auto py-2 font-mono text-micro leading-relaxed">
         {lines.map((line, index) => (
           <div key={index} className="flex px-3">
-            <span className="w-10 flex-none select-none pr-3 text-right text-muted-foreground/50">
+            <span className="w-10 flex-none select-none pr-3 text-right text-muted-slate/70">
               {index + 1}
             </span>
             <span className="min-w-0 flex-1 whitespace-pre-wrap break-all">{line || " "}</span>

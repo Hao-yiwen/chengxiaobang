@@ -94,8 +94,8 @@ export function ChatView() {
   );
 
   return (
-    // Full-bleed scroll area with a centered content column, matching the
-    // ChatGPT-style app layout (the composer lives outside, in App).
+    // Full-bleed scroll area with a centered content column; the composer
+    // lives outside so the bottom rule and input surface stay stable.
     <div className="relative flex min-h-0 w-full flex-1 flex-col">
       <div
         ref={scrollRef}
@@ -106,9 +106,9 @@ export function ChatView() {
             setNearBottom(isNearBottom(el));
           }
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-6"
+        className="min-h-0 flex-1 overflow-y-auto px-8"
       >
-        <div className="mx-auto flex w-full max-w-[44rem] flex-col py-3">
+        <div className="mx-auto flex w-full max-w-[48rem] flex-col py-5">
           {timelineItems(messages, toolHistory).map((item) =>
             item.kind === "message" ? (
               <MessageBubble
@@ -126,13 +126,13 @@ export function ChatView() {
           ) : null}
 
           {pendingTool ? (
-            <div className="mb-5 animate-scale-in self-stretch overflow-hidden rounded-xl border bg-card shadow-soft">
-              <div className="flex items-center gap-2 border-b bg-muted/60 px-4 py-2.5">
+            <div className="mb-5 animate-scale-in self-stretch overflow-hidden rounded-sm border bg-card">
+              <div className="flex items-center gap-2 border-b bg-soft-stone/50 px-4 py-2.5">
                 <Terminal className="size-4 text-muted-foreground" />
-                <span className="text-[13px] font-semibold">{pendingTool.name}</span>
+                <span className="font-mono text-micro font-medium uppercase tracking-[0.28px]">{pendingTool.name}</span>
               </div>
               <div className="flex items-start justify-between gap-4 p-4">
-                <pre className="min-w-0 flex-1 max-h-[220px] overflow-auto rounded-lg bg-muted px-3 py-2.5 font-mono text-xs leading-relaxed text-muted-foreground">
+                <pre className="min-w-0 flex-1 max-h-[220px] overflow-auto rounded-sm bg-muted px-3 py-2.5 font-mono text-xs leading-relaxed text-muted-foreground">
                   {JSON.stringify(pendingTool.args, null, 2)}
                 </pre>
                 <div className="flex flex-none flex-col items-stretch gap-2">
@@ -156,26 +156,28 @@ export function ChatView() {
           ) : null}
 
           {showWaiting ? (
-            <div className="mb-6 flex items-center gap-2 self-stretch text-[13.5px] text-muted-foreground">
+            <div className="mb-6 flex items-center gap-2 self-stretch text-caption text-muted-foreground">
               <span className="size-3 flex-none animate-pulse rounded-full bg-foreground" />
               <span className="shimmer-text">{t("chat.waiting")}</span>
             </div>
           ) : null}
 
           {events
-            .filter((event) => event.type === "run_error")
+            .filter((event) => event.type === "run_end" && event.status === "failed")
             .map((event, index) => (
               <div
                 key={`${event.type}-${index}`}
-                className="mb-3 flex items-start gap-2 self-stretch rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 font-mono text-xs text-destructive"
+                className="mb-3 flex items-start gap-2 self-stretch rounded-sm border border-destructive/30 bg-destructive/5 px-3 py-2 font-mono text-micro text-destructive"
               >
                 <X className="mt-0.5 size-3.5 flex-none" />
-                <span className="min-w-0 break-words">{event.error}</span>
+                <span className="min-w-0 break-words">
+                  {event.type === "run_end" ? event.error : null}
+                </span>
               </div>
             ))}
 
           {!isRunning && lastUsage ? (
-            <div className="mb-2 self-start text-[11px] text-muted-foreground/70">
+            <div className="mb-2 self-start text-micro text-muted-slate">
               {t("chat.tokenUsage", {
                 total: lastUsage.totalTokens,
                 prompt: lastUsage.promptTokens,
@@ -234,8 +236,8 @@ const MessageBubble = memo(function MessageBubble({
     }
     return (
       <div className="group/msg mb-5 flex max-w-[78%] animate-msg-in flex-col items-end self-end">
-        <div className="rounded-3xl bg-bubble-user px-4 py-2.5 text-foreground">
-          <div className="whitespace-pre-wrap break-words text-[14.5px] leading-relaxed">
+        <div className="rounded-lg bg-bubble-user px-4 py-2.5 text-foreground">
+          <div className="whitespace-pre-wrap break-words text-body">
             {message.content}
           </div>
         </div>
@@ -262,7 +264,7 @@ function CompactionCard({ message }: { message: Message }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   return (
-    <div className="mb-5 animate-msg-in self-stretch overflow-hidden rounded-xl border bg-muted/40">
+    <div className="mb-5 animate-msg-in self-stretch overflow-hidden rounded-sm border bg-muted/40">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -270,8 +272,8 @@ function CompactionCard({ message }: { message: Message }) {
       >
         <Archive className="size-4 flex-none text-muted-foreground" />
         <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-semibold">{t("chat.compactionTitle")}</span>
-          <span className="block truncate text-xs text-muted-foreground">
+          <span className="block text-caption font-medium">{t("chat.compactionTitle")}</span>
+          <span className="block truncate text-micro text-muted-foreground">
             {t("chat.compactionHint")}
           </span>
         </span>
@@ -284,7 +286,7 @@ function CompactionCard({ message }: { message: Message }) {
       </button>
       {open ? (
         <div className="border-t px-4 py-3">
-          <Markdown text={message.content} className="text-[13.5px]" />
+          <Markdown text={message.content} className="text-caption" />
         </div>
       ) : null}
     </div>
@@ -295,9 +297,8 @@ function CompactionCard({ message }: { message: Message }) {
 function TurnDuration({ durationMs }: { durationMs: number }) {
   const { t } = useTranslation();
   return (
-    <div className="mt-1.5 text-[11px] text-muted-foreground/70">
+    <div className="mt-1.5 text-micro text-muted-slate">
       {t("chat.turnDuration", { seconds: thinkingSeconds(durationMs) })}
     </div>
   );
 }
-

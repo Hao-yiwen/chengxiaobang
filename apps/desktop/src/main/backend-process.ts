@@ -42,29 +42,26 @@ export function resolveBackendCommand(options: {
     options.token
   ];
   const env = { ...process.env };
-  const bunBinary =
-    process.env.BUN_BINARY ??
-    firstExisting([
-      join(options.resourcesPath, "bun"),
-      resolve(projectRoot(), "node_modules/.bin/bun")
-    ]);
+  const bundledBun = join(options.resourcesPath, "bun");
+  const devBun = resolve(projectRoot(), "node_modules/.bin/bun");
+  const bunBinary = process.env.BUN_BINARY ?? (options.isPackaged
+    ? firstExisting([bundledBun])
+    : firstExisting([devBun]));
 
   // In dev (not packaged) restart the backend automatically when its source
   // changes so backend edits take effect without relaunching the app.
   const dev = !options.isPackaged;
 
-  if (bunBinary) {
-    const args = dev ? ["--watch", ...commonArgs] : commonArgs;
-    return { command: bunBinary, args, env };
+  if (!bunBinary) {
+    throw new Error(
+      options.isPackaged
+        ? `后端运行时缺失：未找到 Bun binary（${bundledBun}）`
+        : `后端运行时缺失：未找到 Bun binary，请先运行 pnpm install 或设置 BUN_BINARY（${devBun}）`
+    );
   }
-  if (options.isPackaged) {
-    return { command: "bun", args: commonArgs, env };
-  }
-  return {
-    command: resolve(projectRoot(), "node_modules/.bin/tsx"),
-    args: ["watch", ...commonArgs],
-    env
-  };
+
+  const args = dev ? ["--watch", ...commonArgs] : commonArgs;
+  return { command: bunBinary, args, env };
 }
 
 export async function startBackendProcess(options: {

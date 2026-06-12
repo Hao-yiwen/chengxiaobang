@@ -59,17 +59,17 @@ export function SetupDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setSetupOpen}>
-      <DialogContent className="max-w-[420px] gap-5 rounded-2xl p-6">
-        <DialogHeader className="items-center text-center sm:text-center">
-          <Logo className="mb-2 size-10" />
-          <DialogTitle className="text-[17px]">{t("setup.title")}</DialogTitle>
-          <DialogDescription className="text-[13px] leading-relaxed">
+      <DialogContent className="max-w-[520px] gap-5 p-7">
+        <DialogHeader className="items-start border-b pb-5 text-left sm:text-left">
+          <Logo className="mb-3 size-8" />
+          <DialogTitle>{t("setup.title")}</DialogTitle>
+          <DialogDescription className="leading-relaxed">
             {t("setup.desc")}
           </DialogDescription>
         </DialogHeader>
         <form className="grid gap-3.5" onSubmit={onSubmit}>
           <div className="grid gap-1.5">
-            <Label className="text-[12.5px] text-muted-foreground">
+            <Label className="text-micro text-muted-slate">
               {t("settings.providers.type")}
             </Label>
             <Select
@@ -94,13 +94,13 @@ export function SetupDialog() {
 
           <div className="grid gap-1.5">
             <div className="flex items-center justify-between">
-              <Label className="text-[12.5px] text-muted-foreground">API Key</Label>
+              <Label className="text-micro text-muted-slate">API Key</Label>
               {API_KEY_URLS[draft.kind] ? (
                 <a
                   href={API_KEY_URLS[draft.kind]}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-1 text-[12px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  className="flex items-center gap-1 text-micro text-action-blue underline-offset-2 hover:underline"
                 >
                   <ExternalLink className="size-3" />
                   {t("settings.providers.getApiKey")}
@@ -118,14 +118,14 @@ export function SetupDialog() {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label className="text-[12.5px] text-muted-foreground">Base URL</Label>
+              <Label className="text-micro text-muted-slate">Base URL</Label>
               <Input
                 value={draft.baseURL}
                 onChange={(event) => setDraft({ ...draft, baseURL: event.target.value })}
               />
             </div>
             <div className="grid gap-1.5">
-              <Label className="text-[12.5px] text-muted-foreground">
+              <Label className="text-micro text-muted-slate">
                 {t("settings.providers.model")}
               </Label>
               <Input
@@ -135,7 +135,7 @@ export function SetupDialog() {
             </div>
           </div>
 
-          {error ? <p className="text-[12.5px] text-destructive">{error}</p> : null}
+          {error ? <p className="text-micro text-destructive">{error}</p> : null}
 
           <div className="mt-1 flex items-center justify-end gap-2">
             <Button
@@ -147,7 +147,7 @@ export function SetupDialog() {
             >
               {t("setup.later")}
             </Button>
-            <Button type="submit" size="sm" className="rounded-full px-4" disabled={!canSave}>
+            <Button type="submit" size="sm" className="rounded-sm px-4" disabled={!canSave}>
               {saving ? t("setup.saving") : t("setup.save")}
             </Button>
           </div>

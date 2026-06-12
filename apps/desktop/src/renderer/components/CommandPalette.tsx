@@ -51,7 +51,7 @@ export function CommandPalette() {
               <MessageSquare className="text-muted-foreground" />
               <span className="flex-1 truncate">{session.title}</span>
               {session.projectId && projectName.has(session.projectId) ? (
-                <span className="flex-none text-xs text-muted-foreground">
+                <span className="flex-none text-micro text-muted-foreground">
                   {projectName.get(session.projectId)}
                 </span>
               ) : null}

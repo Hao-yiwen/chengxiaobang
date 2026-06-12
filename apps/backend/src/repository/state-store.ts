@@ -31,7 +31,12 @@ export interface CreateMessageInput {
   reasoning?: string;
   reasoningMs?: number;
   durationMs?: number;
+  /** Raw pi message JSON for lossless model-context reconstruction. */
+  payload?: string;
 }
+
+/** A persisted message including the backend-only pi payload column. */
+export type StoredMessage = Message & { payload?: string };
 
 export interface CreateRunInput {
   id: string;
@@ -70,8 +75,8 @@ export interface StateStore {
   /** Deletes a project and cascades to its sessions/messages/runs. */
   deleteProject(id: string): Promise<boolean>;
   touchSession(id: string, title?: string): Promise<void>;
-  addMessage(input: CreateMessageInput): Promise<Message>;
-  listMessages(sessionId: string): Promise<Message[]>;
+  addMessage(input: CreateMessageInput): Promise<StoredMessage>;
+  listMessages(sessionId: string): Promise<StoredMessage[]>;
   /**
    * Deletes the given message and every later one in the session (plus runs
    * and tool calls from that span). Returns how many messages were removed;

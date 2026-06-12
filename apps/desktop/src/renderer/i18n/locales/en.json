@@ -134,6 +134,7 @@
   "home": {
     "heading": "What should we work on in {{name}}?",
     "headingNoProject": "What should we work on today?",
+    "tagline": "Chengxiaobang · AI Workspace",
     "subtitle": "Your desktop AI coding companion, ready when you are.",
     "starters": {
       "pptTitle": "Make a deck",

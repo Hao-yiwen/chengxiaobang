@@ -26,7 +26,7 @@ export function TerminalPanel() {
 
   if (!project) {
     return (
-      <div className="flex h-full items-center justify-center px-6 text-center text-[13px] text-muted-foreground">
+      <div className="flex h-full items-center justify-center px-6 text-center text-caption text-muted-foreground">
         {t("rightPanel.terminalNoProject")}
       </div>
     );
@@ -64,33 +64,34 @@ export function TerminalPanel() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    // DESIGN.md agent-console / dark-feature-band: a deep-green console field.
+    <div className="flex h-full min-h-0 flex-col bg-deep-green text-white">
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-xs leading-relaxed"
+        className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-micro leading-relaxed"
       >
-        <p className="mb-2 truncate text-muted-foreground/60" title={project.path}>
+        <p className="mb-2 truncate text-white/50" title={project.path}>
           {project.path}
         </p>
         {entries.length === 0 ? (
-          <p className="text-muted-foreground">{t("rightPanel.terminalEmpty")}</p>
+          <p className="text-white/60">{t("rightPanel.terminalEmpty")}</p>
         ) : (
           entries.map((entry) => (
             <div key={entry.id} className="mb-3">
-              <div className="flex items-center gap-2 font-semibold text-foreground">
-                <span className="select-none text-muted-foreground">$</span>
+              <div className="flex items-center gap-2 font-medium text-white">
+                <span className="select-none text-white/50">$</span>
                 <span className="min-w-0 break-all">{entry.command}</span>
                 {entry.output === undefined ? (
-                  <Loader2 className="size-3 flex-none animate-spin text-muted-foreground" />
+                  <Loader2 className="size-3 flex-none animate-spin text-white/60" />
                 ) : null}
               </div>
               {entry.output ? (
-                <pre className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
+                <pre className="mt-1 whitespace-pre-wrap break-words text-white/80">
                   {entry.output}
                 </pre>
               ) : null}
               {entry.exitCode !== undefined && entry.exitCode !== 0 ? (
-                <p className="mt-1 text-destructive">
+                <p className="mt-1 text-coral-soft">
                   {t("rightPanel.exitCode", { code: entry.exitCode })}
                 </p>
               ) : null}
@@ -98,8 +99,8 @@ export function TerminalPanel() {
           ))
         )}
       </div>
-      <div className="flex flex-none items-center gap-2 border-t px-4 py-2.5 font-mono text-xs">
-        <span className="select-none text-muted-foreground">$</span>
+      <div className="flex flex-none items-center gap-2 border-t border-white/15 px-4 py-2.5 font-mono text-micro">
+        <span className="select-none text-white/50">$</span>
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
@@ -107,7 +108,7 @@ export function TerminalPanel() {
           placeholder={t("rightPanel.terminalPlaceholder")}
           aria-label={t("rightPanel.terminalPlaceholder")}
           spellCheck={false}
-          className="h-7 w-full bg-transparent font-mono text-xs outline-none placeholder:text-muted-foreground/60"
+          className="h-7 w-full bg-transparent font-mono text-micro text-white caret-coral outline-none placeholder:text-white/40"
         />
       </div>
     </div>

@@ -32,23 +32,23 @@ export function ArtifactCard({ artifact, toolName }: { artifact: Artifact; toolN
     <button
       type="button"
       onClick={() => openArtifact(artifact.path, artifact.kind)}
-      className="group mb-3 flex w-full max-w-[420px] items-center gap-3 self-start rounded-xl border bg-card px-3.5 py-3 text-left shadow-soft transition-colors hover:bg-accent/50"
+      className="group mb-3 flex w-full max-w-[420px] items-center gap-3 self-start rounded-lg border bg-card px-3.5 py-3 text-left transition-colors hover:border-primary/40"
     >
-      <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted text-foreground">
+      <span className="flex size-9 flex-none items-center justify-center rounded-sm bg-soft-stone text-ink">
         <Icon className="size-[18px]" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13.5px] font-medium text-foreground">
+        <span className="block truncate text-caption font-medium text-foreground">
           {artifact.name}
         </span>
-        <span className="block text-[12px] text-muted-foreground">
+        <span className="block text-micro text-muted-foreground">
           {opensExternally ? t("chat.artifactOpenExternal") : t("chat.artifactPreview")}
         </span>
       </span>
       {opensExternally ? (
-        <ExternalLink className="size-4 flex-none text-muted-foreground transition-colors group-hover:text-foreground" />
+        <ExternalLink className="size-4 flex-none text-muted-foreground transition-colors group-hover:text-action-blue" />
       ) : (
-        <ArrowUpRight className="size-4 flex-none text-muted-foreground transition-colors group-hover:text-foreground" />
+        <ArrowUpRight className="size-4 flex-none text-muted-foreground transition-colors group-hover:text-action-blue" />
       )}
     </button>
   );
