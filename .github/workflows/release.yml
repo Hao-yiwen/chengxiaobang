@@ -35,7 +35,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build mac distributables
-        run: pnpm run build && pnpm --filter @chengxiaobang/desktop exec electron-builder --mac --publish never
+        run: pnpm run build && pnpm --filter @chengxiaobang/desktop exec electron-builder --mac --publish never -c.npmRebuild=false
 
       - name: Verify artifacts exist
         shell: bash
