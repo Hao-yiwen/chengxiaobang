@@ -24,6 +24,7 @@
     "zod": "4.2.0"
   },
   "devDependencies": {
-    "@types/sql.js": "1.4.9"
+    "@types/sql.js": "1.4.9",
+    "esbuild": "0.27.7"
   }
 }

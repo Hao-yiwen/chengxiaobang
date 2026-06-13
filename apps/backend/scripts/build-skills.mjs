@@ -2,10 +2,7 @@ import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, rm } from "node:fs/promises";
 import { dirname, extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-import { execFile } from "node:child_process";
-
-const execFileAsync = promisify(execFile);
+import { build } from "esbuild";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = dirname(here);
@@ -74,18 +71,42 @@ async function runEsbuild(entry, outfile) {
     "const __dirname = __cxbDirname(__filename);"
   ].join("\n");
   try {
-    await execFileAsync("esbuild", [
-      entry,
-      "--bundle",
-      "--platform=node",
-      "--format=esm",
-      "--target=es2022",
-      "--log-level=warning",
-      `--banner:js=${banner}`,
-      `--outfile=${outfile}`
-    ]);
+    await build({
+      entryPoints: [entry],
+      bundle: true,
+      platform: "node",
+      format: "esm",
+      target: "es2022",
+      logLevel: "warning",
+      banner: { js: banner },
+      outfile
+    });
   } catch (error) {
-    const detail = [error.stdout, error.stderr].filter(Boolean).join("\n");
+    const detail = formatBuildError(error);
     throw new Error(`技能脚本打包失败: ${entry}\n${detail}`);
   }
+}
+
+function formatBuildError(error) {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+  const detail = [error.message, formatEsbuildMessages(error.errors), formatEsbuildMessages(error.warnings)]
+    .filter(Boolean)
+    .join("\n");
+  return detail || error.stack || error.name;
+}
+
+function formatEsbuildMessages(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return "";
+  }
+  return messages
+    .map((message) => {
+      const location = message.location
+        ? `${message.location.file}:${message.location.line}:${message.location.column}`
+        : "";
+      return [location, message.text].filter(Boolean).join(" ");
+    })
+    .join("\n");
 }
