@@ -17,6 +17,7 @@ async function main() {
   const bunPath = join(resourcesPath, process.platform === "win32" ? "bun.exe" : "bun");
   const backendEntry = join(resourcesPath, "backend", "main.js");
   await verifyPackagedResources(resourcesPath, bunPath, backendEntry);
+  await verifyPackagedMainRuntimeLoads(resourcesPath);
 
   const dataDir = await mkdtemp(join(tmpdir(), "cxb-packaged-backend-"));
   const port = Number(process.env.CHENGXIAOBANG_SMOKE_PORT ?? randomInt(30_000, 50_000));
@@ -157,10 +158,33 @@ async function verifyAppAsarRuntimeDependencies(resourcesPath) {
   });
   const entries = new Set(stdout.split(/\r?\n/).filter(Boolean).map(normalizeAsarEntry));
   const requiredEntries = [
+    "/node_modules/@pinojs/redact/index.js",
     "/node_modules/electron-updater/out/main.js",
+    "/node_modules/atomic-sleep/index.js",
+    "/node_modules/builder-util-runtime/out/index.js",
+    "/node_modules/debug/src/index.js",
     "/node_modules/fs-extra/lib/index.js",
     "/node_modules/graceful-fs/graceful-fs.js",
+    "/node_modules/js-yaml/index.js",
     "/node_modules/jsonfile/index.js",
+    "/node_modules/lazy-val/out/main.js",
+    "/node_modules/lodash.escaperegexp/index.js",
+    "/node_modules/lodash.isequal/index.js",
+    "/node_modules/ms/index.js",
+    "/node_modules/on-exit-leak-free/index.js",
+    "/node_modules/pino/pino.js",
+    "/node_modules/pino-abstract-transport/index.js",
+    "/node_modules/pino-std-serializers/index.js",
+    "/node_modules/process-warning/index.js",
+    "/node_modules/quick-format-unescaped/index.js",
+    "/node_modules/real-require/src/index.js",
+    "/node_modules/sax/lib/sax.js",
+    "/node_modules/semver/index.js",
+    "/node_modules/safe-stable-stringify/index.js",
+    "/node_modules/sonic-boom/index.js",
+    "/node_modules/split2/index.js",
+    "/node_modules/thread-stream/index.js",
+    "/node_modules/tiny-typed-emitter/lib/index.js",
     "/node_modules/universalify/index.js"
   ];
   const missingEntries = requiredEntries.filter((entry) => !entries.has(entry));
@@ -175,6 +199,128 @@ async function verifyAppAsarRuntimeDependencies(resourcesPath) {
     asarBin,
     checkedEntries: requiredEntries
   });
+}
+
+async function verifyPackagedMainRuntimeLoads(resourcesPath) {
+  const appAsar = join(resourcesPath, "app.asar");
+  const electronExecutable = await resolvePackagedElectronExecutable(resourcesPath);
+  const updaterSmokeScript = `
+const appAsar = process.env.CHENGXIAOBANG_SMOKE_APP_ASAR;
+const path = require("path");
+const Module = require("module");
+const { EventEmitter } = require("events");
+const updaterOutDir = appAsar + "/node_modules/electron-updater/out";
+const resourcesPath = path.dirname(appAsar);
+const mainRuntimeDir = appAsar + "/dist/main";
+const nativeAutoUpdater = new EventEmitter();
+nativeAutoUpdater.setFeedURL = () => {};
+nativeAutoUpdater.checkForUpdates = () => {};
+nativeAutoUpdater.quitAndInstall = () => {};
+const app = new EventEmitter();
+app.whenReady = () => Promise.resolve();
+app.getVersion = () => "0.1.4";
+app.getName = () => "程小帮";
+app.getAppPath = () => appAsar;
+app.getPath = (name) => path.join(resourcesPath, "smoke-" + name);
+app.isPackaged = true;
+app.quit = () => {};
+app.relaunch = () => {};
+const electronStub = {
+  app,
+  autoUpdater: nativeAutoUpdater,
+  session: { fromPartition: () => ({}) },
+  net: { request: () => new EventEmitter() }
+};
+const originalLoad = Module._load;
+Module._load = function loadWithElectronStub(request, parent, isMain) {
+  if (request === "electron") {
+    return electronStub;
+  }
+  return originalLoad.apply(this, arguments);
+};
+Object.defineProperty(process, "resourcesPath", {
+  value: resourcesPath,
+  configurable: true
+});
+const requiredModules = [
+  "@pinojs/redact",
+  "electron-updater",
+  "atomic-sleep",
+  "builder-util-runtime",
+  "debug",
+  "fs-extra",
+  "graceful-fs",
+  "js-yaml",
+  "jsonfile",
+  "lazy-val",
+  "lodash.escaperegexp",
+  "lodash.isequal",
+  "ms",
+  "on-exit-leak-free",
+  "pino",
+  "pino-abstract-transport",
+  "pino-std-serializers",
+  "process-warning",
+  "quick-format-unescaped",
+  "real-require",
+  "sax",
+  "semver",
+  "safe-stable-stringify",
+  "sonic-boom",
+  "split2",
+  "thread-stream",
+  "tiny-typed-emitter",
+  "universalify"
+];
+for (const moduleName of requiredModules) {
+  require.resolve(moduleName, { paths: [mainRuntimeDir, updaterOutDir] });
+}
+const pino = require(appAsar + "/node_modules/pino/pino.js");
+if (typeof pino !== "function" || typeof pino.destination !== "function") {
+  throw new Error("pino 没有导出预期的 logger 工厂");
+}
+const updater = require(appAsar + "/node_modules/electron-updater/out/main.js");
+if (!updater || !updater.autoUpdater) {
+  throw new Error("electron-updater 没有导出 autoUpdater");
+}
+  console.log("[smoke] main process runtime load ok");
+`;
+  const { stdout } = await execFileAsync(electronExecutable, ["-e", updaterSmokeScript], {
+    cwd: desktopDir,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      CHENGXIAOBANG_SMOKE_APP_ASAR: appAsar
+    },
+    timeout: 15_000,
+    maxBuffer: 1024 * 1024
+  });
+  console.info("[smoke] 打包主进程运行时加载检查通过", {
+    platform: process.platform,
+    arch: process.arch,
+    electronExecutable,
+    stdout: stdout.trim()
+  });
+}
+
+async function resolvePackagedElectronExecutable(resourcesPath) {
+  if (process.platform === "darwin") {
+    const contentsDir = dirname(resourcesPath);
+    const appBundle = dirname(contentsDir);
+    const executableName = appBundle.endsWith(".app")
+      ? appBundle.slice(appBundle.lastIndexOf("/") + 1, -".app".length)
+      : "程小帮";
+    return join(contentsDir, "MacOS", executableName);
+  }
+  if (process.platform === "win32") {
+    const appDir = dirname(resourcesPath);
+    const entries = await readdir(appDir, { withFileTypes: true });
+    const executable = entries.find((entry) => entry.isFile() && entry.name.endsWith(".exe"));
+    if (executable) {
+      return join(appDir, executable.name);
+    }
+  }
+  throw new Error(`未找到打包 Electron 可执行文件 resourcesPath=${resourcesPath}`);
 }
 
 function findAsarBin() {
