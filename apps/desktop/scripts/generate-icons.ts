@@ -36,5 +36,9 @@ for (const size of sizes) {
   await renderIcon(size, join(iconset, `icon_${size}x${size}.png`));
 }
 await renderIcon(1024, join(build, "icon.png"));
-console.info("正在生成 macOS icns 图标");
-await execFileAsync("iconutil", ["-c", "icns", iconset, "-o", join(build, "icon.icns")]);
+if (process.platform === "darwin") {
+  console.info("正在生成 macOS icns 图标");
+  await execFileAsync("iconutil", ["-c", "icns", iconset, "-o", join(build, "icon.icns")]);
+} else {
+  console.info("当前平台不支持 iconutil，已跳过 macOS icns 图标生成");
+}
