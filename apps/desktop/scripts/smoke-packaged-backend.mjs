@@ -155,7 +155,7 @@ async function verifyAppAsarRuntimeDependencies(resourcesPath) {
     cwd: repoRoot,
     shell: process.platform === "win32"
   });
-  const entries = new Set(stdout.split(/\r?\n/).filter(Boolean));
+  const entries = new Set(stdout.split(/\r?\n/).filter(Boolean).map(normalizeAsarEntry));
   const requiredEntries = [
     "/node_modules/electron-updater/out/main.js",
     "/node_modules/fs-extra/lib/index.js",
@@ -165,7 +165,10 @@ async function verifyAppAsarRuntimeDependencies(resourcesPath) {
   ];
   const missingEntries = requiredEntries.filter((entry) => !entries.has(entry));
   if (missingEntries.length > 0) {
-    throw new Error(`app.asar 缺少主进程运行时依赖: ${missingEntries.join(", ")}`);
+    const sampleEntries = [...entries].slice(0, 20).join(", ");
+    throw new Error(
+      `app.asar 缺少主进程运行时依赖: ${missingEntries.join(", ")}; 已读取条目样本: ${sampleEntries}`
+    );
   }
   console.info("[smoke] app.asar 主进程运行时依赖检查通过", {
     appAsar,
@@ -176,6 +179,11 @@ async function verifyAppAsarRuntimeDependencies(resourcesPath) {
 
 function findAsarBin() {
   return getAsarBinCandidates().find((candidate) => existsSync(candidate)) ?? null;
+}
+
+function normalizeAsarEntry(entry) {
+  const normalized = entry.replaceAll("\\", "/");
+  return normalized.startsWith("/") ? normalized : `/${normalized}`;
 }
 
 function getAsarBinCandidates() {
