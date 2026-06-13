@@ -38,22 +38,27 @@ jobs:
         shell: bash
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_LINK_PART_1: ${{ secrets.CSC_LINK_PART_1 }}
+          CSC_LINK_PART_2: ${{ secrets.CSC_LINK_PART_2 }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           missing=0
-          for name in CSC_LINK CSC_KEY_PASSWORD; do
-            if [ -z "${!name}" ]; then
-              echo "::error::$name 未配置，无法进行 Developer ID 签名和 Apple 公证"
-              missing=1
-            fi
-          done
+          if [ -z "$CSC_LINK" ] && { [ -z "$CSC_LINK_PART_1" ] || [ -z "$CSC_LINK_PART_2" ]; }; then
+            echo "::error::CSC_LINK 未配置，且 CSC_LINK_PART_1/CSC_LINK_PART_2 不完整，无法进行 Developer ID 签名"
+            missing=1
+          fi
+          if [ -z "$CSC_KEY_PASSWORD" ]; then
+            echo "::error::CSC_KEY_PASSWORD 未配置，无法导入 Developer ID 证书"
+            missing=1
+          fi
           has_apple_id_credentials=0
-          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]; then
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
             has_apple_id_credentials=1
           fi
           has_api_key_credentials=0
@@ -61,7 +66,7 @@ jobs:
             has_api_key_credentials=1
           fi
           if [ "$has_apple_id_credentials" -eq 0 ] && [ "$has_api_key_credentials" -eq 0 ]; then
-            echo "::error::未配置 Apple 公证凭据。请配置 APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD，或 APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER"
+            echo "::error::未配置 Apple 公证凭据。请配置 APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID，或 APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER"
             missing=1
           fi
           exit "$missing"
@@ -69,13 +74,40 @@ jobs:
       - name: Build mac distributables
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_LINK_PART_1: ${{ secrets.CSC_LINK_PART_1 }}
+          CSC_LINK_PART_2: ${{ secrets.CSC_LINK_PART_2 }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: pnpm run build && pnpm --filter @chengxiaobang/desktop exec electron-builder --mac --publish never -c.npmRebuild=false -c.mac.forceCodeSigning=true
+        run: |
+          if [ -z "$CSC_LINK" ] && [ -n "$CSC_LINK_PART_1" ] && [ -n "$CSC_LINK_PART_2" ]; then
+            certificate_path="$RUNNER_TEMP/developer-id.p12"
+            printf "%s%s" "$CSC_LINK_PART_1" "$CSC_LINK_PART_2" | base64 --decode > "$certificate_path"
+            chmod 600 "$certificate_path"
+            export CSC_LINK="$certificate_path"
+          fi
+          unset CSC_LINK_PART_1 CSC_LINK_PART_2
+          if [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then
+            api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf "%s" "$APPLE_API_KEY" > "$api_key_path"
+            chmod 600 "$api_key_path"
+            export APPLE_API_KEY="$api_key_path"
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID APPLE_KEYCHAIN APPLE_KEYCHAIN_PROFILE
+          else
+            xcrun notarytool store-credentials chengxiaobang-ci \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --validate
+            export APPLE_KEYCHAIN_PROFILE=chengxiaobang-ci
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
+          fi
+          pnpm run build
+          pnpm --filter @chengxiaobang/desktop exec electron-builder --mac --publish never -c.npmRebuild=false -c.mac.forceCodeSigning=true
 
       - name: Verify mac artifacts
         shell: bash

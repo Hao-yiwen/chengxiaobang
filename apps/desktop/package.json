@@ -129,9 +129,7 @@
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
-      "notarize": {
-        "teamId": "84F8R9TAQN"
-      },
+      "notarize": true,
       "icon": "build/icon.icns",
       "target": [
         "dmg",
