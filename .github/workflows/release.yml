@@ -84,18 +84,43 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
           if [ -z "$CSC_LINK" ] && [ -n "$CSC_LINK_PART_1" ] && [ -n "$CSC_LINK_PART_2" ]; then
-            certificate_path="$RUNNER_TEMP/developer-id.p12"
             printf "%s%s" "$CSC_LINK_PART_1" "$CSC_LINK_PART_2" | base64 --decode > "$certificate_path"
             chmod 600 "$certificate_path"
             export CSC_LINK="$certificate_path"
+          elif [ -n "$CSC_LINK" ] && [ -f "$CSC_LINK" ]; then
+            certificate_path="$CSC_LINK"
+          elif [ -n "$CSC_LINK" ] && [[ "$CSC_LINK" != http* ]]; then
+            printf "%s" "$CSC_LINK" | sed 's/^data:.*;base64,//' | base64 --decode > "$certificate_path"
+            chmod 600 "$certificate_path"
+            export CSC_LINK="$certificate_path"
           fi
+          if [ ! -f "$certificate_path" ]; then
+            echo "::error::无法解析 Developer ID 证书文件，DMG 容器签名无法继续"
+            exit 1
+          fi
+          signing_keychain="$RUNNER_TEMP/chengxiaobang-signing.keychain-db"
+          signing_keychain_password="$(uuidgen)"
+          security create-keychain -p "$signing_keychain_password" "$signing_keychain"
+          security set-keychain-settings -lut 21600 "$signing_keychain"
+          security unlock-keychain -p "$signing_keychain_password" "$signing_keychain"
+          existing_keychains=()
+          while IFS= read -r keychain; do
+            existing_keychains+=("${keychain//\"/}")
+          done < <(security list-keychains -d user | sed 's/^[[:space:]]*//')
+          security list-keychains -d user -s "$signing_keychain" "${existing_keychains[@]}"
+          security import "$certificate_path" -k "$signing_keychain" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$signing_keychain_password" "$signing_keychain"
+          export CSC_KEYCHAIN="$signing_keychain"
           unset CSC_LINK_PART_1 CSC_LINK_PART_2
+          notary_submit_args=()
           if [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then
             api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
             printf "%s" "$APPLE_API_KEY" > "$api_key_path"
             chmod 600 "$api_key_path"
             export APPLE_API_KEY="$api_key_path"
+            notary_submit_args=(--key "$api_key_path" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
             unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID APPLE_KEYCHAIN APPLE_KEYCHAIN_PROFILE
           else
             xcrun notarytool store-credentials chengxiaobang-ci \
@@ -104,10 +129,53 @@ jobs:
               --password "$APPLE_APP_SPECIFIC_PASSWORD" \
               --validate
             export APPLE_KEYCHAIN_PROFILE=chengxiaobang-ci
+            notary_submit_args=(--keychain-profile chengxiaobang-ci)
             unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
           fi
           pnpm run build
           pnpm --filter @chengxiaobang/desktop exec electron-builder --mac --publish never -c.npmRebuild=false -c.mac.forceCodeSigning=true
+          dmg_path="$(find apps/desktop/out -maxdepth 1 -type f -name "*.dmg" ! -name "*.blockmap" | head -n 1)"
+          if [ -z "$dmg_path" ]; then
+            echo "::error::没有找到待签名公证的 DMG"
+            find apps/desktop/out -type f || true
+            exit 1
+          fi
+          signing_identity="Developer ID Application: yiwen hao (84F8R9TAQN)"
+          codesign --force --sign "$signing_identity" --timestamp --keychain "$signing_keychain" "$dmg_path"
+          xcrun notarytool submit "$dmg_path" "${notary_submit_args[@]}" --wait
+          xcrun stapler staple "$dmg_path"
+          xcrun stapler validate "$dmg_path"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg_path"
+          app_builder_arch="amd64"
+          if [ "$(uname -m)" = "arm64" ]; then
+            app_builder_arch="arm64"
+          fi
+          app_builder="node_modules/.pnpm/app-builder-bin@4.0.0/node_modules/app-builder-bin/mac/app-builder_${app_builder_arch}"
+          "$app_builder" blockmap --input "$dmg_path" --output "$dmg_path.blockmap"
+          DMG_PATH="$dmg_path" node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = require("node:path");
+
+          const dmgPath = process.env.DMG_PATH;
+          const latestPath = "apps/desktop/out/latest-mac.yml";
+          const dmgName = path.basename(dmgPath);
+          const sha512 = crypto.createHash("sha512").update(fs.readFileSync(dmgPath)).digest("base64");
+          const size = fs.statSync(dmgPath).size;
+          const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          let latest = fs.readFileSync(latestPath, "utf8");
+          const fileEntryPattern = new RegExp(
+            `(  - url: ${escapeRegExp(dmgName)}\\n    sha512: )[^\\n]+(\\n    size: )\\d+`
+          );
+          if (!fileEntryPattern.test(latest)) {
+            throw new Error(`latest-mac.yml 中没有找到 DMG 条目: ${dmgName}`);
+          }
+          latest = latest.replace(fileEntryPattern, `$1${sha512}$2${size}`);
+          const topLevelPattern = new RegExp(`(path: ${escapeRegExp(dmgName)}\\nsha512: )[^\\n]+`);
+          latest = latest.replace(topLevelPattern, `$1${sha512}`);
+          fs.writeFileSync(latestPath, latest);
+          console.log(`已更新 latest-mac.yml 中的 DMG sha512/size: ${dmgName}`);
+          NODE
 
       - name: Verify mac artifacts
         shell: bash
@@ -131,6 +199,11 @@ jobs:
               exit 1
             fi
           done < <(sed -n 's/^path: //p' apps/desktop/out/latest-mac.yml)
+          while IFS= read -r dmg; do
+            hdiutil verify "$dmg"
+            xcrun stapler validate "$dmg"
+            spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
+          done < <(find apps/desktop/out -maxdepth 1 -type f -name "*.dmg" ! -name "*.blockmap")
 
       - name: Upload mac artifacts
         uses: actions/upload-artifact@v4
