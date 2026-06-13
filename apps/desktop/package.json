@@ -66,8 +66,10 @@
     "cmdk": "^1.1.1",
     "electron-updater": "6.8.9",
     "fs-extra": "10.1.0",
+    "graceful-fs": "4.2.11",
     "i18next": "^26.3.1",
     "jszip": "^3.10.1",
+    "jsonfile": "6.2.1",
     "katex": "^0.17.0",
     "mammoth": "^1.12.0",
     "node-pty": "1.1.0",
@@ -83,6 +85,7 @@
     "sharp": "0.34.5",
     "streamdown": "^2.5.0",
     "tailwind-merge": "^2.6.1",
+    "universalify": "2.0.1",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.14"
   },
@@ -92,6 +95,7 @@
     "@napi-rs/canvas-win32-x64-msvc": "1.0.0"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "electron": "39.2.6",
     "electron-builder": "24.13.3",
     "tailwindcss-animate": "^1.0.7"

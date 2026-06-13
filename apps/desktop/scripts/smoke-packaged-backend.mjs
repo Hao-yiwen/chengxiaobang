@@ -147,11 +147,14 @@ async function verifyAppAsarRuntimeDependencies(resourcesPath) {
   if (!existsSync(appAsar)) {
     throw new Error(`打包资源缺失: ${appAsar}`);
   }
-  const asarBin = resolve(repoRoot, "node_modules", ".pnpm", "node_modules", ".bin", "asar");
-  if (!existsSync(asarBin)) {
-    throw new Error(`未找到 asar 检查工具: ${asarBin}`);
+  const asarBin = findAsarBin();
+  if (!asarBin) {
+    throw new Error(`未找到 asar 检查工具，已检查: ${getAsarBinCandidates().join(", ")}`);
   }
-  const { stdout } = await execFileAsync(asarBin, ["list", appAsar], { cwd: repoRoot });
+  const { stdout } = await execFileAsync(asarBin, ["list", appAsar], {
+    cwd: repoRoot,
+    shell: process.platform === "win32"
+  });
   const entries = new Set(stdout.split(/\r?\n/).filter(Boolean));
   const requiredEntries = [
     "/node_modules/electron-updater/out/main.js",
@@ -166,8 +169,23 @@ async function verifyAppAsarRuntimeDependencies(resourcesPath) {
   }
   console.info("[smoke] app.asar 主进程运行时依赖检查通过", {
     appAsar,
+    asarBin,
     checkedEntries: requiredEntries
   });
+}
+
+function findAsarBin() {
+  return getAsarBinCandidates().find((candidate) => existsSync(candidate)) ?? null;
+}
+
+function getAsarBinCandidates() {
+  const names = process.platform === "win32" ? ["asar.cmd", "asar.ps1", "asar"] : ["asar"];
+  const dirs = [
+    join(desktopDir, "node_modules", ".bin"),
+    join(repoRoot, "node_modules", ".bin"),
+    join(repoRoot, "node_modules", ".pnpm", "node_modules", ".bin")
+  ];
+  return dirs.flatMap((dir) => names.map((name) => join(dir, name)));
 }
 
 async function findCanvasNativeBinding(resourcesPath, canvasPackage) {
