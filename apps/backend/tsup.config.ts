@@ -7,6 +7,8 @@ export default defineConfig({
   dts: true,
   outDir: "dist",
   noExternal: [
+    "@chengxiaobang/shared",
+    "zod",
     "croner",
     "sql.js",
     "@earendil-works/pi-ai",
