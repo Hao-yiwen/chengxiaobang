@@ -745,10 +745,10 @@ export function Composer() {
                   key={command.id}
                   type="button"
                   className={cn(
-                    "flex w-full items-center gap-2.5 px-3 py-2 text-left text-body-sm transition-colors",
+                    "flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors",
                     index === highlightedCommand
                       ? "bg-accent text-accent-foreground"
-                      : "hover:bg-accent"
+                      : "hover:bg-accent/60"
                   )}
                   onMouseEnter={() => setHighlightedCommand(index)}
                   onMouseDown={(event) => {
@@ -757,29 +757,33 @@ export function Composer() {
                   }}
                   onClick={() => insertSlashCommand(command)}
                 >
-                  <span className="flex size-7 flex-none items-center justify-center rounded-xs bg-canvas-soft-2 text-muted-foreground">
+                  <span className="flex size-6 flex-none items-center justify-center rounded-sm bg-canvas-soft-2 text-muted-foreground">
                     {command.kind === "builtin_tool" ? (
-                      <Terminal className="size-4" />
+                      <Terminal className="size-3.5" />
                     ) : (
-                      <Sparkles className="size-4" />
+                      <Sparkles className="size-3.5" />
                     )}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block font-medium">{command.name}</span>
-                    <span className="block truncate text-micro text-muted-foreground">
+                    <span className="block truncate font-mono text-body-sm font-medium leading-tight text-foreground">
+                      {command.name}
+                    </span>
+                    <span className="mt-0.5 block truncate text-micro text-muted-foreground">
                       {command.description || t("composer.slashNoDescription")}
                     </span>
                   </span>
-                  <span className="flex-none rounded-xs border px-1.5 py-0.5 text-micro text-muted-foreground">
-                    {t(`composer.slashSource.${command.source}`)}
+                  <span className="flex flex-none items-center gap-1.5">
+                    <span className="rounded-sm bg-canvas-soft-2 px-1.5 py-0.5 text-micro font-medium text-muted-foreground">
+                      {t(`composer.slashSource.${command.source}`)}
+                    </span>
+                    {command.kind === "skill" ? (
+                      <StampBadge
+                        text={t("composer.kindSkill")}
+                        fullLabel={t("composer.kindSkillFull")}
+                        tone="indigo"
+                      />
+                    ) : null}
                   </span>
-                  {command.kind === "skill" ? (
-                    <StampBadge
-                      text={t("composer.kindSkill")}
-                      fullLabel={t("composer.kindSkillFull")}
-                      tone="indigo"
-                    />
-                  ) : null}
                 </button>
               ))}
             </div>
@@ -790,10 +794,10 @@ export function Composer() {
                   key={path}
                   type="button"
                   className={cn(
-                    "flex w-full items-center gap-2.5 px-3 py-2 text-left text-body-sm transition-colors",
+                    "flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors",
                     index === highlightedCommand
                       ? "bg-accent text-accent-foreground"
-                      : "hover:bg-accent"
+                      : "hover:bg-accent/60"
                   )}
                   onMouseEnter={() => setHighlightedCommand(index)}
                   onMouseDown={(event) => {
@@ -802,11 +806,11 @@ export function Composer() {
                   }}
                   onClick={() => insertFileReference(path)}
                 >
-                  <span className="flex size-7 flex-none items-center justify-center rounded-xs bg-canvas-soft-2 text-muted-foreground">
-                    <FileText className="size-4" />
+                  <span className="flex size-6 flex-none items-center justify-center rounded-sm bg-canvas-soft-2 text-muted-foreground">
+                    <FileText className="size-3.5" />
                   </span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-micro">{path}</span>
-                  <span className="flex-none rounded-xs border px-1.5 py-0.5 text-micro text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate font-mono text-body-sm">{path}</span>
+                  <span className="flex-none rounded-sm bg-canvas-soft-2 px-1.5 py-0.5 text-micro font-medium text-muted-foreground">
                     {t("composer.atFileTag")}
                   </span>
                 </button>
