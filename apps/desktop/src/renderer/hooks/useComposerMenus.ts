@@ -78,11 +78,12 @@ export function getAtToken(
 }
 
 export function filterSlashCommands(commands: SlashCommand[], query: string): SlashCommand[] {
+  const skillCommands = commands.filter((command) => command.kind === "skill");
   const compactQuery = query.trim();
   if (!compactQuery) {
-    return commands;
+    return skillCommands;
   }
-  return commands.filter((command) =>
+  return skillCommands.filter((command) =>
     `${command.name} ${command.description}`.toLowerCase().includes(compactQuery)
   );
 }

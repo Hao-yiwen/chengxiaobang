@@ -1189,7 +1189,7 @@ describe("App", () => {
     await waitFor(() => expect(streamRun).toHaveBeenCalled());
   });
 
-  it("shows slash commands and inserts the selected command into the composer", async () => {
+  it("shows only skill slash suggestions and inserts the selected skill into the composer", async () => {
     const client = createClient({
       listSlashCommands: vi.fn(async () => ({
         commands: [
@@ -1208,6 +1208,14 @@ describe("App", () => {
             description: "Review code",
             source: "project" as const,
             insertText: "/review "
+          },
+          {
+            id: "global:skill:excel",
+            name: "/excel",
+            kind: "skill" as const,
+            description: "处理 Excel 表格",
+            source: "global" as const,
+            insertText: "/excel "
           }
         ],
         diagnostics: []
@@ -1219,12 +1227,14 @@ describe("App", () => {
 
     fireEvent.change(input, { target: { value: "/" } });
 
-    expect(await screen.findByText("/ls")).toBeInTheDocument();
-    expect(await screen.findByText("/review")).toBeInTheDocument();
+    const menu = await screen.findByLabelText("斜杠命令建议");
+    expect(within(menu).queryByText("/ls")).not.toBeInTheDocument();
+    expect(within(menu).queryByText("/review")).not.toBeInTheDocument();
+    expect(within(menu).getByText("/excel")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("/review"));
+    fireEvent.click(within(menu).getByText("/excel"));
 
-    expect(input).toHaveValue("/review ");
+    expect(input).toHaveValue("/excel ");
   });
 
   it("suggests project files when typing @ in a project session", async () => {

@@ -27,6 +27,22 @@ const commands: SlashCommand[] = [
     description: "处理 Excel 表格",
     source: "global",
     insertText: "/excel "
+  },
+  {
+    id: "project:skill:ppt",
+    name: "/ppt",
+    kind: "skill",
+    description: "制作演示文稿",
+    source: "project",
+    insertText: "/ppt "
+  },
+  {
+    id: "project:prompt_template:review",
+    name: "/review",
+    kind: "prompt_template",
+    description: "Review code",
+    source: "project",
+    insertText: "/review "
   }
 ];
 
@@ -56,9 +72,13 @@ describe("getSlashQuery / getAtToken / filterSlashCommands", () => {
     expect(getAtToken("@", 1)).toEqual({ query: "", start: 0 });
   });
 
-  it("filters slash commands by name and description", () => {
-    expect(filterSlashCommands(commands, "")).toHaveLength(2);
+  it("filters slash suggestions to skills by name and description", () => {
+    expect(filterSlashCommands(commands, "").map((command) => command.name)).toEqual([
+      "/excel",
+      "/ppt"
+    ]);
     expect(filterSlashCommands(commands, "excel").map((c) => c.name)).toEqual(["/excel"]);
+    expect(filterSlashCommands(commands, "列出")).toEqual([]);
   });
 });
 

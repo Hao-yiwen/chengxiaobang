@@ -23,7 +23,6 @@ import {
   ShieldCheckIcon as ShieldCheck,
   SparkleIcon as Sparkles,
   SquareIcon as Square,
-  TerminalWindowIcon as Terminal,
   XIcon as X,
   type Icon
 } from "@phosphor-icons/react";
@@ -758,11 +757,7 @@ export function Composer() {
                   onClick={() => insertSlashCommand(command)}
                 >
                   <span className="flex size-6 flex-none items-center justify-center rounded-sm bg-canvas-soft-2 text-muted-foreground">
-                    {command.kind === "builtin_tool" ? (
-                      <Terminal className="size-3.5" />
-                    ) : (
-                      <Sparkles className="size-3.5" />
-                    )}
+                    <Sparkles className="size-3.5" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-mono text-body-sm font-medium leading-tight text-foreground">
@@ -776,13 +771,11 @@ export function Composer() {
                     <span className="rounded-sm bg-canvas-soft-2 px-1.5 py-0.5 text-micro font-medium text-muted-foreground">
                       {t(`composer.slashSource.${command.source}`)}
                     </span>
-                    {command.kind === "skill" ? (
-                      <StampBadge
-                        text={t("composer.kindSkill")}
-                        fullLabel={t("composer.kindSkillFull")}
-                        tone="indigo"
-                      />
-                    ) : null}
+                    <StampBadge
+                      text={t("composer.kindSkill")}
+                      fullLabel={t("composer.kindSkillFull")}
+                      tone="indigo"
+                    />
                   </span>
                 </button>
               ))}
@@ -1528,11 +1521,12 @@ function getSlashQuery(value: string, selectionStart: number): string | undefine
 }
 
 function filterSlashCommands(commands: SlashCommand[], query: string): SlashCommand[] {
+  const skillCommands = commands.filter((command) => command.kind === "skill");
   const compactQuery = query.trim();
   if (!compactQuery) {
-    return commands;
+    return skillCommands;
   }
-  return commands.filter((command) =>
+  return skillCommands.filter((command) =>
     `${command.name} ${command.description}`.toLowerCase().includes(compactQuery)
   );
 }

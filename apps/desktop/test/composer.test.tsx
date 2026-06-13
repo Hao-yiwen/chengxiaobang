@@ -766,7 +766,8 @@ describe("Composer slash 菜单技能标（ARCH-SPEC §5.5）", () => {
 
     const menu = await screen.findByLabelText("斜杠命令建议");
     expect(menu).toHaveTextContent("/excel");
-    // skill 行带印章标（title/aria-label = 技能），builtin 行不带。
+    expect(within(menu).queryByText("/ls")).not.toBeInTheDocument();
+    // 斜杠建议只显示技能，技能行带印章标（title/aria-label = 技能）。
     const badges = within(menu).getAllByTitle("技能");
     expect(badges).toHaveLength(1);
     expect(badges[0]).toHaveTextContent("技");
