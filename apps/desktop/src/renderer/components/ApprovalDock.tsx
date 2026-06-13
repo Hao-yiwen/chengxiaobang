@@ -10,17 +10,16 @@ import { toolIcon, toolLineLabel } from "@/lib/tool-display";
 import { useAppStore } from "@/store";
 
 /**
- * Bottom dock above the composer for the run's pending tool: ask_user gets
- * the option card, every other tool an approval card (description + preview
- * + 拒绝/允许). Hides itself the instant a decision is submitted so the
- * timeline receipt never double-renders next to a lingering card.
+ * 输入框上方的待审批工具 dock：ask_user 使用选项卡片，propose_plan 使用计划确认卡，
+ * 其他工具使用通用审批卡。提交决议后立即隐藏，避免和时间线回执重复展示。
  */
 export function ApprovalDock() {
   const pendingTool = useAppStore((state) => state.pendingTool);
   const approve = useAppStore((state) => state.approve);
+  const setPlanMode = useAppStore((state) => state.setPlanMode);
   const [decidedId, setDecidedId] = useState<string>();
 
-  if (!pendingTool || pendingTool.id === decidedId) {
+  if (!pendingTool || pendingTool.id === decidedId || pendingTool.status === "pending_smart_approval") {
     return null;
   }
 
@@ -30,6 +29,12 @@ export function ApprovalDock() {
       name: pendingTool.name,
       approved: decision.approved
     });
+    if (pendingTool.name === "propose_plan" && decision.approved) {
+      console.info("[ApprovalDock] 用户确认计划，退出前端计划模式", {
+        toolCallId: pendingTool.id
+      });
+      setPlanMode(false);
+    }
     setDecidedId(pendingTool.id);
     approve(pendingTool.id, decision);
   };
@@ -42,7 +47,86 @@ export function ApprovalDock() {
     );
   }
 
+  if (pendingTool.name === "propose_plan") {
+    return <PlanApprovalCard toolCall={pendingTool} onDecide={decide} />;
+  }
+
   return <ApprovalCard toolCall={pendingTool} onDecide={decide} />;
+}
+
+function PlanApprovalCard({
+  toolCall,
+  onDecide
+}: {
+  toolCall: ToolCall;
+  onDecide: (decision: ApprovalDecision) => void;
+}) {
+  const { t } = useTranslation();
+  const [feedback, setFeedback] = useState("");
+
+  const submitAdjustment = () => {
+    const text = feedback.trim();
+    if (!text) {
+      console.warn("[ApprovalDock] 计划调整意见为空，已阻止提交", {
+        toolCallId: toolCall.id
+      });
+      return;
+    }
+    console.info("[ApprovalDock] 提交计划调整意见", {
+      toolCallId: toolCall.id,
+      chars: text.length
+    });
+    onDecide({
+      approved: false,
+      answer: { answers: [{ id: "plan_adjustment", question: t("plan.adjustPlaceholder"), text }] }
+    });
+  };
+
+  return (
+    <div
+      data-testid="plan-approval-dock"
+      className="mb-3 animate-scale-in rounded-md border bg-card p-4 shadow-subtle"
+    >
+      <h3 className="mb-3 text-body-sm-strong text-foreground">{t("plan.approvalTitle")}</h3>
+      <div className="overflow-hidden rounded-md bg-canvas-soft-2">
+        <button
+          type="button"
+          className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-body-sm-strong text-foreground transition-colors hover:bg-surface-hover"
+          onClick={() => {
+            console.info("[ApprovalDock] 用户选择实施计划", { toolCallId: toolCall.id });
+            onDecide({ approved: true });
+          }}
+        >
+          <span className="flex size-7 flex-none items-center justify-center rounded-full bg-primary text-button-md text-primary-foreground">
+            1
+          </span>
+          <span className="min-w-0 flex-1">{t("plan.approveAction")}</span>
+          <Check className="size-4 flex-none text-muted-foreground" />
+        </button>
+        <div className="flex min-h-12 items-center gap-3 border-t border-border bg-card px-4">
+          <span className="flex size-7 flex-none items-center justify-center rounded-full border bg-card text-muted-foreground">
+            <X className="size-4" />
+          </span>
+          <input
+            value={feedback}
+            onChange={(event) => setFeedback(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                submitAdjustment();
+              }
+            }}
+            placeholder={t("plan.adjustPlaceholder")}
+            aria-label={t("plan.adjustPlaceholder")}
+            className="min-w-0 flex-1 bg-transparent text-body-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          <Button size="sm" variant="outline" onClick={submitAdjustment}>
+            {t("plan.submitAdjustment")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ApprovalCard({

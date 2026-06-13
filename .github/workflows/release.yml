@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag，例如 v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+          run_install: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build mac distributables
+        run: pnpm package:mac
+
+      - name: Verify artifacts exist
+        shell: bash
+        run: |
+          if [ ! -d apps/desktop/out ]; then
+            echo "::error::没有找到 electron-builder 输出目录 apps/desktop/out"
+            exit 1
+          fi
+          files=$(find apps/desktop/out -type f \( -name "*.dmg" -o -name "*.zip" \) ! -name "*.blockmap")
+          if [ -z "$files" ]; then
+            echo "::error::没有找到 electron-builder 产物（期望 apps/desktop/out 下有 .dmg 或 .zip）"
+            find apps/desktop/out -type f || true
+            exit 1
+          fi
+          echo "$files"
+
+      - name: Upload to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，直接覆盖上传产物"
+          else
+            gh release create "$TAG" --title "程小帮 $TAG" --notes "程小帮 $TAG" --repo "$GITHUB_REPOSITORY"
+          fi
+
+          # GitHub Release 资产名会弱化非 ASCII 字符，上传前统一替换成 ASCII 前缀。
+          mkdir -p dist-upload
+          while IFS= read -r -d '' file; do
+            name=$(basename "$file")
+            cp "$file" "dist-upload/${name//程小帮/chengxiaobang}"
+          done < <(find apps/desktop/out -type f \( -name "*.dmg" -o -name "*.zip" \) ! -name "*.blockmap" -print0)
+
+          gh release upload "$TAG" dist-upload/* --repo "$GITHUB_REPOSITORY" --clobber

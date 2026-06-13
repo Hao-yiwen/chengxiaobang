@@ -12,6 +12,7 @@ export interface ScriptedToolCall {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+  argumentDeltas?: Array<Record<string, unknown>>;
 }
 
 export interface ScriptedTurn {
@@ -82,12 +83,24 @@ export function scriptedStreamFn(turns: ScriptedTurn[]): {
         stream.push({ type: "text_end", contentIndex, content: turn.text, partial: message });
         contentIndex += 1;
       }
-      for (const toolCall of turn.toolCalls ?? []) {
-        stream.push({ type: "toolcall_start", contentIndex, partial: message });
+      for (const [toolIndex, toolCall] of (turn.toolCalls ?? []).entries()) {
+        const startPartial =
+          toolCall.argumentDeltas && toolCall.argumentDeltas.length > 0
+            ? buildMessageWithToolArgs(model, turn, toolIndex, {})
+            : message;
+        stream.push({ type: "toolcall_start", contentIndex, partial: startPartial });
+        for (const args of toolCall.argumentDeltas ?? []) {
+          stream.push({
+            type: "toolcall_delta",
+            contentIndex,
+            delta: JSON.stringify(args),
+            partial: buildMessageWithToolArgs(model, turn, toolIndex, args)
+          });
+        }
         stream.push({
           type: "toolcall_end",
           contentIndex,
-          toolCall: { type: "toolCall", ...toolCall },
+          toolCall: toPiToolCall(toolCall),
           partial: message
         });
         contentIndex += 1;
@@ -122,7 +135,7 @@ function buildMessage(model: Model<any>, turn: ScriptedTurn): AssistantMessage {
     content.push({ type: "text", text: turn.text });
   }
   for (const toolCall of turn.toolCalls ?? []) {
-    content.push({ type: "toolCall", ...toolCall });
+    content.push(toPiToolCall(toolCall));
   }
   return {
     role: "assistant",
@@ -150,4 +163,23 @@ function buildMessage(model: Model<any>, turn: ScriptedTurn): AssistantMessage {
     ...(turn.error !== undefined ? { errorMessage: turn.error } : {}),
     timestamp: Date.now()
   };
+}
+
+function buildMessageWithToolArgs(
+  model: Model<any>,
+  turn: ScriptedTurn,
+  toolIndex: number,
+  args: Record<string, unknown>
+): AssistantMessage {
+  const nextToolCalls = (turn.toolCalls ?? []).map((toolCall, index) =>
+    index === toolIndex ? { ...toolCall, arguments: args } : toolCall
+  );
+  return buildMessage(model, { ...turn, toolCalls: nextToolCalls });
+}
+
+function toPiToolCall(
+  toolCall: ScriptedToolCall
+): Extract<AssistantMessage["content"][number], { type: "toolCall" }> {
+  const { argumentDeltas: _argumentDeltas, ...rest } = toolCall;
+  return { type: "toolCall", ...rest };
 }

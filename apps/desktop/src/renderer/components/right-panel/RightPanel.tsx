@@ -1,5 +1,5 @@
 import { ArrowLeftIcon as ArrowLeft, XIcon as X } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { BrowserPanel } from "./BrowserPanel";
 import { ChangesPanel } from "./ChangesPanel";
@@ -143,6 +143,10 @@ export function RightPanel() {
   }
 
   const title = mode ? t(TITLE_KEYS[mode]) : t("rightPanel.menuTitle");
+  const panelStyle = {
+    "--right-panel-width": `${width}px`,
+    width: expanded ? "var(--right-panel-width)" : "0px"
+  } as CSSProperties & { "--right-panel-width": string };
 
   function onResizeStart(event: React.PointerEvent<HTMLDivElement>): void {
     event.preventDefault();
@@ -162,62 +166,66 @@ export function RightPanel() {
 
   return (
     <aside
-      style={{ width: expanded ? width : 0 }}
+      data-testid="right-panel"
+      style={panelStyle}
       className={cn(
-        "relative h-screen min-h-0 flex-none overflow-hidden bg-background max-[840px]:hidden",
+        "relative h-screen min-h-0 shrink-0 overflow-hidden bg-background max-[840px]:hidden",
         !resizing && "transition-[width] duration-200 ease-out",
-        expanded && "border-l border-border"
+        expanded && "[box-shadow:inset_1px_0_0_rgb(var(--border))]"
       )}
     >
       {/* 固定宽度的内容层:外层宽度做展开/收起过渡时,内容被裁剪而非回流挤压。 */}
-      <div style={{ width }} className="flex h-full min-h-0 flex-col">
       <div
-        role="separator"
-        aria-orientation="vertical"
-        title={t("rightPanel.resize")}
-        onPointerDown={onResizeStart}
-        className="absolute left-0 top-0 z-10 h-full w-1.5 cursor-col-resize"
-      />
-      <header className="flex h-14 flex-none items-center justify-between gap-2 border-b px-4">
-        <div className="flex min-w-0 items-center gap-1.5">
-          {mode ? (
-            <button
-              type="button"
-              title={t("rightPanel.backToMenu")}
-              onClick={() => openRightPanel(null)}
-              className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ArrowLeft className="size-4" />
-            </button>
-          ) : null}
-          <h2 className="truncate font-mono text-mono-label uppercase text-foreground">
-            {title}
-          </h2>
+        data-testid="right-panel-content"
+        className="flex h-full min-h-0 min-w-0 w-[var(--right-panel-width)] flex-col overflow-hidden [contain:layout_paint]"
+      >
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          title={t("rightPanel.resize")}
+          onPointerDown={onResizeStart}
+          className="absolute left-0 top-0 z-10 h-full w-1.5 cursor-col-resize"
+        />
+        <header className="flex h-14 min-w-0 flex-none items-center justify-between gap-2 border-b px-4">
+          <div className="flex min-w-0 items-center gap-1.5">
+            {mode ? (
+              <button
+                type="button"
+                title={t("rightPanel.backToMenu")}
+                onClick={() => openRightPanel(null)}
+                className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ArrowLeft className="size-4" />
+              </button>
+            ) : null}
+            <h2 className="truncate font-mono text-mono-label uppercase text-foreground">
+              {title}
+            </h2>
+          </div>
+          <button
+            type="button"
+            title={t("rightPanel.close")}
+            onClick={closeRightPanel}
+            className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </header>
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          {mode === null ? (
+            <RightPanelMenu availableModes={availableModes} />
+          ) : mode === "changes" ? (
+            <ChangesPanel />
+          ) : mode === "terminal" ? (
+            <TerminalPanel />
+          ) : mode === "browser" ? (
+            <BrowserPanel />
+          ) : mode === "files" ? (
+            <FilePreviewPanel />
+          ) : (
+            <SideChatPanel />
+          )}
         </div>
-        <button
-          type="button"
-          title={t("rightPanel.close")}
-          onClick={closeRightPanel}
-          className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <X className="size-4" />
-        </button>
-      </header>
-      <div className="min-h-0 flex-1">
-        {mode === null ? (
-          <RightPanelMenu availableModes={availableModes} />
-        ) : mode === "changes" ? (
-          <ChangesPanel />
-        ) : mode === "terminal" ? (
-          <TerminalPanel />
-        ) : mode === "browser" ? (
-          <BrowserPanel />
-        ) : mode === "files" ? (
-          <FilePreviewPanel />
-        ) : (
-          <SideChatPanel />
-        )}
-      </div>
       </div>
     </aside>
   );

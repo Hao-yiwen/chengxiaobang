@@ -4,34 +4,34 @@ import { messageSchema, type Message } from "./message";
 import { reasoningModeSchema, type ReasoningMode } from "./model";
 import { tokenUsageSchema, type TokenUsage } from "./model";
 import { sessionSchema, type Session } from "./session";
-import { toolCallSchema, type ToolCall } from "./tool";
+import { toolActivitySchema, toolCallSchema, type ToolActivity, type ToolCall } from "./tool";
+import { scheduledTaskStatusSchema, type ScheduledTaskStatus } from "./scheduled-task";
 
 export type RunEndStatus = "completed" | "failed" | "aborted";
+export type ScheduledTaskTrigger = "schedule" | "manual";
 
 /**
- * The SSE contract between the agent loop and its clients (renderer, Feishu).
+ * agent 循环和客户端（渲染层、飞书）之间的 SSE 契约。
  *
- * - `delta` streams incremental model output on the text or thinking channel.
- * - `message` delivers a persisted message (the user echo, assistant turns,
- *   including a partial answer kept on abort).
- * - `tool_call` fires on every tool-call status transition; the status field
- *   carries the state machine (pending_approval → running → completed |
- *   failed | rejected).
- * - `session_updated` delivers session metadata changed mid-run (e.g. the
- *   AI-generated title) so clients can update lists without a refetch.
- * - `run_end` is always the final event of a run.
+ * - `delta`：按 text/thinking 通道流式输出模型增量。
+ * - `message`：传递已持久化消息（用户回显、assistant 轮次，以及 abort 时保留的部分回答）。
+ * - `tool_call`：每次工具调用状态迁移都会触发，status 字段承载状态机。
+ * - `session_updated`：传递 run 中途更新的会话元数据，让客户端不必等 run 结束再刷新。
+ * - `run_end`：一个 run 的最终事件。
  */
 export type StreamEvent =
   | {
       type: "run_started";
       runId: string;
       sessionId: string;
+      clientRequestId?: string;
       providerId?: string;
       model?: string;
       reasoningMode?: ReasoningMode;
     }
   | { type: "delta"; runId: string; channel: "text" | "thinking"; delta: string }
   | { type: "message"; runId: string; message: Message }
+  | { type: "tool_activity"; runId: string; activity: ToolActivity }
   | { type: "tool_call"; runId: string; toolCall: ToolCall }
   | { type: "session_updated"; runId: string; session: Session }
   | {
@@ -44,11 +44,36 @@ export type StreamEvent =
 
 export type StreamEventType = StreamEvent["type"];
 
+export type ScheduledTaskEvent =
+  | {
+      type: "scheduled_task_started";
+      taskId: string;
+      sessionId: string;
+      name: string;
+      trigger: ScheduledTaskTrigger;
+      occurredAt: string;
+    }
+  | {
+      type: "scheduled_task_finished";
+      taskId: string;
+      sessionId: string;
+      name: string;
+      trigger: ScheduledTaskTrigger;
+      status: ScheduledTaskStatus;
+      runId?: string;
+      error?: string;
+      occurredAt: string;
+    };
+
+export type AppEvent = StreamEvent | ScheduledTaskEvent;
+export type AppEventType = AppEvent["type"];
+
 export const streamEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("run_started"),
     runId: z.string().min(1),
     sessionId: z.string().min(1),
+    clientRequestId: z.string().min(1).optional(),
     providerId: z.string().min(1).optional(),
     model: z.string().min(1).optional(),
     reasoningMode: reasoningModeSchema.optional()
@@ -63,6 +88,11 @@ export const streamEventSchema = z.discriminatedUnion("type", [
     type: z.literal("message"),
     runId: z.string().min(1),
     message: messageSchema
+  }),
+  z.object({
+    type: z.literal("tool_activity"),
+    runId: z.string().min(1),
+    activity: toolActivitySchema
   }),
   z.object({
     type: z.literal("tool_call"),
@@ -83,11 +113,42 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   })
 ]);
 
-export function encodeSseEvent(event: StreamEvent): string {
+export const scheduledTaskEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("scheduled_task_started"),
+    taskId: z.string().min(1),
+    sessionId: z.string().min(1),
+    name: z.string().min(1),
+    trigger: z.enum(["schedule", "manual"]),
+    occurredAt: z.string().min(1)
+  }),
+  z.object({
+    type: z.literal("scheduled_task_finished"),
+    taskId: z.string().min(1),
+    sessionId: z.string().min(1),
+    name: z.string().min(1),
+    trigger: z.enum(["schedule", "manual"]),
+    status: scheduledTaskStatusSchema,
+    runId: z.string().min(1).optional(),
+    error: z.string().optional(),
+    occurredAt: z.string().min(1)
+  })
+]);
+
+export const appEventSchema = z.discriminatedUnion("type", [
+  ...streamEventSchema.options,
+  ...scheduledTaskEventSchema.options
+]);
+
+export function isStreamEvent(event: AppEvent): event is StreamEvent {
+  return !event.type.startsWith("scheduled_task_");
+}
+
+export function encodeSseEvent(event: AppEvent): string {
   return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
-export function parseSseChunk(chunk: string): StreamEvent[] {
+export function parseSseChunk(chunk: string): AppEvent[] {
   return chunk
     .split(/\n\n+/)
     .map((block) => block.trim())
@@ -99,6 +160,6 @@ export function parseSseChunk(chunk: string): StreamEvent[] {
       if (!dataLine) {
         throw new Error(`Invalid SSE block: ${block}`);
       }
-      return JSON.parse(dataLine.slice(6)) as StreamEvent;
+      return JSON.parse(dataLine.slice(6)) as AppEvent;
     });
 }

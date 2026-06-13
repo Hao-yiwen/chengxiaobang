@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import {
   rewindRequestSchema,
+  reasoningModeSchema,
   sessionForkInputSchema,
   sessionInputSchema,
   sessionUpdateSchema,
@@ -25,6 +26,33 @@ export function sessionRoutes(context: AppContext): Hono {
     });
   });
 
+  app.get("/search", async (c) => {
+    const query = c.req.query("query") ?? "";
+    const limitParam = c.req.query("limit");
+    const limit = limitParam === undefined ? undefined : Number(limitParam);
+    if (!query.trim()) {
+      console.debug("[sessions-route] 跳过空会话搜索请求");
+      return c.json({ results: [] });
+    }
+    try {
+      const results = await context.store.searchSessions(
+        query,
+        Number.isFinite(limit) ? limit : undefined
+      );
+      console.info("[sessions-route] 会话搜索请求完成", {
+        query: query.trim(),
+        resultCount: results.length
+      });
+      return c.json({ results });
+    } catch (error) {
+      console.error("[sessions-route] 会话搜索请求失败", {
+        query: query.trim(),
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  });
+
   app.post("/", async (c) => {
     const input = sessionInputSchema.parse(await c.req.json());
     const session = await context.store.createSession({
@@ -39,6 +67,31 @@ export function sessionRoutes(context: AppContext): Hono {
   app.get("/:sessionId/messages", async (c) => {
     const messages = await context.store.listMessages(c.req.param("sessionId"));
     return c.json({ messages: messages.map(toClientMessage) });
+  });
+
+  app.get("/:sessionId/context-usage", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const reasoningModeQuery = c.req.query("reasoningMode");
+    const reasoningMode = reasoningModeQuery
+      ? reasoningModeSchema.parse(reasoningModeQuery)
+      : undefined;
+    const usage = await context.runner.buildSessionContextUsage(sessionId, {
+      providerId: c.req.query("providerId"),
+      model: c.req.query("model"),
+      reasoningMode,
+      planMode: c.req.query("planMode") === "true"
+    });
+    if (!usage) {
+      return c.json({ error: "会话不存在" }, 404);
+    }
+    console.debug("[sessions-route] 返回会话上下文用量", {
+      sessionId,
+      model: usage.model,
+      estimatedTokens: usage.estimatedTokens,
+      sessionCostCny: usage.sessionCostCny,
+      status: usage.status
+    });
+    return c.json({ usage });
   });
 
   app.get("/:sessionId/runs", async (c) => {

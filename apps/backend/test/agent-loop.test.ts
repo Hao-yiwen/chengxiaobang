@@ -1,11 +1,18 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { nowIso, type ProviderConfig, type StreamEvent } from "@chengxiaobang/shared";
+import {
+  deriveTodoState,
+  nowIso,
+  type ProviderConfig,
+  type StreamEvent
+} from "@chengxiaobang/shared";
 import { AgentRunner } from "../src/agent/agent-runner";
+import { TOOL_RESULT_SPILL_DIR } from "../src/agent/tool-result-spill";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 import { MemorySecretStore } from "../src/secrets/secret-store";
+import { createShellTools } from "../src/tools/shell-tools";
 import { scriptedStreamFn, type ScriptedTurn } from "./helpers/scripted-stream";
 
 async function drain(stream: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
@@ -85,6 +92,7 @@ describe("AgentRunner agentic loop (pi)", () => {
       "message:user",
       "delta:thinking",
       "delta:text",
+      "tool_activity",
       "message:assistant",
       "tool_call:running",
       "tool_call:completed",
@@ -123,7 +131,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
     await expect(readFile(join(dir, "out.txt"), "utf8")).resolves.toBe("done");
 
-    // The second model call sees the lossless toolCall/toolResult pair.
+    // 第二次模型调用应看到无损的 toolCall/toolResult 配对。
     const replay = calls[1].context.messages;
     const assistant = replay.find(
       (message) =>
@@ -135,6 +143,373 @@ describe("AgentRunner agentic loop (pi)", () => {
     );
     expect(assistant).toBeDefined();
     expect(toolResult).toMatchObject({ isError: false });
+  });
+
+  it("keeps repeated provider tool ids unique across runs", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    const { runner } = runnerWith([
+      {
+        toolCalls: [
+          { id: "list_directory_0", name: "list_directory", arguments: { path: "." } }
+        ]
+      },
+      { text: "第一轮完成。" },
+      {
+        toolCalls: [
+          { id: "list_directory_0", name: "list_directory", arguments: { path: "." } }
+        ]
+      },
+      { text: "第二轮完成。" }
+    ]);
+
+    const firstEvents = await drain(
+      runner.stream({ prompt: "先看目录", projectId: project.id, accessMode: "full_access" })
+    );
+    const sessionId = firstEvents.find((event) => event.type === "run_started")?.sessionId;
+    const firstRunId = firstEvents.find((event) => event.type === "run_started")?.runId;
+    expect(sessionId).toBeDefined();
+    expect(firstRunId).toBeDefined();
+    const secondEvents = await drain(
+      runner.stream({
+        prompt: "再看一次目录",
+        sessionId: sessionId!,
+        projectId: project.id,
+        accessMode: "full_access"
+      })
+    );
+    const secondRunId = secondEvents.find((event) => event.type === "run_started")?.runId;
+    expect(secondRunId).toBeDefined();
+
+    expect(firstEvents.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
+    expect(secondEvents.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
+    const calls = (await store.listToolCallsForSession(sessionId!)).filter(
+      (toolCall) => toolCall.name === "list_directory"
+    );
+    expect(calls).toHaveLength(2);
+    expect(new Set(calls.map((toolCall) => toolCall.id)).size).toBe(2);
+    expect(calls.map((toolCall) => toolCall.runId).sort()).toEqual(
+      [firstRunId!, secondRunId!].sort()
+    );
+    expect(calls.every((toolCall) => toolCall.id.startsWith(`${toolCall.runId}:tool_`))).toBe(
+      true
+    );
+  });
+
+  it("routes ask_user answers through app tool ids while preserving model ids", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    const { runner, calls } = runnerWith([
+      {
+        toolCalls: [
+          {
+            id: "ask_0",
+            name: "ask_user",
+            arguments: { questions: [{ question: "要继续分析吗？" }] }
+          }
+        ]
+      },
+      { text: "继续分析。" }
+    ]);
+    const events: StreamEvent[] = [];
+
+    for await (const event of runner.stream({
+      prompt: "先问我",
+      projectId: project.id,
+      accessMode: "full_access"
+    })) {
+      events.push(event);
+      if (event.type === "tool_call" && event.toolCall.status === "pending_approval") {
+        runner.approvals.decide(event.toolCall.id, {
+          approved: true,
+          answer: { answers: [{ question: "要继续分析吗？", text: "继续分析" }] }
+        });
+      }
+    }
+
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
+    const replayToolResult = calls[1].context.messages.find(
+      (message) => message.role === "toolResult" && message.toolCallId === "ask_0"
+    );
+    expect(replayToolResult).toMatchObject({ isError: false });
+    expect(JSON.stringify(replayToolResult?.content)).toContain("继续分析");
+  });
+
+  it("计划确认后同一 run 恢复普通工具且不暴露 update_plan", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    const { runner, calls } = runnerWith([
+      {
+        toolCalls: [
+          {
+            id: "plan_0",
+            name: "propose_plan",
+            arguments: {
+              markdown:
+                "# 示例计划\n\n## Summary\n先确认计划。\n\n## Key Changes\n- 写入文件。\n\n## Test Plan\n- 读取文件。\n\n## Assumptions\n- 使用当前项目。"
+            }
+          }
+        ]
+      },
+      {
+        toolCalls: [
+          {
+            id: "write_0",
+            name: "write_file",
+            arguments: { path: "plan.txt", content: "done" }
+          }
+        ]
+      },
+      { text: "已按计划完成。" }
+    ]);
+
+    const events: StreamEvent[] = [];
+    for await (const event of runner.stream({
+      prompt: "先出计划再做",
+      projectId: project.id,
+      accessMode: "full_access",
+      planMode: true
+    })) {
+      events.push(event);
+      if (event.type === "tool_call" && event.toolCall.status === "pending_approval") {
+        runner.approvals.decide(event.toolCall.id, { approved: true });
+      }
+    }
+
+    const secondCall = calls[1];
+    expect(secondCall).toBeDefined();
+    const secondTurnTools = secondCall.context.tools?.map((tool) => tool.name) ?? [];
+    expect(secondTurnTools).toContain("write_file");
+    expect(secondTurnTools).not.toContain("propose_plan");
+    expect(secondTurnTools).not.toContain("update_plan");
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
+    await expect(readFile(join(dir, "plan.txt"), "utf8")).resolves.toBe("done");
+  });
+
+	  it("records todo progress as non-approval tool calls", async () => {
+	    const project = await store.createProject({ name: "proj", path: dir });
+    const { runner } = runnerWith([
+      {
+        toolCalls: [
+          {
+            id: "todo_1",
+            name: "todo_create",
+            arguments: {
+              title: "实现进度面板",
+              items: [
+                { id: "s1", title: "新增契约" },
+                { id: "s2", title: "接入 UI" }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        toolCalls: [
+          {
+            id: "todo_2",
+            name: "todo_update",
+            arguments: { itemId: "s1", status: "completed", note: "契约完成" }
+          }
+        ]
+      },
+      { text: "todo 已更新。" }
+    ]);
+
+    const events = await drain(
+      runner.stream({ prompt: "实现复杂功能", projectId: project.id, accessMode: "approval" })
+    );
+    const todoEvents = events.filter(
+      (event) =>
+        event.type === "tool_call" &&
+        (event.toolCall.name === "todo_create" || event.toolCall.name === "todo_update")
+    );
+
+    expect(todoEvents.map((event) => (event.type === "tool_call" ? event.toolCall.status : ""))).toEqual([
+      "running",
+      "completed",
+      "running",
+      "completed"
+    ]);
+    expect(
+      todoEvents.some(
+        (event) => event.type === "tool_call" && event.toolCall.status === "pending_approval"
+      )
+    ).toBe(false);
+    const sessionId = events.find((event) => event.type === "run_started")?.sessionId;
+    const state = deriveTodoState(await store.listToolCallsForSession(sessionId ?? ""));
+    expect(state).toMatchObject({
+      title: "实现进度面板",
+      latestNote: { itemId: "s1", note: "契约完成" }
+    });
+    expect(state!.items.map((item) => item.status)).toEqual(["completed", "pending"]);
+  });
+
+  it("spills oversized model-requested tool results before the next model turn", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    const largeText = `START\n${"A".repeat(30_000)}\nMIDDLE_UNIQUE\n${"B".repeat(30_000)}\nEND`;
+    await writeFile(join(dir, "large.txt"), largeText, "utf8");
+    const { runner, calls } = runnerWith([
+      { toolCalls: [{ id: "call_1", name: "read_file", arguments: { path: "large.txt" } }] },
+      { text: "已经按需查看摘要。" }
+    ]);
+
+    const events = await drain(
+      runner.stream({ prompt: "读大文件", projectId: project.id, accessMode: "full_access" })
+    );
+    const started = events.find((event) => event.type === "run_started");
+    const completed = events.find(
+      (event) => event.type === "tool_call" && event.toolCall.status === "completed"
+    );
+    const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
+    const runId = started?.type === "run_started" ? started.runId : "";
+
+    expect(summary).toContain("结果过长，已写入文件");
+    expect(summary).toContain(`${TOOL_RESULT_SPILL_DIR}/${runId}/call_1-read_file.txt`);
+    expect(summary).toContain("START");
+    expect(summary).toContain("END");
+    expect(summary).not.toContain("MIDDLE_UNIQUE");
+    await expect(
+      readFile(join(dir, TOOL_RESULT_SPILL_DIR, runId, "call_1-read_file.txt"), "utf8")
+    ).resolves.toBe(largeText);
+
+    const replayToolResult = calls[1].context.messages.find(
+      (message) => message.role === "toolResult" && message.toolCallId === "call_1"
+    );
+    const replayText =
+      replayToolResult?.role === "toolResult"
+        ? replayToolResult.content
+            .filter((block): block is { type: "text"; text: string } => block.type === "text")
+            .map((block) => block.text)
+            .join("\n")
+        : "";
+    expect(replayText).toContain("结果过长，已写入文件");
+    expect(replayText).not.toContain("MIDDLE_UNIQUE");
+  });
+
+  it("returns slow model-requested shell commands as background output files", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    const scripted = scriptedStreamFn([
+      {
+        toolCalls: [
+          {
+            id: "call_shell",
+            name: "shell",
+            arguments: { command: "sleep 0.2; echo loop-background-done" }
+          }
+        ]
+      },
+      { text: "我会读取输出文件确认结果。" }
+    ]);
+    const runner = new AgentRunner(store, secrets, {
+      streamFn: scripted.streamFn,
+      createTools: (workspacePath) => createShellTools(workspacePath, { backgroundAfterMs: 50 })
+    });
+    const startedAt = Date.now();
+
+    const events = await drain(
+      runner.stream({ prompt: "执行慢命令", projectId: project.id, accessMode: "full_access" })
+    );
+
+    expect(Date.now() - startedAt).toBeLessThan(1_500);
+    const completed = events.find(
+      (event) => event.type === "tool_call" && event.toolCall.status === "completed"
+    );
+    const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
+    const outputPath = parseBackgroundOutputPath(summary);
+    const replayToolResult = scripted.calls[1].context.messages.find(
+      (message) => message.role === "toolResult" && message.toolCallId === "call_shell"
+    );
+    const replayText =
+      replayToolResult?.role === "toolResult"
+        ? replayToolResult.content
+            .filter((block): block is { type: "text"; text: string } => block.type === "text")
+            .map((block) => block.text)
+            .join("\n")
+        : "";
+
+    expect(summary).toContain("已转入后台继续运行");
+    expect(replayText).toContain("后台命令 ID");
+    expect(replayText).toContain(outputPath);
+    await waitForFileToContain(join(dir, outputPath), "loop-background-done");
+  });
+
+  it("starts model-requested shell commands in the background when requested", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    const scripted = scriptedStreamFn([
+      {
+        toolCalls: [
+          {
+            id: "call_shell_background",
+            name: "shell",
+            arguments: {
+              command: "sleep 0.2; echo requested-background-done",
+              background: true
+            }
+          }
+        ]
+      },
+      { text: "后台命令已启动，我会查看输出文件。" }
+    ]);
+    const runner = new AgentRunner(store, secrets, {
+      streamFn: scripted.streamFn
+    });
+    const startedAt = Date.now();
+
+    const events = await drain(
+      runner.stream({ prompt: "启动后台命令", projectId: project.id, accessMode: "full_access" })
+    );
+
+    expect(Date.now() - startedAt).toBeLessThan(1_500);
+    const completed = events.find(
+      (event) => event.type === "tool_call" && event.toolCall.status === "completed"
+    );
+    const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
+    const outputPath = parseBackgroundOutputPath(summary);
+
+    expect(summary).toContain("background=true");
+    expect(summary).toContain("后台命令 ID");
+    await waitForFileToContain(join(dir, outputPath), "requested-background-done");
+  });
+
+  it("emits tool_activity while tool arguments stream and omits large content", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    const { runner } = runnerWith([
+      {
+        toolCalls: [
+          {
+            id: "call_1",
+            name: "write_file",
+            arguments: { path: "out.txt", content: "最终文件内容" },
+            argumentDeltas: [
+              { content: "正在生成的大段内容" },
+              { path: "out.txt", content: "正在生成的大段内容" }
+            ]
+          }
+        ]
+      },
+      { text: "已经写好文件。" }
+    ]);
+
+    const events = await drain(
+      runner.stream({ prompt: "写文件", projectId: project.id, accessMode: "full_access" })
+    );
+    const activityIndex = events.findIndex(
+      (event) =>
+        event.type === "tool_activity" && event.activity.argsPreview.path === "out.txt"
+    );
+    const runningIndex = events.findIndex(
+      (event) => event.type === "tool_call" && event.toolCall.status === "running"
+    );
+    const activity = events[activityIndex];
+
+    expect(activityIndex).toBeGreaterThanOrEqual(0);
+    expect(runningIndex).toBeGreaterThan(activityIndex);
+    expect(activity?.type === "tool_activity" && activity.activity.name).toBe("write_file");
+    expect(activity?.type === "tool_activity" && activity.activity.argsPreview).toEqual({
+      path: "out.txt"
+    });
+    expect(
+      activity?.type === "tool_activity" &&
+        "content" in activity.activity.argsPreview
+    ).toBe(false);
   });
 
   it("replays toolCall history losslessly in a later run of the same session", async () => {
@@ -176,12 +551,12 @@ describe("AgentRunner agentic loop (pi)", () => {
     ).toBeDefined();
   });
 
-  it("waits for approval before running a model-requested mutating tool", async () => {
+  it("waits for approval before running a model-requested sensitive tool", async () => {
     const project = await store.createProject({ name: "proj", path: dir });
     const { runner } = runnerWith([
       {
         toolCalls: [
-          { id: "call_1", name: "write_file", arguments: { path: "a.txt", content: "x" } }
+          { id: "call_1", name: "write_file", arguments: { path: ".env", content: "TOKEN=x" } }
         ]
       },
       { text: "好的。" }
@@ -210,7 +585,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     expect(transitions).toEqual(["pending_approval", "running", "completed"]);
     expect(pendingHadNoStart).toBe(true);
     expect(runningStartedAt).toBeDefined();
-    await expect(readFile(join(dir, "a.txt"), "utf8")).resolves.toBe("x");
+    await expect(readFile(join(dir, ".env"), "utf8")).resolves.toBe("TOKEN=x");
   });
 
   it("feeds a rejection back to the model instead of aborting", async () => {
@@ -218,7 +593,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const { runner, calls } = runnerWith([
       {
         toolCalls: [
-          { id: "call_1", name: "write_file", arguments: { path: "a.txt", content: "x" } }
+          { id: "call_1", name: "write_file", arguments: { path: ".env", content: "TOKEN=x" } }
         ]
       },
       { text: "明白，那我先不写文件。" }
@@ -321,7 +696,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const { runner, calls } = runnerWith([
       {
         toolCalls: [
-          { id: "call_1", name: "write_file", arguments: { path: "a.txt", content: "x" } }
+          { id: "call_1", name: "write_file", arguments: { path: ".env", content: "TOKEN=x" } }
         ]
       },
       { text: "不应该被调用" }
@@ -351,6 +726,39 @@ describe("AgentRunner agentic loop (pi)", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("aborts a running model-requested shell tool promptly", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    const { runner, calls } = runnerWith([
+      { toolCalls: [{ id: "call_1", name: "shell", arguments: { command: "sleep 5" } }] },
+      { text: "不应该被调用" }
+    ]);
+    const events: StreamEvent[] = [];
+    let runId: string | undefined;
+    const startedAt = Date.now();
+
+    for await (const event of runner.stream({
+      prompt: "执行一个长命令",
+      projectId: project.id,
+      accessMode: "full_access"
+    })) {
+      events.push(event);
+      if (event.type === "run_started") {
+        runId = event.runId;
+      }
+      if (event.type === "tool_call" && event.toolCall.status === "running") {
+        expect(runId).toBeDefined();
+        runner.abort(runId!);
+      }
+    }
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(
+      events.filter((event) => event.type === "tool_call").map((event) => event.toolCall.status)
+    ).toEqual(["running", "failed"]);
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "aborted" });
+    expect(calls).toHaveLength(1);
+  });
+
   it("fails the run after 25 consecutive tool turns", async () => {
     const project = await store.createProject({ name: "proj", path: dir });
     const turns: ScriptedTurn[] = Array.from({ length: 30 }, (_, index) => ({
@@ -376,7 +784,46 @@ describe("AgentRunner agentic loop (pi)", () => {
     );
 
     const end = events.at(-1);
+    const started = events.find((event) => event.type === "run_started");
     expect(end).toMatchObject({ type: "run_end", status: "failed" });
     expect(end?.type === "run_end" && end.error).toContain("401");
+    expect(started?.type).toBe("run_started");
+    if (started?.type === "run_started") {
+      const runs = await store.listRuns(started.sessionId);
+      expect(runs.at(-1)).toMatchObject({
+        id: started.runId,
+        status: "failed",
+        error: expect.stringContaining("401")
+      });
+    }
   });
 });
+
+function parseBackgroundOutputPath(result: string): string {
+  const match = result.match(/输出文件：(\S+)/);
+  if (!match) {
+    throw new Error(`未找到输出文件路径: ${result}`);
+  }
+  return match[1];
+}
+
+async function waitForFileToContain(
+  path: string,
+  expected: string,
+  timeoutMs = 1_500
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastContent = "";
+  while (Date.now() < deadline) {
+    try {
+      lastContent = await readFile(path, "utf8");
+      if (lastContent.includes(expected)) {
+        return;
+      }
+    } catch {
+      // 文件可能刚创建但还没写入，继续轮询。
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`文件未出现预期内容 path=${path} expected=${expected} content=${lastContent}`);
+}

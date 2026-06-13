@@ -1,6 +1,7 @@
 import {
   ArrowLeftIcon as ArrowLeft,
   ArrowSquareOutIcon as ExternalLink,
+  ChartBarIcon as ChartBar,
   ChatCenteredTextIcon as MessageSquareText,
   CircleHalfTiltIcon as SunMoon,
   FolderOpenIcon as FolderOpen,
@@ -30,6 +31,7 @@ import {
   type ProviderModelOption
 } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +46,8 @@ import {
 import { FeishuSection } from "@/components/settings/FeishuSection";
 import { OptionCard } from "@/components/settings/OptionCard";
 import { SectionShell, SettingBlock } from "@/components/settings/SectionShell";
+import { UsageStatsSection } from "@/components/settings/UsageStatsSection";
+import { WebSearchSection } from "@/components/settings/WebSearchSection";
 import {
   ReasoningModeSelect,
   reasoningModeSummary,
@@ -58,7 +62,14 @@ import {
 import { cn } from "@/lib/utils";
 import { getApiClient, useAppStore } from "@/store";
 
-type SectionId = "appearance" | "general" | "providers" | "skills" | "feishu";
+type SectionId =
+  | "appearance"
+  | "general"
+  | "providers"
+  | "usage"
+  | "skills"
+  | "webSearch"
+  | "feishu";
 
 interface NavDef {
   id: SectionId;
@@ -66,7 +77,9 @@ interface NavDef {
     | "settings.nav.appearance"
     | "settings.nav.general"
     | "settings.nav.providers"
+    | "settings.nav.usage"
     | "settings.nav.skills"
+    | "settings.nav.webSearch"
     | "settings.nav.feishu";
   icon: Icon;
   groupKey: "settings.groupPersonal" | "settings.groupModel" | "settings.groupIntegrations";
@@ -83,7 +96,9 @@ const NAV_DEFS: NavDef[] = [
   { id: "appearance", labelKey: "settings.nav.appearance", icon: SunMoon, groupKey: "settings.groupPersonal" },
   { id: "general", labelKey: "settings.nav.general", icon: SlidersHorizontal, groupKey: "settings.groupPersonal" },
   { id: "providers", labelKey: "settings.nav.providers", icon: Boxes, groupKey: "settings.groupModel" },
+  { id: "usage", labelKey: "settings.nav.usage", icon: ChartBar, groupKey: "settings.groupModel" },
   { id: "skills", labelKey: "settings.nav.skills", icon: Sparkles, groupKey: "settings.groupModel" },
+  { id: "webSearch", labelKey: "settings.nav.webSearch", icon: Globe, groupKey: "settings.groupIntegrations" },
   { id: "feishu", labelKey: "settings.nav.feishu", icon: MessageSquareText, groupKey: "settings.groupIntegrations" }
 ];
 
@@ -202,7 +217,9 @@ export function SettingsView() {
           {section === "appearance" ? <AppearanceSection /> : null}
           {section === "general" ? <GeneralSection /> : null}
           {section === "providers" ? <ProvidersSection /> : null}
+          {section === "usage" ? <UsageStatsSection /> : null}
           {section === "skills" ? <SkillsSection /> : null}
+          {section === "webSearch" ? <WebSearchSection /> : null}
           {section === "feishu" ? <FeishuSection /> : null}
         </div>
       </div>
@@ -254,6 +271,7 @@ function GeneralSection() {
   const setAccessMode = useAppStore((state) => state.setAccessMode);
   const locale = useAppStore((state) => state.locale);
   const setLocale = useAppStore((state) => state.setLocale);
+  const [logsStatus, setLogsStatus] = useState("");
   return (
     <SectionShell title={t("settings.general.title")}>
       <SettingBlock
@@ -277,6 +295,41 @@ function GeneralSection() {
           />
         </div>
       </SettingBlock>
+      {import.meta.env.DEV ? (
+        <SettingBlock
+          title={t("settings.general.logsTitle")}
+          description={t("settings.general.logsDesc")}
+        >
+          <Button
+            type="button"
+            variant="outline"
+            onClick={async () => {
+              setLogsStatus("");
+              if (!window.chengxiaobang?.openLogDir) {
+                console.warn("[settings] 日志目录打开失败：当前环境没有桌面 bridge");
+                setLogsStatus(t("settings.general.logsDesktopOnly"));
+                return;
+              }
+              const result = await window.chengxiaobang.openLogDir();
+              if (!result.ok) {
+                console.warn("[settings] 日志目录打开失败", result);
+                setLogsStatus(result.error ?? t("settings.general.logsOpenFailed"));
+                return;
+              }
+              console.info("[settings] 已请求打开日志目录", { path: result.path });
+              setLogsStatus(t("settings.general.logsOpened", { path: result.path }));
+            }}
+          >
+            <FolderOpen className="size-4" />
+            {t("settings.general.openLogs")}
+          </Button>
+          {logsStatus ? (
+            <span className="ml-3 align-middle text-caption text-muted-foreground">
+              {logsStatus}
+            </span>
+          ) : null}
+        </SettingBlock>
+      ) : null}
       <SettingBlock
         title={t("settings.general.permTitle")}
         description={t("settings.general.permDesc")}
@@ -285,13 +338,23 @@ function GeneralSection() {
           <OptionCard
             selected={accessMode === "approval"}
             icon={<LockKeyhole />}
+            tone="neutral"
             title={t("settings.general.approval")}
             description={t("settings.general.approvalDesc")}
             onSelect={() => setAccessMode("approval")}
           />
           <OptionCard
+            selected={accessMode === "smart_approval"}
+            icon={<Sparkles />}
+            tone="info"
+            title={t("settings.general.smart")}
+            description={t("settings.general.smartDesc")}
+            onSelect={() => setAccessMode("smart_approval")}
+          />
+          <OptionCard
             selected={accessMode === "full_access"}
             icon={<ShieldCheck />}
+            tone="warning"
             title={t("settings.general.full")}
             description={t("settings.general.fullDesc")}
             onSelect={() => setAccessMode("full_access")}
@@ -304,6 +367,7 @@ function GeneralSection() {
 
 function ProvidersSection() {
   const { t } = useTranslation();
+  const confirmDialog = useConfirmDialog();
   const providers = useAppStore(useShallow((state) => state.providers));
   const activeProviderId = useAppStore((state) => state.providerId);
   const saveProvider = useAppStore((state) => state.saveProvider);
@@ -375,6 +439,26 @@ function ProvidersSection() {
     setErrors({});
     setStatus("");
   };
+
+  async function confirmDeleteProvider(
+    provider: { id: string; name: string }
+  ): Promise<boolean> {
+    console.debug("[settings] 请求删除供应商", { providerId: provider.id, name: provider.name });
+    const confirmed = await confirmDialog({
+      title: t("settings.providers.deleteTitle", { name: provider.name }),
+      description: t("settings.providers.deleteConfirm"),
+      confirmLabel: t("settings.providers.delete"),
+      cancelLabel: t("settings.providers.cancel"),
+      tone: "danger",
+      source: "settings.deleteProvider"
+    });
+    console.debug("[settings] 供应商删除确认结果", {
+      providerId: provider.id,
+      name: provider.name,
+      confirmed
+    });
+    return confirmed;
+  }
 
   const startCreate = (kind: ProviderKind) => {
     const preset = PROVIDER_PRESETS[kind];
@@ -522,7 +606,7 @@ function ProvidersSection() {
                     title={t("settings.providers.delete")}
                     className="size-8 flex-none rounded-xs text-muted-foreground hover:text-destructive"
                     onClick={async () => {
-                      if (!window.confirm(t("settings.providers.deleteConfirm"))) {
+                      if (!(await confirmDeleteProvider(provider))) {
                         return;
                       }
                       await deleteProvider(provider.id);
@@ -718,7 +802,7 @@ function ProvidersSection() {
                     variant="ghost"
                     className="text-destructive hover:text-destructive"
                     onClick={async () => {
-                      if (!window.confirm(t("settings.providers.deleteConfirm"))) {
+                      if (!(await confirmDeleteProvider({ id: draft.id!, name: draft.name }))) {
                         return;
                       }
                       await deleteProvider(draft.id!);
@@ -740,7 +824,7 @@ function ProvidersSection() {
   );
 }
 
-function SkillsSection() {
+export function SkillsSection() {
   const { t } = useTranslation();
   const slashCommands = useAppStore(useShallow((state) => state.slashCommands));
   const refreshSlashCommands = useAppStore((state) => state.refreshSlashCommands);
@@ -753,7 +837,8 @@ function SkillsSection() {
   const sourceLabel: Record<string, string> = {
     builtin: t("composer.slashSource.builtin"),
     global: t("composer.slashSource.global"),
-    project: t("composer.slashSource.project")
+    project: t("composer.slashSource.project"),
+    market: t("composer.slashSource.market")
   };
 
   return (

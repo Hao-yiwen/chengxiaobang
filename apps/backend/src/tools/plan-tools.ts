@@ -1,25 +1,17 @@
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import type { AskUserAnswer, ProposePlanArgs } from "@chengxiaobang/shared";
+import {
+  askUserAnswerItemText,
+  type AskUserAnswer,
+  type ProposePlanArgs
+} from "@chengxiaobang/shared";
 import { textResult } from "./tool-result";
 
-const planStepParams = Type.Object({
-  id: Type.String({ description: "稳定步骤 ID，例如 s1、s2" }),
-  title: Type.String({ description: "步骤标题，一句话描述" }),
-  status: Type.Optional(
-    Type.Union([
-      Type.Literal("pending"),
-      Type.Literal("in_progress"),
-      Type.Literal("completed"),
-      Type.Literal("skipped")
-    ])
-  ),
-  detail: Type.Optional(Type.String({ description: "可选步骤细节" }))
-});
-
 const proposePlanParams = Type.Object({
-  title: Type.String({ description: "计划标题" }),
-  steps: Type.Array(planStepParams, { description: "1 到 20 个步骤" })
+  markdown: Type.String({
+    description:
+      "完整 Markdown 计划文本。必须包含 # 标题，以及 Summary、Key Changes、Test Plan、Assumptions 等分节。"
+  })
 });
 
 const updatePlanParams = Type.Object({
@@ -32,10 +24,19 @@ const updatePlanParams = Type.Object({
   note: Type.Optional(Type.String({ description: "可选进展说明" }))
 });
 
+const askUserQuestionParams = Type.Object({
+  id: Type.Optional(Type.String({ description: "可选稳定问题 ID，例如 q1、q2" })),
+  question: Type.String({ description: "需要用户确认的问题正文" }),
+  options: Type.Optional(Type.Array(Type.String({ description: "选择题选项，最多 4 个" }))),
+  allowFreeText: Type.Optional(
+    Type.Boolean({ description: "是否允许用户自由输入，默认 true；纯选择题可设为 false" })
+  )
+});
+
 const askUserParams = Type.Object({
-  question: Type.String({ description: "需要用户确认的问题" }),
-  options: Type.Optional(Type.Array(Type.String({ description: "可选项，最多 4 个" }))),
-  allowFreeText: Type.Optional(Type.Boolean({ description: "是否允许用户自由输入，默认 true" }))
+  questions: Type.Array(askUserQuestionParams, {
+    description: "一次性提出 1 到 4 个结构化问题；有多个澄清点时合并到这里。"
+  })
 });
 
 const btwParams = Type.Object({
@@ -57,24 +58,19 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
   const proposePlan: AgentTool<typeof proposePlanParams> = {
     name: "propose_plan",
     label: "提交计划",
-    description: "在计划模式中提交步骤清单，等待用户确认或修改后再执行。",
+    description: "在计划模式中提交完整 Markdown 计划，等待用户确认后再执行。",
     parameters: proposePlanParams,
     execute: async (toolCallId, params) => {
       const plan = runtime.getApprovedPlanArgs(toolCallId) ?? (params as ProposePlanArgs);
-      console.info(`[plan-tools] 计划已确认 toolCallId=${toolCallId} steps=${plan.steps.length}`);
-      return textResult(
-        [
-          `用户已确认计划「${plan.title}」。`,
-          ...plan.steps.map((step, index) => `${index + 1}. ${step.title}`)
-        ].join("\n")
-      );
+      console.info(`[plan-tools] 计划已确认 toolCallId=${toolCallId} chars=${plan.markdown.length}`);
+      return textResult(`用户已确认此计划，请立即按计划执行。\n\n${plan.markdown}`);
     }
   };
 
   const updatePlan: AgentTool<typeof updatePlanParams> = {
     name: "update_plan",
     label: "更新计划",
-    description: "在执行计划时更新某个步骤的状态，可标记进行中、已完成或已跳过。",
+    description: "旧版计划进度工具，仅用于历史兼容；新版计划模式不应调用。",
     parameters: updatePlanParams,
     execute: async (_toolCallId, params) => {
       console.info(
@@ -90,7 +86,7 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
   const askUser: AgentTool<typeof askUserParams> = {
     name: "ask_user",
     label: "询问用户",
-    description: "向用户提出一个需要确认的问题，支持选项或自由文本回答。",
+    description: "向用户提出 1 到 4 个结构化问题，支持选择题和自由文本回答。",
     parameters: askUserParams,
     execute: async (toolCallId) => {
       const answer = runtime.getAskUserAnswer(toolCallId);
@@ -98,9 +94,22 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
         console.warn(`[plan-tools] ask_user 缺少用户回答 toolCallId=${toolCallId}`);
         throw new Error("用户未提供回答");
       }
-      const text = answer.optionLabel ?? answer.text ?? "";
-      console.info(`[plan-tools] 收到用户回答 toolCallId=${toolCallId} answer=${text}`);
-      return textResult(`用户回答：${text}`);
+      const lines = answer.answers.map((item, index) => {
+        const question = item.question ? `${item.question} ` : "";
+        return `${index + 1}. ${question}${askUserAnswerItemText(item)}`;
+      });
+      console.info("[plan-tools] 收到用户结构化回答", {
+        toolCallId,
+        answerCount: answer.answers.length
+      });
+      return textResult(
+        [
+          "用户回答：",
+          ...lines,
+          "",
+          `结构化回答 JSON：${JSON.stringify(answer.answers)}`
+        ].join("\n")
+      );
     }
   };
 

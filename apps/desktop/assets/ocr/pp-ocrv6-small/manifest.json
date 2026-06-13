@@ -1,0 +1,33 @@
+{
+  "name": "pp-ocrv6-small",
+  "source": "PaddlePaddle Hugging Face ONNX repositories",
+  "generatedAt": "2026-06-13T04:58:05.049Z",
+  "files": {
+    "det.onnx": {
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/main/inference.onnx",
+      "bytes": 9880512,
+      "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e"
+    },
+    "det.inference.yml": {
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/main/inference.yml",
+      "bytes": 885,
+      "sha256": "193f435274bf9f0b5f71a929bbfbcf148282df7e633b34e7c373e8f44741b516"
+    },
+    "rec.onnx": {
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.onnx",
+      "bytes": 21159378,
+      "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634"
+    },
+    "rec.inference.yml": {
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.yml",
+      "bytes": 150579,
+      "sha256": "ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1"
+    },
+    "dict.txt": {
+      "source": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.yml",
+      "bytes": 74944,
+      "sha256": "118d0f0714ad2a37668c23d6541f2c3feb65b8214041265b567f7fd5b3365d8e",
+      "characterCount": 18708
+    }
+  }
+}

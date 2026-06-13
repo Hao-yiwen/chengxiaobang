@@ -7,7 +7,7 @@
   "types": "./dist/main.d.ts",
   "scripts": {
     "dev": "bun --watch src/main.ts",
-    "build": "tsup --config tsup.config.ts && node scripts/copy-sql-wasm.mjs && node scripts/copy-skills.mjs",
+    "build": "tsup --config tsup.config.ts && node scripts/copy-sql-wasm.mjs && node scripts/build-skills.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

@@ -3,11 +3,14 @@ import type {
   Message,
   Project,
   ProviderConfig,
+  ProviderKind,
   ReasoningMode,
   RunRecord,
   ScheduledTask,
   ScheduledTaskStatus,
   Session,
+  SessionSearchResult,
+  TokenUsage,
   ToolCall
 } from "@chengxiaobang/shared";
 
@@ -35,6 +38,7 @@ export interface CreateMessageInput {
   role: Message["role"];
   kind?: Message["kind"];
   content: string;
+  attachments?: Message["attachments"];
   reasoning?: string;
   reasoningMs?: number;
   durationMs?: number;
@@ -49,6 +53,23 @@ export interface CreateRunInput {
   id: string;
   sessionId: string;
   status: "running" | "completed" | "aborted" | "failed";
+  providerId?: string;
+  providerKind?: ProviderKind;
+  model?: string;
+}
+
+export interface UsageStatsSourceRun {
+  id: string;
+  sessionId: string;
+  status: RunRecord["status"];
+  usage?: TokenUsage;
+  createdAt: string;
+  providerId?: string;
+  providerKind?: ProviderKind;
+  model?: string;
+  fallbackProviderId?: string;
+  fallbackProviderKind?: ProviderKind;
+  fallbackModel?: string;
 }
 
 export interface UpdateSessionInput {
@@ -98,6 +119,7 @@ export interface StateStore {
   /** 置顶/取消置顶项目。只写 pinned_at，不更新 updated_at（避免扰动列表排序）。 */
   setProjectPinned(id: string, pinned: boolean): Promise<Project>;
   listSessions(projectId?: string | null): Promise<Session[]>;
+  searchSessions(query: string, limit?: number): Promise<SessionSearchResult[]>;
   getSession(id: string): Promise<Session | undefined>;
   /** The session bound to a Feishu chat, if one exists (one session per chat). */
   findSessionByFeishuChatId(chatId: string): Promise<Session | undefined>;
@@ -124,8 +146,14 @@ export interface StateStore {
    */
   deleteMessagesFrom(sessionId: string, messageId: string): Promise<number>;
   createRun(input: CreateRunInput): Promise<void>;
-  updateRunStatus(id: string, status: CreateRunInput["status"]): Promise<void>;
+  updateRunStatus(
+    id: string,
+    status: CreateRunInput["status"],
+    usage?: TokenUsage,
+    error?: string
+  ): Promise<void>;
   listRuns(sessionId: string): Promise<RunRecord[]>;
+  listUsageStatsRuns(): Promise<UsageStatsSourceRun[]>;
   listToolCallsForSession(sessionId: string): Promise<ToolCall[]>;
   listProviders(): Promise<ProviderConfig[]>;
   getProvider(id: string): Promise<ProviderConfig | undefined>;

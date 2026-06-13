@@ -1,9 +1,10 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 contextBridge.exposeInMainWorld("chengxiaobang", {
   getBackendInfo: () => ipcRenderer.invoke("backend-info"),
   pickDirectory: () => ipcRenderer.invoke("pick-directory"),
   pickFiles: () => ipcRenderer.invoke("pick-files"),
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
   readFileText: (filePath: string) => ipcRenderer.invoke("read-file-text", filePath),
   getFilePreviewInfo: (
     filePath: string,
@@ -16,11 +17,18 @@ contextBridge.exposeInMainWorld("chengxiaobang", {
   createFileUrl: (filePath: string) => ipcRenderer.invoke("file-preview:file-url", filePath),
   createQuickLookThumbnail: (filePath: string) =>
     ipcRenderer.invoke("file-preview:quicklook-thumbnail", filePath),
+  ocrRecognize: (filePath: string) => ipcRenderer.invoke("ocr:recognize", filePath),
+  prepareNativeImages: (filePath: string) =>
+    ipcRenderer.invoke("attachment:prepare-native-images", filePath),
+  saveAttachmentSnapshots: (filePaths: string[]) =>
+    ipcRenderer.invoke("attachment:save-snapshots", filePaths),
   openPath: (filePath: string) => ipcRenderer.invoke("open-path", filePath),
   detectProjectOpeners: () => ipcRenderer.invoke("detect-project-openers"),
   openProjectInApp: (appPath: string, targetPath: string) =>
     ipcRenderer.invoke("open-project-in-app", appPath, targetPath),
+  createProjectFolder: (name: string) => ipcRenderer.invoke("create-project-folder", name),
   openSkillsDir: () => ipcRenderer.invoke("open-skills-dir"),
+  openLogDir: () => ipcRenderer.invoke("open-log-dir"),
   setThemeSource: (source: "light" | "dark" | "system") =>
     ipcRenderer.invoke("set-theme-source", source),
   terminalStart: (input: { id: string; cwd: string; cols: number; rows: number }) =>

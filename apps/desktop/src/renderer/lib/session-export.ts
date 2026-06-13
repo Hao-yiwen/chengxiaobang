@@ -1,4 +1,5 @@
 import type { Message, Session, ToolCall } from "@chengxiaobang/shared";
+import { parseArtifactDeclarations } from "./artifact";
 import { timelineItems } from "./timeline";
 
 /** Display labels injected by the caller so this stays i18n-free and pure. */
@@ -32,7 +33,13 @@ export function buildSessionMarkdown(
     if (item.kind === "message") {
       const message = item.message;
       if (message.role === "user") {
-        parts.push(`## ${labels.user}`, message.content);
+        const body = [
+          ...(message.attachments?.length
+            ? [`附件：${message.attachments.map((attachment) => attachment.name).join("、")}`]
+            : []),
+          ...(message.content.trim() ? [message.content] : [])
+        ];
+        parts.push(`## ${labels.user}`, ...body);
       } else if (message.role === "assistant") {
         // Reasoning-only turns export their reasoning quote alone; with
         // reasoning excluded they would be empty, so skip them entirely.
@@ -40,8 +47,9 @@ export function buildSessionMarkdown(
         if (includeReasoning && message.reasoning) {
           body.push(quoted(`**${labels.reasoning}**\n${message.reasoning}`));
         }
-        if (message.content.trim()) {
-          body.push(message.content);
+        const cleanContent = parseArtifactDeclarations(message.content).cleanMarkdown;
+        if (cleanContent.trim()) {
+          body.push(cleanContent);
         }
         if (body.length > 0) {
           parts.push(`## ${labels.assistant}`, ...body);

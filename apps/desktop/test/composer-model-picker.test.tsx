@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
-import type { ProviderConfig } from "@chengxiaobang/shared";
+import type { ProviderConfig, Session, SessionContextUsage } from "@chengxiaobang/shared";
 
 const deepseek: ProviderConfig = {
   id: "deepseek",
@@ -28,6 +28,35 @@ const kimi: ProviderConfig = {
   apiKeyRef: "test:kimi",
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString()
+};
+
+const session: Session = {
+  id: "session_1",
+  projectId: null,
+  title: "上下文测试",
+  providerId: "deepseek",
+  accessMode: "approval",
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
+};
+
+const contextUsage: SessionContextUsage = {
+  sessionId: session.id,
+  providerId: "deepseek",
+  model: "deepseek-v4-flash",
+  estimatedTokens: 120_000,
+  systemPromptTokens: 10_000,
+  messageTokens: 90_000,
+  toolTokens: 20_000,
+  messageCount: 4,
+  compacted: false,
+  contextWindowTokens: 1_000_000,
+  autoCompactThresholdRatio: 0.8,
+  autoCompactThresholdTokens: 800_000,
+  usedRatio: 0.12,
+  remainingTokens: 880_000,
+  status: "ok",
+  sessionCostCny: 0.16
 };
 
 function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
@@ -52,6 +81,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     testProvider: vi.fn() as never,
     listProviderModels: vi.fn(async () => []),
     listProviderModelOptions: vi.fn(async () => []),
+    getSessionContextUsage: vi.fn(async () => contextUsage),
     getFeishuConfig: vi.fn(async () => ({
       enabled: false,
       appId: "",
@@ -94,31 +124,53 @@ async function openModelMenu(): Promise<HTMLElement> {
   return screen.findByRole("menu");
 }
 
+/** hover 某个模型行，展开它右侧的配置 flyout。 */
+async function openModelFlyout(menu: HTMLElement, modelLabel: string): Promise<void> {
+  const row = within(menu).getByText(modelLabel).closest("[role='menuitem']");
+  if (!row) {
+    throw new Error(`找不到模型行：${modelLabel}`);
+  }
+  await act(async () => {
+    row.focus();
+    fireEvent.focus(row);
+    fireEvent.pointerOver(row, { pointerType: "mouse" });
+    fireEvent.pointerMove(row, { pointerType: "mouse" });
+    fireEvent.mouseOver(row);
+    fireEvent.mouseMove(row);
+    fireEvent.mouseEnter(row);
+    fireEvent.keyDown(row, { key: "ArrowRight" });
+  });
+}
+
 describe("Composer 模型 + 推理联动选择器", () => {
-  it("shows models and the current model's reasoning modes inside one menu", async () => {
+  it("lists models flat (no provider headers); each model's reasoning lives in a right flyout", async () => {
     render(<App client={createClient()} />);
     await screen.findByLabelText("输入消息");
 
     const menu = await openModelMenu();
 
-    // 同一个菜单里：供应商分组的模型项 + 当前模型的推理段。
-    expect(within(menu).getByText("DeepSeek")).toBeInTheDocument();
-    expect(within(menu).getByText("Kimi")).toBeInTheDocument();
+    // 平铺模型，不再有厂商分组小标题。
     expect(within(menu).getByText("DeepSeek V4 Flash")).toBeInTheDocument();
-    expect(within(menu).getByText("推理模式")).toBeInTheDocument();
-    // deepseek-v4-flash 支持 off/high/xhigh，外加「默认」项。
-    expect(within(menu).getByText("默认")).toBeInTheDocument();
-    expect(within(menu).getByText("关闭")).toBeInTheDocument();
-    expect(within(menu).getByText("High")).toBeInTheDocument();
-    expect(within(menu).getByText("XHigh")).toBeInTheDocument();
+    expect(within(menu).getByText("Kimi K2.7 Code")).toBeInTheDocument();
+    // 推理等级初始不直接可见，需 hover 模型后才在右侧 flyout 出现。
+    expect(within(menu).queryByText("High")).not.toBeInTheDocument();
+
+    await openModelFlyout(menu, "DeepSeek V4 Flash");
+
+    // flash 支持 off/high/xhigh，外加「默认」。
+    expect(await screen.findByText("默认")).toBeInTheDocument();
+    expect(screen.getByText("关闭")).toBeInTheDocument();
+    expect(screen.getByText("High")).toBeInTheDocument();
+    expect(screen.getByText("XHigh")).toBeInTheDocument();
   });
 
-  it("sets reasoningMode from the menu and reflects it on the trigger", async () => {
+  it("picks a reasoning level from the model's flyout and reflects it on the trigger", async () => {
     render(<App client={createClient()} />);
     await screen.findByLabelText("输入消息");
 
     const menu = await openModelMenu();
-    fireEvent.click(within(menu).getByText("High"));
+    await openModelFlyout(menu, "DeepSeek V4 Flash");
+    fireEvent.click(await screen.findByText("High"));
 
     await waitFor(() => expect(useAppStore.getState().reasoningMode).toBe("high"));
     expect(await screen.findByLabelText("选择模型")).toHaveTextContent(
@@ -143,26 +195,60 @@ describe("Composer 模型 + 推理联动选择器", () => {
     expect(within(menu).queryByText("DeepSeek V4 Pro")).not.toBeInTheDocument();
   });
 
-  it("keeps the menu open on model switch and syncs the reasoning section to the new model", async () => {
+  it("selects a model via its flyout: sets provider/model and clears unsupported reasoning", async () => {
     render(<App client={createClient()} />);
     await screen.findByLabelText("输入消息");
-    useAppStore.getState().setReasoningMode("high");
+    act(() => {
+      useAppStore.getState().setReasoningMode("high");
+    });
 
     const menu = await openModelMenu();
-    fireEvent.click(within(menu).getByText("Kimi K2.7 Code"));
+    await openModelFlyout(menu, "Kimi K2.7 Code");
+    // K2.7 Code 无可选推理强度，flyout 只有「始终开启」一项。
+    expect(screen.queryByText("XHigh")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByText("始终开启"));
 
     await waitFor(() => expect(useAppStore.getState().providerId).toBe("kimi"));
     // 选中的是 kimi 的默认模型，model 归一为 undefined；推理模式不被 K2.7 Code 支持，被清掉。
     expect(useAppStore.getState().model).toBeUndefined();
     expect(useAppStore.getState().reasoningMode).toBeUndefined();
 
-    // 菜单保持打开，推理段联动为「始终开启」（K2.7 Code 无可选推理强度）。
-    const openMenu = screen.getByRole("menu");
-    expect(within(openMenu).getByText("始终开启")).toBeInTheDocument();
-    expect(within(openMenu).queryByText("XHigh")).not.toBeInTheDocument();
-
     expect(await screen.findByLabelText("选择模型")).toHaveTextContent(
       /Kimi K2\.7 Code\s*· 始终开启/
     );
+  });
+
+  it("shows current context usage to the left of the model picker", async () => {
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      listMessages: vi.fn(async () => [
+        {
+          id: "msg_1",
+          sessionId: session.id,
+          role: "user",
+          content: "你好",
+          createdAt: new Date().toISOString()
+        }
+      ])
+    });
+    render(<App client={client} />);
+    await screen.findByLabelText("输入消息");
+
+    await act(async () => {
+      await useAppStore.getState().selectSession(session.id);
+    });
+
+    await waitFor(() => expect(client.getSessionContextUsage).toHaveBeenCalled());
+    const indicator = await screen.findByLabelText("当前上下文用量");
+    expect(indicator).not.toHaveTextContent("12%");
+    await act(async () => {
+      fireEvent.pointerEnter(indicator, { pointerType: "mouse" });
+      fireEvent.click(indicator);
+    });
+    const popup = await screen.findByText("估计费用");
+    const popupContent = popup.closest("[data-radix-popper-content-wrapper]") ?? document.body;
+    expect(within(popupContent as HTMLElement).getByText("使用率")).toBeInTheDocument();
+    expect(within(popupContent as HTMLElement).getByText("12%")).toBeInTheDocument();
+    expect(within(popupContent as HTMLElement).getByText("约 ¥0.16")).toBeInTheDocument();
   });
 });

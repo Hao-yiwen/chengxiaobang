@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import type { ScheduledTask } from "@chengxiaobang/shared";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
@@ -61,77 +62,80 @@ export function TasksView() {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-12 py-4">
         {tasks.length === 0 ? (
-          <div className="border-b border-border py-4 text-body-sm text-body">
+          <Card className="border-dashed bg-canvas-soft px-4 py-4 text-body-sm text-body">
             {t("tasks.empty")}
-          </div>
+          </Card>
         ) : (
           <div className="space-y-2">
             {tasks.map((task) => (
-              <article
+              <Card
+                asChild
                 key={task.id}
-                className="rounded-md border border-border bg-canvas px-4 py-3 shadow-stack"
+                className="px-4 py-3 transition-colors hover:border-hairline-strong"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <h2 className="truncate text-body-sm font-medium text-foreground">
-                      {task.name}
-                    </h2>
-                    <p className="mt-1 line-clamp-2 text-caption leading-relaxed text-body">
-                      {task.prompt}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-caption text-mute">
-                      <span>{t("tasks.cron", { cron: task.cron })}</span>
-                      <span>{t("tasks.nextRun", { time: formatTime(task.nextRunAt) })}</span>
-                      <span>
-                        {t("tasks.lastRun", { time: formatTime(task.lastRunAt) })} ·{" "}
-                        <TaskStatus task={task} />
-                      </span>
+                <article>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h2 className="truncate text-body-sm font-medium text-foreground">
+                        {task.name}
+                      </h2>
+                      <p className="mt-1 line-clamp-2 text-caption leading-relaxed text-body">
+                        {task.prompt}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-caption text-mute">
+                        <span>{t("tasks.cron", { cron: task.cron })}</span>
+                        <span>{t("tasks.nextRun", { time: formatTime(task.nextRunAt) })}</span>
+                        <span>
+                          {t("tasks.lastRun", { time: formatTime(task.lastRunAt) })} ·{" "}
+                          <TaskStatus task={task} />
+                        </span>
+                      </div>
+                      {task.lastError ? (
+                        <p className="mt-2 text-caption text-error-deep">{task.lastError}</p>
+                      ) : null}
                     </div>
-                    {task.lastError ? (
-                      <p className="mt-2 text-caption text-error-deep">{task.lastError}</p>
-                    ) : null}
+                    <div className="flex flex-none items-center gap-1 [-webkit-app-region:no-drag]">
+                      <Switch
+                        checked={task.enabled}
+                        aria-label={t("tasks.toggle", { name: task.name })}
+                        onCheckedChange={(enabled) => {
+                          console.debug("[tasks-view] 切换定时任务启用状态", {
+                            taskId: task.id,
+                            enabled
+                          });
+                          void updateTask(task.id, { enabled });
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title={t("tasks.runNow")}
+                        className="size-8 rounded-xs"
+                        onClick={() => {
+                          console.debug("[tasks-view] 立即执行定时任务", { taskId: task.id });
+                          void runTaskNow(task.id);
+                        }}
+                      >
+                        <Bolt className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title={t("tasks.delete")}
+                        className="size-8 rounded-xs text-muted-foreground hover:text-error-deep"
+                        onClick={() => {
+                          console.debug("[tasks-view] 删除定时任务", { taskId: task.id });
+                          void deleteTask(task.id);
+                        }}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex flex-none items-center gap-1 [-webkit-app-region:no-drag]">
-                    <Switch
-                      checked={task.enabled}
-                      aria-label={t("tasks.toggle", { name: task.name })}
-                      onCheckedChange={(enabled) => {
-                        console.debug("[tasks-view] 切换定时任务启用状态", {
-                          taskId: task.id,
-                          enabled
-                        });
-                        void updateTask(task.id, { enabled });
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      title={t("tasks.runNow")}
-                      className="size-8 rounded-xs"
-                      onClick={() => {
-                        console.debug("[tasks-view] 立即执行定时任务", { taskId: task.id });
-                        void runTaskNow(task.id);
-                      }}
-                    >
-                      <Bolt className="size-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      title={t("tasks.delete")}
-                      className="size-8 rounded-xs text-muted-foreground hover:text-error-deep"
-                      onClick={() => {
-                        console.debug("[tasks-view] 删除定时任务", { taskId: task.id });
-                        void deleteTask(task.id);
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-              </article>
+                </article>
+              </Card>
             ))}
           </div>
         )}

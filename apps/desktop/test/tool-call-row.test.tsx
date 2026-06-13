@@ -67,6 +67,30 @@ describe("ToolCallRow", () => {
 
     rerender(<ToolCallRow toolCall={toolCall({ status: "pending_approval" })} />);
     expect(screen.getByText("待批准")).toBeInTheDocument();
+
+    rerender(<ToolCallRow toolCall={toolCall({ status: "pending_smart_approval" })} />);
+    expect(screen.getByText("智能审批中")).toBeInTheDocument();
+  });
+
+  it("does not show smart approval internals on the tool line", () => {
+    render(
+      <ToolCallRow
+        toolCall={toolCall({
+          status: "rejected",
+          approval: {
+            kind: "smart",
+            source: "model",
+            verdict: "deny",
+            risk: "high",
+            score: 0.9,
+            reason: "命令会删除文件",
+            decidedAt: "2026-06-13T00:00:00.000Z"
+          }
+        })}
+      />
+    );
+
+    expect(screen.queryByText("智能审批：命令会删除文件")).not.toBeInTheDocument();
   });
 
   it("renders an edit_file call as a +/- diff when expanded", () => {
@@ -107,6 +131,21 @@ describe("ToolCallRow", () => {
     expect(diff).toHaveTextContent("world");
   });
 
+  it("renders HTML writes as normal tool rows instead of artifact cards", () => {
+    render(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "write_file",
+          args: { path: "page.html", content: "<!doctype html>" },
+          result: "已写入 page.html"
+        })}
+      />
+    );
+
+    expect(screen.getByText("写入 page.html")).toBeInTheDocument();
+    expect(screen.queryByText("点击在右侧预览")).not.toBeInTheDocument();
+  });
+
   it("keeps the raw result for non-file tools", () => {
     render(
       <ToolCallRow
@@ -120,16 +159,52 @@ describe("ToolCallRow", () => {
     expect(screen.getByText("total 0")).toBeInTheDocument();
   });
 
-  it("renders a completed ask_user as a static question and answer receipt", () => {
+  it("shows the full shell command before the command artifact when expanded", () => {
+    const command =
+      "lsof -ti:3000 | xargs kill -9 2>/dev/null; lsof -ti:4000 | xargs kill -9 2>/dev/null";
+
+    render(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "shell",
+          args: { command },
+          result: "已生成 /tmp/report.xlsx"
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/^运行 lsof/));
+
+    expect(screen.getByText("执行命令")).toBeInTheDocument();
+    expect(screen.getByText(command)).toBeInTheDocument();
+    expect(screen.getByText("执行产物")).toBeInTheDocument();
+    expect(screen.getByText("已生成 /tmp/report.xlsx")).toBeInTheDocument();
+  });
+
+  it("renders a completed ask_user as an expandable question and answer receipt", () => {
     render(
       <ToolCallRow
         toolCall={toolCall({
           name: "ask_user",
-          args: { question: "用哪种方式处理旧的 API 兼容层？" },
-          result: "保留并标记 deprecated"
+          args: {
+            questions: [{ question: "用哪种方式处理旧的 API 兼容层？" }],
+            answer: {
+              answers: [
+                {
+                  question: "用哪种方式处理旧的 API 兼容层？",
+                  text: "保留并标记 deprecated"
+                }
+              ]
+            }
+          }
         })}
       />
     );
+
+    expect(screen.getByText(/用哪种方式处理旧的 API 兼容层？：保留并标记 deprecated/)).toBeInTheDocument();
+    expect(screen.queryByText(/问：用哪种方式处理旧的 API 兼容层？/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
 
     expect(screen.getByText(/问：用哪种方式处理旧的 API 兼容层？/)).toBeInTheDocument();
     expect(screen.getByText(/答：保留并标记 deprecated/)).toBeInTheDocument();
@@ -141,24 +216,59 @@ describe("ToolCallRow", () => {
         toolCall={toolCall({
           name: "ask_user",
           status: "rejected",
-          args: { question: "继续吗？" }
+          args: { questions: [{ question: "继续吗？" }] }
         })}
       />
     );
 
+    expect(screen.getByText("已跳过：继续吗？")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
     expect(screen.getByText("答：用户跳过了该问题")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { expanded: true }));
 
     rerender(
       <ToolCallRow
         toolCall={toolCall({
           name: "ask_user",
           status: "pending_approval",
-          args: { question: "继续吗？" }
+          args: { questions: [{ question: "继续吗？" }] }
         })}
       />
     );
 
+    expect(screen.getByText("继续吗？：问题未回答（运行已结束）")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
     expect(screen.getByText("答：问题未回答（运行已结束）")).toBeInTheDocument();
+  });
+
+  it("renders structured ask_user answers after expanding", () => {
+    render(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "ask_user",
+          args: {
+            questions: [
+              { id: "q1", question: "脚本类型？", options: ["GPT", "BERT"], allowFreeText: false },
+              { id: "q2", question: "补充说明？" }
+            ],
+            answer: {
+              answers: [
+                { id: "q1", question: "脚本类型？", optionLabel: "GPT" },
+                { id: "q2", question: "补充说明？", text: "保持 demo" }
+              ]
+            }
+          }
+        })}
+      />
+    );
+
+    expect(screen.getByText("已回答 2/2 个问题")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+
+    expect(screen.getByText("问：脚本类型？")).toBeInTheDocument();
+    expect(screen.getByText("答：GPT")).toBeInTheDocument();
+    expect(screen.getByText("问：补充说明？")).toBeInTheDocument();
+    expect(screen.getByText("答：保持 demo")).toBeInTheDocument();
   });
 
   it("renders use_skill as a compact chip without exposing the loaded skill body", () => {

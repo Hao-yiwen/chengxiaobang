@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Markdown } from "../src/renderer/components/Markdown";
 import { setupI18n } from "../src/renderer/i18n";
 
@@ -9,65 +9,78 @@ beforeAll(() => {
   setupI18n("zh");
 });
 
+beforeEach(() => {
+  class MockIntersectionObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords() {
+      return [];
+    }
+  }
+  vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
 describe("Markdown", () => {
-  it("renders safe http links as external anchors", () => {
+  it("uses foreground color for normal conversation body text", () => {
+    const { container } = render(<Markdown text="普通正文应该保持黑色" />);
+    const root = container.querySelector(".markdown-streamdown");
+
+    expect(root).toHaveClass("text-foreground");
+    expect(root).not.toHaveClass("text-body");
+  });
+
+  it("renders safe http links through Streamdown link safety", () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+
     render(<Markdown text="see [docs](https://example.com) here" />);
-    const link = screen.getByRole("link", { name: "docs" });
-    expect(link).toHaveAttribute("href", "https://example.com");
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+    fireEvent.click(screen.getByRole("button", { name: "docs" }));
+
+    expect(screen.getByText("打开外部链接？")).toBeInTheDocument();
+    expect(screen.getByText(/^https:\/\/example\.com\/?$/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开链接" }));
+    expect(open).toHaveBeenCalledWith("https://example.com/", "_blank", "noreferrer");
   });
 
   it("does not linkify unsafe protocols, keeping the text visible", () => {
     render(<Markdown text="[x](javascript:alert)" />);
+
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
-    expect(screen.getByText("x")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "x" })).not.toBeInTheDocument();
+    expect(screen.getByText(/x \[blocked\]/)).toBeInTheDocument();
   });
 
-  it("copies a code block to the clipboard and shows a copied state", async () => {
+  it("keeps single line breaks via remark-breaks", () => {
+    const { container } = render(<Markdown text={"第一行\n第二行"} />);
+    expect(container.querySelector("br")).not.toBeNull();
+    expect(container).toHaveTextContent(/第一行\s*第二行/);
+  });
+
+  it("renders Streamdown code block controls and copies code", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       value: { writeText },
       configurable: true
     });
 
-    render(<Markdown text={"```ts\nconst x = 1;\n```"} />);
-    fireEvent.click(screen.getByText("复制"));
-
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("const x = 1;"));
-    expect(await screen.findByText("已复制")).toBeInTheDocument();
-  });
-
-  it("highlights code blocks with a known language", () => {
     const { container } = render(<Markdown text={"```ts\nconst x = 1;\n```"} />);
-    expect(container.querySelector(".hljs-keyword")).not.toBeNull();
+
+    expect(container.querySelector('[data-streamdown="code-block"]')).not.toBeNull();
+    expect(screen.getByText("ts")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("复制代码"));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("const x = 1")));
+    expect(await screen.findByTitle("复制代码")).toBeInTheDocument();
   });
 
-  it("renders code blocks with unknown languages without crashing", () => {
-    const { container } = render(<Markdown text={"```nosuchlang\nfoo bar\n```"} />);
-    expect(container.querySelector("pre")).toHaveTextContent("foo bar");
-  });
-
-  it("collapses long code blocks and expands on demand", () => {
-    const code = Array.from({ length: 30 }, (_, index) => `line${index}`).join("\n");
-    const { container } = render(<Markdown text={"```ts\n" + code + "\n```"} />);
-
-    expect(screen.getByText("展开代码（共 30 行）")).toBeInTheDocument();
-    expect(container.querySelector("pre")?.className).toContain("max-h-[360px]");
-
-    fireEvent.click(screen.getByText("展开代码（共 30 行）"));
-
-    expect(screen.getByText("收起代码")).toBeInTheDocument();
-    expect(container.querySelector("pre")?.className).not.toContain("max-h-[360px]");
-  });
-
-  it("renders short code blocks without a collapse control", () => {
-    render(<Markdown text={"```ts\nconst x = 1;\n```"} />);
-    expect(screen.queryByText(/展开代码/)).not.toBeInTheDocument();
-    expect(screen.queryByText("收起代码")).not.toBeInTheDocument();
-  });
-
-  it("downloads a code block with the language-mapped extension", () => {
+  it("downloads a code block with Streamdown language-mapped extension", () => {
     const createObjectURL = vi.fn(() => "blob:mock");
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL }));
@@ -82,7 +95,7 @@ describe("Markdown", () => {
       });
 
     render(<Markdown text={"```ts\nconst x = 1;\n```"} />);
-    fireEvent.click(screen.getByLabelText("下载代码"));
+    fireEvent.click(screen.getByTitle("下载文件"));
 
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(click).toHaveBeenCalledTimes(1);
@@ -91,50 +104,67 @@ describe("Markdown", () => {
 
     click.mockRestore();
     setter.mockRestore();
-    vi.unstubAllGlobals();
   });
 
-  it("renders GFM tables", () => {
-    render(<Markdown text={"| 名称 | 值 |\n| --- | --- |\n| 端口 | 8080 |"} />);
+  it("renders GFM tables with Streamdown controls and numeric column markers", () => {
+    render(
+      <Markdown
+        text={"| 名称 | 值 |\n| --- | --- |\n| 端口 | 8080 |\n| 线程 | 12 |\n| 备注 | x |"}
+      />
+    );
+
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "名称" })).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "8080" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "8080" })).toHaveAttribute("data-numeric-col");
+    expect(screen.getByTitle("复制表格")).toBeInTheDocument();
+    expect(screen.getByTitle("下载表格")).toBeInTheDocument();
+    expect(screen.getByTitle("全屏查看")).toBeInTheDocument();
   });
 
-  it("renders strikethrough as del", () => {
-    const { container } = render(<Markdown text="keep ~~gone~~" />);
+  it("opens Streamdown table fullscreen as a modal portal", () => {
+    render(<Markdown text={"| 名称 | 值 |\n| --- | --- |\n| 端口 | 8080 |"} />);
+
+    fireEvent.click(screen.getByTitle("全屏查看"));
+
+    const dialog = screen.getByRole("dialog", { name: "全屏查看" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toHaveAttribute("data-streamdown", "table-fullscreen");
+    expect(screen.getByTitle("退出全屏")).toBeInTheDocument();
+  });
+
+  it("renders strikethrough, task lists, nested lists and headings", () => {
+    const { container } = render(
+      <Markdown text={"# 一级\n\n- [x] done\n  - child\n\nkeep ~~gone~~"} />
+    );
+
+    expect(screen.getByRole("heading", { level: 1, name: "一级" })).toBeInTheDocument();
+    expect(screen.getAllByRole("checkbox")[0]).toBeChecked();
+    expect(container.querySelector("li ul li")).toHaveTextContent("child");
     expect(container.querySelector("del")).toHaveTextContent("gone");
   });
 
-  it("renders task lists as disabled checkboxes", () => {
-    render(<Markdown text={"- [x] done\n- [ ] todo"} />);
-    const boxes = screen.getAllByRole("checkbox");
-    expect(boxes).toHaveLength(2);
-    expect(boxes[0]).toBeChecked();
-    expect(boxes[1]).not.toBeChecked();
-    expect(boxes[0]).toBeDisabled();
-  });
-
-  it("renders blockquotes", () => {
-    const { container } = render(<Markdown text="> 引用内容" />);
-    expect(container.querySelector("blockquote")).toHaveTextContent("引用内容");
-  });
-
-  it("renders nested lists", () => {
-    const { container } = render(<Markdown text={"- a\n  - b"} />);
-    expect(container.querySelector("li ul li")).toHaveTextContent("b");
-  });
-
-  it("renders semantic headings", () => {
-    render(<Markdown text={"# 一级\n\n## 二级"} />);
-    expect(screen.getByRole("heading", { level: 1, name: "一级" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "二级" })).toBeInTheDocument();
-  });
-
-  it("keeps inline code pill styling distinct from block code", () => {
+  it("keeps inline code distinct from block code", () => {
     const { container } = render(<Markdown text="run `pnpm dev` now" />);
-    const inline = container.querySelector("code");
+    const inline = container.querySelector('[data-streamdown="inline-code"]');
     expect(inline).toHaveTextContent("pnpm dev");
-    expect(inline?.className).toContain("bg-muted");
+  });
+
+  it("renders math through KaTeX", () => {
+    const { container } = render(<Markdown text={"$$\na^2 + b^2 = c^2\n$$"} />);
+    expect(container.querySelector(".katex")).not.toBeNull();
+  });
+
+  it("routes Mermaid fences into Streamdown Mermaid renderer and controls", async () => {
+    const { container } = render(
+      <Markdown text={"```mermaid\ngraph TD\n  A[开始] --> B[结束]\n```"} />
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-streamdown="mermaid-block"]')).not.toBeNull();
+    });
+    expect(screen.getByText("mermaid")).toBeInTheDocument();
+    expect(screen.getByTitle("下载图表")).toBeInTheDocument();
+    expect(screen.getByTitle("复制代码")).toBeInTheDocument();
+    expect(screen.getByTitle("全屏查看")).toBeInTheDocument();
   });
 });

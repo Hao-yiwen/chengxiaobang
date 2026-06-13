@@ -1,9 +1,8 @@
 /**
  * PlanBookmark 书签条（UI-SPEC §7.2）。
  *
- * 纯 props 驱动。触发逻辑（plan.status 为 awaiting|executing 且 PlanCard 滚出视口的
- * IntersectionObserver）由父层 ChatView/WP-E 负责；本组件只渲染 sticky 条并回调 onJump，
- * 滚回卡片的 scrollIntoView 也由父层完成。
+ * 纯 props 驱动。旧版步骤计划的悬浮书签仍可渲染历史进度；新版计划卡已改为
+ * 完整文本确认，不再主动接入本组件。
  */
 import { CaretUpIcon as ChevronUp } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";

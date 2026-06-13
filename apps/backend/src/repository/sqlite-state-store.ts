@@ -6,13 +6,19 @@ import { fileURLToPath } from "node:url";
 import initSqlJs, { type Database } from "sql.js";
 import {
   createId,
+  messageAttachmentSchema,
   nowIso,
+  toolCallApprovalSchema,
+  tokenUsageSchema,
   type Message,
+  type MessageAttachment,
   type Project,
   type ProviderConfig,
   type RunRecord,
   type ScheduledTask,
   type Session,
+  type SessionSearchResult,
+  type TokenUsage,
   type ToolCall
 } from "@chengxiaobang/shared";
 import type {
@@ -24,11 +30,16 @@ import type {
   StateStore,
   StoredMessage,
   UpdateScheduledTaskInput,
-  UpdateSessionInput
+  UpdateSessionInput,
+  UsageStatsSourceRun
 } from "./state-store";
 
 type Row = Record<string, unknown>;
 type SqlParam = string | number | null | Uint8Array;
+const DEFAULT_SESSION_SEARCH_LIMIT = 30;
+const MAX_SESSION_SEARCH_LIMIT = 100;
+const INTERRUPTED_RUN_ERROR =
+  "运行进程已重启，无法继续等待审批或工具结果。请重新发起本次请求。";
 
 export class SqliteStateStore implements StateStore {
   private db?: Database;
@@ -74,6 +85,7 @@ export class SqliteStateStore implements StateStore {
         session_id text not null,
         role text not null,
         content text not null,
+        attachments text,
         reasoning text,
         reasoning_ms integer,
         created_at text not null,
@@ -83,6 +95,11 @@ export class SqliteStateStore implements StateStore {
         id text primary key,
         session_id text not null,
         status text not null,
+        provider_id text,
+        provider_kind text,
+        model text,
+        usage text,
+        error text,
         created_at text not null,
         updated_at text not null,
         foreign key (session_id) references sessions(id) on delete cascade
@@ -94,6 +111,7 @@ export class SqliteStateStore implements StateStore {
         args_json text not null,
         status text not null,
         result text,
+        approval_json text,
         started_at text,
         created_at text not null,
         updated_at text not null,
@@ -151,7 +169,14 @@ export class SqliteStateStore implements StateStore {
     this.ensureColumn("messages", "duration_ms", "integer");
     this.ensureColumn("messages", "kind", "text");
     this.ensureColumn("messages", "payload", "text");
+    this.ensureColumn("messages", "attachments", "text");
+    this.ensureColumn("tool_calls", "approval_json", "text");
     this.ensureColumn("tool_calls", "started_at", "text");
+    this.ensureColumn("runs", "provider_id", "text");
+    this.ensureColumn("runs", "provider_kind", "text");
+    this.ensureColumn("runs", "model", "text");
+    this.ensureColumn("runs", "usage", "text");
+    this.ensureColumn("runs", "error", "text");
     this.ensureColumn("sessions", "compacted_up_to_message_id", "text");
     this.ensureColumn("sessions", "parent_session_id", "text");
     this.ensureColumn("sessions", "fork_message_id", "text");
@@ -166,6 +191,7 @@ export class SqliteStateStore implements StateStore {
     this.ensureColumn("projects", "pinned_at", "text");
     this.ensureColumn("sessions", "pinned_at", "text");
     await this.migrateProviderPresets();
+    this.markInterruptedRunsFromPreviousProcess();
     await this.flush();
   }
 
@@ -270,6 +296,78 @@ export class SqliteStateStore implements StateStore {
     return rows.map(mapSession);
   }
 
+  async searchSessions(
+    query: string,
+    limit = DEFAULT_SESSION_SEARCH_LIMIT
+  ): Promise<SessionSearchResult[]> {
+    const needle = query.trim();
+    if (!needle) {
+      console.debug("[sqlite-state-store] 跳过空会话搜索");
+      return [];
+    }
+    const rawLimit = Number.isFinite(limit) ? Math.trunc(limit) : DEFAULT_SESSION_SEARCH_LIMIT;
+    const safeLimit = Math.max(1, Math.min(MAX_SESSION_SEARCH_LIMIT, rawLimit));
+    console.debug("[sqlite-state-store] 开始搜索会话", {
+      query: needle,
+      limit: safeLimit
+    });
+    const rows = this.query(
+      `
+      with title_matches as (
+        select
+          s.*,
+          0 as match_rank,
+          'title' as match_type,
+          null as message_id,
+          null as message_role,
+          null as message_content
+        from sessions s
+        where instr(lower(s.title), lower(?)) > 0
+      ),
+      first_content_matches as (
+        select
+          s.*,
+          1 as match_rank,
+          'content' as match_type,
+          m.id as message_id,
+          m.role as message_role,
+          m.content as message_content
+        from sessions s
+        join messages m on m.session_id = s.id
+        where m.role in ('user', 'assistant')
+          and instr(lower(m.content), lower(?)) > 0
+          and instr(lower(s.title), lower(?)) = 0
+          and not exists (
+            select 1
+            from messages earlier
+            where earlier.session_id = m.session_id
+              and earlier.role in ('user', 'assistant')
+              and instr(lower(earlier.content), lower(?)) > 0
+              and (
+                earlier.created_at < m.created_at
+                or (earlier.created_at = m.created_at and earlier.id < m.id)
+              )
+          )
+      )
+      select *
+      from (
+        select * from title_matches
+        union all
+        select * from first_content_matches
+      )
+      order by match_rank asc, updated_at desc
+      limit ?
+      `,
+      [needle, needle, needle, needle, safeLimit]
+    );
+    const results = rows.map((row) => mapSessionSearchResult(row, needle));
+    console.info("[sqlite-state-store] 会话搜索完成", {
+      query: needle,
+      resultCount: results.length
+    });
+    return results;
+  }
+
   async getSession(id: string): Promise<Session | undefined> {
     return this.query("select * from sessions where id = ?", [id]).map(mapSession)[0];
   }
@@ -363,14 +461,15 @@ export class SqliteStateStore implements StateStore {
       idMap.set(message.id, newId);
       this.run(
         `insert into messages
-         (id, session_id, role, kind, content, reasoning, reasoning_ms, duration_ms, payload, created_at)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, session_id, role, kind, content, attachments, reasoning, reasoning_ms, duration_ms, payload, created_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newId,
           fork.id,
           message.role,
           message.kind ?? null,
           message.content,
+          JSON.stringify(message.attachments ?? []),
           message.reasoning ?? null,
           message.reasoningMs ?? null,
           message.durationMs ?? null,
@@ -506,6 +605,7 @@ export class SqliteStateStore implements StateStore {
       role: input.role,
       ...(input.kind ? { kind: input.kind } : {}),
       content: input.content,
+      attachments: input.attachments ?? [],
       ...(input.reasoning ? { reasoning: input.reasoning } : {}),
       ...(input.reasoningMs !== undefined ? { reasoningMs: input.reasoningMs } : {}),
       ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
@@ -514,14 +614,15 @@ export class SqliteStateStore implements StateStore {
     };
     this.run(
       `insert into messages
-       (id, session_id, role, kind, content, reasoning, reasoning_ms, duration_ms, payload, created_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, session_id, role, kind, content, attachments, reasoning, reasoning_ms, duration_ms, payload, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         message.id,
         message.sessionId,
         message.role,
         message.kind ?? null,
         message.content,
+        JSON.stringify(message.attachments),
         message.reasoning ?? null,
         message.reasoningMs ?? null,
         message.durationMs ?? null,
@@ -542,8 +643,7 @@ export class SqliteStateStore implements StateStore {
   }
 
   async deleteMessagesFrom(sessionId: string, messageId: string): Promise<number> {
-    // Index into the same ordering listMessages uses, so created_at ties
-    // cannot drop a different suffix than the one callers see.
+    // 使用和 listMessages 相同的顺序定位后缀，避免 created_at 并列时删错消息。
     const messages = await this.listMessages(sessionId);
     const index = messages.findIndex((message) => message.id === messageId);
     if (index === -1) {
@@ -553,17 +653,31 @@ export class SqliteStateStore implements StateStore {
     for (const message of doomed) {
       this.run("delete from messages where id = ?", [message.id]);
     }
-    // Drop runs (and their tool calls) from the deleted span, or orphaned
-    // tool rows would interleave into the regenerated timeline.
+    // run 会先于用户消息创建；重试时要同时清掉创建较晚或在该消息后仍被更新的 run。
     const cutoff = doomed[0].createdAt;
-    const runs = this.query("select id from runs where session_id = ? and created_at >= ?", [
-      sessionId,
-      cutoff
-    ]);
+    const runs = this.query(
+      `select id from runs
+       where session_id = ?
+         and (created_at >= ? or updated_at >= ?)`,
+      [sessionId, cutoff, cutoff]
+    );
+    const runIds = runs.map((run) => String(run.id));
     for (const run of runs) {
       this.run("delete from tool_calls where run_id = ?", [String(run.id)]);
     }
-    this.run("delete from runs where session_id = ? and created_at >= ?", [sessionId, cutoff]);
+    this.run(
+      `delete from runs
+       where session_id = ?
+         and (created_at >= ? or updated_at >= ?)`,
+      [sessionId, cutoff, cutoff]
+    );
+    console.info("[state-store] 已回退会话消息并清理相关运行", {
+      sessionId,
+      messageId,
+      deletedMessageCount: doomed.length,
+      deletedRunIds: runIds,
+      cutoff
+    });
     await this.touchSession(sessionId);
     await this.flush();
     return doomed.length;
@@ -573,27 +687,81 @@ export class SqliteStateStore implements StateStore {
     await this.assertSessionExists(input.sessionId);
     const timestamp = nowIso();
     this.run(
-      "insert into runs (id, session_id, status, created_at, updated_at) values (?, ?, ?, ?, ?)",
-      [input.id, input.sessionId, input.status, timestamp, timestamp]
+      `insert into runs
+       (id, session_id, status, provider_id, provider_kind, model, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        input.id,
+        input.sessionId,
+        input.status,
+        input.providerId ?? null,
+        input.providerKind ?? null,
+        input.model ?? null,
+        timestamp,
+        timestamp
+      ]
     );
     await this.flush();
   }
 
-  async updateRunStatus(id: string, status: CreateRunInput["status"]): Promise<void> {
-    await this.assertRunExists(id);
-    this.run("update runs set status = ?, updated_at = ? where id = ?", [
-      status,
-      nowIso(),
-      id
-    ]);
+  async updateRunStatus(
+    id: string,
+    status: CreateRunInput["status"],
+    usage?: TokenUsage,
+    error?: string
+  ): Promise<void> {
+    const runRows = this.query("select session_id from runs where id = ?", [id]);
+    if (runRows.length === 0) {
+      throw new Error("运行记录不存在");
+    }
+    const sessionId = String(runRows[0].session_id);
+    const errorText = status === "failed" && error ? error : undefined;
+    if (usage) {
+      this.run("update runs set status = ?, usage = ?, error = ?, updated_at = ? where id = ?", [
+        status,
+        JSON.stringify(usage),
+        errorText ?? null,
+        nowIso(),
+        id
+      ]);
+    } else {
+      this.run("update runs set status = ?, error = ?, updated_at = ? where id = ?", [
+        status,
+        errorText ?? null,
+        nowIso(),
+        id
+      ]);
+    }
+    if (errorText) {
+      console.warn("[state-store] 运行失败原因已持久化", {
+        runId: id,
+        sessionId,
+        error: errorText
+      });
+    }
     await this.flush();
   }
 
   async listRuns(sessionId: string): Promise<RunRecord[]> {
     await this.assertSessionExists(sessionId);
-    return this.query("select * from runs where session_id = ? order by created_at asc", [
+    return this.query("select * from runs where session_id = ? order by created_at asc, id asc", [
       sessionId
     ]).map(mapRun);
+  }
+
+  async listUsageStatsRuns(): Promise<UsageStatsSourceRun[]> {
+    return this.query(
+      `select
+         runs.*,
+         sessions.provider_id as fallback_provider_id,
+         sessions.model as session_model,
+         providers.kind as fallback_provider_kind,
+         providers.model as provider_model
+       from runs
+       left join sessions on sessions.id = runs.session_id
+       left join providers on providers.id = coalesce(runs.provider_id, sessions.provider_id)
+       order by runs.created_at asc, runs.id asc`
+    ).map(mapUsageStatsSourceRun);
   }
 
   async listToolCallsForSession(sessionId: string): Promise<ToolCall[]> {
@@ -697,12 +865,62 @@ export class SqliteStateStore implements StateStore {
     );
   }
 
+  private markInterruptedRunsFromPreviousProcess(): void {
+    const runningRows = this.query(
+      "select id, session_id from runs where status = ? order by updated_at asc",
+      ["running"]
+    );
+    if (runningRows.length === 0) {
+      return;
+    }
+
+    const timestamp = nowIso();
+    const runIds = runningRows.map((row) => String(row.id));
+    const sessionIds = [...new Set(runningRows.map((row) => String(row.session_id)))];
+    const placeholders = runIds.map(() => "?").join(", ");
+    const toolRows = this.query(
+      `select id from tool_calls
+       where run_id in (${placeholders})
+         and status in (?, ?, ?)`,
+      [...runIds, "pending_smart_approval", "pending_approval", "running"]
+    );
+
+    this.run(
+      `update runs
+       set status = ?, error = ?, updated_at = ?
+       where id in (${placeholders})`,
+      ["failed", INTERRUPTED_RUN_ERROR, timestamp, ...runIds]
+    );
+    this.run(
+      `update tool_calls
+       set status = ?, result = ?, updated_at = ?
+       where run_id in (${placeholders})
+         and status in (?, ?, ?)`,
+      [
+        "failed",
+        INTERRUPTED_RUN_ERROR,
+        timestamp,
+        ...runIds,
+        "pending_smart_approval",
+        "pending_approval",
+        "running"
+      ]
+    );
+
+    console.warn("[state-store] 已收敛上个进程遗留的活跃运行", {
+      runIds,
+      sessionIds,
+      interruptedToolCallCount: toolRows.length,
+      reason: INTERRUPTED_RUN_ERROR
+    });
+  }
+
   async insertToolCall(toolCall: ToolCall): Promise<ToolCall> {
     await this.assertRunExists(toolCall.runId);
     this.run(
       `insert into tool_calls
-       (id, run_id, name, args_json, status, result, started_at, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, run_id, name, args_json, status, result, approval_json, started_at, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         toolCall.id,
         toolCall.runId,
@@ -710,6 +928,7 @@ export class SqliteStateStore implements StateStore {
         JSON.stringify(toolCall.args),
         toolCall.status,
         toolCall.result ?? null,
+        toolCall.approval ? JSON.stringify(toolCall.approval) : null,
         toolCall.startedAt ?? null,
         toolCall.createdAt,
         toolCall.updatedAt
@@ -721,16 +940,16 @@ export class SqliteStateStore implements StateStore {
 
   async updateToolCall(toolCall: ToolCall): Promise<ToolCall> {
     await this.assertToolCallExists(toolCall.id);
-    // args 一并更新：propose_plan 确认时 editedSteps 写回 args（§2.3），
-    // 跨 run 的 derivePlanState 依赖落库后的最终版本。
+    // args 一并更新：旧版 propose_plan 的 editedSteps 仍可写回，跨 run 展示依赖最终参数。
     this.run(
       `update tool_calls
-       set args_json = ?, status = ?, result = ?, started_at = ?, updated_at = ?
+       set args_json = ?, status = ?, result = ?, approval_json = ?, started_at = ?, updated_at = ?
        where id = ?`,
       [
         JSON.stringify(toolCall.args),
         toolCall.status,
         toolCall.result ?? null,
+        toolCall.approval ? JSON.stringify(toolCall.approval) : null,
         toolCall.startedAt ?? null,
         toolCall.updatedAt,
         toolCall.id
@@ -956,7 +1175,12 @@ function mapSession(row: Row): Session {
     projectId: row.project_id === null ? null : String(row.project_id),
     title: String(row.title),
     providerId: row.provider_id === null ? undefined : String(row.provider_id),
-    accessMode: row.access_mode === "full_access" ? "full_access" : "approval",
+    accessMode:
+      row.access_mode === "full_access"
+        ? "full_access"
+        : row.access_mode === "smart_approval"
+          ? "smart_approval"
+          : "approval",
     ...(row.model === null || row.model === undefined ? {} : { model: String(row.model) }),
     ...(row.reasoning_mode === null || row.reasoning_mode === undefined
       ? {}
@@ -979,6 +1203,33 @@ function mapSession(row: Row): Session {
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
+}
+
+function mapSessionSearchResult(row: Row, query: string): SessionSearchResult {
+  const session = mapSession(row);
+  if (row.match_type !== "content") {
+    return { session, matchType: "title" };
+  }
+  const role = row.message_role === "assistant" ? "assistant" : "user";
+  return {
+    session,
+    matchType: "content",
+    messageId: String(row.message_id),
+    role,
+    snippet: buildSearchSnippet(String(row.message_content ?? ""), query)
+  };
+}
+
+function buildSearchSnippet(content: string, query: string): string {
+  const maxLength = 96;
+  const lowerContent = content.toLocaleLowerCase();
+  const lowerQuery = query.toLocaleLowerCase();
+  const index = lowerContent.indexOf(lowerQuery);
+  const start = Math.max(0, index === -1 ? 0 : index - 32);
+  const end = Math.min(content.length, start + maxLength);
+  const prefix = start > 0 ? "..." : "";
+  const suffix = end < content.length ? "..." : "";
+  return `${prefix}${content.slice(start, end).trim()}${suffix}`;
 }
 
 function mapScheduledTask(row: Row): ScheduledTask {
@@ -1009,6 +1260,7 @@ function mapScheduledTask(row: Row): ScheduledTask {
 
 function mapMessage(row: Row): StoredMessage {
   const kind = row.kind === "compaction_summary" ? ("compaction_summary" as const) : undefined;
+  const attachments = parseMessageAttachments(row.attachments);
   const reasoning =
     row.reasoning === null || row.reasoning === undefined ? undefined : String(row.reasoning);
   const reasoningMs =
@@ -1027,6 +1279,7 @@ function mapMessage(row: Row): StoredMessage {
     role: row.role as Message["role"],
     ...(kind ? { kind } : {}),
     content: String(row.content),
+    attachments,
     ...(reasoning !== undefined ? { reasoning } : {}),
     ...(reasoningMs !== undefined ? { reasoningMs } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
@@ -1035,14 +1288,84 @@ function mapMessage(row: Row): StoredMessage {
   };
 }
 
+function parseMessageAttachments(value: unknown): MessageAttachment[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(String(value));
+    return zodMessageAttachments(parsed);
+  } catch (error) {
+    console.warn("[sqlite-state-store] 消息附件 JSON 解析失败，已按空附件处理", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return [];
+  }
+}
+
+function zodMessageAttachments(value: unknown): MessageAttachment[] {
+  return messageAttachmentSchema.array().parse(value);
+}
+
 function mapRun(row: Row): RunRecord {
   return {
     id: String(row.id),
     sessionId: String(row.session_id),
     status: row.status as RunRecord["status"],
+    ...(row.provider_id === null || row.provider_id === undefined
+      ? {}
+      : { providerId: String(row.provider_id) }),
+    ...(row.provider_kind === null || row.provider_kind === undefined
+      ? {}
+      : { providerKind: row.provider_kind as RunRecord["providerKind"] }),
+    ...(row.model === null || row.model === undefined ? {} : { model: String(row.model) }),
+    ...(row.usage ? { usage: parseRunUsage(row.usage) } : {}),
+    ...(row.error ? { error: String(row.error) } : {}),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
+}
+
+function mapUsageStatsSourceRun(row: Row): UsageStatsSourceRun {
+  return {
+    id: String(row.id),
+    sessionId: String(row.session_id),
+    status: row.status as UsageStatsSourceRun["status"],
+    ...(row.usage ? { usage: parseRunUsage(row.usage) } : {}),
+    createdAt: String(row.created_at),
+    ...(row.provider_id === null || row.provider_id === undefined
+      ? {}
+      : { providerId: String(row.provider_id) }),
+    ...(row.provider_kind === null || row.provider_kind === undefined
+      ? {}
+      : { providerKind: row.provider_kind as UsageStatsSourceRun["providerKind"] }),
+    ...(row.model === null || row.model === undefined ? {} : { model: String(row.model) }),
+    ...(row.fallback_provider_id === null || row.fallback_provider_id === undefined
+      ? {}
+      : { fallbackProviderId: String(row.fallback_provider_id) }),
+    ...(row.fallback_provider_kind === null || row.fallback_provider_kind === undefined
+      ? {}
+      : {
+          fallbackProviderKind:
+            row.fallback_provider_kind as UsageStatsSourceRun["fallbackProviderKind"]
+        }),
+    ...(row.session_model === null ||
+    row.session_model === undefined ||
+    String(row.session_model).length === 0
+      ? row.provider_model === null || row.provider_model === undefined
+        ? {}
+        : { fallbackModel: String(row.provider_model) }
+      : { fallbackModel: String(row.session_model) })
+  };
+}
+
+function parseRunUsage(value: unknown): TokenUsage | undefined {
+  try {
+    return tokenUsageSchema.parse(JSON.parse(String(value)));
+  } catch (error) {
+    console.warn("[state-store] 解析 run usage 失败", { error });
+    return undefined;
+  }
 }
 
 function mapToolCall(row: Row): ToolCall {
@@ -1053,12 +1376,24 @@ function mapToolCall(row: Row): ToolCall {
     args: JSON.parse(String(row.args_json)) as Record<string, unknown>,
     status: row.status as ToolCall["status"],
     result: row.result === null ? undefined : String(row.result),
+    ...(row.approval_json === null || row.approval_json === undefined
+      ? {}
+      : { approval: parseToolCallApproval(row.approval_json) }),
     ...(row.started_at === null || row.started_at === undefined
       ? {}
       : { startedAt: String(row.started_at) }),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
+}
+
+function parseToolCallApproval(value: unknown): ToolCall["approval"] {
+  try {
+    return toolCallApprovalSchema.parse(JSON.parse(String(value)));
+  } catch (error) {
+    console.warn("[state-store] 解析 tool_call approval 失败", { error });
+    return undefined;
+  }
 }
 
 function mapProvider(row: Row): ProviderConfig {

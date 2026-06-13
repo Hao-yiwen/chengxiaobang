@@ -40,6 +40,18 @@ describe("detectInstalledProjectOpeners", () => {
     ]);
   });
 
+  it("finds Codex as a project opener when Codex.app is installed", async () => {
+    const exists = (path: string) => path === "/Applications/Codex.app";
+    await expect(detectInstalledProjectOpeners(dirs, exists)).resolves.toEqual([
+      {
+        id: "codex",
+        name: "Codex",
+        appPath: "/Applications/Codex.app",
+        iconDataUrl: undefined
+      }
+    ]);
+  });
+
   it("finds project openers installed only in the user Applications folder", async () => {
     const exists = (path: string) => path === "/Users/me/Applications/Cursor.app";
     await expect(detectInstalledProjectOpeners(dirs, exists)).resolves.toEqual([
@@ -125,6 +137,7 @@ describe("detectInstalledProjectOpeners", () => {
       "zed",
       "windsurf",
       "antigravity",
+      "codex",
       "finder",
       "terminal",
       "iterm2",

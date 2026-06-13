@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Message,
@@ -192,6 +192,60 @@ describe("sideChatReducer", () => {
 });
 
 describe("side chat panel", () => {
+  it("uses startRun and filters global events by clientRequestId/runId", async () => {
+    let emit: ((event: StreamEvent) => void) | undefined;
+    const subscribeRunEvents = vi.fn((listener: (event: StreamEvent) => void) => {
+      emit = listener;
+      return vi.fn();
+    });
+    const startRun = vi.fn(async (input: Parameters<NonNullable<ApiClient["startRun"]>>[0]) => ({
+      runId: "run_side",
+      sessionId: "session_side",
+      clientRequestId: input.clientRequestId,
+      providerId: provider.id,
+      model: provider.model
+    }));
+    const streamRun = vi.fn(async () => {});
+    const client = createClient({
+      startRun,
+      subscribeRunEvents,
+      streamRun: streamRun as never
+    });
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await openSideChat();
+
+    const input = await screen.findByLabelText("问点什么，回车发送");
+    fireEvent.change(input, { target: { value: "走全局流" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(startRun).toHaveBeenCalled());
+    expect(streamRun).not.toHaveBeenCalled();
+    const clientRequestId = startRun.mock.calls[0]?.[0].clientRequestId;
+    expect(clientRequestId).toEqual(expect.any(String));
+
+    emit?.({
+      type: "message",
+      runId: "other_run",
+      message: message("m_other", "assistant", "不该显示")
+    });
+    emit?.({
+      type: "run_started",
+      runId: "run_side",
+      sessionId: "session_side",
+      clientRequestId
+    });
+    emit?.({
+      type: "message",
+      runId: "run_side",
+      message: message("m_side", "assistant", "侧边全局事件")
+    });
+    expect(await screen.findByText("侧边全局事件")).toBeInTheDocument();
+    expect(screen.queryByText("不该显示")).not.toBeInTheDocument();
+    emit?.({ type: "run_end", runId: "run_side", status: "completed" });
+  });
+
   it("streams a reply into the panel and reuses the session on the next send", async () => {
     const streamRun = vi.fn(
       async (input: RunRequest, onEvent: (event: StreamEvent) => void) => {

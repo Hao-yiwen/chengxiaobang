@@ -7,6 +7,8 @@ import { useAppStore } from "./store";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
+import "katex/dist/katex.min.css";
+import "streamdown/styles.css";
 import "./styles/global.css";
 
 // 首次渲染前用持久化语言初始化 i18next。

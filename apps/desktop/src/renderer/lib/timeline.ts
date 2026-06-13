@@ -1,11 +1,11 @@
 import {
   derivePlanState,
   proposePlanArgsSchema,
+  proposedPlanTitle,
   type Message,
   type PlanState,
   type ToolCall
 } from "@chengxiaobang/shared";
-import { isDeliverableToolCall } from "./artifact";
 
 export type TimelineItem =
   | { kind: "message"; at: string; message: Message }
@@ -17,7 +17,7 @@ export type GroupedTimelineItem =
 
 export const ASIDE_INLINE_LIMIT = 2;
 
-export type PlanViewStatus = "draft" | "awaiting" | "executing" | "completed" | "rejected";
+export type PlanViewStatus = "draft" | "awaiting" | "approved" | "rejected";
 
 export interface PlanView {
   anchor: ToolCall;
@@ -39,18 +39,18 @@ interface ChatTimelineOptions {
   pendingToolId?: string;
 }
 
-/** Chronological chat timeline, shared by ChatView and session export. */
+/** 按时间排序的聊天时间线，供 ChatView 和会话导出共用。 */
 export function timelineItems(messages: Message[], toolCalls: ToolCall[]): TimelineItem[] {
   return [
-    // Tool-role messages are rendered as tool-call rows, not chat bubbles.
-    // Tool-only assistant turns persist with empty content (their payload
-    // drives history replay) — kept only when they carry reasoning, so the
-    // thinking panel sits at its true place before the tools it preceded.
+    // tool 角色消息由工具行承载，不作为聊天气泡展示。
+    // 只有携带思考内容的空 assistant 轮次会保留，用来把思考面板放回工具调用前的真实位置。
     ...messages
       .filter(
         (message) =>
           message.role !== "tool" &&
-          (message.content.trim().length > 0 || Boolean(message.reasoning))
+          (message.content.trim().length > 0 ||
+            Boolean(message.reasoning) ||
+            (message.attachments?.length ?? 0) > 0)
       )
       .map((message) => ({
         kind: "message" as const,
@@ -71,19 +71,19 @@ const UNGROUPABLE_TOOLS = new Set<string>([
   "use_skill",
   "propose_plan",
   "update_plan",
+  "todo_create",
+  "todo_update",
   "btw"
 ]);
 
-/** 可并入「连续工具调用」折叠组的普通工具（交付物类独立成 ArtifactCard）。 */
+/** 可并入「连续工具调用」折叠组的普通工具。 */
 export function isGroupableToolCall(toolCall: ToolCall): boolean {
-  return !UNGROUPABLE_TOOLS.has(toolCall.name) && !isDeliverableToolCall(toolCall);
+  return !UNGROUPABLE_TOOLS.has(toolCall.name);
 }
 
 /**
- * Fold consecutive groupable tool calls into "tool-group" items. Any message
- * or ungroupable tool breaks the run; a run of one degrades back to a plain
- * "tool" item. Group `at` (and thus its React key anchor, the first call's
- * id) comes from the first call, so streaming appends keep the group stable.
+ * 将连续的普通工具调用折叠成 tool-group。遇到消息或专属渲染工具会断开分组；
+ * 单个工具仍保持普通 tool 项。分组时间取第一条工具调用，流式追加时 React key 更稳定。
  */
 export function groupTimelineItems(items: TimelineItem[]): GroupedTimelineItem[] {
   const result: GroupedTimelineItem[] = [];
@@ -114,7 +114,10 @@ export function groupTimelineItems(items: TimelineItem[]): GroupedTimelineItem[]
   return result;
 }
 
-export function derivePlanView(toolCalls: ToolCall[]): PlanView | undefined {
+export function derivePlanView(
+  toolCalls: ToolCall[],
+  options: ChatTimelineOptions = {}
+): PlanView | undefined {
   const state = derivePlanState(toolCalls);
   if (!state) {
     return undefined;
@@ -127,22 +130,8 @@ export function derivePlanView(toolCalls: ToolCall[]): PlanView | undefined {
   return {
     anchor,
     state,
-    status: derivePlanStatus(anchor, state)
+    status: derivePlanStatus(anchor, state, options.activeRunId)
   };
-}
-
-export function planCurrentStep(
-  state: PlanState
-): { index: number; total: number; title: string } | undefined {
-  if (state.steps.length === 0) {
-    return undefined;
-  }
-  const step =
-    state.steps.find((item) => item.status === "in_progress") ??
-    state.steps.find((item) => item.status === "pending") ??
-    state.steps[state.steps.length - 1];
-  const index = state.steps.findIndex((item) => item.id === step.id);
-  return { index: index + 1, total: state.steps.length, title: step.title };
 }
 
 export function chatTimeline(
@@ -150,7 +139,7 @@ export function chatTimeline(
   toolCalls: ToolCall[],
   options: ChatTimelineOptions = {}
 ): ChatTimelineItem[] {
-  const plan = derivePlanView(toolCalls);
+  const plan = derivePlanView(toolCalls, options);
   const toolIndicesByRun = new Map<string, number>();
   const asideCountsByRun = new Map<string, number>();
   const result: ChatTimelineItem[] = [];
@@ -169,10 +158,13 @@ export function chatTimeline(
     }
 
     const toolCall = item.toolCall;
-    if (toolCall.id === options.pendingToolId) {
+    if (toolCall.id === options.pendingToolId && toolCall.name !== "propose_plan") {
       continue;
     }
     if (toolCall.name === "update_plan") {
+      continue;
+    }
+    if (toolCall.name === "todo_create" || toolCall.name === "todo_update") {
       continue;
     }
     if (toolCall.name === "propose_plan") {
@@ -190,24 +182,31 @@ export function chatTimeline(
       ...item,
       index,
       residualPending:
-        toolCall.status === "pending_approval" && toolCall.runId !== options.activeRunId
+        (toolCall.status === "pending_approval" ||
+          toolCall.status === "pending_smart_approval") &&
+        toolCall.runId !== options.activeRunId
     });
   }
 
   return result;
 }
 
-function derivePlanStatus(anchor: ToolCall, state: PlanState): PlanViewStatus {
-  if (anchor.status === "rejected") {
+function derivePlanStatus(
+  anchor: ToolCall,
+  state: PlanState,
+  activeRunId?: string
+): PlanViewStatus {
+  if (anchor.status === "rejected" || anchor.status === "failed") {
     return "rejected";
   }
-  if (anchor.status === "pending_approval" || anchor.status === "running") {
-    return state.confirmed ? "draft" : "awaiting";
+  if (
+    anchor.status === "pending_approval" ||
+    anchor.status === "pending_smart_approval" ||
+    anchor.status === "running"
+  ) {
+    return anchor.runId === activeRunId ? "draft" : "awaiting";
   }
-  if (state.finished) {
-    return "completed";
-  }
-  return state.confirmed ? "executing" : "awaiting";
+  return state.confirmed ? "approved" : "awaiting";
 }
 
 function appendPlanItem(
@@ -232,7 +231,7 @@ function appendPlanItem(
     kind: "plan-history",
     at: item.at,
     toolCall,
-    title: parsed.data.title
+    title: proposedPlanTitle(parsed.data.markdown)
   });
 }
 

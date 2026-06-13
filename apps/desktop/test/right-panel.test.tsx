@@ -13,7 +13,14 @@ import {
 import type { ApiClient } from "../src/renderer/lib/api";
 import type { TerminalDataEvent, TerminalExitEvent } from "../src/renderer/global";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
-import type { Project, ProviderConfig, Session, ToolCall } from "@chengxiaobang/shared";
+import type {
+  Message,
+  Project,
+  ProjectFileEntry,
+  ProviderConfig,
+  Session,
+  ToolCall
+} from "@chengxiaobang/shared";
 
 const terminalMock = vi.hoisted(() => {
   class MockTerminal {
@@ -100,6 +107,48 @@ vi.mock("pdfjs-dist", () => ({
     })
   }))
 }));
+const pptxRendererMock = vi.hoisted(() => {
+  const goToSlide = vi.fn(async (index: number) => undefined);
+  const setZoom = vi.fn(async (zoom: number) => undefined);
+  const destroy = vi.fn();
+  const open = vi.fn(async (
+    _input: ArrayBuffer,
+    container: HTMLElement,
+    options?: {
+      onSlideChange?: (index: number) => void;
+      onRenderComplete?: () => void;
+    }
+  ) => {
+    container.innerHTML = [
+      '<section data-testid="pptx-rendered">',
+      "<p>第 1 页</p>",
+      "<p>第 2 页</p>",
+      "</section>"
+    ].join("");
+    options?.onSlideChange?.(0);
+    options?.onRenderComplete?.();
+    goToSlide.mockImplementation(async (index: number) => {
+      options?.onSlideChange?.(index);
+    });
+    setZoom.mockImplementation(async () => undefined);
+    return {
+      slideCount: 2,
+      currentSlideIndex: 0,
+      zoomPercent: 100,
+      goToSlide,
+      setZoom,
+      destroy
+    };
+  });
+  return { open, goToSlide, setZoom, destroy };
+});
+
+vi.mock("@aiden0z/pptx-renderer", () => ({
+  RECOMMENDED_ZIP_LIMITS: { maxEntries: 4000 },
+  PptxViewer: {
+    open: pptxRendererMock.open
+  }
+}));
 
 const provider: ProviderConfig = {
   id: "deepseek",
@@ -151,6 +200,26 @@ const conversationSession: Session = {
   updatedAt: "2026-06-08T00:00:02.000Z"
 };
 
+function artifactMessage(
+  path: string,
+  options: { id?: string; sessionId?: string; createdAt?: string } = {}
+): Message {
+  const escapedPath = path.replace(/&/gu, "&amp;").replace(/"/gu, "&quot;");
+  return {
+    id: options.id ?? `artifact-${path}`,
+    sessionId: options.sessionId ?? session.id,
+    role: "assistant",
+    content: [
+      "最终产物已生成。",
+      "",
+      "<artifacts>",
+      `  <artifact path="${escapedPath}" />`,
+      "</artifacts>"
+    ].join("\n"),
+    createdAt: options.createdAt ?? "2026-06-08T00:00:02.000Z"
+  };
+}
+
 function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     listProjects: vi.fn(async () => [project]),
@@ -194,6 +263,10 @@ beforeEach(() => {
   });
   vi.stubGlobal("cancelAnimationFrame", vi.fn());
   terminalMock.MockTerminal.instances.length = 0;
+  pptxRendererMock.open.mockClear();
+  pptxRendererMock.goToSlide.mockClear();
+  pptxRendererMock.setZoom.mockClear();
+  pptxRendererMock.destroy.mockClear();
   resetAppStore();
 });
 
@@ -261,10 +334,13 @@ function installPreviewBridge(options: {
       path: string,
       context?: { projectPath?: string; sessionId?: string }
     ) => {
-      const resolvedPath =
-        context?.sessionId && !path.startsWith("/")
-          ? `/tmp/${context.sessionId}/${path}`
-          : path;
+      const resolvedPath = path.startsWith("/")
+        ? path
+        : context?.projectPath
+          ? `${context.projectPath}/${path}`
+          : context?.sessionId
+            ? `/tmp/${context.sessionId}/${path}`
+            : path;
       const kind = options.kind ?? previewKindForPath(path);
       const descriptor = previewDescriptorForKind(kind);
       return {
@@ -331,6 +407,29 @@ async function clickSidebarSession(title: string): Promise<void> {
   });
 }
 
+async function clickArtifactButton(name: string): Promise<void> {
+  const matches = await screen.findAllByText(name);
+  const button = matches.map((match) => match.closest("button")).find(Boolean);
+  fireEvent.click(button ?? matches[0]);
+}
+
+function todoToolCall(
+  id: string,
+  name: "todo_create" | "todo_update",
+  args: ToolCall["args"],
+  status: ToolCall["status"] = "completed"
+): ToolCall {
+  return {
+    id,
+    runId: "run_todo",
+    name,
+    args,
+    status,
+    createdAt: `2026-06-13T00:00:0${id.endsWith("2") ? "2" : "1"}.000Z`,
+    updatedAt: `2026-06-13T00:00:0${id.endsWith("2") ? "2" : "1"}.000Z`
+  };
+}
+
 describe("right panel", () => {
   it("opens on the menu page, navigates back from a tool and closes", async () => {
     const client = createClient();
@@ -341,6 +440,8 @@ describe("right panel", () => {
 
     fireEvent.click(await screen.findByTitle("打开侧边面板"));
     expect(await screen.findByRole("button", { name: "侧边会话" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
 
     installTerminalBridge();
     fireEvent.click(screen.getByRole("button", { name: "终端" }));
@@ -353,6 +454,203 @@ describe("right panel", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "浏览器" })).not.toBeInTheDocument()
     );
+  });
+
+  it("auto-opens the floating progress panel when the active run creates a todo", async () => {
+    const client = createClient();
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.handleRunEvent(
+        { type: "run_started", runId: "run_todo", sessionId: session.id },
+        { force: true }
+      );
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall(
+            "todo_1",
+            "todo_create",
+            {
+              title: "实现进度面板",
+              items: [
+                { id: "s1", title: "新增契约" },
+                { id: "s2", title: "接入右侧面板" }
+              ]
+            },
+            "running"
+          )
+        },
+        { force: true }
+      );
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall("todo_2", "todo_update", {
+            itemId: "s1",
+            status: "completed",
+            note: "共享契约完成"
+          })
+        },
+        { force: true }
+      );
+    });
+
+    expect(useAppStore.getState().progressPanelOpen).toBe(true);
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    expect(useAppStore.getState().rightPanelMode).toBeNull();
+    expect(screen.queryByTestId("right-panel")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
+    expect(await screen.findByText("实现进度面板")).toBeInTheDocument();
+    expect(screen.getByText("共享契约完成")).toBeInTheDocument();
+    expect(screen.getByText("完成")).toBeInTheDocument();
+  });
+
+  it("keeps progress updates in the floating panel without opening the right panel", async () => {
+    const client = createClient();
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.setRightPanelWidth(360);
+      store.handleRunEvent(
+        { type: "run_started", runId: "run_todo", sessionId: session.id },
+        { force: true }
+      );
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall("todo_1", "todo_create", {
+            title: "稳定右侧面板宽度",
+            items: [{ id: "s1", title: "预留滚动条空间并约束长文本" }]
+          })
+        },
+        { force: true }
+      );
+    });
+
+    const panel = await screen.findByTestId("progress-floating-panel");
+    const scrollRegion = await screen.findByTestId("progress-floating-scroll");
+
+    expect(useAppStore.getState().progressPanelOpen).toBe(true);
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    expect(screen.queryByTestId("right-panel")).not.toBeInTheDocument();
+    expect(panel).toHaveClass("chat-progress-floating", "shadow-overlay");
+    expect(scrollRegion).toHaveClass("overflow-x-hidden", "[scrollbar-gutter:stable]");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall("todo_2", "todo_update", {
+            itemId: "s1",
+            status: "completed",
+            note: "这是一段较长的流式进度说明，用来模拟更新进入面板时的内容增长。".repeat(
+              5
+            )
+          })
+        },
+        { force: true }
+      );
+      store.handleRunEvent(
+        { type: "delta", runId: "run_todo", channel: "text", delta: "继续输出中..." },
+        { force: true }
+      );
+    });
+
+    expect(useAppStore.getState().rightPanelWidth).toBe(360);
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    expect(screen.getByTestId("progress-floating-panel")).toBeInTheDocument();
+  });
+
+  it("keeps the floating progress panel open without exposing a close control", async () => {
+    const client = createClient();
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.handleRunEvent(
+        { type: "run_started", runId: "run_todo", sessionId: session.id },
+        { force: true }
+      );
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall("todo_1", "todo_create", {
+            title: "实现进度面板",
+            items: [{ id: "s1", title: "新增契约" }]
+          })
+        },
+        { force: true }
+      );
+    });
+    expect(await screen.findByText("实现进度面板")).toBeInTheDocument();
+    expect(screen.getByTestId("progress-floating-panel")).toHaveClass("rounded-xl");
+    expect(screen.queryByTitle("关闭进度")).not.toBeInTheDocument();
+
+    act(() => {
+      useAppStore.getState().handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall("todo_2", "todo_create", {
+            title: "第二份清单",
+            items: [{ id: "s2", title: "继续执行" }]
+          })
+        },
+        { force: true }
+      );
+    });
+
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    expect(useAppStore.getState().progressPanelOpen).toBe(true);
+    expect(await screen.findByText("第二份清单")).toBeInTheDocument();
+  });
+
+  it("keeps the right panel tools available while the floating progress panel is open", async () => {
+    const client = createClient();
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.handleRunEvent(
+        { type: "run_started", runId: "run_todo", sessionId: session.id },
+        { force: true }
+      );
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall("todo_1", "todo_create", {
+            title: "对话右侧进度",
+            items: [{ id: "s1", title: "保持工具入口可用" }]
+          })
+        },
+        { force: true }
+      );
+    });
+
+    expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("打开侧边面板"));
+
+    expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
+    expect(useAppStore.getState().progressPanelOpen).toBe(true);
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
   });
 
   it("starts a pty terminal in the active project and streams data through the bridge", async () => {
@@ -393,6 +691,8 @@ describe("right panel", () => {
 
     expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "侧边会话" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "终端" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "文件预览" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "变更" })).not.toBeInTheDocument();
@@ -412,8 +712,118 @@ describe("right panel", () => {
     expect(screen.getByRole("button", { name: "文件预览" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "浏览器" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "侧边会话" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
     await waitFor(() => expect(getGitInfo).toHaveBeenCalledWith(project.id));
     expect(screen.queryByRole("button", { name: "变更" })).not.toBeInTheDocument();
+  });
+
+  it("lists active project files in the file preview panel and opens them with project context", async () => {
+    const bridge = installPreviewBridge({ kind: "code", text: "line one\nline two" });
+    const rootEntries: ProjectFileEntry[] = [
+      { name: "src", path: "src", type: "directory" },
+      { name: "README.md", path: "README.md", type: "file" }
+    ];
+    const listProjectDirectory = vi.fn(async (projectId: string, path = ".") =>
+      projectId === project.id && path === "." ? rootEntries : []
+    );
+    const client = createClient({ listProjectDirectory });
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+    await openPane("文件预览");
+
+    expect(await screen.findByText("项目文件")).toBeInTheDocument();
+    expect(await screen.findByText("README.md")).toBeInTheDocument();
+    expect(listProjectDirectory).toHaveBeenCalledWith(project.id, ".");
+
+    fireEvent.click(screen.getByText("README.md"));
+
+    expect(await screen.findByText("line two")).toBeInTheDocument();
+    expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("README.md", {
+      projectPath: project.path,
+      sessionId: session.id
+    });
+    expect(bridge.readFilePreviewText).toHaveBeenCalledWith("/tmp/demo/README.md", {
+      maxBytes: 524288
+    });
+  });
+
+  it("lists final XML artifacts in the floating artifact panel and opens preview", async () => {
+    const bridge = installPreviewBridge({
+      kind: "html",
+      fileUrl: "file:///tmp/demo/page.html"
+    });
+    const client = createClient({
+      listMessages: vi.fn(async () => [
+        artifactMessage("page.html", {
+          id: "artifact_1",
+          createdAt: "2026-06-08T00:00:01.000Z"
+        }),
+        artifactMessage("reports/summary.docx", {
+          id: "artifact_2",
+          createdAt: "2026-06-08T00:00:02.000Z"
+        }),
+        artifactMessage("page.html", {
+          id: "artifact_3",
+          createdAt: "2026-06-08T00:00:03.000Z"
+        })
+      ])
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+
+    const panel = await screen.findByTestId("artifact-floating-panel");
+    expect(screen.queryByTestId("right-panel")).not.toBeInTheDocument();
+    expect(within(panel).getByText("2 个产物")).toBeInTheDocument();
+    const artifactButtons = within(panel).getAllByRole("button");
+    expect(artifactButtons[0]).toHaveTextContent("page.html");
+    expect(artifactButtons[1]).toHaveTextContent("summary.docx");
+
+    fireEvent.click(within(panel).getByRole("button", { name: /page\.html/u }));
+
+    expect(await screen.findByText("HTML / SVG · 17 B")).toBeInTheDocument();
+    expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("page.html", {
+      projectPath: project.path,
+      sessionId: session.id
+    });
+    expect(bridge.createFileUrl).toHaveBeenCalledWith("/tmp/demo/page.html");
+  });
+
+  it("shows artifact floating panel above the progress floating panel", async () => {
+    const client = createClient({
+      listMessages: vi.fn(async () => [artifactMessage("page.html")])
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.handleRunEvent(
+        { type: "run_started", runId: "run_todo", sessionId: session.id },
+        { force: true }
+      );
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall("todo_1", "todo_create", {
+            title: "带产物的任务",
+            items: [{ id: "s1", title: "生成页面" }]
+          })
+        },
+        { force: true }
+      );
+    });
+
+    const stack = await screen.findByTestId("chat-floating-stack");
+    const artifactPanel = await within(stack).findByTestId("artifact-floating-panel");
+    const progressPanel = await within(stack).findByTestId("progress-floating-panel");
+
+    expect([...stack.children]).toEqual([artifactPanel, progressPanel]);
   });
 
   it("shows changes for a git project", async () => {
@@ -429,6 +839,8 @@ describe("right panel", () => {
     expect(await screen.findByRole("button", { name: "变更" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "终端" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "文件预览" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
   });
 
   it("returns to the menu when switching from a project-only panel to a conversation", async () => {
@@ -448,6 +860,7 @@ describe("right panel", () => {
     await waitFor(() => expect(screen.queryByLabelText("终端")).not.toBeInTheDocument());
     expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "侧边会话" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "终端" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "文件预览" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "变更" })).not.toBeInTheDocument();
@@ -501,6 +914,10 @@ describe("right panel", () => {
 
     expect(await screen.findByText("a.ts")).toBeInTheDocument();
     expect(await screen.findByText("line two")).toBeInTheDocument();
+    expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("src/a.ts", {
+      projectPath: project.path,
+      sessionId: session.id
+    });
     expect(bridge.readFilePreviewText).toHaveBeenCalledWith("/tmp/demo/src/a.ts", {
       maxBytes: 524288
     });
@@ -511,157 +928,135 @@ describe("right panel", () => {
       kind: "html",
       fileUrl: "file:///tmp/demo/page.html"
     });
-    const toolCall: ToolCall = {
-      id: "tool_html",
-      runId: "run_1",
-      name: "write_file",
-      args: { path: "page.html", content: "<!doctype html>" },
-      status: "completed",
-      result: "已写入 page.html",
-      createdAt: "2026-06-08T00:00:01.000Z",
-      updatedAt: "2026-06-08T00:00:01.000Z"
-    };
     const client = createClient({
-      listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [toolCall] }))
+      listMessages: vi.fn(async () => [artifactMessage("page.html")])
     });
 
     const { container } = render(<App client={client} />);
     await selectSession("项目对话");
-    fireEvent.click(await screen.findByText("page.html"));
+    await clickArtifactButton("page.html");
 
     expect(await screen.findByText("HTML / SVG · 17 B")).toBeInTheDocument();
     expect(container.querySelector("webview")?.getAttribute("src")).toBe("file:///tmp/demo/page.html");
     expect(bridge.createFileUrl).toHaveBeenCalledWith("/tmp/demo/page.html");
   });
 
-  it("falls back to a presentation thumbnail and system open for PPT artifacts", async () => {
+  it("renders PPTX artifacts in the embedded multi-page preview", async () => {
     const bridge = installPreviewBridge({
       kind: "presentation",
-      thumbnailUrl: "data:image/png;base64,thumb"
+      buffer: previewBuffer("pptx")
     });
-    const toolCall: ToolCall = {
-      id: "tool_ppt",
-      runId: "run_1",
-      name: "create_pptx",
-      args: { path: "slides/demo.pptx" },
-      status: "completed",
-      result: "已生成 slides/demo.pptx",
-      createdAt: "2026-06-08T00:00:01.000Z",
-      updatedAt: "2026-06-08T00:00:01.000Z"
-    };
     const client = createClient({
-      listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [toolCall] }))
+      listMessages: vi.fn(async () => [artifactMessage("slides/demo.pptx")])
     });
 
     render(<App client={client} />);
     await selectSession("项目对话");
-    fireEvent.click(await screen.findByText("demo.pptx"));
+    await clickArtifactButton("demo.pptx");
 
-    expect(await screen.findByText("演示文稿暂以缩略图和系统打开为主。")).toBeInTheDocument();
+    expect(await screen.findByText("1 / 2")).toBeInTheDocument();
+    expect(await screen.findByTestId("pptx-rendered")).toHaveTextContent("第 2 页");
+    expect(bridge.readFilePreviewBuffer).toHaveBeenCalledWith("/tmp/demo/slides/demo.pptx", {
+      maxBytes: 26214400
+    });
+    expect(bridge.createQuickLookThumbnail).not.toHaveBeenCalled();
+    expect(pptxRendererMock.open).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTitle("下一页"));
+    await waitFor(() => expect(screen.getByText("2 / 2")).toBeInTheDocument());
+    expect(pptxRendererMock.goToSlide).toHaveBeenCalledWith(1, { behavior: "smooth", block: "start" });
+  });
+
+  it("falls back to a presentation thumbnail and system open for legacy PPT artifacts", async () => {
+    const bridge = installPreviewBridge({
+      kind: "presentation",
+      thumbnailUrl: "data:image/png;base64,thumb"
+    });
+    const client = createClient({
+      listMessages: vi.fn(async () => [artifactMessage("slides/demo.ppt")])
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+    await clickArtifactButton("demo.ppt");
+
+    expect(await screen.findByText("旧版 PPT 演示文稿暂无法内嵌解析，请用系统应用打开。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "用系统应用打开" }));
-    expect(bridge.openPath).toHaveBeenCalledWith("/tmp/demo/slides/demo.pptx");
+    expect(bridge.openPath).toHaveBeenCalledWith("/tmp/demo/slides/demo.ppt");
   });
 
   it("opens a presentation artifact directly in file preview even without a project menu item", async () => {
     const bridge = installPreviewBridge({
       kind: "presentation",
-      thumbnailUrl: "data:image/png;base64,thumb"
+      buffer: previewBuffer("pptx")
     });
-    const toolCall: ToolCall = {
-      id: "tool_conversation_ppt",
-      runId: "run_1",
-      name: "create_pptx",
-      args: { path: "AI日报_2026-06-12.pptx" },
-      status: "completed",
-      result: "已生成 AI日报_2026-06-12.pptx",
-      createdAt: "2026-06-08T00:00:01.000Z",
-      updatedAt: "2026-06-08T00:00:01.000Z"
-    };
     const client = createClient({
       listSessions: vi.fn(async () => [conversationSession]),
-      listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [toolCall] }))
+      listMessages: vi.fn(async () => [
+        artifactMessage("AI日报_2026-06-12.pptx", { sessionId: conversationSession.id })
+      ])
     });
 
     render(<App client={client} />);
     await selectSession("纯对话");
     fireEvent.click(await screen.findByTitle("打开侧边面板"));
     expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "文件预览" })).not.toBeInTheDocument();
 
-    fireEvent.click(await screen.findByText("AI日报_2026-06-12.pptx"));
+    await clickArtifactButton("AI日报_2026-06-12.pptx");
 
-    expect(await screen.findByText("演示文稿暂以缩略图和系统打开为主。")).toBeInTheDocument();
+    expect(await screen.findByText("1 / 2")).toBeInTheDocument();
     expect(screen.getAllByText("AI日报_2026-06-12.pptx").length).toBeGreaterThan(1);
     expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("AI日报_2026-06-12.pptx", {
       sessionId: conversationSession.id
     });
-    expect(bridge.createQuickLookThumbnail).toHaveBeenCalledWith(
-      "/tmp/session_2/AI日报_2026-06-12.pptx"
-    );
+    expect(bridge.readFilePreviewBuffer).toHaveBeenCalledWith("/tmp/session_2/AI日报_2026-06-12.pptx", {
+      maxBytes: 26214400
+    });
   });
 
   it("keeps right panel preview memory scoped to each chat session", async () => {
     installPreviewBridge({
       kind: "presentation",
-      thumbnailUrl: "data:image/png;base64,thumb"
+      buffer: previewBuffer("pptx")
     });
-    const toolCall: ToolCall = {
-      id: "tool_session_ppt",
-      runId: "run_1",
-      name: "create_pptx",
-      args: { path: "slides/session-a.pptx" },
-      status: "completed",
-      result: "已生成 slides/session-a.pptx",
-      createdAt: "2026-06-08T00:00:01.000Z",
-      updatedAt: "2026-06-08T00:00:01.000Z"
-    };
     const client = createClient({
       listSessions: vi.fn(async () => [session, secondSession]),
-      listSessionRuns: vi.fn(async (sessionId: string) => ({
-        runs: [],
-        toolCalls: sessionId === session.id ? [toolCall] : []
-      }))
+      listMessages: vi.fn(async (sessionId: string) =>
+        sessionId === session.id ? [artifactMessage("slides/session-a.pptx")] : []
+      )
     });
 
     render(<App client={client} />);
     await selectSession("项目对话");
-    fireEvent.click(await screen.findByText("session-a.pptx"));
-    expect(await screen.findByText("演示文稿暂以缩略图和系统打开为主。")).toBeInTheDocument();
+    await clickArtifactButton("session-a.pptx");
+    expect(await screen.findByText("1 / 2")).toBeInTheDocument();
 
     await clickSidebarSession("另一个项目对话");
     await waitFor(() =>
-      expect(screen.queryByText("演示文稿暂以缩略图和系统打开为主。")).not.toBeInTheDocument()
+      expect(screen.queryByText("1 / 2")).not.toBeInTheDocument()
     );
     expect(screen.getByTitle("打开侧边面板")).toBeInTheDocument();
     expect(useAppStore.getState().rightPanelOpen).toBe(false);
 
     await clickSidebarSession("项目对话");
-    expect(await screen.findByText("演示文稿暂以缩略图和系统打开为主。")).toBeInTheDocument();
+    expect(await screen.findByText("1 / 2")).toBeInTheDocument();
     expect(useAppStore.getState().rightPanelOpen).toBe(true);
     expect(useAppStore.getState().rightPanelMode).toBe("files");
   });
 
   it("routes DOCX, spreadsheet, and PDF artifacts into their embedded viewers", async () => {
     const docBridge = installPreviewBridge({ kind: "docx", buffer: previewBuffer("docx") });
-    const docTool: ToolCall = {
-      id: "tool_doc",
-      runId: "run_1",
-      name: "create_docx",
-      args: { path: "report.docx" },
-      status: "completed",
-      result: "已生成 report.docx",
-      createdAt: "2026-06-08T00:00:01.000Z",
-      updatedAt: "2026-06-08T00:00:01.000Z"
-    };
     const { unmount } = render(
       <App
         client={createClient({
-          listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [docTool] }))
+          listMessages: vi.fn(async () => [artifactMessage("report.docx")])
         })}
       />
     );
     await selectSession("项目对话");
-    fireEvent.click(await screen.findByText("report.docx"));
+    await clickArtifactButton("report.docx");
     await waitFor(() =>
       expect(document.querySelector('iframe[title="docx-preview"]')?.getAttribute("srcdoc")).toContain(
         "DOCX 内容预览"
@@ -674,25 +1069,15 @@ describe("right panel", () => {
 
     resetAppStore();
     const sheetBridge = installPreviewBridge({ kind: "spreadsheet", buffer: previewBuffer("sheet") });
-    const sheetTool: ToolCall = {
-      id: "tool_xlsx",
-      runId: "run_1",
-      name: "create_xlsx",
-      args: { path: "data.xlsx" },
-      status: "completed",
-      result: "已生成 data.xlsx",
-      createdAt: "2026-06-08T00:00:01.000Z",
-      updatedAt: "2026-06-08T00:00:01.000Z"
-    };
     const sheetRender = render(
       <App
         client={createClient({
-          listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [sheetTool] }))
+          listMessages: vi.fn(async () => [artifactMessage("data.xlsx")])
         })}
       />
     );
     await selectSession("项目对话");
-    fireEvent.click(await screen.findByText("data.xlsx"));
+    await clickArtifactButton("data.xlsx");
     expect(await screen.findByText("Sheet1")).toBeInTheDocument();
     expect(await screen.findByText("苹果")).toBeInTheDocument();
     expect(sheetBridge.readFilePreviewBuffer).toHaveBeenCalledWith("/tmp/demo/data.xlsx", {
@@ -702,25 +1087,15 @@ describe("right panel", () => {
 
     resetAppStore();
     const pdfBridge = installPreviewBridge({ kind: "pdf", buffer: previewBuffer("%PDF") });
-    const pdfTool: ToolCall = {
-      id: "tool_pdf",
-      runId: "run_1",
-      name: "write_file",
-      args: { path: "brief.pdf", content: "" },
-      status: "completed",
-      result: "已生成 brief.pdf",
-      createdAt: "2026-06-08T00:00:01.000Z",
-      updatedAt: "2026-06-08T00:00:01.000Z"
-    };
     render(
       <App
         client={createClient({
-          listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [pdfTool] }))
+          listMessages: vi.fn(async () => [artifactMessage("brief.pdf")])
         })}
       />
     );
     await selectSession("项目对话");
-    fireEvent.click(await screen.findByText("brief.pdf"));
+    await clickArtifactButton("brief.pdf");
     expect(await screen.findByText("1 / 1")).toBeInTheDocument();
     expect(pdfBridge.readFilePreviewBuffer).toHaveBeenCalledWith("/tmp/demo/brief.pdf", {
       maxBytes: 26214400

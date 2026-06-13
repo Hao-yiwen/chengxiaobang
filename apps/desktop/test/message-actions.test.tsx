@@ -99,6 +99,25 @@ describe("MessageActions", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("答案是 42"));
   });
 
+  it("copies assistant answers without final artifact XML", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true
+    });
+    const artifactAnswer: Message = {
+      ...assistantMessage,
+      content: "HTML 已经生成。\n\n<artifacts><artifact path=\"page.html\" /></artifacts>"
+    };
+    render(<App client={createClient({ listMessages: vi.fn(async () => [userMessage, artifactAnswer]) })} />);
+    await screen.findByText("HTML 已经生成。");
+
+    const copyButtons = screen.getAllByRole("button", { name: "复制" });
+    fireEvent.click(copyButtons[1]);
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("HTML 已经生成。"));
+  });
+
   it("regenerates the last answer by rewinding to the last user message", async () => {
     const rewindSession = vi.fn(async () => [] as Message[]);
     const streamRun = vi.fn(async () => {});
@@ -214,7 +233,7 @@ describe("MessageActions", () => {
       id: "a_final",
       sessionId: session.id,
       role: "assistant",
-      content: "HTML 已经生成。",
+      content: "HTML 已经生成。\n\n<artifacts><artifact path=\"beautiful-page.html\" /></artifacts>",
       createdAt: "2026-06-08T00:00:03.000Z"
     };
     const htmlToolCall: ToolCall = {
@@ -236,7 +255,34 @@ describe("MessageActions", () => {
 
     expect(await screen.findByText("好的，我先创建 HTML 文件。")).toBeInTheDocument();
     expect(await screen.findByText("HTML 已经生成。")).toBeInTheDocument();
-    expect(screen.getByText("beautiful-page.html")).toBeInTheDocument();
+    expect(screen.getAllByText("beautiful-page.html").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole("button", { name: "复制" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "从这条消息创建分支" })).toHaveLength(2);
+  });
+
+  it("hides actions for interim assistant messages followed by another assistant answer", async () => {
+    const interimMessage: Message = {
+      id: "a_interim",
+      sessionId: session.id,
+      role: "assistant",
+      content: "结构已规划好，共 12 页，分五大章节。现在写规格文件。",
+      createdAt: "2026-06-08T00:00:01.000Z"
+    };
+    const finalMessage: Message = {
+      id: "a_final",
+      sessionId: session.id,
+      role: "assistant",
+      content: "规格文件已经写完，页面结构和章节安排都整理好了。",
+      createdAt: "2026-06-08T00:00:02.000Z"
+    };
+    const client = createClient({
+      listMessages: vi.fn(async () => [userMessage, interimMessage, finalMessage])
+    });
+
+    render(<App client={client} />);
+
+    expect(await screen.findByText("结构已规划好，共 12 页，分五大章节。现在写规格文件。")).toBeInTheDocument();
+    expect(await screen.findByText("规格文件已经写完，页面结构和章节安排都整理好了。")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "复制" })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "从这条消息创建分支" })).toHaveLength(2);
   });

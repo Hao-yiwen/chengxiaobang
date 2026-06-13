@@ -5,9 +5,11 @@ import * as React from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
+type CommandRootProps = React.ComponentPropsWithoutRef<typeof CommandPrimitive>;
+
 const Command = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive>,
-  React.ComponentPropsWithoutRef<typeof CommandPrimitive>
+  CommandRootProps
 >(({ className, ...props }, ref) => (
   <CommandPrimitive
     ref={ref}
@@ -20,16 +22,32 @@ const Command = React.forwardRef<
 ));
 Command.displayName = CommandPrimitive.displayName;
 
-type CommandDialogProps = DialogProps & { title?: string; description?: string };
+type CommandDialogProps = DialogProps & {
+  title?: string;
+  description?: string;
+  commandProps?: CommandRootProps;
+};
 
-function CommandDialog({ children, title = "Command Menu", ...props }: CommandDialogProps) {
+function CommandDialog({
+  children,
+  title = "Command Menu",
+  commandProps,
+  ...props
+}: CommandDialogProps) {
+  const { className, ...rootProps } = commandProps ?? {};
   return (
     <Dialog {...props}>
       <DialogContent className="overflow-hidden p-0" hideClose>
         <DialogHeader className="sr-only">
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+        <Command
+          className={cn(
+            "[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5",
+            className
+          )}
+          {...rootProps}
+        >
           {children}
         </Command>
       </DialogContent>

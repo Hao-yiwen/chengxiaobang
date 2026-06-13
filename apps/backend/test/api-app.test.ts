@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   nowIso,
   parseSseChunk,
+  sessionSearchResultSchema,
   type ProviderConfig,
+  type StreamEvent,
   type ToolCall
 } from "@chengxiaobang/shared";
 import { AgentRunner } from "../src/agent/agent-runner";
@@ -13,6 +15,7 @@ import { createApp } from "../src/api/app";
 import { ProviderService } from "../src/model/provider-service";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 import { MemorySecretStore } from "../src/secrets/secret-store";
+import { SkillMarketService } from "../src/tools/skill-market-service";
 import { runCommand } from "../src/tools/shell";
 import { SlashCommandService } from "../src/tools/slash-command-service";
 import { scriptedStreamFn } from "./helpers/scripted-stream";
@@ -176,6 +179,100 @@ describe("createApp", () => {
     expect(missing.status).toBe(404);
   });
 
+  it("clears failed run history and tool calls when retry rewinds the user message", async () => {
+    const session = await store.createSession({
+      projectId: null,
+      title: "重试清理",
+      accessMode: "approval"
+    });
+    await store.createRun({
+      id: "run_interrupted",
+      sessionId: session.id,
+      status: "running"
+    });
+    await tick();
+    const userMessage = await store.addMessage({
+      sessionId: session.id,
+      role: "user",
+      content: "帮我做一份介绍『人工智能发展简史』的演示文稿"
+    });
+    await tick();
+    const timestamp = nowIso();
+    await store.insertToolCall({
+      id: "tool_skill_ppt",
+      runId: "run_interrupted",
+      name: "use_skill",
+      args: { name: "ppt" },
+      status: "completed",
+      result: "已加载技能 ppt",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await store.updateRunStatus(
+      "run_interrupted",
+      "failed",
+      undefined,
+      "运行进程已重启，无法继续等待审批或工具结果。请重新发起本次请求。"
+    );
+
+    const before = await app(
+      new Request(`http://local/api/sessions/${session.id}/runs`, { method: "GET" })
+    );
+    await expect(before.json()).resolves.toMatchObject({
+      runs: [expect.objectContaining({ id: "run_interrupted", status: "failed" })],
+      toolCalls: [expect.objectContaining({ id: "tool_skill_ppt", name: "use_skill" })]
+    });
+
+    const response = await app(
+      jsonRequest(`/api/sessions/${session.id}/rewind`, "POST", { messageId: userMessage.id })
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ messages: [] });
+
+    const after = await app(
+      new Request(`http://local/api/sessions/${session.id}/runs`, { method: "GET" })
+    );
+    await expect(after.json()).resolves.toEqual({ runs: [], toolCalls: [] });
+  });
+
+  it("searches sessions by title or visible message content over HTTP", async () => {
+    const empty = await app(
+      new Request("http://local/api/sessions/search?query=", { method: "GET" })
+    );
+    expect(empty.status).toBe(200);
+    await expect(empty.json()).resolves.toEqual({ results: [] });
+
+    const session = await store.createSession({
+      projectId: null,
+      title: "普通标题",
+      accessMode: "approval"
+    });
+    const message = await store.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "这里记录了湖蓝色线索，应该能被正文搜索找到。"
+    });
+
+    const response = await app(
+      new Request(
+        `http://local/api/sessions/search?query=${encodeURIComponent("湖蓝色线索")}`,
+        { method: "GET" }
+      )
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { results: unknown[] };
+    expect(sessionSearchResultSchema.array().safeParse(body.results).success).toBe(true);
+    expect(body.results).toMatchObject([
+      {
+        session: { id: session.id, title: "普通标题" },
+        matchType: "content",
+        messageId: message.id,
+        role: "assistant",
+        snippet: expect.stringContaining("湖蓝色线索")
+      }
+    ]);
+  });
+
   it("lists project files for the composer autocomplete", async () => {
     await mkdir(join(dir, "proj", "src"), { recursive: true });
     await writeFile(join(dir, "proj", "src", "index.ts"), "export {};");
@@ -322,6 +419,50 @@ describe("createApp", () => {
     await expect(status.json()).resolves.toMatchObject({ status: { status: "connected" } });
   });
 
+  it("serves, saves and tests the web search config without exposing the API Key", async () => {
+    const { WebSearchConfigService } = await import(
+      "../src/web-search/web-search-config-service"
+    );
+    const webSearchConfigService = new WebSearchConfigService(store, secrets);
+    const webSearchApp = createApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets),
+      webSearchConfigService
+    });
+
+    const initial = await webSearchApp(
+      new Request("http://local/api/settings/web-search", { method: "GET" })
+    );
+    await expect(initial.json()).resolves.toEqual({ config: { enabled: false } });
+
+    const saved = await webSearchApp(
+      jsonRequest("/api/settings/web-search", "PUT", {
+        enabled: true,
+        apiKey: "tvly-secret"
+      })
+    );
+    expect(saved.status).toBe(200);
+    const body = (await saved.json()) as { config: { apiKeyRef?: string } };
+    expect(body.config.apiKeyRef).toBe("memory:web-search:tavily");
+    expect(JSON.stringify(body)).not.toContain("tvly-secret");
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ results: [{ title: "OK", url: "https://example.com" }] }), {
+        headers: { "content-type": "application/json" }
+      })) as typeof fetch;
+    try {
+      const tested = await webSearchApp(
+        new Request("http://local/api/settings/web-search/test", { method: "POST" })
+      );
+      expect(tested.status).toBe(200);
+      await expect(tested.json()).resolves.toEqual({ ok: true });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("reports feishu routes as unavailable when not wired", async () => {
     const response = await app(
       new Request("http://local/api/settings/feishu", { method: "GET" })
@@ -331,6 +472,10 @@ describe("createApp", () => {
       new Request("http://local/api/settings/feishu/status", { method: "GET" })
     );
     await expect(status.json()).resolves.toEqual({ status: { status: "disconnected" } });
+    const webSearch = await app(
+      new Request("http://local/api/settings/web-search", { method: "GET" })
+    );
+    expect(webSearch.status).toBe(404);
   });
 
   it("allows PATCH in CORS preflight responses", async () => {
@@ -386,6 +531,150 @@ describe("createApp", () => {
     expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
   });
 
+  it("starts a run through POST /api/runs and publishes events on the global SSE stream", async () => {
+    const scripted = scriptedStreamFn([{ thinking: "想一想", text: "你好！" }]);
+    const eventApp = createApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets, { streamFn: scripted.streamFn })
+    });
+    const eventsController = new AbortController();
+    const eventsResponse = await eventApp(
+      new Request("http://local/api/events", { signal: eventsController.signal })
+    );
+    const eventsPromise = collectSseEvents(eventsResponse, eventsController);
+
+    const startedResponse = await eventApp(
+      jsonRequest("/api/runs", "POST", {
+        prompt: "你好",
+        clientRequestId: "client_1",
+        accessMode: "approval"
+      })
+    );
+
+    expect(startedResponse.status).toBe(200);
+    await expect(startedResponse.json()).resolves.toMatchObject({
+      sessionId: expect.any(String),
+      runId: expect.any(String),
+      clientRequestId: "client_1",
+      model: expect.any(String)
+    });
+    const events = await eventsPromise;
+    expect(events.map((event) => event.type)).toEqual([
+      "run_started",
+      "message",
+      "delta",
+      "delta",
+      "message",
+      "run_end"
+    ]);
+    expect(events[0]).toMatchObject({ type: "run_started", clientRequestId: "client_1" });
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
+  });
+
+  it("returns an HTTP error when POST /api/runs fails before run_started", async () => {
+    await store.deleteProvider("deepseek");
+
+    const response = await app(
+      jsonRequest("/api/runs", "POST", {
+        prompt: "你好",
+        accessMode: "approval"
+      })
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({ error: "请先配置至少一个模型" });
+  });
+
+  it("returns in-process active run snapshots and lets approval continue after reconnect", async () => {
+    const scripted = scriptedStreamFn([
+      {
+        toolCalls: [
+          {
+            id: "call_write",
+            name: "write_file",
+            arguments: { path: ".env", content: "TOKEN=ok" }
+          }
+        ]
+      },
+      { text: "写好了。" }
+    ]);
+    const runner = new AgentRunner(store, secrets, {
+      streamFn: scripted.streamFn,
+      sessionWorkspacePath: (sessionId) => join(dir, "sessions", sessionId)
+    });
+    const activeApp = createApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner
+    });
+
+    const startedResponse = await activeApp(
+      jsonRequest("/api/runs", "POST", {
+        prompt: "写文件",
+        accessMode: "approval"
+      })
+    );
+    expect(startedResponse.status).toBe(200);
+    const started = (await startedResponse.json()) as { runId: string; sessionId: string };
+
+    let activePayload:
+      | { runs: Array<{ run: { id: string; sessionId: string }; toolCalls: ToolCall[] }> }
+      | undefined;
+    await vi.waitFor(async () => {
+      const response = await activeApp(
+        new Request(`http://local/api/runs/active?sessionId=${started.sessionId}`)
+      );
+      expect(response.status).toBe(200);
+      activePayload = (await response.json()) as typeof activePayload;
+      expect(activePayload?.runs).toHaveLength(1);
+      expect(activePayload?.runs[0]?.run).toMatchObject({
+        id: started.runId,
+        sessionId: started.sessionId
+      });
+      expect(activePayload?.runs[0]?.toolCalls).toEqual([
+        expect.objectContaining({ name: "write_file", status: "pending_approval" })
+      ]);
+    });
+
+    const pendingTool = activePayload?.runs[0]?.toolCalls[0];
+    expect(pendingTool?.id).toBeTruthy();
+    const approval = await activeApp(
+      jsonRequest(`/api/approvals/${pendingTool!.id}`, "POST", { approved: true })
+    );
+    expect(approval.status).toBe(200);
+
+    await vi.waitFor(async () => {
+      const response = await activeApp(
+        new Request(`http://local/api/runs/active?sessionId=${started.sessionId}`)
+      );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ runs: [] });
+      const runs = await store.listRuns(started.sessionId);
+      expect(runs.find((run) => run.id === started.runId)?.status).toBe("completed");
+    });
+  });
+
+  it("does not expose stale DB running records as active run snapshots", async () => {
+    const session = await store.createSession({
+      projectId: null,
+      title: "残留运行",
+      accessMode: "approval"
+    });
+    await store.createRun({
+      id: "run_stale",
+      sessionId: session.id,
+      status: "running"
+    });
+
+    const response = await app(
+      new Request(`http://local/api/runs/active?sessionId=${session.id}`, { method: "GET" })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ runs: [] });
+  });
+
   it("returns persisted runs and tool calls for a session", async () => {
     const session = await store.createSession({
       projectId: null,
@@ -397,6 +686,12 @@ describe("createApp", () => {
       sessionId: session.id,
       status: "completed"
     });
+    await store.createRun({
+      id: "run_2",
+      sessionId: session.id,
+      status: "running"
+    });
+    await store.updateRunStatus("run_2", "failed", undefined, "模型 token 超限");
     const timestamp = nowIso();
     const toolCall: ToolCall = {
       id: "tool_1",
@@ -417,8 +712,19 @@ describe("createApp", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      runs: [{ id: "run_1", sessionId: session.id, status: "completed" }],
+    const payload = await response.json();
+    expect(payload.runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "run_1", sessionId: session.id, status: "completed" }),
+        expect.objectContaining({
+          id: "run_2",
+          sessionId: session.id,
+          status: "failed",
+          error: "模型 token 超限"
+        })
+      ])
+    );
+    expect(payload).toMatchObject({
       toolCalls: [
         {
           id: "tool_1",
@@ -430,6 +736,51 @@ describe("createApp", () => {
         }
       ]
     });
+  });
+
+  it("returns global usage stats from settings API", async () => {
+    const session = await store.createSession({
+      projectId: null,
+      title: "用量统计",
+      providerId: "deepseek",
+      accessMode: "approval"
+    });
+    await store.createRun({
+      id: "run_usage_stats",
+      sessionId: session.id,
+      status: "running",
+      providerId: "deepseek",
+      providerKind: "deepseek",
+      model: "deepseek-v4-flash"
+    });
+    await store.updateRunStatus("run_usage_stats", "completed", {
+      promptTokens: 1_000_000,
+      completionTokens: 1_000_000,
+      totalTokens: 2_000_000
+    });
+
+    const response = await app(
+      new Request("http://local/api/settings/usage-stats?timezoneOffsetMinutes=-480", {
+        method: "GET"
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.stats).toMatchObject({
+      currency: "CNY",
+      total: {
+        runCount: 1,
+        usageRunCount: 1,
+        totalTokens: 2_000_000
+      },
+      dataQuality: {
+        totalRunCount: 1,
+        pricedRunCount: 1
+      }
+    });
+    expect(payload.stats.dailyBuckets).toHaveLength(371);
+    expect(payload.stats.total.costCny).toBeGreaterThan(2);
   });
 
   it("executes terminal commands inside the project directory", async () => {
@@ -664,6 +1015,87 @@ describe("createApp", () => {
     expect(deleted.status).toBe(200);
     await expect(deleted.json()).resolves.toEqual({ deleted: true });
   });
+
+  it("returns 404 for skills routes when the market service is absent", async () => {
+    const missing = await app(new Request("http://local/api/skills", { method: "GET" }));
+    expect(missing.status).toBe(404);
+  });
+
+  it("lists, toggles and manages skills through HTTP API", async () => {
+    await mkdir(join(dir, "market", "code-review"), { recursive: true });
+    await writeFile(
+      join(dir, "market", "code-review", "SKILL.md"),
+      "---\nname: code-review\ndescription: 审代码\nmetadata:\n  category: coding\n---\n正文",
+      "utf8"
+    );
+    const skillsApp = createApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets),
+      skillMarketService: new SkillMarketService(store, {
+        builtinRoot: join(dir, "builtin"),
+        marketRoot: join(dir, "market"),
+        customRoot: join(dir, "custom")
+      })
+    });
+
+    const listed = await skillsApp(new Request("http://local/api/skills", { method: "GET" }));
+    expect(listed.status).toBe(200);
+    await expect(listed.json()).resolves.toEqual({
+      skills: [
+        {
+          name: "code-review",
+          description: "审代码",
+          category: "coding",
+          source: "market",
+          enabled: false
+        }
+      ]
+    });
+
+    const detail = await skillsApp(
+      new Request("http://local/api/skills/detail/code-review", { method: "GET" })
+    );
+    expect(detail.status).toBe(200);
+    await expect(detail.json()).resolves.toMatchObject({
+      skill: { name: "code-review", source: "market", content: "正文" }
+    });
+
+    const detailMissing = await skillsApp(
+      new Request("http://local/api/skills/detail/nope", { method: "GET" })
+    );
+    expect(detailMissing.status).toBe(404);
+
+    const enabled = await skillsApp(
+      jsonRequest("/api/skills/market/code-review", "PUT", { enabled: true })
+    );
+    expect(enabled.status).toBe(200);
+    const enabledBody = (await enabled.json()) as { skills: Array<{ enabled: boolean }> };
+    expect(enabledBody.skills[0]?.enabled).toBe(true);
+
+    const unknown = await skillsApp(
+      jsonRequest("/api/skills/market/missing", "PUT", { enabled: true })
+    );
+    expect(unknown.status).toBe(400);
+
+    const created = await skillsApp(
+      jsonRequest("/api/skills/custom", "POST", {
+        name: "daily-report",
+        description: "生成日报",
+        content: "按模板写日报"
+      })
+    );
+    expect(created.status).toBe(200);
+    await expect(created.json()).resolves.toMatchObject({
+      skill: { name: "daily-report", source: "custom", enabled: true }
+    });
+
+    const deletedSkill = await skillsApp(
+      new Request("http://local/api/skills/custom/daily-report", { method: "DELETE" })
+    );
+    expect(deletedSkill.status).toBe(200);
+    await expect(deletedSkill.json()).resolves.toEqual({ deleted: true });
+  });
 });
 
 function jsonRequest(path: string, method: string, body: unknown): Request {
@@ -672,6 +1104,43 @@ function jsonRequest(path: string, method: string, body: unknown): Request {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
+}
+
+async function collectSseEvents(
+  response: Response,
+  controller: AbortController
+): Promise<StreamEvent[]> {
+  expect(response.status).toBe(200);
+  expect(response.body).toBeTruthy();
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const events: StreamEvent[] = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split(/\n\n+/);
+    buffer = blocks.pop() ?? "";
+    for (const block of blocks) {
+      const data = block
+        .split("\n")
+        .find((line) => line.startsWith("data: "))
+        ?.slice(6);
+      if (!data) {
+        continue;
+      }
+      const event = JSON.parse(data) as StreamEvent;
+      events.push(event);
+      if (event.type === "run_end") {
+        controller.abort();
+        return events;
+      }
+    }
+  }
+  return events;
 }
 
 async function seedProvider(
@@ -690,4 +1159,8 @@ async function seedProvider(
     updatedAt: timestamp
   };
   await store.upsertProvider(provider);
+}
+
+function tick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 2));
 }

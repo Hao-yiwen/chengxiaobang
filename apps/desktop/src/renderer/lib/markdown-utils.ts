@@ -1,9 +1,11 @@
 /**
- * Pure helpers behind the Markdown renderer (components/Markdown.tsx).
- * Dependency-free and node-testable.
+ * Markdown 渲染层保留的纯函数工具。
+ *
+ * Streamdown 已接管代码块、链接、未闭合 Markdown 修复和流式分块；这里仅保留
+ * 项目侧仍需要的表格数字列启发式，便于用 DESIGN token 做右对齐和等宽数字。
  */
 
-/** Minimal structural view of a hast node, compatible with react-markdown's. */
+/** 与 Streamdown/rehype 兼容的最小 hast 节点视图。 */
 export interface HastNode {
   type: string;
   tagName?: string;
@@ -12,12 +14,7 @@ export interface HastNode {
   properties?: Record<string, unknown>;
 }
 
-/** Only http(s) links are linkified — the main process opens those externally. */
-export function isSafeHref(href: string): boolean {
-  return /^https?:\/\//i.test(href);
-}
-
-/** Concatenated text content of a hast subtree (e.g. highlighted code spans). */
+/** 拼接 hast 子树里的纯文本内容，用于表格单元格内容统计。 */
 export function hastText(node: HastNode | undefined): string {
   if (!node) {
     return "";
@@ -28,45 +25,10 @@ export function hastText(node: HastNode | undefined): string {
   return (node.children ?? []).map(hastText).join("");
 }
 
-/** Extracts `x` from a `language-x` class, given a string or hast class list. */
-export function languageFromClass(className: unknown): string | undefined {
-  const classes = Array.isArray(className)
-    ? className.map(String)
-    : typeof className === "string"
-      ? className.split(/\s+/)
-      : [];
-  const entry = classes.find((value) => value.startsWith("language-"));
-  return entry ? entry.slice("language-".length).toLowerCase() : undefined;
-}
-
-/**
- * Rehype plugin tagging `pre > code` with `data-code-block` so the `code`
- * renderer can tell blocks from inline code — class names alone can't, since
- * rehype-highlight leaves language-less blocks untouched.
- */
-export function rehypeMarkCodeBlocks() {
-  return (tree: HastNode): void => {
-    walk(tree);
-  };
-}
-
-function walk(node: HastNode): void {
-  for (const child of node.children ?? []) {
-    if (node.tagName === "pre" && child.tagName === "code") {
-      child.properties = { ...child.properties, dataCodeBlock: "" };
-    }
-    walk(child);
-  }
-}
-
-/* ------------------------------------------------------------------------ *
- * 表格数字列启发式（UI-SPEC §5 table）：>60% 单元格匹配数字模式即右对齐 + tnum。
- * ------------------------------------------------------------------------ */
-
-/** 「数字模式」：可选正负号，千分位或纯数字，可选小数，可选百分号。 */
+/** 数字单元格：可选正负号，千分位或纯数字，可选小数，可选百分号。 */
 export const NUMERIC_CELL_RE = /^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?$/;
 
-/** §5 阈值：严格大于 60% 的单元格匹配数字模式时该列右对齐。 */
+/** 严格超过 60% 的表体单元格匹配数字模式时，该列视为数字列。 */
 export const NUMERIC_COLUMN_RATIO = 0.6;
 
 export function isNumericCellText(text: string): boolean {
@@ -74,10 +36,9 @@ export function isNumericCellText(text: string): boolean {
 }
 
 /**
- * Rehype plugin：按列内容启发式给数字列的 `td` 打 `data-numeric-col` 标记
- * （UI-SPEC §5：>60% 单元格匹配数字模式即右对齐 + tnum）。
- * 统计口径：以列内全部表体单元格为分母（空单元格不匹配、计入分母），
- * 仅标记 `td`——th 按规格恒左对齐。GFM 表无 colspan，列号即行内序。
+ * Rehype 插件：给数字列的 td 打 `data-numeric-col` 标记。
+ *
+ * 统计口径：只统计表体行，空单元格计入分母但不匹配；只标记 td，不标记 th。
  */
 export function rehypeNumericTables() {
   return (tree: HastNode): void => {
@@ -108,6 +69,7 @@ function markNumericColumns(table: HastNode): void {
     if (cells.length === 0) {
       continue;
     }
+
     const numeric = cells.filter((cell) => isNumericCellText(hastText(cell))).length;
     if (numeric / cells.length > NUMERIC_COLUMN_RATIO) {
       for (const cell of cells) {
@@ -119,7 +81,7 @@ function markNumericColumns(table: HastNode): void {
   }
 }
 
-/** 表体行 = thead 之外的所有 tr（直挂 table、tbody、tfoot 下均算）。 */
+/** 表体行 = thead 之外的 tr，兼容 table 直挂、tbody 和 tfoot 三种形状。 */
 function tableBodyRows(table: HastNode): HastNode[] {
   const rows: HastNode[] = [];
   for (const section of table.children ?? []) {
@@ -130,69 +92,4 @@ function tableBodyRows(table: HastNode): HastNode[] {
     }
   }
   return rows;
-}
-
-/* ------------------------------------------------------------------------ *
- * 流式墨点光标定位（UI-SPEC §4.1）：appendCaret 时找到尾块最后一个块级元素。
- * ------------------------------------------------------------------------ */
-
-/** 视为「可继续下钻」的块级容器/宿主标签。 */
-const CARET_BLOCK_TAGS = new Set([
-  "p",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "li",
-  "td",
-  "th",
-  "pre",
-  "ul",
-  "ol",
-  "blockquote",
-  "table",
-  "thead",
-  "tbody",
-  "tfoot",
-  "tr",
-  "hr"
-]);
-
-/**
- * Rehype plugin（仅在 Markdown 的 appendCaret=true 时挂载）：沿「最后一个块级
- * 子元素」一路下钻，给最终宿主打标——
- * - 普通文本块（p/h1–h4/li/td/blockquote…）打 `data-caret-host`，覆写组件在
- *   children 末尾行内追加 `.ink-caret`；
- * - `pre`（代码块尾块）打 `data-caret-block`，光标改挂代码块下一行行首，且
- *   CodeBlock 进入流式纯文本模式（§4.4）。
- */
-export function rehypeMarkCaretHost() {
-  return (tree: HastNode): void => {
-    let node = lastElementChild(tree);
-    if (!node) {
-      return; // 空文档：无宿主，光标由调用方（StreamingMarkdown）自行兜底
-    }
-    for (;;) {
-      const last = lastElementChild(node);
-      if (last?.tagName !== undefined && CARET_BLOCK_TAGS.has(last.tagName)) {
-        node = last;
-        continue;
-      }
-      break;
-    }
-    const key = node.tagName === "pre" ? "dataCaretBlock" : "dataCaretHost";
-    node.properties = { ...node.properties, [key]: "" };
-  };
-}
-
-function lastElementChild(node: HastNode): HastNode | undefined {
-  const children = node.children ?? [];
-  for (let index = children.length - 1; index >= 0; index -= 1) {
-    if (children[index].type === "element") {
-      return children[index];
-    }
-  }
-  return undefined;
 }

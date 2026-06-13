@@ -11,11 +11,13 @@
     "noChats": "No conversations yet",
     "noProjects": "No projects yet",
     "settings": "Settings",
+    "deleteTitle": "Delete conversation?",
     "deleteConfirm": "Delete this conversation?",
     "deleteProject": "Delete project",
     "newChatInProject": "New chat in this project",
     "collapseFolder": "Collapse project",
     "expandFolder": "Expand project",
+    "deleteProjectTitle": "Delete project?",
     "deleteProjectConfirm": "Delete this project and all its conversations? Files in the project folder are untouched.",
     "sessionTitle": "Conversation title",
     "projectName": "Project name",
@@ -27,11 +29,17 @@
     "branchOf": "Branched from \"{{title}}\"",
     "branchUnknown": "Branched from a deleted session",
     "feishuSession": "Session from Feishu",
+    "sessionRunning": "Running",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "cancel": "Cancel",
     "confirmDelete": "Delete",
-    "tasks": "Scheduled tasks"
+    "tasks": "Scheduled tasks",
+    "skills": "Skills"
+  },
+  "confirmDialog": {
+    "cancel": "Cancel",
+    "confirm": "Confirm"
   },
   "tasks": {
     "title": "Scheduled tasks",
@@ -54,19 +62,38 @@
   "composer": {
     "messageLabel": "Message input",
     "placeholder": "Type anything",
+    "placeholderRotation": [
+      "Type anything, let 程小帮 handle it",
+      "Try: tidy up this folder for me",
+      "Try: draft a weekly project report"
+    ],
+    "runningPlaceholder": "程小帮 is working on the current request…",
     "addContext": "Add context",
+    "dropContextHint": "Release to add context",
     "selectModel": "Select model",
     "stop": "Stop",
     "send": "Send",
     "selectProject": "Select project",
     "conversationMode": "Chat",
     "openFolderEllipsis": "Open folder…",
+    "searchProjects": "Search projects…",
+    "noMatchingProjects": "No matching projects",
+    "addProject": "Add project",
+    "createBlankProject": "New blank project",
+    "useExistingFolder": "Use existing folder",
+    "noProject": "No project",
+    "blankProjectTitle": "New blank project",
+    "blankProjectHint": "A folder with this name will be created under Documents as the project.",
+    "blankProjectNamePlaceholder": "Project name",
+    "create": "Create",
+    "cancel": "Cancel",
     "removeAttachment": "Remove {{name}}",
     "slashNoDescription": "No description",
     "slashSource": {
       "builtin": "Built-in",
       "global": "Global",
-      "project": "Project"
+      "project": "Project",
+      "market": "Market"
     },
     "atFileTag": "File",
     "fileMenuLabel": "Project file suggestions",
@@ -85,10 +112,35 @@
     "kindFileFull": "File",
     "keyConfigured": "API key configured",
     "keyMissing": "Not configured",
-    "slashMenuLabel": "Slash command suggestions"
+    "slashMenuLabel": "Slash command suggestions",
+    "context": {
+      "ariaLabel": "Current context usage",
+      "title": "Context usage",
+      "loadingShort": "Loading",
+      "unknownShort": "Context",
+      "loading": "Calculating the current conversation context…",
+      "unavailable": "This model has no registered context window, so only message size can be estimated.",
+      "error": "Failed: {{error}}",
+      "usedRatio": "Usage",
+      "used": "Used",
+      "threshold": "Compact at",
+      "sessionCost": "Estimated cost",
+      "estimatedCostValue": "approx. {{value}}",
+      "remaining": "Remaining",
+      "breakdown": "Breakdown",
+      "breakdownValue": "system {{system}} · messages {{messages}} · tools {{tools}}",
+      "statusLabel": "Status",
+      "status": {
+        "unknown": "Window unknown; auto compaction disabled",
+        "ok": "Healthy",
+        "near_threshold": "Near compaction point",
+        "over_threshold": "Will compact before the next run"
+      }
+    }
   },
   "permission": {
     "fullAccess": "Full access",
+    "smartApproval": "Smart approval",
     "approval": "Approve actions"
   },
   "onboarding": {
@@ -106,6 +158,11 @@
     "reasoningInProgress": "Thinking",
     "reasoningDone": "Thought for {{seconds}}s",
     "waiting": "Thinking…",
+    "toolActivity": {
+      "preparing": "Preparing tool call…",
+      "preparingWithTool": "Preparing tool call: {{tool}}",
+      "runningWithTool": "Calling tool: {{tool}}"
+    },
     "copy": "Copy",
     "copied": "Copied",
     "run": "Run",
@@ -116,9 +173,9 @@
     "roleAssistant": "程小帮",
     "roleTool": "Tool",
     "roleSystem": "System",
-    "tokenUsage": "{{total}} tokens this run (in {{prompt}} · out {{completion}})",
-    "tokenCached": " · cache hit {{cached}}",
     "previewFile": "Preview file",
+    "openAttachment": "Open attachment {{name}}",
+    "attachmentImageAlt": "Attachment image {{name}}",
     "regenerate": "Regenerate",
     "edit": "Edit",
     "editSend": "Send",
@@ -126,16 +183,17 @@
     "codeExpand": "Show all {{lines}} lines",
     "codeCollapse": "Collapse code",
     "codeDownload": "Download code",
-    "turnDuration": "Took {{seconds}}s",
     "diffView": "Diff view",
     "compactionTitle": "Context compacted",
     "compactionHint": "Earlier messages were summarized; future turns continue from the summary",
     "forkFromHere": "Branch from this message",
+    "retryFailedRun": "Retry this request",
     "toolStatus": {
       "completed": "Done",
       "failed": "Failed",
       "rejected": "Rejected",
       "running": "Running",
+      "pendingSmartApproval": "Smart approval",
       "pendingApproval": "Pending approval"
     },
     "toolLine": {
@@ -147,22 +205,32 @@
       "glob": "Globbed {{pattern}}",
       "search": "Searched for {{query}}",
       "shell": "Ran {{command}}",
+      "shell_status": "Checked background command status",
+      "shell_cancel": "Stopped a background command",
       "git_status": "Checked git status",
       "git_diff": "Viewed git diff",
       "fetch_url": "Fetched {{url}}",
+      "web_search": "Searched web for {{query}}",
       "create_pptx": "Generated slides {{path}}",
       "create_docx": "Generated document {{path}}",
       "create_xlsx": "Generated spreadsheet {{path}}",
       "feishu_send_message": "Sent a Feishu message",
       "propose_plan": "Proposed plan \"{{title}}\"",
-      "update_plan": "Updated plan progress",
+      "update_plan": "Legacy plan progress",
+      "todo_create": "Created todo \"{{title}}\"",
+      "todo_update": "Updated todo progress",
       "ask_user": "Asked you a question",
       "btw": "Left a side note",
       "use_skill": "Loaded skill {{name}}",
       "schedule_create": "Created scheduled task \"{{name}}\"",
       "schedule_list": "Listed scheduled tasks",
       "schedule_cancel": "Cancelled a scheduled task",
+      "memory": "Accessed memory {{path}}",
       "fallback": "Called {{name}}"
+    },
+    "toolDetail": {
+      "command": "Command",
+      "result": "Output"
     },
     "toolGroup": {
       "read_one": "Read 1 file",
@@ -183,6 +251,8 @@
       "plan_other": "{{count}} plan updates",
       "schedule_one": "1 schedule action",
       "schedule_other": "{{count}} schedule actions",
+      "memory_one": "1 memory access",
+      "memory_other": "{{count}} memory accesses",
       "other_one": "1 tool call",
       "other_other": "{{count}} tool calls",
       "failed": "{{count}} failed"
@@ -215,6 +285,7 @@
     },
     "askUser": {
       "title": "Chengxiaobang wants to confirm something",
+      "titleMulti": "Chengxiaobang wants to confirm {{count}} things",
       "questionPrefix": "Q: ",
       "answerPrefix": "A: ",
       "skip": "Skip",
@@ -223,6 +294,10 @@
       "customLabel": "Other:",
       "customPlaceholder": "Type your answer",
       "submit": "Reply",
+      "submitAll": "Submit answers",
+      "required": "This question still needs an answer",
+      "missing": "{{count}} questions still need answers",
+      "structuredHint": "These answers will be submitted together",
       "invalidArgs": "Failed to parse the question"
     },
     "asideNote": {
@@ -234,6 +309,19 @@
     },
     "copyReceipt": "✓",
     "lastRunModel": "This run used {{provider}} · {{model}}"
+  },
+  "debug": {
+    "open": "Debug",
+    "title": "Session Debug",
+    "loading": "Loading debug context…",
+    "unavailable": "Session debug context is not available in this environment",
+    "generatedAt": "Snapshot generated at {{time}}",
+    "fullReportHint": "Only model, system prompt, user input, and assistant output are shown; tool calls are expanded by default, while tool results start collapsed.",
+    "toolsReportHint": "{{count}} tools visible to the model in this conversation, filtered by the current session mode.",
+    "copy": "Copy concise record",
+    "copied": "Copied",
+    "copyFailed": "Copy failed",
+    "refresh": "Refresh"
   },
   "app": {
     "disclaimer": "程小帮 can make mistakes. Check important info."
@@ -251,10 +339,12 @@
     "collapse": "Collapse side panel",
     "menuTitle": "Panels",
     "backToMenu": "Back to menu",
+    "progress": "Progress",
     "changes": "Changes",
     "chat": "Side chat",
     "terminal": "Terminal",
     "browser": "Browser",
+    "artifacts": "Artifacts",
     "files": "File preview",
     "close": "Close panel",
     "resize": "Resize panel",
@@ -265,6 +355,17 @@
     "changesLoadFailed": "Failed to load changes",
     "changesFileCount": "{{count}} changed files",
     "changesBinaryFile": "Binary or oversized file; content hidden",
+    "progressEmpty": "When a task is complex enough, the AI's todo progress appears here.",
+    "progressLive": "Live run",
+    "progressLatest": "Latest todo",
+    "progressCount": "{{done}} / {{total}}",
+    "progressCurrent": "Current {{index}} / {{total}}: {{title}}",
+    "todoStatus": {
+      "pending": "Pending",
+      "in_progress": "In progress",
+      "completed": "Done",
+      "skipped": "Skipped"
+    },
     "gitStatus": {
       "modified": "Modified",
       "added": "Added",
@@ -285,7 +386,12 @@
     "forward": "Forward",
     "reload": "Reload",
     "openExternal": "Open in system",
+    "artifactsEmpty": "No artifacts yet",
+    "artifactsCount": "{{count}} artifacts",
     "filesEmpty": "Click a file path next to a tool call in the chat, or pick a file to preview.",
+    "projectFilesTitle": "Project files",
+    "projectFilesEmpty": "No previewable files in this project directory.",
+    "projectFilesLoadFailed": "Failed to load project files",
     "pickFile": "Choose file…",
     "openWithSystem": "Open in system app",
     "prevPage": "Previous page",
@@ -307,7 +413,13 @@
     "heading": "What should we work on in {{name}}?",
     "headingNoProject": "What should we work on today?",
     "tagline": "Chengxiaobang · AI Workspace",
-    "subtitle": "Your desktop AI coding companion, ready when you are.",
+    "heroPhrases": {
+      "today": "What should we work on today?",
+      "next": "What should we move forward next?",
+      "build": "What idea should we build together?",
+      "ship": "What should we land today?"
+    },
+    "subtitle": "Office work and coding, all in one",
     "heroAlt": "Chengxiaobang creative adventure illustration",
     "starters": {
       "pptTitle": "Make a deck",
@@ -327,8 +439,9 @@
   },
   "palette": {
     "title": "Search chats",
-    "placeholder": "Search chat titles…",
+    "placeholder": "Search titles or messages…",
     "empty": "No matching chats",
+    "searching": "Searching…",
     "group": "Chats"
   },
   "settings": {
@@ -341,8 +454,58 @@
       "appearance": "Appearance",
       "general": "General",
       "providers": "Providers",
+      "usage": "Usage",
       "skills": "Skills & Commands",
+      "webSearch": "Web Search",
       "feishu": "Feishu"
+    },
+    "usage": {
+      "title": "Usage",
+      "overviewTitle": "Today",
+      "overviewDesc": "Aggregates token usage across all conversations and estimates RMB cost from the model catalog.",
+      "todayEstimatedCost": "Estimated cost today",
+      "estimatedHint": "Estimated from tokens and model pricing, not a provider bill.",
+      "todayTokens": "Tokens today",
+      "tokenBreakdown": "input {{input}} · output {{output}}",
+      "todayRuns": "Runs today",
+      "usageRuns": "{{count}} runs returned token usage",
+      "vsSevenDay": "vs. 7-day average",
+      "sevenDayAverage": "Average active day over 7 days: {{value}}",
+      "noBaseline": "—",
+      "noBaselineHint": "No recent baseline to compare yet.",
+      "loading": "Loading usage stats…",
+      "unavailable": "Usage stats are not available in this environment",
+      "retry": "Retry",
+      "heatmapTitle": "Token Activity",
+      "heatmapDesc": "Daily uses heatmap cells; weekly and total use bars. Hover to inspect a date or range.",
+      "tokenActivity": "Token activity",
+      "modeLabel": "Switch usage stats view",
+      "modes": {
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "cumulative": "Total"
+      },
+      "tooltipTokens": "Tokens",
+      "tooltipCost": "Cost",
+      "tooltipRuns": "Runs",
+      "summaryLine": "{{tokens}} tokens · {{cost}} · {{runs}} runs",
+      "detailsTitle": "Cost and Models",
+      "detailsDesc": "All costs are estimates; custom or unknown-price models count tokens but not cost.",
+      "weekEstimatedCost": "Estimated cost this week",
+      "weekTokens": "{{value}} tokens this week",
+      "totalEstimatedCost": "Estimated cost total",
+      "totalTokens": "{{value}} tokens total",
+      "cacheTokens": "Cached prompt tokens",
+      "cacheHint": "Cache hits use the catalog cache-read price when available.",
+      "modelRanking": "Model usage ranking",
+      "emptyModels": "No model usage to show yet.",
+      "unknownModel": "Unknown model",
+      "modelRuns": "{{count}} runs",
+      "dataQuality": "Coverage",
+      "missingUsage": "Missing tokens",
+      "unknownPrice": "Unknown price",
+      "fallbackModel": "Used fallback model",
+      "qualityHint": "For older runs without a model snapshot, the estimate falls back to the session or current provider model."
     },
     "skills": {
       "title": "Skills & Commands",
@@ -371,7 +534,9 @@
       "permTitle": "Default permission",
       "permDesc": "The tool-execution permission new chats start with. You can switch it anytime from the composer.",
       "approval": "Approve actions",
-      "approvalDesc": "Ask for your confirmation before writing files, running commands, etc.",
+      "approvalDesc": "Run ordinary project edits and routine development commands automatically; ask for sensitive files, external side effects, or risky commands.",
+      "smart": "Smart approval",
+      "smartDesc": "Run ordinary project edits and development commands automatically; block only dangerous, sensitive, or external side-effect actions.",
       "full": "Full access",
       "fullDesc": "Run every tool automatically without confirmation (higher risk)",
       "langTitle": "Language",
@@ -379,7 +544,13 @@
       "langZh": "简体中文",
       "langZhDesc": "使用简体中文界面",
       "langEn": "English",
-      "langEnDesc": "Use the English interface"
+      "langEnDesc": "Use the English interface",
+      "logsTitle": "Developer logs",
+      "logsDesc": "Open the folder containing main, renderer, and backend logs for this dev environment.",
+      "openLogs": "View logs",
+      "logsDesktopOnly": "Viewing logs requires the desktop app",
+      "logsOpenFailed": "Failed to open the log folder",
+      "logsOpened": "Opened log folder: {{path}}"
     },
     "providers": {
       "title": "Providers",
@@ -422,6 +593,7 @@
       "connectionOk": "Connection OK",
       "delete": "Delete",
       "deleteNamed": "Delete {{name}}",
+      "deleteTitle": "Delete {{name}}?",
       "deleteConfirm": "Delete this provider configuration?",
       "deleted": "Deleted",
       "statusConfigured": "Configured",
@@ -437,6 +609,26 @@
       }
     },
     "groupIntegrations": "Integrations",
+    "webSearch": {
+      "title": "Web Search",
+      "connTitle": "Tavily Search",
+      "connDesc": "When enabled, the agent gets a pure Web Search tool for live public-web information with source URLs.",
+      "enable": "Enable Web Search",
+      "enableDesc": "When off, the model cannot see the web_search tool and no search requests are sent.",
+      "tavilyDesc": "Pure search API, independent from model providers, suited for agent research and fact checking.",
+      "pureSearch": "Pure search",
+      "apiKey": "Tavily API Key",
+      "apiKeyKeepHint": "Saved — leave empty to keep",
+      "pricingHint": "Uses Tavily Basic Search by default; saving does not spend credits, only manual tests or agent tool calls do.",
+      "getApiKey": "Get API Key",
+      "missingKey": "Enter a Tavily API Key before enabling Web Search.",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "test": "Test search",
+      "testing": "Testing…",
+      "testOk": "Search test passed"
+    },
     "feishu": {
       "title": "Feishu Bot",
       "connTitle": "Connection",
@@ -474,10 +666,26 @@
     "providerRequired": "Configure at least one model with an API Key first.",
     "openFolderDesktopOnly": "Opening a folder requires the desktop app — the browser preview has no system file-picker access.",
     "addContextDesktopOnly": "Adding file context requires the desktop app — the browser preview has no system file-read access.",
+    "addDroppedContextDesktopOnly": "Dragging files in requires the desktop app — the browser preview has no system file-read access.",
+    "dropFilePathUnavailable": "The dropped file has no readable local path and was skipped.",
+    "dropNoUsableFile": "No dropped file can be added.",
+    "skipDroppedUnsupported": "Skipped {{name}}: folders or unknown file types cannot be added by drag-and-drop yet",
+    "fileReadUnavailable": "file reading is unavailable",
     "skipFile": "Skipped {{name}}: {{error}}",
     "attachmentBlock": "Here is the content of file {{name}}:\n```\n{{text}}\n```\n",
     "exportFailed": "Export failed, please try again",
-    "openArtifactDesktopOnly": "Opening this file requires the desktop app"
+    "openArtifactDesktopOnly": "Opening this file requires the desktop app",
+    "createBlankProjectFailed": "Failed to create a blank project. Please try again"
+  },
+  "notifications": {
+    "dismiss": "Dismiss notification",
+    "scheduledTask": {
+      "completedTitle": "Scheduled task \"{{name}}\" completed",
+      "failedTitle": "Scheduled task \"{{name}}\" failed",
+      "abortedTitle": "Scheduled task \"{{name}}\" was aborted",
+      "savedToSession": "The result was added to the original conversation.",
+      "errorDetail": "Error: {{error}}"
+    }
   },
   "export": {
     "toolCall": "Tool call",
@@ -486,8 +694,9 @@
   },
   "plan": {
     "heading": "Plan",
-    "statusDraft": "Draft",
+    "statusDraft": "Needs approval",
     "statusAwaiting": "Unconfirmed",
+    "statusApproved": "Approved",
     "statusExecuting": "Executing",
     "statusCompleted": "Completed",
     "statusRejected": "Rejected",
@@ -503,13 +712,62 @@
     "remaining": "~{{n}} steps left",
     "staleAwaiting": "Plan unconfirmed (run ended)",
     "bookmarkLabel": "Plan progress {{index}} / {{total}}, jump back to the plan card",
-    "rejectedHistory": "Rejected plan"
+    "rejectedHistory": "Rejected plan",
+    "expand": "Expand plan",
+    "collapse": "Collapse plan",
+    "approvalTitle": "Implement this plan?",
+    "approveAction": "Yes, implement this plan",
+    "adjustPlaceholder": "No, tell Chengxiaobang what to change",
+    "submitAdjustment": "Submit"
   },
   "skills": {
     "sourceShort": {
       "builtin": "内",
+      "market": "市",
       "global": "全",
       "project": "项"
-    }
+    },
+    "title": "Skills",
+    "subtitle": "Built-in skills work out of the box; add popular skills from the marketplace, or import and create your own.",
+    "mine": "My skills",
+    "mineEmpty": "No skills enabled yet.",
+    "market": "Skill marketplace",
+    "marketHint": "Added skills can be invoked with /name in chat, and the model uses them automatically when a task matches.",
+    "marketEmpty": "No matching skills.",
+    "categoryFilter": "Skill marketplace category filter",
+    "category": {
+      "all": "All",
+      "coding": "Coding",
+      "office": "Office",
+      "other": "Other"
+    },
+    "source": {
+      "builtin": "Built-in",
+      "market": "Market",
+      "custom": "Custom"
+    },
+    "add": "Add",
+    "added": "Added",
+    "remove": "Remove",
+    "alwaysOn": "Always on",
+    "delete": "Delete",
+    "deleteTitle": "Delete custom skill \"{{name}}\"?",
+    "deleteConfirm": "Delete custom skill \"{{name}}\"? Its files will be removed from disk.",
+    "manage": "Manage skills",
+    "addCustom": "Add skill",
+    "addCustomHint": "Paste a GitHub link with a SKILL.md to import quickly, or let 程小帮 create one for you in chat.",
+    "importUrlLabel": "GitHub URL",
+    "importUrlHint": "Repository, directory, or SKILL.md file links are supported; the repo must be public.",
+    "import": "Import",
+    "importing": "Importing…",
+    "or": "or",
+    "chatCreateTitle": "Create via chat",
+    "chatCreateHint": "Describe the skill you want in natural language, or send 程小帮 a GitHub link — it will fetch the content, draft, and install the skill for you.",
+    "chatCreateCta": "Create in chat",
+    "chatCreatePrompt": "I want to create a new skill. My requirements are: ",
+    "viewDetail": "View details of \"{{name}}\"",
+    "detailLoading": "Loading skill details…",
+    "detailUnavailable": "Could not load the skill content.",
+    "close": "Close"
   }
 }

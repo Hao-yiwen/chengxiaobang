@@ -22,6 +22,7 @@ export const PROJECT_OPENER_DEFINITIONS: ProjectOpenerDefinition[] = [
   { id: "zed", name: "Zed", appNames: ["Zed.app"] },
   { id: "windsurf", name: "Windsurf", appNames: ["Windsurf.app"] },
   { id: "antigravity", name: "Antigravity", appNames: ["Antigravity.app"] },
+  { id: "codex", name: "Codex", appNames: ["Codex.app"] },
   { id: "finder", name: "Finder", absoluteAppPaths: ["/System/Library/CoreServices/Finder.app"] },
   {
     id: "terminal",

@@ -51,7 +51,7 @@
 把任务转化为可验证的目标:
 - "加校验" → "先为非法输入写测试,再让它通过"
 - "修 bug" → "先写一个能复现它的失败测试,再修到通过"
-- "重构 X" → "确保重构前后测试都通过"
+- "重构 X" → "优先确保重构前后的相关测试通过"
 
 多步任务先列简短计划:
 ```
@@ -64,10 +64,10 @@
 
 > 这些准则在起作用的标志:diff 里的无关改动更少、因过度复杂而返工更少、澄清问题发生在动手之前而不是出错之后。
 
-### 测试是硬性要求
+### 测试与验证
 
-- 每个行为变更都要带单元测试。把任务表述为"先写出能证明它的测试,再让它通过";修 bug 先写复现的失败测试。
-- 测试放在各包的 `test/` 目录,用 Vitest 运行。收工前保持 `pnpm test` 全绿;单文件 `pnpm test <path>`,按名过滤 `pnpm test -t "<name>"`。
+- 行为变更原则上要带单元测试。把任务表述为"先写出能证明它的测试,再让它通过";修 bug 优先先写复现的失败测试。
+- 测试放在各包的 `test/` 目录,用 Vitest 运行。收工前尽可能保持 `pnpm test` 全绿;如果受并行修改、既有失败或环境限制影响,至少运行并记录与自己改动直接相关的定向测试,确认自己改动覆盖范围内通过,并说明剩余失败来源。单文件:`pnpm test <path>`,按名过滤 `pnpm test -t "<name>"`。
 - 遵循既有模式:后端逻辑直接针对模块测试;渲染层用 `@testing-library/react` + jsdom + mock 的 `ApiClient`(见 `apps/desktop/test/app.test.tsx`);agent 循环的模型测试缝是注入 pi `StreamFn`(见 `test/helpers/scripted-stream.ts`),**不要 mock 循环本身**。把纯函数抽出来,让它们不依赖运行中的应用即可测试。
 - 绝不为了变绿而削弱或删除测试。测试挡路时,先搞清楚为什么。
 
@@ -107,7 +107,7 @@
 
 **`packages/shared`** — API/IPC 契约的唯一事实源。所有实体(Provider、Project、Session、Message、ToolCall、RunRequest)都是 Zod schema + 推导类型;后端用它们 `.parse()` 请求,渲染层导入同一份类型。还拥有 `StreamEvent` 联合类型与 SSE codec(`encodeSseEvent`/`parseSseChunk`)。改这里的契约,两端必须跟随。它必须**先 build**,backend/desktop 的 typecheck 才能过(跨包消费其 `dist/` 类型)。
 
-**`apps/backend`** — 无头本地 HTTP 服务,**不是** Electron 进程。Hono 风格的 `fetch` handler(`api/app.ts`)由 `Bun.serve` 提供服务(`server.ts`,强制 Bun;dev 与生产分别用 `node_modules/.bin/bun` 和捆绑的 Bun binary 启动)。agent 循环是 **pi 的 `runAgentLoopContinue`**(`@earendil-works/pi-agent-core`),由 `agent/agent-runner.ts` 驱动:pi 事件经 `agent/pi-events.ts`(`RunEventTranslator`,同时独占 run 级持久化)翻译为 `StreamEvent`,经 `POST /api/runs/stream` 以 SSE 流出。状态经 sql.js 落 SQLite(`repository/sqlite-state-store.ts`,藏在 `StateStore` 接口后);assistant/tool 消息行带 backend-only 的 `payload` 列(pi 原始消息 JSON),多轮工具调用历史得以无损回放(`agent/history.ts`)。密钥在 darwin 用 macOS Keychain(`security` CLI),其他平台内存实现(`secrets/secret-store.ts`)。模型调用走 **pi-ai**(`streamSimple`);`model/pi-model.ts` 把 `ProviderConfig` 映射为 pi `Model`(provider 兼容差异——DeepSeek `reasoning_content`、Moonshot 怪癖——按 slug/baseUrl 自动探测)。内置 provider 为 DeepSeek 和 Kimi(shared 的 `defaultProviders`)。工具是 TypeBox schema 的 pi `AgentTool`(`tools/registry.ts` 汇集 fs/shell/web/office/feishu 工具工厂)。**定时任务**:模型在会话中经 `tools/schedule-tools.ts`(`schedule_create/list/cancel`,5 字段 cron,croner 解析)创建,任务绑定创建它的会话;`tasks/task-scheduler.ts` 轮询到期任务并在原会话中追加 headless run(`stream()` 的进程内 `headless` 参数:隐藏 `ask_user`、不覆写会话设置,待审批工具一律自动拒绝),先推进 `nextRunAt` 再执行(at-most-once,重启后补跑一次)。
+**`apps/backend`** — 无头本地 HTTP 服务,**不是** Electron 进程。Hono 风格的 `fetch` handler(`api/app.ts`)由 `Bun.serve` 提供服务(`server.ts`,强制 Bun;dev 与生产分别用 `node_modules/.bin/bun` 和捆绑的 Bun binary 启动)。agent 循环是 **pi 的 `runAgentLoopContinue`**(`@earendil-works/pi-agent-core`),由 `agent/agent-runner.ts` 驱动:pi 事件经 `agent/pi-events.ts`(`RunEventTranslator`,同时独占 run 级持久化)翻译为 `StreamEvent`,经 `POST /api/runs/stream` 以 SSE 流出。状态经 sql.js 落 SQLite(`repository/sqlite-state-store.ts`,藏在 `StateStore` 接口后);assistant/tool 消息行带 backend-only 的 `payload` 列(pi 原始消息 JSON),多轮工具调用历史得以无损回放(`agent/history.ts`)。密钥在 darwin 用 macOS Keychain(`security` CLI),其他平台内存实现(`secrets/secret-store.ts`)。模型调用走 **pi-ai**(`streamSimple`);`model/pi-model.ts` 把 `ProviderConfig` 映射为 pi `Model`(provider 兼容差异——DeepSeek `reasoning_content`、Moonshot 怪癖——按 slug/baseUrl 自动探测)。内置 provider 为 DeepSeek 和 Kimi(shared 的 `defaultProviders`)。工具是 TypeBox schema 的 pi `AgentTool`(`tools/registry.ts` 汇集 fs/shell/web/office/feishu 工具工厂)。**定时任务**:模型在会话中经 `tools/schedule-tools.ts`(`schedule_create/list/cancel`,5 字段 cron,croner 解析)创建,任务绑定创建它的会话;`tasks/task-scheduler.ts` 轮询到期任务并在原会话中追加 headless run(`stream()` 的进程内 `headless` 参数:隐藏 `ask_user`、不覆写会话设置,待审批工具一律自动拒绝),先推进 `nextRunAt` 再执行(at-most-once,重启后补跑一次)。**技能市场**:内置技能(`apps/backend/skills/`,word/ppt/excel)始终激活;市场技能(`apps/backend/skills-market/`,编程/办公各 9 个,均随 dist 分发,见 `scripts/build-skills.mjs`)默认不激活,激活集合以 JSON 数组存 settings KV(`tools/skill-market-service.ts`),`SlashCommandService` 经注入的 `enabledMarketSkills` 回调过滤加载(source 为 `market`,优先级 builtin < market < global < project);自定义技能经 GitHub 链接导入或手动创建,落 `~/.chengxiaobang/skills/`(即 global 根,装好即被拾取)。REST 入口 `api/routes/skills.ts`,桌面端 UI 是侧边栏「技能」页(`SkillsView`)。注意:`paths.ts` 的 `builtinResourceRoot()` 靠探测 `skills` 目录定位资源根,**不要在 `src/` 下新建名为 `skills` 的目录**(会遮蔽资源根导致内置技能消失)。
 
 **`apps/desktop`** — Electron 应用。**main 进程拉起并监督后端**(`main/backend-process.ts`):随机端口 + 随机 token,轮询 `/api/health` 就绪后经 `backend-info` IPC 把 `{baseURL, token}` 暴露给渲染层。每次启动应用 = 新端口上的全新后端。渲染层(React + Vite + Tailwind)是沙箱的;`preload/index.ts` 只暴露最小的 `window.chengxiaobang` bridge(backend info、原生文件/目录选择器、读文件)。`renderer/lib/api.ts` 据 bridge 的 baseURL/token 构建类型化 `ApiClient` 并消费 SSE 流。main 进程在 dev 加载 `VITE_DEV_SERVER_URL`,打包后加载 `dist/renderer/index.html`。
 

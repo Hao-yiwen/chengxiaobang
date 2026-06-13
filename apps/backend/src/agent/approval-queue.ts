@@ -2,7 +2,7 @@ import type { ApprovalDecision } from "@chengxiaobang/shared";
 
 /**
  * 泛化后的审批队列：决议从 boolean 升级为带 payload 的 ApprovalDecision
- * （计划确认携带 editedSteps、ask_user 携带 answer）。abort 与早到决议
+ * （计划调整意见和 ask_user 都携带 answer）。abort 与早到决议
  * （decide 先于 wait 到达）语义与旧实现一致。
  */
 export class ApprovalQueue {
@@ -41,7 +41,7 @@ export class ApprovalQueue {
   decide(toolCallId: string, decision: ApprovalDecision): boolean {
     console.log(
       `[approval-queue] 收到决议 toolCallId=${toolCallId} approved=${decision.approved}` +
-        `${decision.answer ? " 含answer" : ""}${decision.editedSteps ? ` 含editedSteps(${decision.editedSteps.length})` : ""}`
+        `${decision.answer ? " 含answer" : ""}${decision.editedSteps ? ` 含legacyEditedSteps(${decision.editedSteps.length})` : ""}`
     );
     const resolve = this.pending.get(toolCallId);
     if (!resolve) {
@@ -64,8 +64,12 @@ export function normalizeDecision(name: string, decision: ApprovalDecision): App
     return { approved: decision.approved, answer: decision.answer };
   }
   if (name === "propose_plan") {
-    // editedSteps 已在路由层过 approvalDecisionSchema（含逐项 planStepSchema），此处仅裁剪无关字段。
-    return { approved: decision.approved, editedSteps: decision.editedSteps };
+    // editedSteps 只为旧客户端保留；新版计划调整通过 answer 反馈给模型。
+    return {
+      approved: decision.approved,
+      answer: decision.answer,
+      editedSteps: decision.editedSteps
+    };
   }
   if (decision.answer || decision.editedSteps) {
     console.warn(`[approval-queue] 工具 ${name} 的决议携带无关 payload，已忽略`);

@@ -1,7 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron";
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, open as openFile, readFile, readdir, rm, stat } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  open as openFile,
+  readFile,
+  readdir,
+  rm,
+  stat
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -32,9 +42,11 @@ import {
   previewPathCandidates,
   type FilePreviewResolveContext
 } from "./file-preview-path";
+import { registerOcrIpc } from "./ocr";
 import { registerTerminalIpc, type TerminalSessionManager } from "./terminal";
 
 const MAX_CONTEXT_FILE_BYTES = 256 * 1024;
+const DEFAULT_BLANK_PROJECT_NAME = "未命名项目";
 const desktopLogging = initializeDesktopLogging({ logDir: defaultLogDir() });
 
 if (desktopLogging) {
@@ -65,6 +77,24 @@ type ReadFilePreviewTextResult =
 type ReadFilePreviewBufferResult =
   | { ok: true; path: string; name: string; data: ArrayBuffer; size: number; truncated: boolean }
   | { ok: false; path: string; name: string; error: string; size: number };
+
+type DisplayAttachmentSnapshot = {
+  id: string;
+  name: string;
+  kind: PreviewKind;
+  mimeType?: string;
+  size: number;
+  path: string;
+};
+
+type SaveAttachmentSnapshotsResult =
+  | {
+      ok: true;
+      attachments: DisplayAttachmentSnapshot[];
+      totalBytes: number;
+      elapsedMs: number;
+    }
+  | { ok: false; error: string };
 
 type FileUrlResult =
   | { ok: true; path: string; url: string }
@@ -414,6 +444,105 @@ async function createPreviewFileUrl(target: unknown): Promise<FileUrlResult> {
   }
 }
 
+async function saveAttachmentSnapshots(target: unknown): Promise<SaveAttachmentSnapshotsResult> {
+  const paths = Array.isArray(target)
+    ? target.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+  if (!Array.isArray(target)) {
+    console.warn("[main] 附件快照请求收到无效参数");
+    return { ok: false, error: "无效附件列表" };
+  }
+  const startedAt = Date.now();
+  try {
+    console.info("[main] 开始保存附件快照", {
+      count: paths.length,
+      dataDir: defaultDataDir()
+    });
+    const attachments: DisplayAttachmentSnapshot[] = [];
+    for (const path of paths) {
+      attachments.push(await saveOneAttachmentSnapshot(path));
+    }
+    const totalBytes = attachments.reduce((total, attachment) => total + attachment.size, 0);
+    const elapsedMs = Date.now() - startedAt;
+    console.info("[main] 附件快照保存完成", {
+      count: attachments.length,
+      totalBytes,
+      elapsedMs
+    });
+    return { ok: true, attachments, totalBytes, elapsedMs };
+  } catch (error) {
+    const message = messageFromError(error);
+    console.warn("[main] 附件快照保存失败", {
+      count: paths.length,
+      elapsedMs: Date.now() - startedAt,
+      error: message
+    });
+    return { ok: false, error: message };
+  }
+}
+
+async function saveOneAttachmentSnapshot(sourcePath: string): Promise<DisplayAttachmentSnapshot> {
+  const info = await stat(sourcePath);
+  if (!info.isFile()) {
+    throw new Error(`不是可复制的文件：${sourcePath}`);
+  }
+  const id = `attachment_${randomUUID().replace(/-/g, "")}`;
+  const name = basename(sourcePath);
+  const kind = previewDescriptorForPath(sourcePath).kind;
+  const targetDir = join(defaultDataDir(), "attachments");
+  await mkdir(targetDir, { recursive: true });
+  const targetPath = join(targetDir, `${id}-${sanitizeSnapshotFileName(name)}`);
+  await copyFile(sourcePath, targetPath);
+  console.info("[main] 附件快照已复制", {
+    id,
+    sourcePath,
+    targetPath,
+    kind,
+    size: info.size
+  });
+  const mimeType = mimeTypeForPath(sourcePath);
+  return {
+    id,
+    name,
+    kind,
+    ...(mimeType ? { mimeType } : {}),
+    size: info.size,
+    path: targetPath
+  };
+}
+
+function sanitizeSnapshotFileName(name: string): string {
+  const sanitized = name
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
+    .trim();
+  return (sanitized || "attachment").slice(0, 160);
+}
+
+function mimeTypeForPath(path: string): string | undefined {
+  switch (extensionOf(path)) {
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "bmp":
+      return "image/bmp";
+    case "avif":
+      return "image/avif";
+    case "heic":
+      return "image/heic";
+    case "pdf":
+      return "application/pdf";
+    default:
+      return undefined;
+  }
+}
+
 async function createQuickLookThumbnail(target: unknown): Promise<QuickLookThumbnailResult> {
   const path = typeof target === "string" ? target : "";
   if (!path) {
@@ -463,12 +592,61 @@ async function createWindow(): Promise<void> {
 
   ipcMain.handle("backend-info", () => backend?.info);
   terminalManager ??= registerTerminalIpc(ipcMain);
+  registerOcrIpc(ipcMain, {
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    isPackaged: app.isPackaged
+  });
 
   ipcMain.handle("open-skills-dir", async () => {
     const dir = join(homedir(), ".chengxiaobang", "skills");
     await mkdir(dir, { recursive: true });
     await shell.openPath(dir);
     return { ok: true, path: dir };
+  });
+
+  ipcMain.handle("open-log-dir", async () => {
+    const dir = defaultLogDir();
+    await mkdir(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    if (error) {
+      console.warn(`[main] 打开日志目录失败 path=${dir}: ${error}`);
+      return { ok: false, path: dir, error };
+    }
+    console.info(`[main] 已打开日志目录 path=${dir}`);
+    return { ok: true, path: dir };
+  });
+
+  ipcMain.handle("create-project-folder", async (_event, rawName: unknown) => {
+    const requested = typeof rawName === "string" ? rawName : "";
+    console.info(`[main] 新建空白项目目录 请求 name=${JSON.stringify(requested)}`);
+    // 清洗名字：去首尾空白、去掉路径分隔符与前导点，避免越权路径或隐藏目录
+    const sanitized = requested
+      .trim()
+      .replace(/[/\\]/g, "")
+      .replace(/^\.+/, "")
+      .trim();
+    const base = sanitized.length > 0 ? sanitized : DEFAULT_BLANK_PROJECT_NAME;
+    const documentsDir = app.getPath("documents");
+    try {
+      await mkdir(documentsDir, { recursive: true });
+      // 去重：同名存在则追加 -2、-3…
+      let name = base;
+      let target = join(documentsDir, name);
+      let suffix = 2;
+      while (existsSync(target)) {
+        name = `${base}-${suffix}`;
+        target = join(documentsDir, name);
+        suffix += 1;
+      }
+      await mkdir(target, { recursive: true });
+      console.info(`[main] 新建空白项目目录 成功 path=${target}`);
+      return { ok: true, path: target, name };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[main] 新建空白项目目录 失败 name=${base}: ${message}`);
+      return { ok: false, error: message };
+    }
   });
 
   // 在用户默认应用中打开生成的文件产物（pptx/docx/xlsx 等）。
@@ -498,6 +676,9 @@ async function createWindow(): Promise<void> {
   ipcMain.handle("file-preview:file-url", (_event, target: unknown) => createPreviewFileUrl(target));
   ipcMain.handle("file-preview:quicklook-thumbnail", (_event, target: unknown) =>
     createQuickLookThumbnail(target)
+  );
+  ipcMain.handle("attachment:save-snapshots", (_event, target: unknown) =>
+    saveAttachmentSnapshots(target)
   );
 
   ipcMain.handle("detect-project-openers", async () => {
@@ -627,7 +808,9 @@ async function createWindow(): Promise<void> {
   });
 
   mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === "media");
+    const allowed = permission === "media" || permission === "notifications";
+    console.info("[main] 权限申请", { permission, allowed });
+    callback(allowed);
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (openExternalFromAppWindow(url, "window-open")) {
@@ -734,6 +917,12 @@ app.on("before-quit", () => {
   void flushDesktopLogs();
 });
 
+app.on("will-quit", () => {
+  terminalManager?.disposeAll();
+  stopBackend("will-quit");
+  void flushDesktopLogs();
+});
+
 function handleProcessSignal(signal: NodeJS.Signals): void {
   terminalManager?.disposeAll();
   stopBackend(signal);
@@ -745,6 +934,10 @@ function handleProcessSignal(signal: NodeJS.Signals): void {
 
 process.on("SIGTERM", handleProcessSignal);
 process.on("SIGINT", handleProcessSignal);
+process.on("exit", () => {
+  terminalManager?.disposeAll();
+  stopBackend("process-exit");
+});
 
 async function flushDesktopLogs(): Promise<void> {
   try {

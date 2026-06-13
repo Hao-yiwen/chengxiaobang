@@ -23,11 +23,13 @@ import { useAppStore } from "@/store";
 export function MessageActions({
   message,
   isLastAssistant = false,
-  onEdit
+  onEdit,
+  copyContent
 }: {
   message: Message;
   isLastAssistant?: boolean;
   onEdit?: () => void;
+  copyContent?: string;
 }) {
   const { t } = useTranslation();
   const isRunning = useAppStore((state) => state.isRunning);
@@ -46,7 +48,7 @@ export function MessageActions({
     >
       <ActionButton
         label={copied ? t("chat.copied") : t("chat.copy")}
-        onClick={() => void copy(message.content)}
+        onClick={() => void copy(copyContent ?? message.content)}
       >
         {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
       </ActionButton>

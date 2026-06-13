@@ -1,6 +1,12 @@
 import { Hono } from "hono";
-import { feishuConfigInputSchema, providerInputSchema } from "@chengxiaobang/shared";
+import {
+  feishuConfigInputSchema,
+  providerInputSchema,
+  usageStatsSchema,
+  webSearchConfigInputSchema
+} from "@chengxiaobang/shared";
 import type { AppContext } from "../context";
+import { buildUsageStats } from "../../usage/usage-stats";
 
 export function settingsRoutes(context: AppContext): Hono {
   const app = new Hono();
@@ -29,6 +35,46 @@ export function settingsRoutes(context: AppContext): Hono {
     return c.json({
       status: context.feishuService?.getStatus() ?? { status: "disconnected" }
     });
+  });
+
+  app.get("/web-search", async (c) => {
+    if (!context.webSearchConfigService) {
+      return c.json({ error: "网络搜索服务不可用" }, 404);
+    }
+    return c.json({ config: await context.webSearchConfigService.load() });
+  });
+
+  app.put("/web-search", async (c) => {
+    if (!context.webSearchConfigService) {
+      return c.json({ error: "网络搜索服务不可用" }, 404);
+    }
+    const input = webSearchConfigInputSchema.parse(await c.req.json());
+    return c.json({ config: await context.webSearchConfigService.save(input) });
+  });
+
+  app.post("/web-search/test", async (c) => {
+    if (!context.webSearchConfigService) {
+      return c.json({ error: "网络搜索服务不可用" }, 404);
+    }
+    await context.webSearchConfigService.test();
+    return c.json({ ok: true });
+  });
+
+  app.get("/usage-stats", async (c) => {
+    const rawOffset = Number(c.req.query("timezoneOffsetMinutes") ?? 0);
+    const timezoneOffsetMinutes = Number.isFinite(rawOffset) ? Math.trunc(rawOffset) : 0;
+    console.info("[settings-routes] 拉取全局 Token 与预估费用统计", {
+      timezoneOffsetMinutes
+    });
+    const stats = usageStatsSchema.parse(
+      await buildUsageStats(context.store, { timezoneOffsetMinutes })
+    );
+    console.info("[settings-routes] 全局用量统计返回完成", {
+      totalRunCount: stats.dataQuality.totalRunCount,
+      todayCostCny: stats.today.costCny,
+      todayTokens: stats.today.totalTokens
+    });
+    return c.json({ stats });
   });
 
   app.get("/providers", async (c) => {

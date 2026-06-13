@@ -95,6 +95,21 @@ describe("buildSessionMarkdown", () => {
     expect(markdown).not.toContain("raw tool output row");
   });
 
+  it("exports assistant answers without final artifact XML", () => {
+    const artifactAnswer = message({
+      id: "a_artifact",
+      role: "assistant",
+      content: "文件已生成。\n\n<artifacts><artifact path=\"page.html\" /></artifacts>",
+      createdAt: "2026-06-08T00:00:03.000Z"
+    });
+
+    const markdown = buildSessionMarkdown(session, [artifactAnswer], [], labels);
+
+    expect(markdown).toContain("文件已生成。");
+    expect(markdown).not.toContain("<artifacts>");
+    expect(markdown).not.toContain("page.html");
+  });
+
   it("exports reasoning-only turns as a quote alone, and skips them without reasoning", () => {
     const reasoningOnly = message({
       id: "a2",

@@ -8,6 +8,7 @@
     --canvas: 255 255 255; /* #ffffff */
     --canvas-soft: 250 250 250; /* #fafafa */
     --canvas-soft-2: 245 245 245; /* #f5f5f5 */
+    --plan-surface: 237 237 237; /* #ededed：中性浅灰（R=G=B，无冷暖色调），计划/套餐卡片专用，比 canvas-soft-2 深一档 */
     --ink: 23 23 23; /* #171717 */
     --body: 77 77 77; /* #4d4d4d */
     --mute: 136 136 136; /* #888888 */
@@ -71,6 +72,7 @@
     --input: 235 235 235;
     --ring: var(--link);
     --bubble-user: var(--canvas-soft-2);
+    --sidebar: var(--canvas-soft);
 
     /* 状态色映射到 Vercel 语义与渐变色系，供印章/计划/问答卡复用。 */
     --success: var(--link);
@@ -91,6 +93,7 @@
     --canvas: 18 18 18;
     --canvas-soft: 10 10 10;
     --canvas-soft-2: 38 38 38;
+    --plan-surface: 44 44 44; /* #2c2c2c：暗色中性灰 */
     --ink: 250 250 250;
     --body: 209 209 209;
     --mute: 136 136 136;
@@ -137,6 +140,7 @@
     --input: 77 77 77;
     --ring: var(--link);
     --bubble-user: 38 38 38;
+    --sidebar: 18 18 18;
 
     --success: var(--link);
     --moss: var(--link);
@@ -203,17 +207,293 @@
     pointer-events: none;
   }
 
-  /* ChatView 流式输出时的插入光标。 */
-  .stream-caret::after {
-    content: "";
-    display: inline-block;
-    width: 8px;
-    height: 1em;
-    margin-left: 3px;
-    border-radius: 99px;
-    vertical-align: text-bottom;
-    background: rgb(var(--foreground));
-    animation: caret 1s steps(2) infinite;
+  /* 聊天主列按容器宽度左偏，为右侧旁注和后续侧栏预留空间。 */
+  .chat-layout-scope {
+    container-type: inline-size;
+  }
+
+  .chat-primary-column {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 48rem;
+    margin-inline: auto;
+  }
+
+  .chat-floating-stack {
+    position: absolute;
+    top: 1rem;
+    right: 1.5rem;
+    z-index: 30;
+    display: none;
+    width: 16.5rem;
+    max-height: calc(100% - 2rem);
+    flex-direction: column;
+    gap: 0.75rem;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .chat-progress-floating,
+  .chat-artifact-floating {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .chat-artifact-floating {
+    flex: 0 1 auto;
+    max-height: 15rem;
+  }
+
+  .chat-progress-floating {
+    flex: 1 1 auto;
+    max-height: min(22rem, calc(100vh - 6rem));
+  }
+
+  /* 侧边栏使用 Radix ScrollArea，但隐藏 viewport 原生滚动条与自定义轨道。 */
+  .sidebar-scroll-area {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  /* 侧边栏下方列表区只放大字号数值，不替换组件里绑定的字号类。 */
+  .sidebar-scroll-area .text-caption,
+  .sidebar-scroll-area .text-micro {
+    font-size: 13px;
+  }
+
+  .sidebar-scroll-area::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Streamdown Markdown：保留原生结构和 controls，只把视觉压进 DESIGN.md 的灰阶系统。 */
+  .markdown-streamdown {
+    color: rgb(var(--foreground));
+    overflow-wrap: anywhere;
+  }
+
+  .markdown-streamdown p {
+    margin-block: 0;
+  }
+
+  .markdown-streamdown [data-streamdown^="heading"] {
+    margin-block: 1rem 0.4rem;
+    color: rgb(var(--foreground));
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  .markdown-streamdown [data-streamdown="heading-1"] {
+    font-size: 18px;
+    line-height: 28px;
+  }
+
+  .markdown-streamdown [data-streamdown="heading-2"],
+  .markdown-streamdown [data-streamdown="heading-3"],
+  .markdown-streamdown [data-streamdown="heading-4"],
+  .markdown-streamdown [data-streamdown="heading-5"],
+  .markdown-streamdown [data-streamdown="heading-6"] {
+    font-size: 15px;
+    line-height: 22px;
+  }
+
+  .markdown-streamdown [data-streamdown="link"] {
+    color: rgb(var(--link));
+    text-decoration-color: rgb(var(--link) / 0.35);
+    text-underline-offset: 2px;
+    transition:
+      color 0.15s ease,
+      text-decoration-color 0.15s ease;
+  }
+
+  .markdown-streamdown [data-streamdown="link"]:hover {
+    color: rgb(var(--link-deep));
+    text-decoration-color: rgb(var(--link));
+  }
+
+  .markdown-streamdown [data-streamdown="inline-code"] {
+    border: 1px solid rgb(var(--border) / 0.75);
+    background: rgb(var(--canvas-soft-2) / 0.72);
+    color: rgb(var(--foreground));
+    font-size: 0.88em;
+  }
+
+  .markdown-streamdown [data-streamdown="code-block"],
+  .markdown-streamdown [data-streamdown="table-wrapper"],
+  .markdown-streamdown [data-streamdown="mermaid-block"] {
+    margin-block: 1rem;
+    border-radius: 8px;
+    border-color: rgb(var(--border));
+    background: rgb(var(--canvas-soft));
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.03);
+  }
+
+  .dark .markdown-streamdown [data-streamdown="code-block"],
+  .dark .markdown-streamdown [data-streamdown="table-wrapper"],
+  .dark .markdown-streamdown [data-streamdown="mermaid-block"] {
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04);
+  }
+
+  .markdown-streamdown [data-streamdown="code-block-header"] {
+    color: rgb(var(--mute));
+  }
+
+  .markdown-streamdown [data-streamdown="code-block-body"] {
+    border-color: rgb(var(--border));
+    background: rgb(var(--canvas));
+    font-size: 13px;
+    line-height: 20px;
+  }
+
+  .markdown-streamdown [data-streamdown$="-actions"],
+  .markdown-streamdown [data-streamdown="code-block-actions"],
+  .markdown-streamdown [data-streamdown="mermaid-block-actions"] {
+    border-color: rgb(var(--border));
+    background: rgb(var(--canvas) / 0.86);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+  }
+
+  .markdown-streamdown [data-streamdown="code-block-copy-button"],
+  .markdown-streamdown [data-streamdown="code-block-download-button"] {
+    border-radius: 6px;
+  }
+
+  .markdown-streamdown [data-streamdown="table-wrapper"] > div:last-child {
+    border-color: rgb(var(--border));
+    background: rgb(var(--canvas));
+  }
+
+  .markdown-streamdown [data-streamdown="table"] {
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .markdown-streamdown [data-streamdown="table-header"] {
+    background: rgb(var(--canvas-soft-2));
+  }
+
+  .markdown-streamdown [data-streamdown="table-header-cell"],
+  .markdown-streamdown [data-streamdown="table-cell"] {
+    padding: 8px 12px;
+    border-color: rgb(var(--border));
+  }
+
+  .markdown-streamdown [data-streamdown="table-row"]:hover {
+    background: rgb(var(--canvas-soft) / 0.78);
+  }
+
+  .markdown-streamdown [data-streamdown="table-cell"][data-numeric-col] {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .markdown-streamdown [data-streamdown="blockquote"] {
+    margin-block: 1rem;
+    border-left-width: 2px;
+    border-left-color: rgb(var(--hairline-strong));
+    color: rgb(var(--body));
+    font-style: normal;
+    background: rgb(var(--canvas-soft));
+    padding: 8px 12px;
+  }
+
+  .markdown-streamdown [data-streamdown="horizontal-rule"] {
+    margin-block: 1.25rem;
+  }
+
+  .markdown-streamdown.proposed-plan-markdown {
+    color: rgb(var(--foreground));
+  }
+
+  .markdown-streamdown.proposed-plan-markdown p {
+    margin-block: 0.4rem 0.75rem;
+    font-size: 13px;
+    line-height: 20px;
+    color: rgb(var(--body));
+  }
+
+  .markdown-streamdown.proposed-plan-markdown [data-streamdown="heading-1"] {
+    margin-block: 0 0.85rem;
+    font-size: 18px;
+    line-height: 26px;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+  }
+
+  .markdown-streamdown.proposed-plan-markdown [data-streamdown="heading-2"] {
+    margin-block: 1rem 0.45rem;
+    font-size: 15px;
+    line-height: 22px;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  .markdown-streamdown.proposed-plan-markdown [data-streamdown="list"] {
+    margin-block: 0.35rem 0.9rem;
+    padding-inline-start: 1.25rem;
+  }
+
+  .markdown-streamdown.proposed-plan-markdown [data-streamdown="list-item"] {
+    margin-block: 0.3rem;
+    font-size: 13px;
+    line-height: 20px;
+    color: rgb(var(--body));
+  }
+
+  .markdown-streamdown .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.35rem 0;
+  }
+
+  .markdown-streamdown [data-streamdown="mermaid-block"] > div:last-child {
+    border-color: rgb(var(--border));
+    background: rgb(var(--canvas));
+  }
+
+  .markdown-streamdown [data-streamdown="table-fullscreen"],
+  [role="dialog"][aria-modal="true"][aria-label="全屏查看"],
+  [data-streamdown="link-safety-modal"] {
+    z-index: 120 !important;
+    isolation: isolate;
+  }
+
+  .markdown-streamdown [data-streamdown="table-fullscreen"],
+  [role="dialog"][aria-modal="true"][aria-label="全屏查看"] {
+    background: rgb(var(--background));
+  }
+
+  [data-streamdown="link-safety-modal"] > div {
+    border-color: rgb(var(--border));
+    border-radius: 8px;
+    background: rgb(var(--canvas));
+    box-shadow:
+      0 8px 16px -4px rgb(0 0 0 / 0.04),
+      0 24px 32px -8px rgb(0 0 0 / 0.06),
+      inset 0 0 0 1px rgb(0 0 0 / 0.08);
+  }
+
+  @container (min-width: 916px) {
+    .chat-primary-column {
+      max-width: calc(48rem + 200px);
+      padding-right: 200px;
+    }
+  }
+
+  @container (min-width: 1096px) {
+    .chat-primary-column {
+      max-width: calc(48rem + 244px);
+      padding-right: 244px;
+    }
+  }
+
+  @container (min-width: 1160px) {
+    .chat-floating-stack {
+      display: flex;
+    }
   }
 
   /* 思考占位文本的低调扫光。 */
@@ -229,6 +509,51 @@
     background-clip: text;
     color: transparent;
     animation: shimmer 1.8s linear infinite;
+  }
+
+  /* 首页 hero 与人物的入场动画，保持白底工作台的克制感。 */
+  .home-hero {
+    animation: home-hero-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .home-mascot {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      #000 0%,
+      #000 76%,
+      rgb(0 0 0 / 0.88) 88%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      #000 0%,
+      #000 76%,
+      rgb(0 0 0 / 0.88) 88%,
+      transparent 100%
+    );
+    animation: home-mascot-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* 主句与副标题共用宋体衬线，字身左缘一致天然对齐，保留排版质感。 */
+  .home-phrase,
+  .home-subtitle {
+    font-family:
+      "Songti SC",
+      "STSong",
+      "Noto Serif CJK SC",
+      "PingFang SC",
+      "Space Grotesk",
+      ui-serif,
+      serif;
+  }
+
+  .home-phrase {
+    font-weight: 600;
+  }
+
+  /* 右侧话术整体随入场轻微右滑，与人物动作呼应。 */
+  .home-copy {
+    animation: home-copy-in 0.46s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
   }
 }
 
@@ -248,99 +573,44 @@
   }
 }
 
-/* rehype-highlight 语法高亮：灰阶底座 + Vercel 链接蓝 / 紫粉 / 青色渐变色系。 */
-.hljs-comment,
-.hljs-quote {
-  color: #888888;
-  font-style: italic;
+@keyframes home-hero-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-.hljs-keyword,
-.hljs-selector-tag,
-.hljs-doctag {
-  color: #0070f3;
+@keyframes home-mascot-in {
+  from {
+    opacity: 0;
+    transform: translateX(-14px) translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
 }
 
-.hljs-string,
-.hljs-regexp,
-.hljs-addition {
-  color: #0070f3;
+@keyframes home-copy-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
-.hljs-number,
-.hljs-literal,
-.hljs-symbol,
-.hljs-bullet {
-  color: #ff0080;
-}
-
-.hljs-title,
-.hljs-section,
-.hljs-name {
-  color: #171717;
-}
-
-.hljs-attr,
-.hljs-attribute,
-.hljs-variable,
-.hljs-template-variable,
-.hljs-type,
-.hljs-built_in {
-  color: #7928ca;
-}
-
-.hljs-meta,
-.hljs-deletion {
-  color: #a1a1a1;
-}
-
-.hljs-emphasis {
-  font-style: italic;
-}
-
-.hljs-strong {
-  font-weight: 500;
-}
-
-.dark .hljs-comment,
-.dark .hljs-quote,
-.dark .hljs-meta,
-.dark .hljs-deletion {
-  color: #888888;
-}
-
-.dark .hljs-keyword,
-.dark .hljs-selector-tag,
-.dark .hljs-doctag {
-  color: #52a8ff;
-}
-
-.dark .hljs-string,
-.dark .hljs-regexp,
-.dark .hljs-addition {
-  color: #52a8ff;
-}
-
-.dark .hljs-number,
-.dark .hljs-literal,
-.dark .hljs-symbol,
-.dark .hljs-bullet {
-  color: #ff4d9d;
-}
-
-.dark .hljs-title,
-.dark .hljs-section,
-.dark .hljs-name {
-  color: #fafafa;
-}
-
-.dark .hljs-attr,
-.dark .hljs-attribute,
-.dark .hljs-variable,
-.dark .hljs-template-variable,
-.dark .hljs-type,
-.dark .hljs-built_in {
-  color: #bf80ff;
+@media (prefers-reduced-motion: reduce) {
+  .home-hero,
+  .home-mascot,
+  .home-phrase,
+  .home-copy {
+    animation: none;
+  }
 }
 
 /* macOS 覆盖式滚动条：窄、低存在感。 */

@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import type { AppEvent } from "@chengxiaobang/shared";
+import { EventHub } from "../events/event-hub";
 import { SlashCommandService } from "../tools/slash-command-service";
 import type { AppContext, AppOptions } from "./context";
 import { registerRoutes } from "./routes/index";
@@ -12,7 +14,8 @@ const ALLOWED_HEADERS = ["Content-Type", "x-chengxiaobang-token"];
 export function createApp(options: AppOptions): (request: Request) => Promise<Response> {
   const context: AppContext = {
     ...options,
-    slashCommandService: options.slashCommandService ?? new SlashCommandService()
+    slashCommandService: options.slashCommandService ?? new SlashCommandService(),
+    eventHub: options.eventHub ?? new EventHub<AppEvent>()
   };
   const app = new Hono();
 

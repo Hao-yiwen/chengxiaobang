@@ -2,8 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { nowIso, type ProviderConfig } from "@chengxiaobang/shared";
+import { nowIso, type AppEvent, type ProviderConfig } from "@chengxiaobang/shared";
 import { AgentRunner } from "../src/agent/agent-runner";
+import type { EventHub } from "../src/events/event-hub";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 import { MemorySecretStore } from "../src/secrets/secret-store";
 import { TaskScheduler } from "../src/tasks/task-scheduler";
@@ -28,12 +29,26 @@ describe("TaskScheduler", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  function schedulerWith(turns: ScriptedTurn[]): { scheduler: TaskScheduler; runner: AgentRunner } {
+  function schedulerWith(
+    turns: ScriptedTurn[],
+    options: { events?: AppEvent[]; now?: Date } = {}
+  ): { scheduler: TaskScheduler; runner: AgentRunner } {
     const runner = new AgentRunner(store, secrets, {
       streamFn: scriptedStreamFn(turns).streamFn,
       sessionWorkspacePath: (sessionId) => join(dir, "sessions", sessionId)
     });
-    return { scheduler: new TaskScheduler({ store, runner }), runner };
+    const eventHub = options.events
+      ? ({ publish: (event: AppEvent) => options.events?.push(event) } as EventHub<AppEvent>)
+      : undefined;
+    return {
+      scheduler: new TaskScheduler({
+        store,
+        runner,
+        eventHub,
+        ...(options.now ? { now: () => options.now! } : {})
+      }),
+      runner
+    };
   }
 
   async function seedSessionAndTask(options: { fullAccess?: boolean; enabled?: boolean } = {}) {
@@ -77,6 +92,37 @@ describe("TaskScheduler", () => {
     expect(Date.parse(updated!.lastRunAt!)).toBeGreaterThanOrEqual(before);
   });
 
+  it("publishes start and finish events for scheduled executions", async () => {
+    await seedProvider(store, secrets);
+    const { session, task } = await seedSessionAndTask();
+    const events: AppEvent[] = [];
+    const now = new Date("2026-06-13T01:00:00.000Z");
+    const { scheduler } = schedulerWith([{ text: "今日 AI 要点……" }], { events, now });
+
+    await scheduler.tick();
+
+    expect(events).toEqual([
+      {
+        type: "scheduled_task_started",
+        taskId: task.id,
+        sessionId: session.id,
+        name: "AI 日报",
+        trigger: "schedule",
+        occurredAt: now.toISOString()
+      },
+      expect.objectContaining({
+        type: "scheduled_task_finished",
+        taskId: task.id,
+        sessionId: session.id,
+        name: "AI 日报",
+        trigger: "schedule",
+        status: "completed",
+        occurredAt: now.toISOString()
+      })
+    ]);
+    expect(events[1]).toHaveProperty("runId");
+  });
+
   it("records a failure when the run cannot start (no provider configured)", async () => {
     const { task } = await seedSessionAndTask();
     const { scheduler } = schedulerWith([]);
@@ -88,6 +134,30 @@ describe("TaskScheduler", () => {
     expect(updated?.lastError).toContain("模型");
     // 失败也已推进 nextRunAt，不会在每个 tick 重复打失败的任务。
     expect(Date.parse(updated!.nextRunAt!)).toBeGreaterThan(Date.now() - 1000);
+  });
+
+  it("publishes manual run failures with the task error", async () => {
+    const { task } = await seedSessionAndTask();
+    const events: AppEvent[] = [];
+    const { scheduler } = schedulerWith([], {
+      events,
+      now: new Date("2026-06-13T02:00:00.000Z")
+    });
+
+    await scheduler.runNow(task.id);
+
+    expect(events[0]).toMatchObject({
+      type: "scheduled_task_started",
+      taskId: task.id,
+      trigger: "manual"
+    });
+    expect(events[1]).toMatchObject({
+      type: "scheduled_task_finished",
+      taskId: task.id,
+      trigger: "manual",
+      status: "failed"
+    });
+    expect(events[1]).toHaveProperty("error");
   });
 
   it("auto-denies mutating tools for read-only tasks and the run still completes", async () => {

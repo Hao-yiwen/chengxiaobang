@@ -204,6 +204,10 @@ describe("设置页供应商：列表选中与删除", () => {
     const list = screen.getByTestId("settings-provider-list");
 
     fireEvent.click(within(list).getByRole("button", { name: "删除 Kimi" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("确定删除该供应商配置？")).toBeInTheDocument();
+    expect(window.confirm).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
 
     await waitFor(() => expect(deleteProvider).toHaveBeenCalledWith("kimi"));
   });

@@ -26,10 +26,8 @@ export interface ToolCallLineProps {
 }
 
 /**
- * One borderless tool line, styled like the reasoning panel header: tool icon
- * in the chevron slot + a muted description that brightens on hover. Expands
- * on click to the raw result or, for edit/write, a diff. Used both inside
- * ToolCallGroup and as a standalone timeline row.
+ * 无边框工具行：图标占据折叠箭头槽位，摘要文本保持轻量。
+ * 点击后展开工具详情；命令类工具会同时展示完整命令与执行产物。
  */
 export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
   const { t } = useTranslation();
@@ -37,7 +35,10 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
 
   const ToolIcon = toolIcon(toolCall.name);
   const label = toolLineLabel(toolCall);
-  const isRunning = toolCall.status === "running" || toolCall.status === "pending_approval";
+  const isRunning =
+    toolCall.status === "running" ||
+    toolCall.status === "pending_approval" ||
+    toolCall.status === "pending_smart_approval";
   const isError = toolCall.status === "failed" || toolCall.status === "rejected";
   const filePath =
     onOpenFile && FILE_PREVIEW_TOOLS.has(toolCall.name) && typeof toolCall.args.path === "string"
@@ -45,14 +46,33 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
       : undefined;
   const durationMs = toolCallDurationMs(toolCall);
   const diff = toolCall.status === "completed" ? buildToolCallDiff(toolCall) : undefined;
-  const expandable = Boolean(toolCall.result || diff);
+  const command = shellCommandDetail(toolCall);
+  const result = typeof toolCall.result === "string" && toolCall.result.length > 0
+    ? toolCall.result
+    : undefined;
+  const expandable = Boolean(command || result || diff);
 
   return (
     <div className="max-w-full">
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => expandable && setOpen((value) => !value)}
+          aria-expanded={expandable ? open : undefined}
+          onClick={() => {
+            if (!expandable) {
+              return;
+            }
+            const nextOpen = !open;
+            console.debug("[ToolCallLine] 切换工具详情", {
+              toolCallId: toolCall.id,
+              name: toolCall.name,
+              open: nextOpen,
+              hasCommand: Boolean(command),
+              hasResult: Boolean(result),
+              hasDiff: Boolean(diff)
+            });
+            setOpen(nextOpen);
+          }}
           className={cn(
             "flex min-w-0 items-center gap-1.5 py-0.5 text-left text-caption text-muted-foreground",
             expandable && "transition-colors hover:text-foreground"
@@ -67,6 +87,11 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
           {toolCall.status === "pending_approval" ? (
             <span className="flex-none text-micro text-muted-slate">
               {t("chat.toolStatus.pendingApproval")}
+            </span>
+          ) : null}
+          {toolCall.status === "pending_smart_approval" ? (
+            <span className="flex-none text-micro text-muted-slate">
+              {t("chat.toolStatus.pendingSmartApproval")}
             </span>
           ) : null}
           {isError ? (
@@ -100,15 +125,58 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
           </button>
         ) : null}
       </div>
-      {open && diff ? (
+      {open && command ? (
+        <div className="mt-1 space-y-2">
+          <ToolDetailBlock label={t("chat.toolDetail.command")} content={command} />
+          {result ? (
+            <ToolDetailBlock
+              label={t("chat.toolDetail.result")}
+              content={result}
+              muted
+            />
+          ) : null}
+        </div>
+      ) : open && diff ? (
         <div className="mt-1 overflow-hidden rounded-sm border">
           <DiffView lines={diff} />
         </div>
-      ) : open && toolCall.result ? (
+      ) : open && result ? (
         <pre className="mt-1 max-h-[220px] overflow-auto whitespace-pre-wrap break-words rounded-sm bg-muted/50 px-3 py-2 font-mono text-micro leading-relaxed text-muted-foreground">
-          {toolCall.result}
+          {result}
         </pre>
       ) : null}
     </div>
+  );
+}
+
+function shellCommandDetail(toolCall: ToolCall): string | undefined {
+  if (toolCall.name !== "shell") {
+    return undefined;
+  }
+  const command = toolCall.args.command;
+  return typeof command === "string" && command.trim().length > 0 ? command : undefined;
+}
+
+function ToolDetailBlock({
+  label,
+  content,
+  muted
+}: {
+  label: string;
+  content: string;
+  muted?: boolean;
+}) {
+  return (
+    <section className="min-w-0 space-y-1">
+      <div className="text-micro font-medium text-muted-slate">{label}</div>
+      <pre
+        className={cn(
+          "max-h-[220px] overflow-auto whitespace-pre-wrap break-words rounded-sm border border-hairline bg-canvas-soft-2 px-3 py-2 font-mono text-micro leading-relaxed",
+          muted ? "text-muted-foreground" : "text-foreground"
+        )}
+      >
+        {content}
+      </pre>
+    </section>
   );
 }

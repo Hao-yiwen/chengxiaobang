@@ -3,6 +3,16 @@ import { z } from "zod";
 export const messageRoleSchema = z.enum(["user", "assistant", "system", "tool"]);
 export type MessageRole = z.infer<typeof messageRoleSchema>;
 
+export const messageAttachmentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  kind: z.string().min(1),
+  mimeType: z.string().min(1).optional(),
+  size: z.number().int().nonnegative(),
+  path: z.string().min(1)
+});
+export type MessageAttachment = z.infer<typeof messageAttachmentSchema>;
+
 export const messageSchema = z.object({
   id: z.string().min(1),
   sessionId: z.string().min(1),
@@ -10,6 +20,8 @@ export const messageSchema = z.object({
   /** Special message kinds; a /compact summary renders as a system-style card. */
   kind: z.enum(["compaction_summary"]).optional(),
   content: z.string(),
+  /** 用户可见的附件快照；模型实际上下文仍由后端 payload 回放。 */
+  attachments: z.array(messageAttachmentSchema).default([]),
   /** The model's reasoning ("深度思考") that preceded this assistant message. */
   reasoning: z.string().optional(),
   /** How long that reasoning took, in milliseconds. */
@@ -18,4 +30,6 @@ export const messageSchema = z.object({
   durationMs: z.number().int().nonnegative().optional(),
   createdAt: z.string()
 });
-export type Message = z.infer<typeof messageSchema>;
+export type Message = Omit<z.infer<typeof messageSchema>, "attachments"> & {
+  attachments?: MessageAttachment[];
+};

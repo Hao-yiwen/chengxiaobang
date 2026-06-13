@@ -3,7 +3,7 @@ import { z } from "zod";
 export const slashCommandKindSchema = z.enum(["builtin_tool", "prompt_template", "skill"]);
 export type SlashCommandKind = z.infer<typeof slashCommandKindSchema>;
 
-export const slashCommandSourceSchema = z.enum(["builtin", "global", "project"]);
+export const slashCommandSourceSchema = z.enum(["builtin", "market", "global", "project"]);
 export type SlashCommandSource = z.infer<typeof slashCommandSourceSchema>;
 
 export const slashCommandSchema = z.object({

@@ -43,10 +43,17 @@ const KIND_ICON: Partial<Record<Artifact["kind"], Icon>> = {
 /**
  * 生成物卡片：无论是 HTML、PDF、Office 还是媒体，都统一进入右侧文件预览工作台。
  */
-export function ArtifactCard({ artifact, toolName }: { artifact: Artifact; toolName: ToolCall["name"] }) {
+export function ArtifactCard({
+  artifact,
+  toolName
+}: {
+  artifact: Artifact;
+  toolName?: ToolCall["name"];
+}) {
   const { t } = useTranslation();
   const openArtifact = useAppStore((state) => state.openArtifact);
-  const Icon = TOOL_ICON[toolName] ?? KIND_ICON[artifact.kind] ?? FileText;
+  const Icon =
+    (toolName ? TOOL_ICON[toolName] : undefined) ?? KIND_ICON[artifact.kind] ?? FileText;
   return (
     <button
       type="button"

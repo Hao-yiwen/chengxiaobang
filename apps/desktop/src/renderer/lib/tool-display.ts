@@ -1,5 +1,6 @@
 import {
   AlarmIcon,
+  BrainIcon,
   ChatCircleDotsIcon,
   ClockCountdownIcon,
   ClockIcon,
@@ -24,7 +25,7 @@ import {
   WrenchIcon,
   type Icon
 } from "@phosphor-icons/react";
-import type { ToolCall } from "@chengxiaobang/shared";
+import { proposePlanArgsSchema, proposedPlanTitle, type ToolCall } from "@chengxiaobang/shared";
 import { shortenPath } from "./tool-call";
 
 /** 工具在折叠摘要中聚合的类别。 */
@@ -38,6 +39,7 @@ export type ToolCategory =
   | "message"
   | "plan"
   | "schedule"
+  | "memory"
   | "other";
 
 const TOOL_ICONS: Record<string, Icon> = {
@@ -49,21 +51,27 @@ const TOOL_ICONS: Record<string, Icon> = {
   glob: FilesIcon,
   search: MagnifyingGlassIcon,
   shell: TerminalWindowIcon,
+  shell_status: TerminalWindowIcon,
+  shell_cancel: TerminalWindowIcon,
   git_status: GitBranchIcon,
   git_diff: GitDiffIcon,
   fetch_url: GlobeIcon,
+  web_search: MagnifyingGlassIcon,
   create_pptx: FilePptIcon,
   create_docx: FileDocIcon,
   create_xlsx: FileXlsIcon,
   feishu_send_message: PaperPlaneTiltIcon,
   propose_plan: ListChecksIcon,
   update_plan: ListChecksIcon,
+  todo_create: ListChecksIcon,
+  todo_update: ListChecksIcon,
   ask_user: ChatCircleDotsIcon,
   btw: NotePencilIcon,
   use_skill: SparkleIcon,
   schedule_create: AlarmIcon,
   schedule_list: ClockIcon,
-  schedule_cancel: ClockCountdownIcon
+  schedule_cancel: ClockCountdownIcon,
+  memory: BrainIcon
 };
 
 export const FALLBACK_TOOL_ICON: Icon = WrenchIcon;
@@ -92,18 +100,24 @@ const TOOL_CATEGORIES: Record<string, ToolCategory> = {
   glob: "search",
   search: "search",
   shell: "command",
+  shell_status: "command",
+  shell_cancel: "command",
   git_status: "command",
   git_diff: "command",
   fetch_url: "web",
+  web_search: "web",
   create_pptx: "artifact",
   create_docx: "artifact",
   create_xlsx: "artifact",
   feishu_send_message: "message",
   propose_plan: "plan",
   update_plan: "plan",
+  todo_create: "plan",
+  todo_update: "plan",
   schedule_create: "schedule",
   schedule_list: "schedule",
-  schedule_cancel: "schedule"
+  schedule_cancel: "schedule",
+  memory: "memory"
 };
 
 export function toolCategory(name: string): ToolCategory {
@@ -120,6 +134,7 @@ const CATEGORY_ICONS: Record<ToolCategory, Icon> = {
   message: PaperPlaneTiltIcon,
   plan: ListChecksIcon,
   schedule: ClockIcon,
+  memory: BrainIcon,
   other: WrenchIcon
 };
 
@@ -141,21 +156,27 @@ type ToolLineKey = `chat.toolLine.${
   | "glob"
   | "search"
   | "shell"
+  | "shell_status"
+  | "shell_cancel"
   | "git_status"
   | "git_diff"
   | "fetch_url"
+  | "web_search"
   | "create_pptx"
   | "create_docx"
   | "create_xlsx"
   | "feishu_send_message"
   | "propose_plan"
   | "update_plan"
+  | "todo_create"
+  | "todo_update"
   | "ask_user"
   | "btw"
   | "use_skill"
   | "schedule_create"
   | "schedule_list"
   | "schedule_cancel"
+  | "memory"
   | "fallback"}`;
 
 export interface ToolLineLabel {
@@ -185,6 +206,8 @@ export function toolLineLabel(toolCall: ToolCall): ToolLineLabel {
       return { key: "chat.toolLine.glob", params: { pattern: truncateEnd(stringArg(args, "pattern") ?? "", 40) } };
     case "search":
       return { key: "chat.toolLine.search", params: { query: truncateEnd(stringArg(args, "query") ?? "", 40) } };
+    case "web_search":
+      return { key: "chat.toolLine.web_search", params: { query: truncateEnd(stringArg(args, "query") ?? "", 40) } };
     case "shell":
       return {
         key: "chat.toolLine.shell",
@@ -193,13 +216,29 @@ export function toolLineLabel(toolCall: ToolCall): ToolLineLabel {
     case "fetch_url":
       return { key: "chat.toolLine.fetch_url", params: { url: truncateEnd(stringArg(args, "url") ?? "", 60) } };
     case "propose_plan":
-      return { key: "chat.toolLine.propose_plan", params: { title: truncateEnd(stringArg(args, "title") ?? "", 30) } };
+      return {
+        key: "chat.toolLine.propose_plan",
+        params: { title: truncateEnd(proposePlanLabel(args), 30) }
+      };
+    case "todo_create":
+      return { key: "chat.toolLine.todo_create", params: { title: truncateEnd(stringArg(args, "title") ?? "", 30) } };
+    case "todo_update":
+      return { key: "chat.toolLine.todo_update" };
     case "use_skill":
       return { key: "chat.toolLine.use_skill", params: { name: stringArg(args, "name") ?? "" } };
     case "schedule_create":
       return { key: "chat.toolLine.schedule_create", params: { name: stringArg(args, "name") ?? "" } };
+    case "memory":
+      return {
+        key: "chat.toolLine.memory",
+        params: {
+          path: shortenPath(stringArg(args, "path") ?? stringArg(args, "old_path") ?? "/memories")
+        }
+      };
     case "git_status":
     case "git_diff":
+    case "shell_status":
+    case "shell_cancel":
     case "feishu_send_message":
     case "update_plan":
     case "ask_user":
@@ -210,6 +249,14 @@ export function toolLineLabel(toolCall: ToolCall): ToolLineLabel {
     default:
       return { key: "chat.toolLine.fallback", params: { name } };
   }
+}
+
+function proposePlanLabel(args: Record<string, unknown>): string {
+  const parsed = proposePlanArgsSchema.safeParse(args);
+  if (parsed.success) {
+    return proposedPlanTitle(parsed.data.markdown);
+  }
+  return stringArg(args, "title") ?? "计划";
 }
 
 export interface ToolGroupSummaryPart {

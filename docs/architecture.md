@@ -193,13 +193,13 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
 
 ### 4.5 工具系统
 
-15 个内置工具全部是 pi `AgentTool`(TypeBox 参数 schema + `execute` 函数,**失败用 throw**,pi 自动转为错误工具结果喂回模型):
+内置工具全部是 pi `AgentTool`(TypeBox 参数 schema + `execute` 函数,**失败用 throw**,pi 自动转为错误工具结果喂回模型):
 
 | 文件 | 工具 | 审批 |
 |---|---|---|
 | `fs-tools.ts` | list_directory、read_file、glob、search | 否 |
 | | write_file、edit_file、make_directory | **是** |
-| `shell-tools.ts` | git_status、git_diff | 否 |
+| `shell-tools.ts` | git_status、git_diff、shell_status、shell_cancel | 否 |
 | | shell | **是** |
 | `web-tools.ts` | fetch_url(HTML→纯文本,30s 超时,20k 截断) | 否 |
 | `office-tools.ts` | create_pptx / create_docx / create_xlsx(结构化规格→真实文件,复用 `{pptx,docx,xlsx}-builder.ts`) | **是** |
@@ -207,6 +207,7 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
 
 - `registry.ts`:`createAgentTools(workspacePath, getFeishuSender?)` 汇集工厂;`MUTATING_TOOLS` 集合 + `requiresApproval(name)` 是审批门控的唯一事实源。
 - `workspace.ts`:`safeResolve` 强制路径不逃逸工作目录;glob/search 实现(忽略 node_modules/.git/dist 等);`listProjectFiles` 供 @-mention 自动补全。
+- Bash 命令默认最多前台等待 15 秒,也可通过 `background=true` 立即转入后台;输出持续写入工作区文件,再由 `shell_status` 查询状态、`shell_cancel` 主动终止;详见 [Bash 异步执行与后台命令](./shell-background-execution.md)。
 - 参数校验由 pi 在执行前按 TypeBox schema 完成,非法参数直接变成错误工具结果(不经 beforeToolCall)。
 
 ### 4.6 模型层与压缩

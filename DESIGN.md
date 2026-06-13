@@ -11,6 +11,7 @@ colors:
   canvas: "#ffffff"
   canvas-soft: "#fafafa"
   canvas-soft-2: "#f5f5f5"
+  plan-surface: "#ededed"
   surface-hover: "#ececec"
   hairline: "#ebebeb"
   hairline-strong: "#a1a1a1"
@@ -202,6 +203,7 @@ components:
 - **Canvas** `#ffffff`：卡片、弹窗、输入框、菜单。
 - **Canvas Soft** `#fafafa`：页面背景。
 - **Canvas Soft 2** `#f5f5f5`：嵌入式区域、代码块内层背景，以及轻量控件的 hover。
+- **Plan Surface** `#ededed`：计划/套餐等成块卡片的背景，纯中性浅灰（R=G=B，无冷暖色调），比 Canvas Soft 2 深一档、配深色文字（暗色为 `#2c2c2c`）。
 - **Surface Hover** `#ececec`：侧边栏等列表项的 hover / 选中态背景，比 Canvas Soft 2 深一档，呈 macOS 风格的轻盈苹果灰。
 - **Hairline** `#ebebeb`：默认边框、分隔线、表格线。
 - **Hairline Strong** `#a1a1a1`：更强的分隔线、低优先级文字。

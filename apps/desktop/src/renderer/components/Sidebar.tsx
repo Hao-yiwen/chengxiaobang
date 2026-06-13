@@ -8,6 +8,7 @@ import {
   FolderIcon as Folder,
   FolderOpenIcon as FolderOpen,
   GearIcon as Settings,
+  CircleNotchIcon as Loader2,
   MagnifyingGlassIcon as Search,
   NotePencilIcon as SquarePen,
   PencilSimpleIcon as Pencil,
@@ -15,6 +16,7 @@ import {
   PushPinIcon as PushPin,
   PushPinSlashIcon as PushPinSlash,
   SidebarSimpleIcon as PanelLeft,
+  SparkleIcon as Sparkle,
   TrashIcon as Trash2,
   XIcon as X
 } from "@phosphor-icons/react";
@@ -29,8 +31,9 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger
 } from "@/components/ui/context-menu";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
@@ -61,7 +64,13 @@ export function SidebarToggle() {
 }
 
 /** 侧边栏扁平行：图标 + 文案，用于新对话/搜索/设置等固定入口。 */
-function SidebarRow(props: { icon: ReactNode; label: string; active?: boolean; onClick(): void }) {
+function SidebarRow(props: {
+  icon: ReactNode;
+  label: string;
+  active?: boolean;
+  compactLabel?: boolean;
+  onClick(): void;
+}) {
   return (
     <button
       type="button"
@@ -75,38 +84,59 @@ function SidebarRow(props: { icon: ReactNode; label: string; active?: boolean; o
       <span className="flex size-4 flex-none items-center justify-center [&_svg]:size-4 [&_svg]:stroke-[1.75]">
         {props.icon}
       </span>
-      <span className="truncate">{props.label}</span>
+      <span className={cn("truncate", props.compactLabel && "text-[15px]")}>{props.label}</span>
     </button>
   );
 }
 
-/** 区块小标签：区块之间靠留白切分，不再使用分隔线。 */
-function SectionLabel(props: { children: ReactNode; className?: string }) {
+/**
+ * 区块小标签：区块之间靠留白切分，不再使用分隔线。
+ * 传入 onAction 时，悬停标签行右侧浮出加号（如「对话」新建会话、「项目」打开文件夹）。
+ */
+function SectionLabel(props: {
+  children: ReactNode;
+  className?: string;
+  actionLabel?: string;
+  onAction?(): void;
+}) {
   return (
     <div
       className={cn(
-        "mb-1 px-2.5 font-mono text-caption tracking-[0.28px] text-mute",
+        "group/section relative mb-1 flex items-center px-2.5 font-mono text-caption tracking-[0.28px] text-mute",
         props.className
       )}
     >
-      {props.children}
+      <span className="min-w-0 truncate">{props.children}</span>
+      {props.onAction ? (
+        <button
+          type="button"
+          title={props.actionLabel}
+          onClick={props.onAction}
+          className="absolute right-1 flex size-5 flex-none items-center justify-center rounded-xs text-muted-slate opacity-0 transition-opacity hover:text-foreground group-hover/section:opacity-100"
+        >
+          <Plus className="size-3.5" />
+        </button>
+      ) : null}
     </div>
   );
 }
 
 export function Sidebar() {
   const { t } = useTranslation();
+  const confirmDialog = useConfirmDialog();
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
-  const { projects, sessions, activeSessionId, view } = useAppStore(
+  const { projects, sessions, activeSessionId, view, runningSessionsById } = useAppStore(
     useShallow((state) => ({
       projects: state.projects,
       sessions: state.sessions,
       activeSessionId: state.activeSessionId,
-      view: state.view
+      view: state.view,
+      runningSessionsById: state.runningSessionsById
     }))
   );
   const newChat = useAppStore((state) => state.newChat);
   const newChatInProject = useAppStore((state) => state.newChatInProject);
+  const openFolder = useAppStore((state) => state.openFolder);
   const setPaletteOpen = useAppStore((state) => state.setPaletteOpen);
   const setView = useAppStore((state) => state.setView);
   const selectSession = useAppStore((state) => state.selectSession);
@@ -172,11 +202,40 @@ export function Sidebar() {
     setEditingId(undefined);
   }
 
-  function onDelete(id: string): void {
-    if (!window.confirm(t("sidebar.deleteConfirm"))) {
+  async function onDelete(id: string): Promise<void> {
+    console.debug("[sidebar] 请求删除会话", { id });
+    const confirmed = await confirmDialog({
+      title: t("sidebar.deleteTitle"),
+      description: t("sidebar.deleteConfirm"),
+      confirmLabel: t("sidebar.confirmDelete"),
+      cancelLabel: t("sidebar.cancel"),
+      tone: "danger",
+      source: "sidebar.deleteSession"
+    });
+    if (!confirmed) {
+      console.debug("[sidebar] 用户取消删除会话", { id });
       return;
     }
+    console.debug("[sidebar] 用户确认删除会话", { id });
     void deleteSession(id);
+  }
+
+  async function onDeleteProject(id: string): Promise<void> {
+    console.debug("[sidebar] 请求删除项目", { id });
+    const confirmed = await confirmDialog({
+      title: t("sidebar.deleteProjectTitle"),
+      description: t("sidebar.deleteProjectConfirm"),
+      confirmLabel: t("sidebar.confirmDelete"),
+      cancelLabel: t("sidebar.cancel"),
+      tone: "danger",
+      source: "sidebar.deleteProject"
+    });
+    if (!confirmed) {
+      console.debug("[sidebar] 用户取消删除项目", { id });
+      return;
+    }
+    console.debug("[sidebar] 用户确认删除项目", { id });
+    void deleteProject(id);
   }
 
   async function commitRenameProject(): Promise<void> {
@@ -202,6 +261,7 @@ export function Sidebar() {
         session={session}
         indent={indent}
         active={view === "chat" && session.id === activeSessionId}
+        running={Boolean(runningSessionsById[session.id])}
         editing={editingId === session.id}
         draftTitle={draftTitle}
         branchHint={branchHint}
@@ -210,7 +270,7 @@ export function Sidebar() {
         onDraftChange={setDraftTitle}
         onCommitRename={() => void commitRename()}
         onCancelRename={() => setEditingId(undefined)}
-        onDelete={() => onDelete(session.id)}
+        onDelete={() => void onDelete(session.id)}
         onExport={() => void exportSession(session.id)}
         onTogglePin={() => void setSessionPinned(session.id, !session.pinnedAt)}
       />
@@ -244,11 +304,7 @@ export function Sidebar() {
         onCommitRename={() => void commitRenameProject()}
         onCancelRename={() => setEditingProjectId(undefined)}
         onTogglePin={() => void setProjectPinned(project.id, !project.pinnedAt)}
-        onDelete={() => {
-          if (window.confirm(t("sidebar.deleteProjectConfirm"))) {
-            void deleteProject(project.id);
-          }
-        }}
+        onDelete={() => void onDeleteProject(project.id)}
       >
         {projectSessionList.length === 0 ? (
           <p className="py-1 pl-7 pr-2 text-micro text-foreground">{t("sidebar.noChats")}</p>
@@ -278,43 +334,79 @@ export function Sidebar() {
       <div className="h-10 flex-none" />
 
       <div className="mt-1 flex-none space-y-0.5">
-        <SidebarRow icon={<SquarePen />} label={t("sidebar.newChat")} onClick={newChat} />
-        <SidebarRow icon={<Search />} label={t("sidebar.search")} onClick={() => setPaletteOpen(true)} />
+        <SidebarRow icon={<SquarePen />} label={t("sidebar.newChat")} compactLabel onClick={newChat} />
+        <SidebarRow icon={<Search />} label={t("sidebar.search")} compactLabel onClick={() => setPaletteOpen(true)} />
         <SidebarRow
           icon={<Clock />}
           label={t("sidebar.tasks")}
+          compactLabel
           active={view === "tasks"}
           onClick={() => setView("tasks")}
         />
+        <SidebarRow
+          icon={<Sparkle />}
+          label={t("sidebar.skills")}
+          compactLabel
+          active={view === "skills"}
+          onClick={() => setView("skills")}
+        />
       </div>
 
-      <ScrollArea className="-mx-1 mt-6 min-h-0 flex-1 px-1">
-        {hasPinned ? (
-          <>
-            <SectionLabel>{t("sidebar.pinned")}</SectionLabel>
-            {pinnedProjects.map(({ project, sessions: projectSessionList }) =>
-              renderProjectGroup(project, projectSessionList, {})
-            )}
-            {pinnedSessions.map((session) => renderSession(session, false))}
-          </>
-        ) : null}
-        <SectionLabel className={hasPinned ? "mt-6" : undefined}>
-          {t("sidebar.projects")}
-        </SectionLabel>
-        {unpinnedProjects.map(({ project, sessions: projectSessionList }) =>
-          renderProjectGroup(project, projectSessionList, { sliceTo: 8 })
-        )}
-        {projects.length === 0 ? (
-          <p className="px-2.5 py-1 text-micro text-foreground">{t("sidebar.noProjects")}</p>
-        ) : null}
+      {/* 原生滚动：Radix ScrollArea 的 viewport 会用 display:table 按内容宽排版，
+          导致行的 absolute 悬停按钮相对超宽容器定位、右侧被裁，故改回原生滚动。 */}
+      <div className="relative -mx-1 mt-6 min-h-0 flex-1">
+        <div
+          data-scrollbar-hidden="true"
+          className="sidebar-scroll-area h-full min-h-0 overflow-y-auto px-1 pb-6"
+        >
+          {hasPinned ? (
+            <>
+              <SectionLabel>{t("sidebar.pinned")}</SectionLabel>
+              {pinnedProjects.map(({ project, sessions: projectSessionList }) =>
+                renderProjectGroup(project, projectSessionList, {})
+              )}
+              {pinnedSessions.map((session) => renderSession(session, false))}
+            </>
+          ) : null}
+          <SectionLabel
+            className={hasPinned ? "mt-6" : undefined}
+            actionLabel={t("sidebar.openFolder")}
+            onAction={() => {
+              console.debug("[sidebar] 点击「项目」区块加号，打开文件夹选择");
+              void openFolder();
+            }}
+          >
+            {t("sidebar.projects")}
+          </SectionLabel>
+          {unpinnedProjects.map(({ project, sessions: projectSessionList }) =>
+            renderProjectGroup(project, projectSessionList, { sliceTo: 8 })
+          )}
+          {projects.length === 0 ? (
+            <p className="px-2.5 py-1 text-micro text-foreground">{t("sidebar.noProjects")}</p>
+          ) : null}
 
-        <SectionLabel className="mt-6">{t("sidebar.conversations")}</SectionLabel>
-        {ungrouped.length === 0 ? (
-          <p className="px-2.5 py-1 text-micro text-foreground">{t("sidebar.noChats")}</p>
-        ) : (
-          ungrouped.map((session) => renderSession(session, false))
-        )}
-      </ScrollArea>
+          <SectionLabel
+            className="mt-6"
+            actionLabel={t("sidebar.newChat")}
+            onAction={() => {
+              console.debug("[sidebar] 点击「对话」区块加号，新建对话");
+              newChat();
+            }}
+          >
+            {t("sidebar.conversations")}
+          </SectionLabel>
+          {ungrouped.length === 0 ? (
+            <p className="px-2.5 py-1 text-micro text-foreground">{t("sidebar.noChats")}</p>
+          ) : (
+            ungrouped.map((session) => renderSession(session, false))
+          )}
+        </div>
+        <div
+          data-sidebar-bottom-fade="true"
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-b from-background/0 via-background/80 to-background"
+        />
+      </div>
 
       <div className="mt-2 flex-none border-t border-border pt-2">
         <SidebarRow
@@ -350,10 +442,14 @@ function ProjectGroup(props: {
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(true);
+  const onOpenChange = (nextOpen: boolean) => {
+    console.debug("[sidebar] 切换项目组折叠状态", { name: props.name, open: nextOpen });
+    setOpen(nextOpen);
+  };
 
   if (props.editing) {
     return (
-      <div className="mb-1">
+      <Collapsible open={open} onOpenChange={onOpenChange} className="mb-1">
         <div className="flex items-center gap-1 py-1 pl-1.5 pr-1">
           <Folder className="size-4 flex-none stroke-[1.75] text-muted-slate" />
           <Input
@@ -384,39 +480,42 @@ function ProjectGroup(props: {
             <X className="size-4" />
           </button>
         </div>
-        {open ? props.children : null}
-      </div>
+        <CollapsibleContent>{props.children}</CollapsibleContent>
+      </Collapsible>
     );
   }
 
   return (
-    <div className="mb-1">
+    <Collapsible open={open} onOpenChange={onOpenChange} className="mb-1">
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div className="group/header relative mb-0.5 flex items-center">
-            <button
-              type="button"
-              title={open ? t("sidebar.collapseFolder") : t("sidebar.expandFolder")}
-              onClick={() => setOpen((value) => !value)}
-              className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1.5 pr-7 text-left text-body-sm text-foreground transition-colors hover:bg-surface-hover"
-            >
-              {open ? (
-                <FolderOpen className="size-4 flex-none stroke-[1.75] text-muted-slate" />
-              ) : (
-                <Folder className="size-4 flex-none stroke-[1.75] text-muted-slate" />
-              )}
-              <span className="min-w-0 truncate">{props.name}</span>
-              {open ? (
-                <ChevronDown className="ml-1 size-3.5 flex-none text-muted-slate opacity-0 transition-opacity group-hover/header:opacity-100" />
-              ) : (
-                <ChevronRight className="ml-1 size-3.5 flex-none text-muted-slate opacity-0 transition-opacity group-hover/header:opacity-100" />
-              )}
-            </button>
+          <div className="group/header relative mb-0.5 flex w-full min-w-0 max-w-full items-center">
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                title={open ? t("sidebar.collapseFolder") : t("sidebar.expandFolder")}
+                className="flex h-7 w-full min-w-0 max-w-full flex-1 items-center gap-1.5 overflow-hidden rounded-sm px-1.5 pr-8 text-left text-body-sm text-foreground transition-colors hover:bg-surface-hover"
+              >
+                {open ? (
+                  <FolderOpen className="size-4 flex-none stroke-[1.75] text-muted-slate" />
+                ) : (
+                  <Folder className="size-4 flex-none stroke-[1.75] text-muted-slate" />
+                )}
+                <span className="block min-w-0 max-w-[174px] truncate" title={props.name}>
+                  {props.name}
+                </span>
+                {/* 展开/收起指示：紧跟名字，悬停浮现。 */}
+                <span className="ml-0.5 flex size-4 flex-none items-center justify-center text-muted-slate opacity-0 transition-opacity group-hover/header:opacity-100">
+                  {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                </span>
+              </button>
+            </CollapsibleTrigger>
+            {/* 最右侧固定：新建对话加号。 */}
             <button
               type="button"
               title={t("sidebar.newChatInProject")}
               onClick={props.onNewChat}
-              className="absolute right-1 flex size-6 flex-none items-center justify-center rounded-xs text-muted-slate opacity-0 transition-opacity hover:text-foreground group-hover/header:opacity-100"
+              className="absolute right-1 flex size-6 flex-none items-center justify-center rounded-xs text-muted-slate opacity-0 transition-opacity hover:bg-canvas-soft-2 hover:text-foreground group-hover/header:opacity-100"
             >
               <Plus className="size-3.5" />
             </button>
@@ -449,14 +548,15 @@ function ProjectGroup(props: {
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
-      {open ? props.children : null}
-    </div>
+      <CollapsibleContent>{props.children}</CollapsibleContent>
+    </Collapsible>
   );
 }
 
 interface SessionRowProps {
   session: Session;
   active: boolean;
+  running: boolean;
   /** 项目组内的行额外缩进，与组名文本对齐。 */
   indent: boolean;
   editing: boolean;
@@ -513,7 +613,7 @@ function SessionRow(props: SessionRowProps) {
       <ContextMenuTrigger asChild>
         <div
           className={cn(
-            "group relative mb-0.5 flex h-7 items-center rounded-sm pr-1 transition-colors",
+            "group relative mx-1 mb-0.5 flex h-7 min-w-0 items-center rounded-sm transition-colors",
             props.indent ? "pl-7" : "pl-2.5",
             props.active ? "bg-surface-hover" : "hover:bg-surface-hover"
           )}
@@ -524,7 +624,7 @@ function SessionRow(props: SessionRowProps) {
             onClick={props.onSelect}
             title={props.branchHint}
             className={cn(
-              "flex h-full min-w-0 flex-1 items-center gap-1.5 text-left text-caption",
+              "flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden pr-7 text-left text-caption",
               props.active ? "font-medium text-foreground" : "text-foreground"
             )}
           >
@@ -533,16 +633,33 @@ function SessionRow(props: SessionRowProps) {
                 <MessageSquareText className="size-3.5" />
               </span>
             ) : null}
-            <span className="truncate">{props.session.title}</span>
+            <span className="min-w-0 flex-1 truncate">{props.session.title}</span>
           </button>
-          <div className="hidden flex-none items-center group-hover:flex">
+          {props.running ? (
+            <span
+              title={t("sidebar.sessionRunning")}
+              className="absolute right-1 top-0 flex h-full w-6 flex-none items-center justify-center text-muted-foreground"
+            >
+              <Loader2 className="size-3.5 animate-spin" />
+            </span>
+          ) : null}
+          <div
+            className={cn(
+              "absolute right-1 top-0 h-full flex-none items-center",
+              props.running ? "hidden" : "hidden group-hover:flex"
+            )}
+          >
             <button
               type="button"
-              title={t("sidebar.deleteSession")}
-              onClick={props.onDelete}
-              className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-accent hover:text-destructive"
+              title={props.session.pinnedAt ? t("sidebar.unpin") : t("sidebar.pin")}
+              onClick={props.onTogglePin}
+              className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-accent hover:text-foreground"
             >
-              <Trash2 className="size-3.5" />
+              {props.session.pinnedAt ? (
+                <PushPinSlash className="size-3.5" />
+              ) : (
+                <PushPin className="size-3.5" />
+              )}
             </button>
           </div>
         </div>
@@ -563,6 +680,11 @@ function SessionRow(props: SessionRowProps) {
         <ContextMenuItem onSelect={props.onExport}>
           <FileDown className="size-3.5" />
           {t("sidebar.exportSession")}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={props.onDelete} className="text-destructive focus:text-destructive">
+          <Trash2 className="size-3.5" />
+          {t("sidebar.deleteSession")}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

@@ -107,6 +107,92 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
+  it("searches sessions by title and user or assistant content only", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const titleSession = await store.createSession({
+      projectId: null,
+      title: "火星计划讨论",
+      accessMode: "approval"
+    });
+    await store.addMessage({
+      sessionId: titleSession.id,
+      role: "assistant",
+      content: "正文也提到火星计划时仍应按标题命中返回"
+    });
+    await tick();
+    const userSession = await store.createSession({
+      projectId: null,
+      title: "用户正文会话",
+      accessMode: "approval"
+    });
+    const userMessage = await store.addMessage({
+      sessionId: userSession.id,
+      role: "user",
+      content: "请帮我整理火星计划的阶段目标。"
+    });
+    await tick();
+    const assistantSession = await store.createSession({
+      projectId: null,
+      title: "助手正文会话",
+      accessMode: "approval"
+    });
+    const assistantMessage = await store.addMessage({
+      sessionId: assistantSession.id,
+      role: "assistant",
+      content: "火星计划需要先拆成任务清单。"
+    });
+    await tick();
+    const toolSession = await store.createSession({
+      projectId: null,
+      title: "工具结果会话",
+      accessMode: "approval"
+    });
+    await store.addMessage({
+      sessionId: toolSession.id,
+      role: "tool",
+      content: "工具输出里的火星计划不应该被搜索到。"
+    });
+    await tick();
+    const systemSession = await store.createSession({
+      projectId: null,
+      title: "系统消息会话",
+      accessMode: "approval"
+    });
+    await store.addMessage({
+      sessionId: systemSession.id,
+      role: "system",
+      content: "系统消息里的火星计划不应该被搜索到。"
+    });
+
+    const results = await store.searchSessions("火星计划");
+    expect(results[0]).toMatchObject({
+      session: { id: titleSession.id },
+      matchType: "title"
+    });
+    expect(results.map((result) => result.session.id)).toEqual([
+      titleSession.id,
+      assistantSession.id,
+      userSession.id
+    ]);
+    expect(results.filter((result) => result.session.id === titleSession.id)).toHaveLength(1);
+    const userHit = results.find((result) => result.session.id === userSession.id);
+    expect(userHit).toMatchObject({
+      matchType: "content",
+      messageId: userMessage.id,
+      role: "user"
+    });
+    expect(userHit?.matchType === "content" ? userHit.snippet : "").toContain("火星计划");
+    expect(results.find((result) => result.session.id === assistantSession.id)).toMatchObject({
+      matchType: "content",
+      messageId: assistantMessage.id,
+      role: "assistant"
+    });
+    expect(results.some((result) => result.session.id === toolSession.id)).toBe(false);
+    expect(results.some((result) => result.session.id === systemSession.id)).toBe(false);
+    await store.close();
+  });
+
   it("persists assistant reasoning and its duration across restarts", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);
@@ -178,6 +264,49 @@ describe("SqliteStateStore", () => {
     expect(messages[1].payload).toBe(payload);
   });
 
+  it("round-trips visible message attachments across restarts", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const session = await first.createSession({
+      projectId: null,
+      title: "attachments",
+      accessMode: "approval"
+    });
+    await first.addMessage({
+      sessionId: session.id,
+      role: "user",
+      content: "看图",
+      attachments: [
+        {
+          id: "attachment_1",
+          name: "photo.png",
+          kind: "image",
+          mimeType: "image/png",
+          size: 100,
+          path: "/tmp/cxb/photo.png"
+        }
+      ]
+    });
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    const messages = await second.listMessages(session.id);
+    await second.close();
+
+    expect(messages[0].attachments).toEqual([
+      {
+        id: "attachment_1",
+        name: "photo.png",
+        kind: "image",
+        mimeType: "image/png",
+        size: 100,
+        path: "/tmp/cxb/photo.png"
+      }
+    ]);
+  });
+
   it("clones the payload when forking a session", async () => {
     const store = new SqliteStateStore(join(dir, "state.sqlite"));
     await store.initialize();
@@ -204,6 +333,41 @@ describe("SqliteStateStore", () => {
     await store.close();
   });
 
+  it("clones visible attachments when forking a session", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const source = await store.createSession({
+      projectId: null,
+      title: "原会话",
+      accessMode: "approval"
+    });
+    const first = await store.addMessage({
+      sessionId: source.id,
+      role: "user",
+      content: "看图",
+      attachments: [
+        {
+          id: "attachment_1",
+          name: "photo.png",
+          kind: "image",
+          mimeType: "image/png",
+          size: 100,
+          path: "/tmp/cxb/photo.png"
+        }
+      ]
+    });
+
+    const fork = await store.forkSession(source.id, first.id);
+    const cloned = await store.listMessages(fork.id);
+
+    expect(cloned[0].attachments?.[0]).toMatchObject({
+      id: "attachment_1",
+      name: "photo.png",
+      kind: "image"
+    });
+    await store.close();
+  });
+
   it("persists runs and tool calls across store restarts", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);
@@ -215,6 +379,14 @@ describe("SqliteStateStore", () => {
     });
     await first.createRun({
       id: "run_1",
+      sessionId: session.id,
+      status: "running",
+      providerId: "deepseek",
+      providerKind: "deepseek",
+      model: "deepseek-v4-flash"
+    });
+    await first.createRun({
+      id: "run_2",
       sessionId: session.id,
       status: "running"
     });
@@ -231,14 +403,49 @@ describe("SqliteStateStore", () => {
     };
     await first.insertToolCall(toolCall);
     await first.updateRunStatus("run_1", "completed");
+    await first.updateRunStatus("run_1", "completed", {
+      promptTokens: 10,
+      completionTokens: 5,
+      totalTokens: 15,
+      costUsd: 0.00042
+    });
+    await first.updateRunStatus("run_2", "failed", undefined, "模型 token 超限");
     await first.close();
 
     const second = new SqliteStateStore(dbPath);
     await second.initialize();
 
     expect(await second.listRuns(session.id)).toMatchObject([
-      { id: "run_1", sessionId: session.id, status: "completed" }
+      {
+        id: "run_1",
+        sessionId: session.id,
+        status: "completed",
+        providerId: "deepseek",
+        providerKind: "deepseek",
+        model: "deepseek-v4-flash",
+        usage: {
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+          costUsd: 0.00042
+        }
+      },
+      {
+        id: "run_2",
+        sessionId: session.id,
+        status: "failed",
+        error: "模型 token 超限"
+      }
     ]);
+    const usageStatsRuns = await second.listUsageStatsRuns();
+    expect(usageStatsRuns.find((run) => run.id === "run_1")).toMatchObject({
+      providerId: "deepseek",
+      providerKind: "deepseek",
+      model: "deepseek-v4-flash"
+    });
+    expect(usageStatsRuns.find((run) => run.id === "run_2")).not.toHaveProperty(
+      "providerKind"
+    );
     expect(await second.listToolCallsForSession(session.id)).toMatchObject([
       {
         id: "tool_1",
@@ -249,6 +456,90 @@ describe("SqliteStateStore", () => {
         result: "file package.json"
       }
     ]);
+    await second.close();
+  });
+
+  it("marks running runs from a previous backend process as failed on startup", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const session = await first.createSession({
+      projectId: null,
+      title: "遗留审批",
+      accessMode: "approval"
+    });
+    await first.createRun({
+      id: "run_interrupted",
+      sessionId: session.id,
+      status: "running"
+    });
+    const timestamp = nowIso();
+    await first.insertToolCall({
+      id: "tool_pending",
+      runId: "run_interrupted",
+      name: "write_file",
+      args: { path: "a.txt", content: "ok" },
+      status: "pending_approval",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await first.insertToolCall({
+      id: "tool_smart_pending",
+      runId: "run_interrupted",
+      name: "edit_file",
+      args: { path: "a.txt", oldText: "a", newText: "b" },
+      status: "pending_smart_approval",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await first.insertToolCall({
+      id: "tool_running",
+      runId: "run_interrupted",
+      name: "shell",
+      args: { command: "echo hi" },
+      status: "running",
+      startedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await first.insertToolCall({
+      id: "tool_completed",
+      runId: "run_interrupted",
+      name: "read_file",
+      args: { path: "done.txt" },
+      status: "completed",
+      result: "done",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+
+    const [run] = await second.listRuns(session.id);
+    expect(run).toMatchObject({
+      id: "run_interrupted",
+      status: "failed"
+    });
+    expect(run?.error).toContain("运行进程已重启");
+    const toolCalls = await second.listToolCallsForSession(session.id);
+    expect(toolCalls.find((toolCall) => toolCall.id === "tool_pending")).toMatchObject({
+      status: "failed",
+      result: expect.stringContaining("运行进程已重启")
+    });
+    expect(toolCalls.find((toolCall) => toolCall.id === "tool_smart_pending")).toMatchObject({
+      status: "failed",
+      result: expect.stringContaining("运行进程已重启")
+    });
+    expect(toolCalls.find((toolCall) => toolCall.id === "tool_running")).toMatchObject({
+      status: "failed",
+      result: expect.stringContaining("运行进程已重启")
+    });
+    expect(toolCalls.find((toolCall) => toolCall.id === "tool_completed")).toMatchObject({
+      status: "completed",
+      result: "done"
+    });
     await second.close();
   });
 
@@ -293,7 +584,7 @@ describe("SqliteStateStore", () => {
       title: "执行计时",
       accessMode: "approval"
     });
-    await first.createRun({ id: "run_1", sessionId: session.id, status: "running" });
+    await first.createRun({ id: "run_1", sessionId: session.id, status: "completed" });
     const createdAt = nowIso();
     await first.insertToolCall({
       id: "tool_1",
@@ -339,7 +630,53 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
-  it("updateToolCall 持久化 args 变更（propose_plan editedSteps 写回，跨重启可恢复）", async () => {
+  it("round-trips smart approval mode and tool approval metadata", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const session = await first.createSession({
+      projectId: null,
+      title: "智能审批",
+      accessMode: "smart_approval"
+    });
+    await first.createRun({ id: "run_1", sessionId: session.id, status: "completed" });
+    const timestamp = nowIso();
+    await first.insertToolCall({
+      id: "tool_1",
+      runId: "run_1",
+      name: "write_file",
+      args: { path: "smart.txt", content: "hi" },
+      status: "pending_smart_approval",
+      approval: {
+        kind: "smart",
+        source: "model",
+        verdict: "allow",
+        risk: "low",
+        score: 0.1,
+        reason: "普通文件写入",
+        decidedAt: timestamp
+      },
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    const [sessionAgain] = await second.listSessions();
+    const [toolCall] = await second.listToolCallsForSession(session.id);
+    expect(sessionAgain.accessMode).toBe("smart_approval");
+    expect(toolCall).toMatchObject({
+      status: "pending_smart_approval",
+      approval: {
+        verdict: "allow",
+        reason: "普通文件写入"
+      }
+    });
+    await second.close();
+  });
+
+  it("updateToolCall 持久化 legacy editedSteps 写回后的 args（跨重启可恢复）", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);
     await first.initialize();
@@ -359,7 +696,7 @@ describe("SqliteStateStore", () => {
       createdAt,
       updatedAt: createdAt
     });
-    // 用户确认时携带 editedSteps：args 与状态在同一次 update 中写回（§2.3）。
+    // 旧客户端确认时携带 editedSteps：args 与状态仍可在同一次 update 中写回。
     await first.updateToolCall({
       id: "tool_plan",
       runId: "run_1",
@@ -482,6 +819,49 @@ describe("SqliteStateStore", () => {
 
     expect(await store.deleteMessagesFrom(session.id, "msg_missing")).toBe(0);
     expect(await store.listMessages(session.id)).toHaveLength(1);
+
+    await store.close();
+  });
+
+  it("deletes a run created before the rewound user message when it was updated later", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const session = await store.createSession({
+      projectId: null,
+      title: "重试清理",
+      accessMode: "approval"
+    });
+
+    await store.createRun({ id: "run_interrupted", sessionId: session.id, status: "running" });
+    await tick();
+    const userMessage = await store.addMessage({
+      sessionId: session.id,
+      role: "user",
+      content: "帮我重写页面"
+    });
+    await tick();
+    const timestamp = nowIso();
+    await store.insertToolCall({
+      id: "tool_interrupted",
+      runId: "run_interrupted",
+      name: "write_file",
+      args: { path: "app/globals.css", content: "body {}" },
+      status: "failed",
+      result: "运行进程已重启，无法继续等待审批或工具结果。请重新发起本次请求。",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await store.updateRunStatus(
+      "run_interrupted",
+      "failed",
+      undefined,
+      "运行进程已重启，无法继续等待审批或工具结果。请重新发起本次请求。"
+    );
+
+    expect(await store.deleteMessagesFrom(session.id, userMessage.id)).toBe(1);
+    expect(await store.listMessages(session.id)).toEqual([]);
+    expect(await store.listRuns(session.id)).toEqual([]);
+    expect(await store.listToolCallsForSession(session.id)).toEqual([]);
 
     await store.close();
   });

@@ -10,7 +10,7 @@ describe("ApprovalQueue（泛化决议）", () => {
 
     const decision: ApprovalDecision = {
       approved: true,
-      answer: { optionLabel: "方案 A" }
+      answer: { answers: [{ optionLabel: "方案 A" }] }
     };
     expect(queue.decide("tool_1", decision)).toBe(true);
     await expect(pending).resolves.toEqual(decision);
@@ -67,8 +67,11 @@ describe("normalizeDecision（按工具名裁决 payload）", () => {
 
   it("ask_user approved 带 answer 原样保留", () => {
     expect(
-      normalizeDecision("ask_user", { approved: true, answer: { text: "自由回答" } })
-    ).toEqual({ approved: true, answer: { text: "自由回答" } });
+      normalizeDecision("ask_user", {
+        approved: true,
+        answer: { answers: [{ text: "自由回答" }] }
+      })
+    ).toEqual({ approved: true, answer: { answers: [{ text: "自由回答" }] } });
   });
 
   it("ask_user 拒绝时不要求 answer", () => {
@@ -78,16 +81,23 @@ describe("normalizeDecision（按工具名裁决 payload）", () => {
     });
   });
 
-  it("editedSteps 仅 propose_plan 保留", () => {
+  it("propose_plan 保留调整意见与 legacy editedSteps", () => {
     const steps = [{ id: "s1", title: "第一步", status: "pending" as const }];
-    expect(normalizeDecision("propose_plan", { approved: true, editedSteps: steps })).toEqual({
-      approved: true,
+    expect(
+      normalizeDecision("propose_plan", {
+        approved: false,
+        answer: { answers: [{ text: "请先补充测试计划" }] },
+        editedSteps: steps
+      })
+    ).toEqual({
+      approved: false,
+      answer: { answers: [{ text: "请先补充测试计划" }] },
       editedSteps: steps
     });
     // ask_user 决议中的 editedSteps 被裁掉。
     const askResult = normalizeDecision("ask_user", {
       approved: true,
-      answer: { text: "好" },
+      answer: { answers: [{ text: "好" }] },
       editedSteps: steps
     });
     expect(askResult.editedSteps).toBeUndefined();
@@ -97,7 +107,7 @@ describe("normalizeDecision（按工具名裁决 payload）", () => {
     expect(
       normalizeDecision("write_file", {
         approved: true,
-        answer: { text: "无关" },
+        answer: { answers: [{ text: "无关" }] },
         editedSteps: [{ id: "s1", title: "x", status: "pending" }]
       })
     ).toEqual({ approved: true });

@@ -3,7 +3,15 @@ import animate from "tailwindcss-animate";
 
 export default {
   darkMode: ["class"],
-  content: ["./index.html", "./src/renderer/**/*.{ts,tsx}"],
+  content: [
+    "./index.html",
+    "./src/renderer/**/*.{ts,tsx}",
+    "./node_modules/streamdown/dist/**/*.{js,mjs}",
+    "./node_modules/@streamdown/code/dist/**/*.{js,mjs}",
+    "./node_modules/@streamdown/mermaid/dist/**/*.{js,mjs}",
+    "./node_modules/@streamdown/math/dist/**/*.{js,mjs}",
+    "./node_modules/@streamdown/cjk/dist/**/*.{js,mjs}"
+  ],
   theme: {
     container: {
       center: true,
@@ -47,6 +55,7 @@ export default {
         canvas: "rgb(var(--canvas) / <alpha-value>)",
         "canvas-soft": "rgb(var(--canvas-soft) / <alpha-value>)",
         "canvas-soft-2": "rgb(var(--canvas-soft-2) / <alpha-value>)",
+        "plan-surface": "rgb(var(--plan-surface) / <alpha-value>)",
         ink: "rgb(var(--ink) / <alpha-value>)",
         body: "rgb(var(--body) / <alpha-value>)",
         mute: "rgb(var(--mute) / <alpha-value>)",
@@ -95,6 +104,7 @@ export default {
         "body-muted": "rgb(var(--body-muted) / <alpha-value>)",
         "card-border": "rgb(var(--card-border) / <alpha-value>)",
         "bubble-user": "rgb(var(--bubble-user) / <alpha-value>)",
+        sidebar: "rgb(var(--sidebar) / <alpha-value>)",
         primary: {
           DEFAULT: "rgb(var(--primary) / <alpha-value>)",
           foreground: "rgb(var(--primary-foreground) / <alpha-value>)"

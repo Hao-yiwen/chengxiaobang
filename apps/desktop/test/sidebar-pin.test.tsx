@@ -164,6 +164,56 @@ describe("sidebar pinning", () => {
     ).toBeTruthy();
   });
 
+  it("会话行右侧悬浮按钮置顶独立会话", async () => {
+    const pinned = session("s2", "另一个B", null, "2026-06-12T00:00:00.000Z");
+    const updateSession = vi.fn(async () => pinned);
+    const client = createClient({ updateSession });
+
+    render(<App client={client} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+    const row = (await sidebar.findByText("另一个B")).closest("div") as HTMLElement;
+
+    expect(within(row).queryByTitle("删除会话")).not.toBeInTheDocument();
+    fireEvent.click(within(row).getByTitle("置顶"));
+
+    await waitFor(() => expect(updateSession).toHaveBeenCalledWith("s2", { pinned: true }));
+  });
+
+  it("会话行右侧悬浮按钮置顶项目内会话", async () => {
+    const pinned = session("p0", "项目会话0", "project_1", "2026-06-12T00:00:00.000Z");
+    const updateSession = vi.fn(async () => pinned);
+    const client = createClient({ updateSession });
+
+    render(<App client={client} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+    const row = (await sidebar.findByText("项目会话0")).closest("div") as HTMLElement;
+
+    expect(within(row).queryByTitle("删除会话")).not.toBeInTheDocument();
+    fireEvent.click(within(row).getByTitle("置顶"));
+
+    await waitFor(() => expect(updateSession).toHaveBeenCalledWith("p0", { pinned: true }));
+  });
+
+  it("会话删除只从右键菜单触发", async () => {
+    const deleteSession = vi.fn(async () => true);
+    const client = createClient({ deleteSession });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<App client={client} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+    const row = (await sidebar.findByText("另一个B")).closest("div") as HTMLElement;
+
+    expect(within(row).queryByTitle("删除会话")).not.toBeInTheDocument();
+    fireEvent.contextMenu(row);
+    fireEvent.click(await screen.findByText("删除会话"));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("确定删除该对话？")).toBeInTheDocument();
+    expect(confirmSpy).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
+
+    await waitFor(() => expect(deleteSession).toHaveBeenCalledWith("s2"));
+  });
+
   it("从右键菜单取消置顶项目", async () => {
     const setProjectPinned = vi.fn(async () => project());
     const client = createClient({

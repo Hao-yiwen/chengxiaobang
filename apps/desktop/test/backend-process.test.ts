@@ -1,14 +1,19 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { EventEmitter } from "node:events";
+import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import type { ChildProcess } from "node:child_process";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   appendBackendStartupOutput,
+  checkBackendRuntime,
   createBackendStartupDiagnostics,
   formatBackendStartupFailure,
   logBackendChunk,
+  prepareBackendRuntimeCommand,
   resolveBackendCommand,
-  resolveBackendStartTimeoutMs
+  resolveBackendStartTimeoutMs,
+  stopBackendChild
 } from "../src/main/backend-process";
 import type { LogLevelName, LogWriter, TerminalLogWriter } from "../src/main/logging";
 
@@ -16,6 +21,13 @@ interface LogEntry {
   level: LogLevelName;
   fields: Record<string, unknown>;
   message: string;
+}
+
+interface MockBackendChild extends EventEmitter {
+  pid: number;
+  exitCode: number | null;
+  signalCode: NodeJS.Signals | null;
+  kill: ReturnType<typeof vi.fn>;
 }
 
 function createMockLogger(): { logger: LogWriter; entries: LogEntry[] } {
@@ -29,11 +41,21 @@ function createMockLogger(): { logger: LogWriter; entries: LogEntry[] } {
   return { logger, entries };
 }
 
+function createMockBackendChild(pid = 4321): MockBackendChild {
+  const child = new EventEmitter() as MockBackendChild;
+  child.pid = pid;
+  child.exitCode = null;
+  child.signalCode = null;
+  child.kill = vi.fn(() => true);
+  return child;
+}
+
 describe("resolveBackendCommand", () => {
   const previousBunBinary = process.env.BUN_BINARY;
   const tempDirs: string[] = [];
 
   afterEach(async () => {
+    vi.useRealTimers();
     if (previousBunBinary === undefined) {
       delete process.env.BUN_BINARY;
     } else {
@@ -60,6 +82,8 @@ describe("resolveBackendCommand", () => {
     expect(command.args).toContain("/tmp/data");
     expect(command.args).toContain("--token");
     expect(command.args).toContain("token");
+    expect(command.args).toContain("--parent-pid");
+    expect(command.args).toContain(String(process.pid));
   });
 
   it("uses workspace Bun in development", () => {
@@ -78,6 +102,111 @@ describe("resolveBackendCommand", () => {
     expect(command.args[1]).toBe("--watch");
   });
 
+  it("copies workspace Bun to the runtime cache before development launch", async () => {
+    delete process.env.BUN_BINARY;
+    const tempDir = await mkdtemp(join(tmpdir(), "cxb-runtime-cache-"));
+    tempDirs.push(tempDir);
+    const sourceDir = join(tempDir, "node_modules/bun/bin");
+    await mkdir(sourceDir, { recursive: true });
+    const sourceBun = join(sourceDir, "bun.exe");
+    await writeFile(sourceBun, "#!/bin/sh\necho 1.2.3\n");
+    await chmod(sourceBun, 0o755);
+
+    const command = prepareBackendRuntimeCommand(
+      {
+        command: sourceBun,
+        args: ["--watch"],
+        env: process.env
+      },
+      { dataDir: join(tempDir, "data"), isPackaged: false, signRuntime: false }
+    );
+
+    expect(command.command).toContain(join(tempDir, "data/runtime/bun-dev-"));
+    expect(command.command).not.toBe(sourceBun);
+    await expect(checkBackendRuntime(command, { timeoutMs: 1_000 })).resolves.toMatchObject({
+      version: "1.2.3"
+    });
+  });
+
+  it("reuses a prepared runtime cache even when signing changed its size", async () => {
+    delete process.env.BUN_BINARY;
+    const tempDir = await mkdtemp(join(tmpdir(), "cxb-runtime-cache-"));
+    tempDirs.push(tempDir);
+    const sourceDir = join(tempDir, "node_modules/bun/bin");
+    const dataDir = join(tempDir, "data");
+    await mkdir(sourceDir, { recursive: true });
+    const sourceBun = join(sourceDir, "bun.exe");
+    await writeFile(sourceBun, "#!/bin/sh\necho source\n");
+    await chmod(sourceBun, 0o755);
+
+    const sourceStat = await stat(sourceBun);
+    const runtimeDir = join(dataDir, "runtime");
+    const extension = process.platform === "win32" ? ".exe" : "";
+    const target = join(
+      runtimeDir,
+      `bun-dev-${process.platform}-${process.arch}-${sourceStat.size}${extension}`
+    );
+    await mkdir(runtimeDir, { recursive: true });
+    await writeFile(target, "#!/bin/sh\necho signed-cache\n");
+    await chmod(target, 0o755);
+    await writeFile(target + ".adhoc-signature", `adhoc-v2:${sourceStat.size}:${sourceStat.mtimeMs}`);
+
+    const command = prepareBackendRuntimeCommand(
+      {
+        command: sourceBun,
+        args: ["--watch"],
+        env: process.env
+      },
+      { dataDir, isPackaged: false, signRuntime: false }
+    );
+
+    expect(command.command).toBe(target);
+    await expect(checkBackendRuntime(command, { timeoutMs: 1_000 })).resolves.toMatchObject({
+      version: "signed-cache"
+    });
+  });
+
+  it("does not replace an explicit Bun binary with the runtime cache", async () => {
+    process.env.BUN_BINARY = "/custom/bun";
+    const tempDir = await mkdtemp(join(tmpdir(), "cxb-runtime-cache-"));
+    tempDirs.push(tempDir);
+    const sourceBun = join(tempDir, "node_modules/bun/bin/bun.exe");
+
+    const command = prepareBackendRuntimeCommand(
+      {
+        command: sourceBun,
+        args: ["--watch"],
+        env: process.env
+      },
+      { dataDir: join(tempDir, "data"), isPackaged: false, signRuntime: false }
+    );
+
+    expect(command.command).toBe(sourceBun);
+  });
+
+  it("falls back to the original Bun path when runtime cache preparation fails", async () => {
+    delete process.env.BUN_BINARY;
+    const tempDir = await mkdtemp(join(tmpdir(), "cxb-runtime-cache-"));
+    tempDirs.push(tempDir);
+    const sourceDir = join(tempDir, "node_modules/bun/bin");
+    await mkdir(sourceDir, { recursive: true });
+    const sourceBun = join(sourceDir, "bun.exe");
+    const dataFile = join(tempDir, "data");
+    await writeFile(sourceBun, "#!/bin/sh\necho 1.2.3\n");
+    await writeFile(dataFile, "not a directory");
+
+    const command = prepareBackendRuntimeCommand(
+      {
+        command: sourceBun,
+        args: ["--watch"],
+        env: process.env
+      },
+      { dataDir: dataFile, isPackaged: false, signRuntime: false }
+    );
+
+    expect(command.command).toBe(sourceBun);
+  });
+
   it("uses bundled Bun in packaged builds", async () => {
     delete process.env.BUN_BINARY;
     const resourcesPath = await mkdtemp(join(tmpdir(), "cxb-resources-"));
@@ -94,6 +223,36 @@ describe("resolveBackendCommand", () => {
 
     expect(command.command).toBe(join(resourcesPath, "bun"));
     expect(command.args).not.toContain("--watch");
+  });
+
+  it("checks backend runtime before launching the backend", async () => {
+    const result = await checkBackendRuntime({
+      command: process.execPath,
+      args: [],
+      env: process.env
+    });
+
+    expect(result.version).toBe(process.version);
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("fails backend runtime check quickly when the runtime hangs", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "cxb-runtime-check-"));
+    tempDirs.push(tempDir);
+    const scriptPath = join(tempDir, "fake-bun");
+    await writeFile(scriptPath, "#!/bin/sh\nsleep 5\n");
+    await chmod(scriptPath, 0o755);
+
+    await expect(
+      checkBackendRuntime(
+        {
+          command: scriptPath,
+          args: [],
+          env: process.env
+        },
+        { timeoutMs: 50 }
+      )
+    ).rejects.toThrow("Bun 运行时自检超时");
   });
 
   it("fails clearly when packaged Bun is missing", async () => {
@@ -159,6 +318,70 @@ describe("resolveBackendCommand", () => {
     ]);
   });
 
+  it("force kills the backend process group if SIGTERM does not stop it", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    vi.useFakeTimers();
+    const child = createMockBackendChild(4321);
+    const signals: Array<{ pid: number; signal: NodeJS.Signals }> = [];
+
+    stopBackendChild(child as unknown as ChildProcess, {
+      forceKillAfterMs: 50,
+      killProcess: (pid, signal) => {
+        signals.push({ pid, signal });
+      }
+    });
+
+    expect(signals).toEqual([{ pid: -4321, signal: "SIGTERM" }]);
+    vi.advanceTimersByTime(49);
+    expect(signals).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(signals).toEqual([
+      { pid: -4321, signal: "SIGTERM" },
+      { pid: -4321, signal: "SIGKILL" }
+    ]);
+  });
+
+  it("does not force kill the backend after the child exits", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    vi.useFakeTimers();
+    const child = createMockBackendChild(4321);
+    const signals: Array<{ pid: number; signal: NodeJS.Signals }> = [];
+
+    stopBackendChild(child as unknown as ChildProcess, {
+      forceKillAfterMs: 50,
+      killProcess: (pid, signal) => {
+        signals.push({ pid, signal });
+      }
+    });
+    child.exitCode = 0;
+    child.emit("exit", 0, null);
+    vi.advanceTimersByTime(50);
+
+    expect(signals).toEqual([{ pid: -4321, signal: "SIGTERM" }]);
+  });
+
+  it("falls back to killing the backend child when process group cleanup fails", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const child = createMockBackendChild(4321);
+    const killProcess = vi.fn(() => {
+      throw new Error("missing process group");
+    });
+
+    stopBackendChild(child as unknown as ChildProcess, {
+      forceKillAfterMs: 0,
+      killProcess
+    });
+
+    expect(killProcess).toHaveBeenCalledWith(-4321, "SIGTERM");
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
   it("uses a longer backend startup timeout and allows env override", () => {
     expect(resolveBackendStartTimeoutMs({})).toBe(45_000);
     expect(
@@ -186,6 +409,10 @@ describe("resolveBackendCommand", () => {
     });
     diagnostics.lastHealthError = "fetch failed";
     diagnostics.spawnError = "spawn EACCES";
+    diagnostics.runtimeCheck = {
+      timeoutMs: 10_000,
+      error: "Bun 运行时自检超时 timeout=10000ms stdout=<empty> stderr=<empty>"
+    };
     appendBackendStartupOutput(diagnostics, "stdout", "booting\nstill booting\n");
     appendBackendStartupOutput(diagnostics, "stderr", "database locked\n");
 
@@ -199,6 +426,7 @@ describe("resolveBackendCommand", () => {
     expect(message).toContain("command=/tmp/bun --watch /repo/apps/backend/src/main.ts --port 30503");
     expect(message).toContain("lastHealthError=fetch failed");
     expect(message).toContain("spawnError=spawn EACCES");
+    expect(message).toContain("runtimeCheck=timeoutMs=10000 error=Bun 运行时自检超时");
     expect(message).toContain("backend stdout tail");
     expect(message).toContain("booting");
     expect(message).toContain("backend stderr tail");

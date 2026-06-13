@@ -123,6 +123,36 @@ describe("SlashCommandService", () => {
       await expect(isolated.findSkill("secret")).resolves.toBeUndefined();
     });
 
+    it("loads market skills only when they are enabled", async () => {
+      const withMarket = new SlashCommandService(join(dir, "global"), join(dir, "builtin"), {
+        marketRoot: join(dir, "market"),
+        enabledMarketSkills: async () => new Set(["code-review"])
+      });
+      // 市场目录本身就是技能根（不含 skills/ 中间层）。
+      await writeMarketSkill(join(dir, "market"), "code-review", "审代码");
+      await writeMarketSkill(join(dir, "market"), "translate", "翻译");
+
+      const skills = await withMarket.listSkills();
+      expect(skills).toEqual([{ name: "code-review", description: "审代码" }]);
+
+      const { commands } = await withMarket.list();
+      const marketCommand = commands.find((command) => command.name === "/code-review");
+      expect(marketCommand?.source).toBe("market");
+      expect(commands.some((command) => command.name === "/translate")).toBe(false);
+
+      const expanded = await withMarket.expandPrompt("/code-review src");
+      expect(expanded.matched).toBe(true);
+    });
+
+    it("does not load market skills without an enablement provider", async () => {
+      const noProvider = new SlashCommandService(join(dir, "global"), join(dir, "builtin"), {
+        marketRoot: join(dir, "market")
+      });
+      await writeMarketSkill(join(dir, "market"), "code-review", "审代码");
+
+      await expect(noProvider.listSkills()).resolves.toEqual([]);
+    });
+
     it("prefers project skills over global ones in both listSkills and findSkill", async () => {
       const projectPath = join(dir, "project");
       await writeSkill(join(dir, "global"), "excel", "全局版");
@@ -137,6 +167,20 @@ describe("SlashCommandService", () => {
     });
   });
 });
+
+/** 市场根目录直接包含技能目录（不含 skills/ 中间层）。 */
+async function writeMarketSkill(
+  marketRoot: string,
+  name: string,
+  description: string
+): Promise<void> {
+  await mkdir(join(marketRoot, name), { recursive: true });
+  await writeFile(
+    join(marketRoot, name, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${description}\n---\n${name} 的操作说明正文`,
+    "utf8"
+  );
+}
 
 function createProject(path: string): Project {
   return {

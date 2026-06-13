@@ -10,9 +10,13 @@ import {
   MagnifyingGlassPlusIcon as ZoomIn,
   WarningCircleIcon as WarningCircle
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import type { Project, ProjectFileEntry } from "@chengxiaobang/shared";
+import pdfjsModuleUrl from "pdfjs-dist/build/pdf.min.mjs?url";
+import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
+import type { PptxViewer as PptxViewerInstance } from "@aiden0z/pptx-renderer";
 import { Markdown } from "@/components/Markdown";
 import {
   BINARY_PREVIEW_MAX_BYTES,
@@ -21,7 +25,7 @@ import {
   isTextualPreviewKind,
   type PreviewKind
 } from "../../../common/file-preview";
-import { useAppStore } from "@/store";
+import { selectActiveProject, useAppStore } from "@/store";
 import type { FilePreviewInfo } from "@/global";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +52,7 @@ export function FilePreviewPanel() {
   const previewFile = useAppStore((state) => state.previewFile);
   const openFilePreview = useAppStore((state) => state.openFilePreview);
   const setNotice = useAppStore((state) => state.setNotice);
+  const project = useAppStore(selectActiveProject);
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [refreshKey, setRefreshKey] = useState(0);
   const path = previewFile?.path;
@@ -96,6 +101,21 @@ export function FilePreviewPanel() {
         truncated: result.truncated
       };
     }
+    if (info.kind === "image") {
+      if (!bridge.readFilePreviewBuffer) {
+        return { status: "error", path: info.path, name: info.name, error: t("rightPanel.fileDesktopOnly") };
+      }
+      console.info("[FilePreviewPanel] 图片进入二进制预览", {
+        path: info.path,
+        size: info.size
+      });
+      const result = await bridge.readFilePreviewBuffer(info.path, { maxBytes: BINARY_PREVIEW_MAX_BYTES });
+      if (!result.ok) {
+        console.warn("[FilePreviewPanel] 图片预览读取失败", { path: info.path, error: result.error });
+        return { status: "error", path: info.path, name: info.name, error: result.error };
+      }
+      return { status: "ready", info, data: result.data, truncated: result.truncated };
+    }
     if (isFileUrlPreviewKind(info.kind)) {
       if (!bridge.createFileUrl) {
         return { status: "error", path: info.path, name: info.name, error: t("rightPanel.fileDesktopOnly") };
@@ -106,6 +126,21 @@ export function FilePreviewPanel() {
         return { status: "error", path: info.path, name: info.name, error: result.error };
       }
       return { status: "ready", info, fileUrl: result.url };
+    }
+    if (info.kind === "presentation" && info.extension === "pptx") {
+      if (!bridge.readFilePreviewBuffer) {
+        return { status: "error", path: info.path, name: info.name, error: t("rightPanel.fileDesktopOnly") };
+      }
+      console.info("[FilePreviewPanel] PPTX 进入本地多页预览", {
+        path: info.path,
+        size: info.size
+      });
+      const result = await bridge.readFilePreviewBuffer(info.path, { maxBytes: BINARY_PREVIEW_MAX_BYTES });
+      if (!result.ok) {
+        console.warn("[FilePreviewPanel] PPTX 预览读取失败", { path: info.path, error: result.error });
+        return { status: "error", path: info.path, name: info.name, error: result.error };
+      }
+      return { status: "ready", info, data: result.data, truncated: result.truncated };
     }
     if (info.kind === "presentation" || (info.kind === "docx" && info.extension === "doc")) {
       const thumbnail = await bridge.createQuickLookThumbnail?.(info.path);
@@ -169,7 +204,7 @@ export function FilePreviewPanel() {
     }
   }
 
-  if (preview.status === "loading") {
+  if (preview.status === "loading" || (path && preview.status === "idle")) {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -178,7 +213,11 @@ export function FilePreviewPanel() {
   }
 
   if (preview.status === "idle") {
-    return <EmptyPreview onPickFile={pickFile} />;
+    return project ? (
+      <ProjectFileBrowser project={project} onPickFile={pickFile} />
+    ) : (
+      <EmptyPreview onPickFile={pickFile} />
+    );
   }
 
   if (preview.status === "error") {
@@ -251,7 +290,13 @@ function PreviewBody(props: {
     case "html":
       return state.fileUrl ? <HtmlPreview url={state.fileUrl} name={state.info.name} /> : <MissingPreview />;
     case "image":
-      return state.fileUrl ? <ImagePreview url={state.fileUrl} name={state.info.name} /> : <MissingPreview />;
+      return state.data ? (
+        <ImagePreview data={state.data} name={state.info.name} />
+      ) : state.fileUrl ? (
+        <ImagePreview url={state.fileUrl} name={state.info.name} />
+      ) : (
+        <MissingPreview />
+      );
     case "audio":
       return state.fileUrl ? <AudioPreview url={state.fileUrl} /> : <MissingPreview />;
     case "video":
@@ -267,6 +312,11 @@ function PreviewBody(props: {
     case "spreadsheet":
       return state.data ? <SpreadsheetPreview data={state.data} /> : <MissingPreview />;
     case "presentation":
+      return state.data ? (
+        <PptxPreview data={state.data} name={state.info.name} onOpenSystem={props.onOpenSystem} />
+      ) : (
+        <ThumbnailFallback state={state} onOpenSystem={props.onOpenSystem} />
+      );
     case "unsupported":
       return <ThumbnailFallback state={state} onOpenSystem={props.onOpenSystem} />;
   }
@@ -286,6 +336,174 @@ function EmptyPreview({ onPickFile }: { onPickFile: () => void }) {
           <FolderOpen className="size-3.5" />
           {t("rightPanel.pickFile")}
         </button>
+      ) : null}
+    </div>
+  );
+}
+
+function ProjectFileBrowser(props: { project: Project; onPickFile: () => void }) {
+  const { t } = useTranslation();
+  const listProjectDirectory = useAppStore((state) => state.listProjectDirectory);
+  const openFilePreview = useAppStore((state) => state.openFilePreview);
+  const [entriesByDirectory, setEntriesByDirectory] = useState<Record<string, ProjectFileEntry[]>>(
+    {}
+  );
+  const [expandedDirectories, setExpandedDirectories] = useState<Record<string, true>>({
+    ".": true
+  });
+  const [loadingDirectories, setLoadingDirectories] = useState<Record<string, true>>({});
+  const [error, setError] = useState<string | undefined>();
+
+  const loadDirectory = useCallback(
+    async (directory: string) => {
+      console.debug("[FilePreviewPanel] 读取项目文件目录", {
+        projectId: props.project.id,
+        directory
+      });
+      setLoadingDirectories((current) => ({ ...current, [directory]: true }));
+      setError(undefined);
+      try {
+        const entries = await listProjectDirectory(directory);
+        console.info("[FilePreviewPanel] 项目文件目录读取完成", {
+          projectId: props.project.id,
+          directory,
+          count: entries.length
+        });
+        setEntriesByDirectory((current) => ({ ...current, [directory]: entries }));
+      } catch (loadError) {
+        const message = loadError instanceof Error ? loadError.message : String(loadError);
+        console.warn("[FilePreviewPanel] 项目文件目录读取失败", {
+          projectId: props.project.id,
+          directory,
+          error: message
+        });
+        setError(message);
+      } finally {
+        setLoadingDirectories((current) => {
+          const next = { ...current };
+          delete next[directory];
+          return next;
+        });
+      }
+    },
+    [listProjectDirectory, props.project.id]
+  );
+
+  useEffect(() => {
+    setEntriesByDirectory({});
+    setExpandedDirectories({ ".": true });
+    void loadDirectory(".");
+  }, [loadDirectory, props.project.id, props.project.path]);
+
+  function toggleDirectory(entry: ProjectFileEntry): void {
+    const isExpanded = Boolean(expandedDirectories[entry.path]);
+    console.debug("[FilePreviewPanel] 切换项目文件目录展开状态", {
+      projectId: props.project.id,
+      path: entry.path,
+      expanded: !isExpanded
+    });
+    setExpandedDirectories((current) => {
+      const next = { ...current };
+      if (isExpanded) {
+        delete next[entry.path];
+      } else {
+        next[entry.path] = true;
+      }
+      return next;
+    });
+    if (!isExpanded && !entriesByDirectory[entry.path]) {
+      void loadDirectory(entry.path);
+    }
+  }
+
+  function openProjectFile(entry: ProjectFileEntry): void {
+    console.info("[FilePreviewPanel] 从项目文件列表打开预览", {
+      projectId: props.project.id,
+      path: entry.path
+    });
+    openFilePreview(entry.path);
+  }
+
+  const rootEntries = entriesByDirectory["."] ?? [];
+  const rootLoading = Boolean(loadingDirectories["."]) && rootEntries.length === 0;
+
+  const renderEntry = (entry: ProjectFileEntry, depth: number): ReactNode => {
+    const isDirectory = entry.type === "directory";
+    const isExpanded = Boolean(expandedDirectories[entry.path]);
+    const children = entriesByDirectory[entry.path] ?? [];
+    const loading = Boolean(loadingDirectories[entry.path]);
+    const paddingLeft = 12 + depth * 14;
+
+    return (
+      <div key={entry.path}>
+        <button
+          type="button"
+          onClick={() => (isDirectory ? toggleDirectory(entry) : openProjectFile(entry))}
+          className="flex h-8 w-full min-w-0 items-center gap-2 rounded-xs pr-2 text-left text-caption text-foreground transition-colors hover:bg-muted"
+          style={{ paddingLeft }}
+        >
+          {isDirectory ? (
+            <FolderOpen className="size-3.5 flex-none text-muted-foreground" />
+          ) : (
+            <FileText className="size-3.5 flex-none text-muted-foreground" />
+          )}
+          <span className="min-w-0 flex-1 truncate font-mono text-micro">{entry.name}</span>
+          {loading ? <Loader2 className="size-3 animate-spin text-muted-foreground" /> : null}
+        </button>
+        {isDirectory && isExpanded
+          ? children.map((child) => renderEntry(child, depth + 1))
+          : null}
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex-none border-b px-4 py-3">
+        <p className="text-caption font-medium text-foreground">{t("rightPanel.projectFilesTitle")}</p>
+        <p
+          className="mt-1 truncate font-mono text-micro text-muted-foreground"
+          title={props.project.path}
+        >
+          {props.project.path}
+        </p>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto p-2">
+        {rootLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : error ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-caption text-muted-foreground">
+            <WarningCircle className="size-5 text-warning" />
+            <p>{`${t("rightPanel.projectFilesLoadFailed")}：${error}`}</p>
+            <button
+              type="button"
+              onClick={() => void loadDirectory(".")}
+              className="rounded-sm border bg-card px-3 py-1.5 text-micro text-foreground transition-colors hover:bg-muted"
+            >
+              {t("rightPanel.refresh")}
+            </button>
+          </div>
+        ) : rootEntries.length > 0 ? (
+          rootEntries.map((entry) => renderEntry(entry, 0))
+        ) : (
+          <div className="flex h-full items-center justify-center px-4 text-center text-caption text-muted-foreground">
+            {t("rightPanel.projectFilesEmpty")}
+          </div>
+        )}
+      </div>
+      {window.chengxiaobang?.pickFiles ? (
+        <div className="flex-none border-t px-4 py-3">
+          <button
+            type="button"
+            onClick={() => void props.onPickFile()}
+            className="flex items-center gap-1.5 rounded-sm border bg-card px-3 py-1.5 text-micro text-foreground transition-colors hover:bg-muted"
+          >
+            <FolderOpen className="size-3.5" />
+            {t("rightPanel.pickFile")}
+          </button>
+        </div>
       ) : null}
     </div>
   );
@@ -377,12 +595,58 @@ function HtmlPreview({ url, name }: { url: string; name: string }) {
   );
 }
 
-function ImagePreview({ url, name }: { url: string; name: string }) {
+function ImagePreview({ data, url, name }: { data?: ArrayBuffer; url?: string; name: string }) {
+  const [objectUrl, setObjectUrl] = useState<string>();
+
+  useEffect(() => {
+    if (!data) {
+      setObjectUrl(undefined);
+      return;
+    }
+    if (typeof URL.createObjectURL !== "function") {
+      console.warn("[FilePreviewPanel] 图片 Blob URL 能力不可用", { name });
+      setObjectUrl(undefined);
+      return;
+    }
+    const nextUrl = URL.createObjectURL(new Blob([data], { type: imageMimeTypeForPath(name) }));
+    setObjectUrl(nextUrl);
+    return () => {
+      URL.revokeObjectURL(nextUrl);
+    };
+  }, [data, name]);
+
+  const src = objectUrl ?? url;
+  if (!src) {
+    return <MissingPreview />;
+  }
+
   return (
     <div className="flex h-full items-center justify-center overflow-auto bg-canvas-soft-2 p-4">
-      <img src={url} alt={name} className="max-h-full max-w-full object-contain shadow-sm" />
+      <img src={src} alt={name} className="max-h-full max-w-full object-contain shadow-sm" />
     </div>
   );
+}
+
+function imageMimeTypeForPath(path: string): string {
+  const extension = path.split(".").pop()?.toLowerCase();
+  switch (extension) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "avif":
+      return "image/avif";
+    case "bmp":
+      return "image/bmp";
+    case "svg":
+      return "image/svg+xml";
+    case "png":
+    default:
+      return "image/png";
+  }
 }
 
 function AudioPreview({ url }: { url: string }) {
@@ -700,6 +964,221 @@ function SpreadsheetPreview({ data }: { data: ArrayBuffer }) {
   );
 }
 
+function PptxPreview({
+  data,
+  name,
+  onOpenSystem
+}: {
+  data: ArrayBuffer;
+  name: string;
+  onOpenSystem: () => void;
+}) {
+  const { t } = useTranslation();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewerRef = useRef<PptxViewerInstance | null>(null);
+  const [state, setState] = useState<{
+    status: "loading" | "ready" | "error";
+    error?: string;
+    page: number;
+    pageCount: number;
+    zoom: number;
+    busy: boolean;
+  }>({ status: "loading", page: 1, pageCount: 0, zoom: 100, busy: false });
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const scrollContainer = scrollRef.current;
+    if (!container || !scrollContainer) {
+      return;
+    }
+    const abortController = new AbortController();
+    let cancelled = false;
+    container.innerHTML = "";
+    viewerRef.current = null;
+    setState({ status: "loading", page: 1, pageCount: 0, zoom: 100, busy: false });
+
+    void (async () => {
+      try {
+        console.info("[FilePreviewPanel] 开始渲染 PPTX 预览", { name, bytes: data.byteLength });
+        const { PptxViewer, RECOMMENDED_ZIP_LIMITS } = await import("@aiden0z/pptx-renderer");
+        const viewer = await PptxViewer.open(data.slice(0), container, {
+          fitMode: "contain",
+          zoomPercent: 100,
+          scrollContainer,
+          zipLimits: RECOMMENDED_ZIP_LIMITS,
+          pdfjs: {
+            moduleUrl: pdfjsModuleUrl,
+            workerUrl: pdfjsWorkerUrl
+          },
+          listOptions: {
+            windowed: true,
+            batchSize: 8,
+            initialSlides: 4,
+            overscanViewport: 1.5,
+            showSlideLabels: true
+          },
+          signal: abortController.signal,
+          onSlideChange: (index) => {
+            setState((current) => ({ ...current, page: index + 1 }));
+          },
+          onSlideError: (index, error) => {
+            console.warn("[FilePreviewPanel] PPTX 单页渲染失败", { name, page: index + 1, error });
+          },
+          onNodeError: (nodeId, error) => {
+            console.warn("[FilePreviewPanel] PPTX 节点渲染失败", { name, nodeId, error });
+          }
+        });
+        if (cancelled) {
+          viewer.destroy();
+          return;
+        }
+        viewerRef.current = viewer;
+        console.info("[FilePreviewPanel] PPTX 预览渲染完成", {
+          name,
+          slideCount: viewer.slideCount
+        });
+        setState({
+          status: "ready",
+          page: Math.max(1, viewer.currentSlideIndex + 1),
+          pageCount: viewer.slideCount,
+          zoom: viewer.zoomPercent,
+          busy: false
+        });
+      } catch (error) {
+        if (!cancelled && !abortController.signal.aborted) {
+          console.warn("[FilePreviewPanel] PPTX 预览渲染失败", { name, error });
+          setState({
+            status: "error",
+            page: 1,
+            pageCount: 0,
+            zoom: 100,
+            busy: false,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      abortController.abort();
+      viewerRef.current?.destroy();
+      viewerRef.current = null;
+      container.innerHTML = "";
+    };
+  }, [data, name]);
+
+  async function goToSlide(page: number): Promise<void> {
+    const viewer = viewerRef.current;
+    if (!viewer) {
+      return;
+    }
+    const targetPage = Math.min(Math.max(1, page), Math.max(1, state.pageCount));
+    setState((current) => ({ ...current, busy: true }));
+    try {
+      await viewer.goToSlide(targetPage - 1, { behavior: "smooth", block: "start" });
+      setState((current) => ({ ...current, page: targetPage, busy: false }));
+    } catch (error) {
+      console.warn("[FilePreviewPanel] PPTX 跳转页面失败", { name, page: targetPage, error });
+      setState((current) => ({ ...current, busy: false }));
+    }
+  }
+
+  async function setZoom(zoom: number): Promise<void> {
+    const viewer = viewerRef.current;
+    if (!viewer) {
+      return;
+    }
+    const nextZoom = Math.min(200, Math.max(50, zoom));
+    setState((current) => ({ ...current, busy: true }));
+    try {
+      await viewer.setZoom(nextZoom);
+      setState((current) => ({ ...current, zoom: viewer.zoomPercent, busy: false }));
+    } catch (error) {
+      console.warn("[FilePreviewPanel] PPTX 缩放失败", { name, zoom: nextZoom, error });
+      setState((current) => ({ ...current, busy: false }));
+    }
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-caption text-muted-foreground">
+        <WarningCircle className="size-5 text-warning" />
+        <div className="max-w-[360px] space-y-1">
+          <p className="text-foreground">PPTX 内嵌预览失败</p>
+          <p>{`${t("rightPanel.fileLoadFailed")}：${state.error ?? ""}`}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenSystem}
+          className="rounded-sm border bg-card px-3 py-1.5 text-micro text-foreground transition-colors hover:bg-muted"
+        >
+          {t("rightPanel.openWithSystem")}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex flex-none items-center justify-center gap-1 border-b px-3 py-2">
+        <button
+          type="button"
+          title={t("rightPanel.prevPage")}
+          disabled={state.status !== "ready" || state.busy || state.page <= 1}
+          onClick={() => void goToSlide(state.page - 1)}
+          className={ICON_BUTTON}
+        >
+          <ArrowLeft className="size-3.5" />
+        </button>
+        <span className="px-2 font-mono text-micro text-muted-foreground">
+          {state.status === "ready" ? `${state.page} / ${state.pageCount}` : "PPTX"}
+        </span>
+        <button
+          type="button"
+          title={t("rightPanel.nextPage")}
+          disabled={state.status !== "ready" || state.busy || state.page >= state.pageCount}
+          onClick={() => void goToSlide(state.page + 1)}
+          className={ICON_BUTTON}
+        >
+          <ArrowRight className="size-3.5" />
+        </button>
+        <span className="mx-1 h-4 w-px bg-border" />
+        <button
+          type="button"
+          title={t("rightPanel.zoomOut")}
+          disabled={state.status !== "ready" || state.busy || state.zoom <= 50}
+          onClick={() => void setZoom(state.zoom - 10)}
+          className={ICON_BUTTON}
+        >
+          <ZoomOut className="size-3.5" />
+        </button>
+        <span className="w-12 text-center font-mono text-micro text-muted-foreground">
+          {state.status === "ready" ? `${state.zoom}%` : ""}
+        </span>
+        <button
+          type="button"
+          title={t("rightPanel.zoomIn")}
+          disabled={state.status !== "ready" || state.busy || state.zoom >= 200}
+          onClick={() => void setZoom(state.zoom + 10)}
+          className={ICON_BUTTON}
+        >
+          <ZoomIn className="size-3.5" />
+        </button>
+      </div>
+      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto bg-canvas-soft-2 px-4 py-4">
+        {state.status === "loading" ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-canvas-soft-2/80">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : null}
+        <div ref={containerRef} className="mx-auto min-h-full w-full max-w-[1280px]" />
+      </div>
+    </div>
+  );
+}
+
 function ThumbnailFallback(props: {
   state: Extract<PreviewState, { status: "ready" }>;
   onOpenSystem: () => void;
@@ -766,7 +1245,10 @@ function pdfData(data: ArrayBuffer): Uint8Array {
 
 function fallbackMessageForKind(kind: PreviewKind, extension: string): string {
   if (kind === "presentation") {
-    return "演示文稿暂以缩略图和系统打开为主。";
+    if (extension === "ppt") {
+      return "旧版 PPT 演示文稿暂无法内嵌解析，请用系统应用打开。";
+    }
+    return "PPTX 内嵌预览不可用，请用系统应用打开。";
   }
   if (kind === "docx" && extension === "doc") {
     return "旧版 Word 文档暂无法内嵌解析，请用系统应用打开。";

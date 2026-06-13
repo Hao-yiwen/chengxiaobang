@@ -5,7 +5,6 @@ import {
   chatTimeline,
   derivePlanView,
   groupTimelineItems,
-  planCurrentStep,
   timelineItems,
   type ChatTimelineItem
 } from "../src/renderer/lib/timeline";
@@ -36,12 +35,20 @@ function tool(
 }
 
 const planArgs = {
-  title: "重构 store",
-  steps: [
-    { id: "s1", title: "梳理依赖", status: "completed" },
-    { id: "s2", title: "拆分切片", status: "in_progress" },
-    { id: "s3", title: "迁移订阅", status: "pending" }
-  ]
+  markdown: `# 重构 store
+
+## Summary
+整理 store 的状态边界。
+
+## Key Changes
+- 梳理依赖。
+- 拆分切片。
+
+## Test Plan
+- 运行相关前端测试。
+
+## Assumptions
+- 不改后端接口。`
 };
 
 function kinds(items: ChatTimelineItem[]): string[] {
@@ -64,6 +71,27 @@ describe("timelineItems", () => {
     expect(items[0]).toMatchObject({ kind: "message", message: { id: reasoningOnly.id } });
     // 思考先于工具发生，时间线保持这个顺序。
     expect(items[1]).toMatchObject({ kind: "tool" });
+  });
+
+  it("keeps user messages that only contain visible attachments", () => {
+    const attachmentOnly: Message = {
+      ...msg("user", "2026-06-11T00:00:01.000Z", ""),
+      attachments: [
+        {
+          id: "attachment_1",
+          name: "photo.png",
+          kind: "image",
+          mimeType: "image/png",
+          size: 100,
+          path: "/tmp/cxb/photo.png"
+        }
+      ]
+    };
+
+    const items = timelineItems([attachmentOnly], []);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: "message", message: { id: attachmentOnly.id } });
   });
 
   it("breaks createdAt ties deterministically: messages before tools, each in source order", () => {
@@ -101,7 +129,15 @@ describe("groupTimelineItems", () => {
   });
 
   it("keeps specially-rendered tools out of groups and breaks runs on them", () => {
-    for (const name of ["ask_user", "use_skill", "propose_plan", "update_plan", "btw"]) {
+    for (const name of [
+      "ask_user",
+      "use_skill",
+      "propose_plan",
+      "update_plan",
+      "todo_create",
+      "todo_update",
+      "btw"
+    ]) {
       const t1 = tool("read_file", { at: "2026-06-11T00:00:01.000Z" });
       const t2 = tool(name, { at: "2026-06-11T00:00:02.000Z", args: planArgs });
       const t3 = tool("read_file", { at: "2026-06-11T00:00:03.000Z" });
@@ -110,7 +146,7 @@ describe("groupTimelineItems", () => {
     }
   });
 
-  it("keeps deliverable tools standalone regardless of status", () => {
+  it("groups legacy create_* tools like ordinary tool rows", () => {
     const t1 = tool("read_file", { at: "2026-06-11T00:00:01.000Z" });
     const t2 = tool("create_pptx", {
       at: "2026-06-11T00:00:02.000Z",
@@ -119,10 +155,10 @@ describe("groupTimelineItems", () => {
     });
     const t3 = tool("read_file", { at: "2026-06-11T00:00:03.000Z" });
     const items = groupTimelineItems(timelineItems([], [t1, t2, t3]));
-    expect(items.map((item) => item.kind)).toEqual(["tool", "tool", "tool"]);
+    expect(items.map((item) => item.kind)).toEqual(["tool-group"]);
   });
 
-  it("groups write_file for code paths but not for deliverable paths", () => {
+  it("groups write_file regardless of the target extension", () => {
     const code = tool("write_file", {
       at: "2026-06-11T00:00:01.000Z",
       args: { path: "src/app.ts", content: "x" }
@@ -138,8 +174,7 @@ describe("groupTimelineItems", () => {
     });
     const read2 = tool("read_file", { at: "2026-06-11T00:00:02.000Z" });
     expect(groupTimelineItems(timelineItems([], [doc, read2])).map((item) => item.kind)).toEqual([
-      "tool",
-      "tool"
+      "tool-group"
     ]);
   });
 
@@ -179,7 +214,7 @@ describe("chatTimeline", () => {
     expect(indices).toEqual([1, 2, 1]);
   });
 
-  it("filters update_plan rows out of the timeline (they fold into the plan card)", () => {
+  it("filters update_plan rows out of the timeline because plan progress is legacy-only", () => {
     const anchor = tool("propose_plan", {
       args: planArgs,
       status: "completed",
@@ -193,38 +228,61 @@ describe("chatTimeline", () => {
     expect(kinds(items)).toEqual(["plan"]);
   });
 
-  it("renders the anchor propose_plan as a plan item with executing status", () => {
+  it("filters todo rows out of the chat timeline because the right panel owns progress", () => {
+    const create = tool("todo_create", {
+      args: { title: "实现进度面板", items: [{ id: "s1", title: "共享契约" }] },
+      at: "2026-06-11T00:00:01.000Z"
+    });
+    const update = tool("todo_update", {
+      args: { itemId: "s1", status: "completed" },
+      at: "2026-06-11T00:00:02.000Z"
+    });
+    expect(chatTimeline([], [create, update])).toEqual([]);
+  });
+
+  it("renders the anchor propose_plan as a plan item with approved status", () => {
     const anchor = tool("propose_plan", { args: planArgs, status: "completed" });
     const items = chatTimeline([], [anchor]);
     const plan = items[0];
     if (plan?.kind !== "plan") {
       throw new Error("expected plan item");
     }
-    expect(plan.plan.status).toBe("executing");
+    expect(plan.plan.status).toBe("approved");
     expect(plan.plan.state.title).toBe("重构 store");
+    expect(plan.plan.state.markdown).toContain("## Summary");
     expect(plan.plan.anchor.id).toBe(anchor.id);
   });
 
-  it("derives completed / rejected / awaiting plan statuses", () => {
-    const finished = {
-      ...planArgs,
-      steps: planArgs.steps.map((step) => ({ ...step, status: "completed" }))
-    };
-    expect(derivePlanView([tool("propose_plan", { args: finished, status: "completed" })])?.status).toBe(
-      "completed"
-    );
-    expect(derivePlanView([tool("propose_plan", { args: planArgs, status: "rejected" })])?.status).toBe(
-      "rejected"
-    );
-    // 残留 pending（运行已结束）→ awaiting，不可交互（ARCH 评委修正 6）。
+  it("derives approved / rejected / draft / awaiting plan statuses", () => {
     expect(
-      derivePlanView([tool("propose_plan", { args: planArgs, status: "pending_approval" })])?.status
+      derivePlanView([tool("propose_plan", { args: planArgs, status: "completed" })])?.status
+    ).toBe("approved");
+    expect(
+      derivePlanView([tool("propose_plan", { args: planArgs, status: "rejected" })])?.status
+    ).toBe("rejected");
+    expect(
+      derivePlanView(
+        [
+          tool("propose_plan", {
+            args: planArgs,
+            status: "pending_approval",
+            runId: "run_live"
+          })
+        ],
+        { activeRunId: "run_live" }
+      )?.status
+    ).toBe("draft");
+    expect(
+      derivePlanView([tool("propose_plan", { args: planArgs, status: "pending_approval" })])
+        ?.status
     ).toBe("awaiting");
   });
 
   it("renders superseded propose_plan history as collapsed plan-history rows", () => {
     const rejected = tool("propose_plan", {
-      args: { ...planArgs, title: "旧计划" },
+      args: {
+        markdown: "# 旧计划\n\n## Summary\n旧版计划。"
+      },
       status: "rejected",
       at: "2026-06-11T00:00:01.000Z"
     });
@@ -240,6 +298,47 @@ describe("chatTimeline", () => {
       throw new Error("expected plan-history item");
     }
     expect(history.title).toBe("旧计划");
+  });
+
+  it("keeps active pending propose_plan in the timeline even when it is also the pending tool", () => {
+    const pending = tool("propose_plan", {
+      args: planArgs,
+      status: "pending_approval",
+      id: "t_pending",
+      runId: "run_live"
+    });
+    const items = chatTimeline([], [pending], {
+      pendingToolId: "t_pending",
+      activeRunId: "run_live"
+    });
+    expect(kinds(items)).toEqual(["plan"]);
+    const plan = items[0];
+    expect(plan?.kind === "plan" && plan.plan.status).toBe("draft");
+  });
+
+  it("converts legacy step plans to Markdown titles in history", () => {
+    const legacy = tool("propose_plan", {
+      args: {
+        title: "旧计划",
+        steps: [{ id: "s1", title: "第一步" }]
+      },
+      status: "rejected",
+      at: "2026-06-11T00:00:01.000Z"
+    });
+    const anchor = tool("propose_plan", {
+      args: planArgs,
+      status: "completed",
+      at: "2026-06-11T00:00:02.000Z"
+    });
+    const items = chatTimeline([], [legacy, anchor]);
+    const history = items[0];
+    expect(history?.kind === "plan-history" && history.title).toBe("旧计划");
+  });
+
+  it("skips the active pendingTool row except for propose_plan", () => {
+    const pending = tool("write_file", { status: "pending_approval", id: "t_pending" });
+    const items = chatTimeline([], [pending], { pendingToolId: "t_pending" });
+    expect(items).toEqual([]);
   });
 
   it("aggregates btw asides from the third note of a run onward", () => {
@@ -283,38 +382,4 @@ describe("chatTimeline", () => {
     expect(flags).toEqual([true, false]);
   });
 
-  it("skips the active pendingTool row (rendered separately by ChatView)", () => {
-    const pending = tool("write_file", { status: "pending_approval", id: "t_pending" });
-    const items = chatTimeline([], [pending], { pendingToolId: "t_pending" });
-    expect(items).toEqual([]);
-  });
-});
-
-describe("planCurrentStep", () => {
-  it("prefers the in_progress step, 1-based", () => {
-    const view = derivePlanView([tool("propose_plan", { args: planArgs, status: "completed" })]);
-    expect(planCurrentStep(view!.state)).toEqual({ index: 2, total: 3, title: "拆分切片" });
-  });
-
-  it("falls back to the first pending step, then the last step", () => {
-    const pendingOnly = {
-      ...planArgs,
-      steps: [
-        { id: "s1", title: "甲", status: "completed" },
-        { id: "s2", title: "乙", status: "pending" }
-      ]
-    };
-    const v1 = derivePlanView([tool("propose_plan", { args: pendingOnly, status: "completed" })]);
-    expect(planCurrentStep(v1!.state)).toEqual({ index: 2, total: 2, title: "乙" });
-
-    const allDone = {
-      ...planArgs,
-      steps: [
-        { id: "s1", title: "甲", status: "completed" },
-        { id: "s2", title: "乙", status: "skipped" }
-      ]
-    };
-    const v2 = derivePlanView([tool("propose_plan", { args: allDone, status: "completed" })]);
-    expect(planCurrentStep(v2!.state)).toEqual({ index: 2, total: 2, title: "乙" });
-  });
 });

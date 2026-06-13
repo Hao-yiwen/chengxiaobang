@@ -36,7 +36,9 @@ describe("buildModel", () => {
       api: "openai-completions",
       provider: "deepseek",
       baseUrl: "https://api.deepseek.com",
-      reasoning: false
+      reasoning: false,
+      cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 },
+      contextWindow: 1_000_000
     });
     expect(
       buildModel(
@@ -57,6 +59,21 @@ describe("buildModel", () => {
       compat: { thinkingFormat: "deepseek", supportsReasoningEffort: true }
     });
   });
+
+  it("maps shared model input modalities to pi model input capabilities", () => {
+    expect(buildModel(provider()).input).toEqual(["text"]);
+    expect(
+      buildModel(
+        provider({
+          id: "kimi",
+          kind: "kimi",
+          name: "Kimi",
+          baseURL: "https://api.moonshot.ai/v1",
+          model: "kimi-k2.6"
+        })
+      ).input
+    ).toEqual(["text", "image"]);
+  });
 });
 
 describe("toTokenUsage", () => {
@@ -75,6 +92,30 @@ describe("toTokenUsage", () => {
       completionTokens: 5,
       totalTokens: 15,
       cachedPromptTokens: 4
+    });
+  });
+
+  it("surfaces provider-reported cost", () => {
+    expect(
+      toTokenUsage({
+        input: 10,
+        output: 5,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 15,
+        cost: {
+          input: 0.0000014,
+          output: 0.0000014,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0.0000028
+        }
+      })
+    ).toMatchObject({
+      promptTokens: 10,
+      completionTokens: 5,
+      totalTokens: 15,
+      costUsd: 0.0000028
     });
   });
 
@@ -276,12 +317,14 @@ describe("deepseek wire format through pi", () => {
     expect(thinking).toBe("先想一想");
     expect(text).toBe("答案");
     expect(message.stopReason).toBe("stop");
-    expect(toTokenUsage(message.usage)).toEqual({
+    const usage = toTokenUsage(message.usage);
+    expect(usage).toMatchObject({
       promptTokens: 10,
       completionTokens: 5,
       totalTokens: 15,
       cachedPromptTokens: 4
     });
+    expect(usage.costUsd).toBeCloseTo(0.0000022512);
     // reasoning:false keeps thinking request params off the wire entirely.
     expect(requestBody).not.toHaveProperty("thinking");
     expect(requestBody).toMatchObject({ model: "deepseek-v4-flash", stream: true });

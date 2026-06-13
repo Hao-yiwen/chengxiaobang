@@ -22,21 +22,27 @@ const BUILTIN_TOOLS = [
   "glob",
   "search",
   "shell",
+  "shell_status",
+  "shell_cancel",
   "git_status",
   "git_diff",
   "fetch_url",
+  "web_search",
   "create_pptx",
   "create_docx",
   "create_xlsx",
   "feishu_send_message",
   "propose_plan",
   "update_plan",
+  "todo_create",
+  "todo_update",
   "ask_user",
   "btw",
   "use_skill",
   "schedule_create",
   "schedule_list",
-  "schedule_cancel"
+  "schedule_cancel",
+  "memory"
 ] as const;
 
 const CATEGORIES: ToolCategory[] = [
@@ -49,6 +55,7 @@ const CATEGORIES: ToolCategory[] = [
   "message",
   "plan",
   "schedule",
+  "memory",
   "other"
 ];
 
@@ -86,11 +93,16 @@ describe("toolCategory / categoryIcon", () => {
     expect(toolCategory("search")).toBe("search");
     expect(toolCategory("list_directory")).toBe("search");
     expect(toolCategory("shell")).toBe("command");
+    expect(toolCategory("shell_status")).toBe("command");
+    expect(toolCategory("shell_cancel")).toBe("command");
     expect(toolCategory("fetch_url")).toBe("web");
+    expect(toolCategory("web_search")).toBe("web");
     expect(toolCategory("create_pptx")).toBe("artifact");
     expect(toolCategory("feishu_send_message")).toBe("message");
     expect(toolCategory("propose_plan")).toBe("plan");
+    expect(toolCategory("todo_create")).toBe("plan");
     expect(toolCategory("schedule_create")).toBe("schedule");
+    expect(toolCategory("memory")).toBe("memory");
     expect(toolCategory("nonexistent")).toBe("other");
   });
 
@@ -133,6 +145,27 @@ describe("toolLineLabel", () => {
   it("search 查询截断到 40 字符", () => {
     const label = toolLineLabel(toolCall({ name: "search", args: { query: "y".repeat(50) } }));
     expect(label.params?.query).toBe(`${"y".repeat(40)}…`);
+  });
+
+  it("web_search 查询截断到 40 字符", () => {
+    const label = toolLineLabel(toolCall({ name: "web_search", args: { query: "z".repeat(50) } }));
+    expect(label.key).toBe("chat.toolLine.web_search");
+    expect(label.params?.query).toBe(`${"z".repeat(40)}…`);
+  });
+
+  it("propose_plan 从 Markdown 标题提取摘要标题，并兼容旧 title", () => {
+    const markdownLabel = toolLineLabel(
+      toolCall({
+        name: "propose_plan",
+        args: { markdown: "# 登录页错误提示优化\n\n## Summary\n优化提示。" }
+      })
+    );
+    expect(markdownLabel.params).toEqual({ title: "登录页错误提示优化" });
+
+    const legacyLabel = toolLineLabel(
+      toolCall({ name: "propose_plan", args: { title: "旧计划", steps: [] } })
+    );
+    expect(legacyLabel.params).toEqual({ title: "旧计划" });
   });
 
   it("未知工具名落 fallback 并携带原名", () => {

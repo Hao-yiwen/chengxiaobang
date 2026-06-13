@@ -2,6 +2,7 @@
 name: ppt
 description: 根据主题或资料制作专业的 PowerPoint 演示文稿（.pptx），自动规划结构、配色与每页要点。
 metadata:
+  category: office
   author: chengxiaobang
   version: "1.0"
 ---
@@ -19,8 +20,13 @@ metadata:
    - 结尾页：总结 / 行动建议 / 致谢，可用 `quote` 收尾。
    - 总页数一般 6–12 页，不要把所有内容堆在一页。
 3. **撰写内容**：每条要点精炼成一句话；标题有信息量（避免“介绍”“概述”这类空标题）。可在 `notes` 写演讲备注。
-4. **调用工具生成**：使用 `create_pptx` 工具，`path` 放在工作目录下（例如 `演示文稿.pptx` 或用户指定路径），`deck` 为结构化规格。
-5. **总结**：生成后用中文告诉用户文件位置、页数和大纲，并询问是否需要调整。
+4. **写入规格文件**：用基础文件写入能力在工作目录中创建一个 JSON 规格文件（例如 `deck-spec.json`），内容格式见下方示例。
+5. **执行脚本生成**：用基础 shell 能力执行本技能自带脚本 `scripts/create-pptx.mjs`：
+   ```bash
+   node "<技能目录>/scripts/create-pptx.mjs" deck-spec.json 产品发布.pptx
+   ```
+   技能正文开头会给出本技能目录位置，脚本路径相对该目录。第二个参数是输出 `.pptx` 路径，省略时会读取 JSON 里的 `path` 字段。
+6. **总结**：生成后用中文告诉用户文件位置、页数和大纲，并询问是否需要调整。
 
 ## deck 规格示例
 

@@ -1,8 +1,16 @@
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import {
   type LogWriter,
@@ -42,6 +50,7 @@ export interface BackendStartupDiagnostics {
   port: number;
   dataDir: string;
   timeoutMs: number;
+  runtimeCheck?: BackendRuntimeCheckDiagnostics;
   stdout: string[];
   stderr: string[];
   lastHealthStatus?: string;
@@ -49,10 +58,29 @@ export interface BackendStartupDiagnostics {
   spawnError?: string;
 }
 
+export interface BackendRuntimeCheckDiagnostics {
+  timeoutMs: number;
+  durationMs?: number;
+  version?: string;
+  error?: string;
+}
+
+export interface BackendRuntimeCheckResult {
+  version: string;
+  durationMs: number;
+}
+
+export interface BackendStopOptions {
+  forceKillAfterMs?: number;
+  killProcess?: (pid: number, signal: NodeJS.Signals) => void;
+}
+
 const DEFAULT_BACKEND_START_TIMEOUT_MS = 45_000;
+const BACKEND_RUNTIME_CHECK_TIMEOUT_MS = 10_000;
 const BACKEND_HEALTH_CHECK_TIMEOUT_MS = 1_500;
 const BACKEND_HEALTH_CHECK_INTERVAL_MS = 200;
 const BACKEND_OUTPUT_TAIL_LINES = 30;
+const BACKEND_STOP_FORCE_KILL_AFTER_MS = 1_500;
 
 export function resolveBackendCommand(options: {
   port: number;
@@ -71,7 +99,9 @@ export function resolveBackendCommand(options: {
     "--data-dir",
     options.dataDir,
     "--token",
-    options.token
+    options.token,
+    "--parent-pid",
+    String(process.pid)
   ];
   const env = { ...process.env };
   const root = projectRoot();
@@ -105,11 +135,15 @@ export async function startBackendProcess(options: {
 }): Promise<BackendProcess> {
   const port = 30_000 + Math.floor(Math.random() * 20_000);
   const token = randomBytes(24).toString("hex");
-  const command = resolveBackendCommand({
+  let command = resolveBackendCommand({
     port,
     dataDir: options.dataDir,
     token,
     resourcesPath: options.resourcesPath,
+    isPackaged: options.isPackaged
+  });
+  command = prepareBackendRuntimeCommand(command, {
+    dataDir: options.dataDir,
     isPackaged: options.isPackaged
   });
   const diagnostics = createBackendStartupDiagnostics({
@@ -121,6 +155,31 @@ export async function startBackendProcess(options: {
   console.info(
     `[main] 启动后端 port=${port} dataDir=${options.dataDir} watch=${command.args.includes("--watch")} timeout=${diagnostics.timeoutMs}ms command=${command.command}`
   );
+  console.info(
+    `[main] 后端运行时自检开始 command=${command.command} platform=${process.platform} arch=${process.arch} timeout=${BACKEND_RUNTIME_CHECK_TIMEOUT_MS}ms`
+  );
+  try {
+    const runtimeCheck = await checkBackendRuntime(command);
+    diagnostics.runtimeCheck = {
+      timeoutMs: BACKEND_RUNTIME_CHECK_TIMEOUT_MS,
+      durationMs: runtimeCheck.durationMs,
+      version: runtimeCheck.version
+    };
+    console.info(
+      `[main] 后端运行时自检完成 command=${command.command} version=${runtimeCheck.version} durationMs=${runtimeCheck.durationMs}ms`
+    );
+  } catch (error) {
+    diagnostics.runtimeCheck = {
+      timeoutMs: BACKEND_RUNTIME_CHECK_TIMEOUT_MS,
+      error: messageFromError(error)
+    };
+    const errorMessage = formatBackendStartupFailure("后端运行时自检失败", diagnostics);
+    console.error(
+      `[main] 后端运行时自检失败 port=${port} timeout=${BACKEND_RUNTIME_CHECK_TIMEOUT_MS}ms command=${command.command}\n${errorMessage}`
+    );
+    throw new Error(errorMessage);
+  }
+
   const child = spawn(command.command, command.args, {
     env: command.env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -149,12 +208,24 @@ export async function startBackendProcess(options: {
     });
   });
 
+  let stopRequested = false;
+  child.on("exit", (code, signal) => {
+    const message = stopRequested ? "后端进程已退出" : "后端进程意外退出";
+    const log = stopRequested ? console.info : console.warn;
+    log(
+      `[main] ${message} port=${port} pid=${child.pid ?? "unknown"} exitCode=${code ?? "unknown"} signal=${signal ?? "none"}`
+    );
+  });
+
   await waitForBackend(child, port, token, diagnostics);
   console.info(`[main] 后端启动完成 port=${port}`);
   return {
     info: { baseURL: `http://127.0.0.1:${port}`, token },
     child,
-    stop: () => stopBackendChild(child)
+    stop: () => {
+      stopRequested = true;
+      stopBackendChild(child);
+    }
   };
 }
 
@@ -222,6 +293,94 @@ function firstExisting(paths: string[]): string | undefined {
   return paths.find((path) => existsSync(path));
 }
 
+export function prepareBackendRuntimeCommand(
+  command: BackendCommand,
+  options: { dataDir: string; isPackaged: boolean; signRuntime?: boolean }
+): BackendCommand {
+  if (options.isPackaged || process.env.BUN_BINARY || !isWorkspaceBunBinary(command.command)) {
+    return command;
+  }
+
+  try {
+    const sourceStat = statSync(command.command);
+    if (!sourceStat.isFile()) {
+      return command;
+    }
+
+    const runtimeDir = join(options.dataDir, "runtime");
+    const extension = process.platform === "win32" ? ".exe" : "";
+    const target = join(
+      runtimeDir,
+      `bun-dev-${process.platform}-${process.arch}-${sourceStat.size}${extension}`
+    );
+    mkdirSync(runtimeDir, { recursive: true });
+
+    const targetNeedsCopy =
+      !existsSync(target) || !isDevBunRuntimePreparedForSource(target, sourceStat);
+    if (targetNeedsCopy) {
+      copyFileSync(command.command, target);
+      chmodSync(target, 0o755);
+      console.info(
+        `[main] 已准备开发态 Bun 运行时缓存 source=${command.command} target=${target} size=${sourceStat.size}`
+      );
+    } else {
+      chmodSync(target, 0o755);
+      console.info(
+        `[main] 使用开发态 Bun 运行时缓存 source=${command.command} target=${target} size=${sourceStat.size}`
+      );
+    }
+    signDevBunRuntime(target, sourceStat, options.signRuntime !== false);
+
+    return { ...command, command: target };
+  } catch (error) {
+    console.warn(
+      `[main] 准备开发态 Bun 运行时缓存失败 source=${command.command} dataDir=${options.dataDir} error=${messageFromError(error)}，回退原路径`
+    );
+    return command;
+  }
+}
+
+function isWorkspaceBunBinary(command: string): boolean {
+  return /(^|\/)node_modules\/bun\/bin\/bun\.exe$/.test(command.replaceAll("\\", "/"));
+}
+
+function isDevBunRuntimePreparedForSource(
+  target: string,
+  sourceStat: { size: number; mtimeMs: number }
+): boolean {
+  const marker = `${target}.adhoc-signature`;
+  return existsSync(marker) && readFileSync(marker, "utf8") === devBunRuntimeMarkerContent(sourceStat);
+}
+
+function signDevBunRuntime(
+  target: string,
+  sourceStat: { size: number; mtimeMs: number },
+  enabled: boolean
+): void {
+  if (!enabled || process.platform !== "darwin") {
+    return;
+  }
+
+  const marker = `${target}.adhoc-signature`;
+  const markerContent = devBunRuntimeMarkerContent(sourceStat);
+
+  try {
+    execFileSync("codesign", ["--force", "--sign", "-", target], {
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    writeFileSync(marker, markerContent);
+    console.info(`[main] 已对开发态 Bun 运行时缓存完成本地签名 target=${target}`);
+  } catch (error) {
+    console.warn(
+      `[main] 开发态 Bun 运行时缓存本地签名失败 target=${target} error=${syncProcessErrorMessage(error)}`
+    );
+  }
+}
+
+function devBunRuntimeMarkerContent(sourceStat: { size: number; mtimeMs: number }): string {
+  return `adhoc-v2:${sourceStat.size}:${sourceStat.mtimeMs}`;
+}
+
 export function resolveBackendStartTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.CHENGXIAOBANG_BACKEND_START_TIMEOUT_MS;
   if (!raw) {
@@ -253,6 +412,69 @@ export function createBackendStartupDiagnostics(options: {
   };
 }
 
+export async function checkBackendRuntime(
+  command: BackendCommand,
+  options: { timeoutMs?: number } = {}
+): Promise<BackendRuntimeCheckResult> {
+  const timeoutMs = options.timeoutMs ?? BACKEND_RUNTIME_CHECK_TIMEOUT_MS;
+  const startedAt = Date.now();
+
+  return new Promise((resolveCheck, rejectCheck) => {
+    let settled = false;
+    let stdout = "";
+    let stderr = "";
+    const child = spawn(command.command, ["--version"], {
+      env: command.env,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback();
+    };
+
+    const timeout = setTimeout(() => {
+      finish(() => {
+        child.kill("SIGKILL");
+        rejectCheck(
+          new Error(
+            `Bun 运行时自检超时 timeout=${timeoutMs}ms stdout=${formatOneLineOutput(stdout)} stderr=${formatOneLineOutput(stderr)}`
+          )
+        );
+      });
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", (error) => {
+      finish(() => {
+        rejectCheck(new Error(`Bun 运行时自检启动失败: ${messageFromError(error)}`));
+      });
+    });
+    child.on("close", (code, signal) => {
+      finish(() => {
+        const durationMs = Date.now() - startedAt;
+        if (code === 0) {
+          const version = stdout.trim() || stderr.trim() || "unknown";
+          resolveCheck({ version, durationMs });
+          return;
+        }
+        rejectCheck(
+          new Error(
+            `Bun 运行时自检失败 exitCode=${code ?? "unknown"} signal=${signal ?? "none"} durationMs=${durationMs}ms stdout=${formatOneLineOutput(stdout)} stderr=${formatOneLineOutput(stderr)}`
+          )
+        );
+      });
+    });
+  });
+}
+
 export function appendBackendStartupOutput(
   diagnostics: BackendStartupDiagnostics,
   stream: BackendLogStream,
@@ -279,6 +501,9 @@ export function formatBackendStartupFailure(
 
   if (diagnostics.spawnError) {
     lines.push(`spawnError=${diagnostics.spawnError}`);
+  }
+  if (diagnostics.runtimeCheck) {
+    lines.push(formatRuntimeCheckDiagnostic(diagnostics.runtimeCheck));
   }
   if (child?.exitCode !== null && child?.exitCode !== undefined) {
     lines.push(`exitCode=${child.exitCode}`);
@@ -353,6 +578,25 @@ function formatOutputTail(lines: string[]): string {
   return lines.map((line) => `  ${line}`).join("\n");
 }
 
+function formatRuntimeCheckDiagnostic(runtimeCheck: BackendRuntimeCheckDiagnostics): string {
+  const fields = [`timeoutMs=${runtimeCheck.timeoutMs}`];
+  if (runtimeCheck.durationMs !== undefined) {
+    fields.push(`durationMs=${runtimeCheck.durationMs}`);
+  }
+  if (runtimeCheck.version) {
+    fields.push(`version=${runtimeCheck.version}`);
+  }
+  if (runtimeCheck.error) {
+    fields.push(`error=${runtimeCheck.error}`);
+  }
+  return `runtimeCheck=${fields.join(" ")}`;
+}
+
+function formatOneLineOutput(output: string): string {
+  const text = output.replace(/\s+/g, " ").trim();
+  return text ? text.slice(0, 500) : "<empty>";
+}
+
 function messageFromError(error: unknown): string {
   if (error instanceof Error) {
     const cause = (error as Error & { cause?: unknown }).cause;
@@ -369,18 +613,77 @@ function messageFromError(error: unknown): string {
   return String(error);
 }
 
-function stopBackendChild(child: ChildProcess): void {
-  if (child.exitCode !== null || child.signalCode !== null) {
+function syncProcessErrorMessage(error: unknown): string {
+  const base = messageFromError(error);
+  if (!error || typeof error !== "object") {
+    return base;
+  }
+  const stdout = "stdout" in error ? formatOneLineOutput(String(error.stdout ?? "")) : "";
+  const stderr = "stderr" in error ? formatOneLineOutput(String(error.stderr ?? "")) : "";
+  return [base, stdout ? `stdout=${stdout}` : "", stderr ? `stderr=${stderr}` : ""]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function stopBackendChild(child: ChildProcess, options: BackendStopOptions = {}): void {
+  if (hasBackendChildExited(child)) {
     return;
   }
+  const killProcess = options.killProcess ?? process.kill;
+  const forceKillAfterMs = options.forceKillAfterMs ?? BACKEND_STOP_FORCE_KILL_AFTER_MS;
+  const target = signalBackendChild(child, "SIGTERM", killProcess, "请求停止");
+  if (target === "none" || !Number.isFinite(forceKillAfterMs) || forceKillAfterMs <= 0) {
+    return;
+  }
+
+  let forceTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
+    forceTimer = undefined;
+    if (hasBackendChildExited(child)) {
+      return;
+    }
+    console.warn(
+      `[main] 后端进程在 ${forceKillAfterMs}ms 内未退出，开始强制清理 pid=${child.pid ?? "unknown"}`
+    );
+    signalBackendChild(child, "SIGKILL", killProcess, "强制停止");
+  }, forceKillAfterMs);
+
+  const clearForceTimer = () => {
+    if (!forceTimer) {
+      return;
+    }
+    clearTimeout(forceTimer);
+    forceTimer = undefined;
+  };
+  child.once("exit", clearForceTimer);
+  child.once("close", clearForceTimer);
+}
+
+function hasBackendChildExited(child: Pick<ChildProcess, "exitCode" | "signalCode">): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+function signalBackendChild(
+  child: ChildProcess,
+  signal: NodeJS.Signals,
+  killProcess: (pid: number, signal: NodeJS.Signals) => void,
+  action: string
+): "process-group" | "process" | "none" {
   if (process.platform !== "win32" && child.pid) {
     try {
-      process.kill(-child.pid, "SIGTERM");
-      console.info(`[main] 已请求停止后端进程组 pid=${child.pid}`);
-      return;
+      killProcess(-child.pid, signal);
+      console.info(`[main] ${action}后端进程组 pid=${child.pid} signal=${signal}`);
+      return "process-group";
     } catch (error) {
-      console.warn("[main] 停止后端进程组失败，回退为停止主进程", error);
+      console.warn(
+        `[main] ${action}后端进程组失败 pid=${child.pid} signal=${signal}，回退为停止主进程`,
+        error
+      );
     }
   }
-  child.kill("SIGTERM");
+  if (child.kill(signal)) {
+    console.info(`[main] ${action}后端主进程 pid=${child.pid ?? "unknown"} signal=${signal}`);
+    return "process";
+  }
+  console.warn(`[main] ${action}后端主进程失败 pid=${child.pid ?? "unknown"} signal=${signal}`);
+  return "none";
 }

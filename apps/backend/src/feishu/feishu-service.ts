@@ -166,7 +166,8 @@ export class FeishuService {
       })) {
         if (
           event.type === "tool_call" &&
-          event.toolCall.status === "pending_approval" &&
+          (event.toolCall.status === "pending_approval" ||
+            event.toolCall.status === "pending_smart_approval") &&
           !fullAccess
         ) {
           // Read-only enforcement: nobody is around to approve, so mutating

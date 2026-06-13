@@ -136,7 +136,10 @@ describe("project opener menu", () => {
     render(<App client={createClient()} />);
     fireEvent.click(await screen.findByText("项目对话"));
 
-    expect(await screen.findByTitle("用本机应用打开项目")).toBeInTheDocument();
+    const trigger = await screen.findByTitle("用本机应用打开项目");
+    expect(trigger).toHaveClass("bg-canvas-soft", "border-border/60", "px-2.5");
+    expect(trigger).not.toHaveClass("shadow-hairline");
+    expect(trigger).not.toHaveClass("bg-canvas");
     await waitFor(() => expect(detectProjectOpeners).toHaveBeenCalled());
   });
 

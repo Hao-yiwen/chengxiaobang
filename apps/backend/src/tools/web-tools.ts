@@ -1,11 +1,23 @@
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { WebSearchExecutor } from "../web-search/web-search-config-service";
 import { textResult } from "./tool-result";
 
 const MAX_FETCH_CHARS = 20_000;
 
 const fetchUrlParams = Type.Object({
   url: Type.String({ description: "要抓取的 http(s) 地址" })
+});
+
+const webSearchParams = Type.Object({
+  query: Type.String({ description: "要搜索的公网信息关键词或问题" }),
+  maxResults: Type.Optional(
+    Type.Number({
+      description: "返回结果数量，默认 5，范围 1-10",
+      minimum: 1,
+      maximum: 10
+    })
+  )
 });
 
 function htmlToText(html: string): string {
@@ -48,7 +60,7 @@ async function fetchUrl(url: string): Promise<string> {
   }
 }
 
-export function createWebTools(): AgentTool<any>[] {
+export function createWebTools(webSearch?: WebSearchExecutor): AgentTool<any>[] {
   const fetchUrlTool: AgentTool<typeof fetchUrlParams> = {
     name: "fetch_url",
     label: "抓取网页",
@@ -57,5 +69,23 @@ export function createWebTools(): AgentTool<any>[] {
     execute: async (_id, params) => textResult(await fetchUrl(params.url))
   };
 
-  return [fetchUrlTool];
+  if (!webSearch) {
+    return [fetchUrlTool];
+  }
+  const webSearchTool: AgentTool<typeof webSearchParams> = {
+    name: "web_search",
+    label: "网络搜索",
+    description:
+      "使用 Tavily 纯搜索 API 查询实时公网信息，返回标题、URL 与摘要；适合新闻、文档、资料调研和需要来源的事实核查。",
+    parameters: webSearchParams,
+    execute: async (_id, params) =>
+      textResult(
+        await webSearch({
+          query: params.query,
+          maxResults: params.maxResults
+        })
+      )
+  };
+
+  return [fetchUrlTool, webSearchTool];
 }

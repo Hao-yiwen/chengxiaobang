@@ -1,31 +1,30 @@
 import {
+  CaretDownIcon as ChevronDown,
   CheckIcon as Check,
+  ChatCircleDotsIcon as ChatCircleDots,
   CircleNotchIcon as Loader2,
   XIcon as X
 } from "@phosphor-icons/react";
-import type { ToolCall } from "@chengxiaobang/shared";
-import { ArtifactCard } from "@/components/ArtifactCard";
+import { useState } from "react";
+import {
+  askUserAnswerItemText,
+  askUserAnswerSchema,
+  askUserArgsSchema,
+  type AskUserAnswerItem,
+  type AskUserQuestion,
+  type ToolCall
+} from "@chengxiaobang/shared";
 import { ToolCallLine } from "@/components/ToolCallLine";
-import { artifactFromToolCall, type ArtifactKind } from "@/lib/artifact";
+import type { ArtifactKind } from "@/lib/artifact";
+import { cn } from "@/lib/utils";
 
 interface ToolCallRowProps {
   toolCall: ToolCall;
   onOpenFile?: (path: string, kind: ArtifactKind) => void;
 }
 
-/**
- * One standalone tool invocation in the timeline. Generated deliverables
- * render as an ArtifactCard (clickable → right preview); ask_user/use_skill
- * keep their dedicated shapes; every other tool is a borderless ToolCallLine
- * (icon + muted description, expandable to its raw result or diff), aligned
- * with the reasoning panel headers.
- */
+/** 时间线中的单个工具调用：ask_user、use_skill 各自用专属轻量形态。 */
 export function ToolCallRow({ toolCall, onOpenFile }: ToolCallRowProps) {
-  const artifact = artifactFromToolCall(toolCall);
-  if (artifact) {
-    return <ArtifactCard artifact={artifact} toolName={toolCall.name} />;
-  }
-
   if (toolCall.name === "ask_user") {
     return <AskUserReceipt toolCall={toolCall} />;
   }
@@ -47,7 +46,10 @@ function textArg(toolCall: ToolCall, key: string): string | undefined {
 }
 
 function ToolStatusIcon({ toolCall }: { toolCall: ToolCall }) {
-  const isRunning = toolCall.status === "running" || toolCall.status === "pending_approval";
+  const isRunning =
+    toolCall.status === "running" ||
+    toolCall.status === "pending_approval" ||
+    toolCall.status === "pending_smart_approval";
   const isError = toolCall.status === "failed" || toolCall.status === "rejected";
 
   if (isRunning) {
@@ -60,29 +62,109 @@ function ToolStatusIcon({ toolCall }: { toolCall: ToolCall }) {
 }
 
 function AskUserReceipt({ toolCall }: { toolCall: ToolCall }) {
-  const question = textArg(toolCall, "question") ?? "问题";
-  const answer =
-    toolCall.status === "completed" && toolCall.result ? toolCall.result : answerTextFor(toolCall.status);
+  const [open, setOpen] = useState(false);
+  const questions = parseAskUserQuestions(toolCall);
+  const answers = parseAskUserAnswers(toolCall);
+  const rows = questions.map((question, index) => ({
+    question,
+    answer: answers[index]
+  }));
+  const summary = askUserSummary(toolCall, questions, answers);
 
   return (
-    <div className="mb-1.5 max-w-full self-start overflow-hidden rounded-sm border bg-card">
-      <div className="flex min-w-0 items-center gap-2 px-3 py-1.5 font-mono text-micro">
+    <div className="mb-4 max-w-full self-stretch">
+      <button
+        type="button"
+        className="flex max-w-full items-center gap-1.5 text-left text-caption text-muted-foreground transition-colors hover:text-foreground"
+        aria-expanded={open}
+        onClick={() => {
+          const nextOpen = !open;
+          console.info("[ToolCallRow] 切换 ask_user 历史详情", {
+            toolCallId: toolCall.id,
+            open: nextOpen,
+            questionCount: questions.length
+          });
+          setOpen(nextOpen);
+        }}
+      >
+        <ChatCircleDots className="size-3.5 flex-none" />
+        <span className="min-w-0 truncate">{summary}</span>
         <ToolStatusIcon toolCall={toolCall} />
-        <span className="font-medium uppercase tracking-[0.28px] text-foreground">{toolCall.name}</span>
-      </div>
-      <div className="space-y-1 border-t bg-background px-3 py-2 text-micro leading-relaxed text-muted-foreground">
-        <p className="min-w-0 break-words">问：{question}</p>
-        <p className="min-w-0 break-words">答：{answer}</p>
-      </div>
+        <ChevronDown
+          className={cn("size-3.5 flex-none transition-transform", open && "rotate-180")}
+        />
+      </button>
+      {open ? (
+        <div className="ml-5 mt-2 space-y-2 text-caption leading-relaxed text-muted-foreground">
+          {rows.map((row, index) => (
+            <div key={`${index}-${row.question.id ?? row.question.question}`} className="min-w-0">
+              <p className="break-words text-foreground">
+                问：{row.question.question}
+              </p>
+              <p className="mt-0.5 break-words">
+                答：{answerTextFor(toolCall, row.answer)}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function answerTextFor(status: ToolCall["status"]): string {
-  if (status === "rejected") {
+function parseAskUserQuestions(toolCall: ToolCall): AskUserQuestion[] {
+  const parsed = askUserArgsSchema.safeParse(toolCall.args);
+  if (parsed.success) {
+    return parsed.data.questions;
+  }
+  console.warn("[ToolCallRow] ask_user 历史参数解析失败", {
+    toolCallId: toolCall.id,
+    issues: parsed.error.issues
+  });
+  return [{ question: "问题参数解析失败", allowFreeText: true }];
+}
+
+function parseAskUserAnswers(toolCall: ToolCall): AskUserAnswerItem[] {
+  const parsed = askUserAnswerSchema.safeParse(toolCall.args.answer);
+  if (parsed.success) {
+    return parsed.data.answers;
+  }
+  return [];
+}
+
+function askUserSummary(
+  toolCall: ToolCall,
+  questions: AskUserQuestion[],
+  answers: AskUserAnswerItem[]
+): string {
+  if (toolCall.status === "rejected") {
+    return questions.length > 1
+      ? `已跳过 ${questions.length} 个问题`
+      : `已跳过：${questions[0]?.question ?? "问题"}`;
+  }
+  if (questions.length === 1) {
+    const answer = answers[0];
+    const text = answer ? askUserAnswerItemText(answer) : answerTextFor(toolCall, undefined);
+    return `${questions[0]?.question ?? "问题"}：${text}`;
+  }
+  const answered = answers.length;
+  return answered > 0
+    ? `已回答 ${answered}/${questions.length} 个问题`
+    : `向你确认了 ${questions.length} 个问题`;
+}
+
+function answerTextFor(toolCall: ToolCall, answer: AskUserAnswerItem | undefined): string {
+  if (answer) {
+    return askUserAnswerItemText(answer);
+  }
+  if (toolCall.status === "rejected") {
     return "用户跳过了该问题";
   }
-  if (status === "pending_approval" || status === "running") {
+  if (
+    toolCall.status === "pending_approval" ||
+    toolCall.status === "pending_smart_approval" ||
+    toolCall.status === "running"
+  ) {
     return "问题未回答（运行已结束）";
   }
   return "无回答";
@@ -92,7 +174,9 @@ function UseSkillChip({ toolCall }: { toolCall: ToolCall }) {
   const skillName = textArg(toolCall, "name") ?? "unknown";
   const failed = toolCall.status === "failed";
   const label =
-    toolCall.status === "running" || toolCall.status === "pending_approval"
+    toolCall.status === "running" ||
+    toolCall.status === "pending_approval" ||
+    toolCall.status === "pending_smart_approval"
       ? "正在加载技能"
       : failed
         ? "加载技能失败"

@@ -11,11 +11,13 @@
     "noChats": "还没有对话",
     "noProjects": "还没有项目",
     "settings": "设置",
+    "deleteTitle": "删除对话？",
     "deleteConfirm": "确定删除该对话？",
     "deleteProject": "删除项目",
     "newChatInProject": "在此项目下新建对话",
     "collapseFolder": "收起项目",
     "expandFolder": "展开项目",
+    "deleteProjectTitle": "删除项目？",
     "deleteProjectConfirm": "确定删除该项目及其全部对话？项目目录中的文件不会被删除。",
     "sessionTitle": "会话标题",
     "projectName": "项目名称",
@@ -27,11 +29,17 @@
     "branchOf": "从「{{title}}」分支",
     "branchUnknown": "来自已删除的会话",
     "feishuSession": "来自飞书的会话",
+    "sessionRunning": "正在处理",
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
     "cancel": "取消",
     "confirmDelete": "删除",
-    "tasks": "定时任务"
+    "tasks": "定时任务",
+    "skills": "技能"
+  },
+  "confirmDialog": {
+    "cancel": "取消",
+    "confirm": "确认"
   },
   "tasks": {
     "title": "定时任务",
@@ -54,19 +62,38 @@
   "composer": {
     "messageLabel": "输入消息",
     "placeholder": "随心输入",
+    "placeholderRotation": [
+      "随心输入，交给程小帮",
+      "试试：帮我把这个文件夹整理一下",
+      "试试：生成一份项目周报"
+    ],
+    "runningPlaceholder": "程小帮正在处理当前请求…",
     "addContext": "添加上下文",
+    "dropContextHint": "松开添加到上下文",
     "selectModel": "选择模型",
     "stop": "停止",
     "send": "发送",
     "selectProject": "选择项目",
     "conversationMode": "对话",
     "openFolderEllipsis": "打开文件夹…",
+    "searchProjects": "搜索项目…",
+    "noMatchingProjects": "无匹配项目",
+    "addProject": "添加新项目",
+    "createBlankProject": "新建空白项目",
+    "useExistingFolder": "使用现有文件夹",
+    "noProject": "不使用项目",
+    "blankProjectTitle": "新建空白项目",
+    "blankProjectHint": "将在「文稿」目录下创建一个同名文件夹作为项目。",
+    "blankProjectNamePlaceholder": "项目名称",
+    "create": "创建",
+    "cancel": "取消",
     "removeAttachment": "移除 {{name}}",
     "slashNoDescription": "没有说明",
     "slashSource": {
       "builtin": "内置",
       "global": "全局",
-      "project": "项目"
+      "project": "项目",
+      "market": "市场"
     },
     "atFileTag": "文件",
     "fileMenuLabel": "项目文件建议",
@@ -85,10 +112,35 @@
     "kindFileFull": "文件",
     "keyConfigured": "已配置 API Key",
     "keyMissing": "未配置",
-    "slashMenuLabel": "斜杠命令建议"
+    "slashMenuLabel": "斜杠命令建议",
+    "context": {
+      "ariaLabel": "当前上下文用量",
+      "title": "上下文用量",
+      "loadingShort": "计算中",
+      "unknownShort": "上下文",
+      "loading": "正在计算当前会话上下文…",
+      "unavailable": "当前模型未登记上下文窗口，暂时只能估算消息规模。",
+      "error": "读取失败：{{error}}",
+      "usedRatio": "使用率",
+      "used": "已用",
+      "threshold": "压缩点",
+      "sessionCost": "估计费用",
+      "estimatedCostValue": "约 {{value}}",
+      "remaining": "剩余",
+      "breakdown": "构成",
+      "breakdownValue": "系统 {{system}} · 消息 {{messages}} · 工具 {{tools}}",
+      "statusLabel": "状态",
+      "status": {
+        "unknown": "窗口未知，不自动压缩",
+        "ok": "正常",
+        "near_threshold": "接近压缩点",
+        "over_threshold": "下次运行前会自动压缩"
+      }
+    }
   },
   "permission": {
     "fullAccess": "完全访问",
+    "smartApproval": "智能审批",
     "approval": "审批执行"
   },
   "onboarding": {
@@ -106,6 +158,11 @@
     "reasoningInProgress": "思考中",
     "reasoningDone": "已深度思考 · 用时 {{seconds}} 秒",
     "waiting": "正在思考…",
+    "toolActivity": {
+      "preparing": "正在准备工具调用…",
+      "preparingWithTool": "正在准备工具调用：{{tool}}",
+      "runningWithTool": "正在调用工具：{{tool}}"
+    },
     "copy": "复制",
     "copied": "已复制",
     "run": "执行",
@@ -116,9 +173,9 @@
     "roleAssistant": "程小帮",
     "roleTool": "工具",
     "roleSystem": "系统",
-    "tokenUsage": "本次用量 {{total}} tokens（输入 {{prompt}} · 输出 {{completion}}）",
-    "tokenCached": " · 命中缓存 {{cached}}",
     "previewFile": "预览文件",
+    "openAttachment": "打开附件 {{name}}",
+    "attachmentImageAlt": "附件图片 {{name}}",
     "regenerate": "重新生成",
     "edit": "编辑",
     "editSend": "发送",
@@ -126,16 +183,17 @@
     "codeExpand": "展开代码（共 {{lines}} 行）",
     "codeCollapse": "收起代码",
     "codeDownload": "下载代码",
-    "turnDuration": "用时 {{seconds}} 秒",
     "diffView": "变更对比",
     "compactionTitle": "上下文已压缩",
     "compactionHint": "较早的对话已总结为摘要，后续对话将基于摘要继续",
     "forkFromHere": "从这条消息创建分支",
+    "retryFailedRun": "重试本次请求",
     "toolStatus": {
       "completed": "已完成",
       "failed": "失败",
       "rejected": "已拒绝",
       "running": "执行中",
+      "pendingSmartApproval": "智能审批中",
       "pendingApproval": "待批准"
     },
     "toolLine": {
@@ -147,22 +205,32 @@
       "glob": "查找文件 {{pattern}}",
       "search": "搜索 {{query}}",
       "shell": "运行 {{command}}",
+      "shell_status": "查看后台命令状态",
+      "shell_cancel": "终止后台命令",
       "git_status": "查看 Git 状态",
       "git_diff": "查看 Git 变更",
       "fetch_url": "抓取 {{url}}",
+      "web_search": "网络搜索 {{query}}",
       "create_pptx": "生成演示文稿 {{path}}",
       "create_docx": "生成 Word 文档 {{path}}",
       "create_xlsx": "生成 Excel 表格 {{path}}",
       "feishu_send_message": "发送飞书消息",
       "propose_plan": "提出计划「{{title}}」",
-      "update_plan": "更新计划进度",
+      "update_plan": "旧版计划进度",
+      "todo_create": "创建 Todo「{{title}}」",
+      "todo_update": "更新 Todo 进度",
       "ask_user": "向你提问",
       "btw": "记录旁注",
       "use_skill": "加载技能 {{name}}",
       "schedule_create": "创建定时任务「{{name}}」",
       "schedule_list": "查看定时任务",
       "schedule_cancel": "取消定时任务",
+      "memory": "访问记忆 {{path}}",
       "fallback": "调用 {{name}}"
+    },
+    "toolDetail": {
+      "command": "执行命令",
+      "result": "执行产物"
     },
     "toolGroup": {
       "read": "读取 {{count}} 个文件",
@@ -174,6 +242,7 @@
       "message": "发送 {{count}} 条消息",
       "plan": "{{count}} 项计划操作",
       "schedule": "{{count}} 项定时任务操作",
+      "memory": "{{count}} 次记忆操作",
       "other": "调用 {{count}} 个工具",
       "failed": "{{count}} 失败"
     },
@@ -205,6 +274,7 @@
     },
     "askUser": {
       "title": "程小帮想确认一件事",
+      "titleMulti": "程小帮想确认 {{count}} 件事",
       "questionPrefix": "问：",
       "answerPrefix": "答：",
       "skip": "跳过",
@@ -213,6 +283,10 @@
       "customLabel": "其他：",
       "customPlaceholder": "输入你的回答",
       "submit": "答复",
+      "submitAll": "提交回答",
+      "required": "这个问题还没有回答",
+      "missing": "还有 {{count}} 个问题未回答",
+      "structuredHint": "会一次性提交这组回答",
       "invalidArgs": "问题内容解析失败"
     },
     "asideNote": {
@@ -224,6 +298,19 @@
     },
     "copyReceipt": "已录",
     "lastRunModel": "本轮使用 {{provider}} · {{model}}"
+  },
+  "debug": {
+    "open": "Debug",
+    "title": "会话 Debug",
+    "loading": "正在加载 Debug 上下文…",
+    "unavailable": "当前环境不支持会话 Debug 上下文",
+    "generatedAt": "快照生成于 {{time}}",
+    "fullReportHint": "仅展示模型、系统提示词、用户输入、助手输出；工具调用默认展开，工具结果默认折叠。",
+    "toolsReportHint": "展示当前会话会交给模型的 {{count}} 个工具，已按会话模式筛选。",
+    "copy": "复制精简记录",
+    "copied": "已复制",
+    "copyFailed": "复制失败",
+    "refresh": "刷新"
   },
   "app": {
     "disclaimer": "程小帮也可能会犯错，请核查重要信息。"
@@ -241,10 +328,12 @@
     "collapse": "收起侧边面板",
     "menuTitle": "面板",
     "backToMenu": "返回菜单",
+    "progress": "进度",
     "changes": "变更",
     "chat": "侧边会话",
     "terminal": "终端",
     "browser": "浏览器",
+    "artifacts": "产物",
     "files": "文件预览",
     "close": "关闭面板",
     "resize": "调整面板宽度",
@@ -255,6 +344,17 @@
     "changesLoadFailed": "加载变更失败",
     "changesFileCount": "{{count}} 个文件有变更",
     "changesBinaryFile": "二进制或过大文件，不展示内容",
+    "progressEmpty": "稍复杂任务开始后，AI 会在这里显示自己的 Todo 进度。",
+    "progressLive": "当前运行",
+    "progressLatest": "最近清单",
+    "progressCount": "{{done}} / {{total}}",
+    "progressCurrent": "当前 {{index}} / {{total}}：{{title}}",
+    "todoStatus": {
+      "pending": "待办",
+      "in_progress": "进行中",
+      "completed": "完成",
+      "skipped": "跳过"
+    },
     "gitStatus": {
       "modified": "修改",
       "added": "新增",
@@ -275,7 +375,12 @@
     "forward": "前进",
     "reload": "刷新",
     "openExternal": "在系统中打开",
+    "artifactsEmpty": "暂无产物",
+    "artifactsCount": "{{count}} 个产物",
     "filesEmpty": "点击对话中文件操作旁的路径，或选择一个文件进行预览。",
+    "projectFilesTitle": "项目文件",
+    "projectFilesEmpty": "当前项目目录没有可预览的文件。",
+    "projectFilesLoadFailed": "项目文件读取失败",
     "pickFile": "选择文件…",
     "openWithSystem": "用系统应用打开",
     "prevPage": "上一页",
@@ -297,7 +402,13 @@
     "heading": "我们应该在 {{name}} 中做些什么？",
     "headingNoProject": "今天想做点什么？",
     "tagline": "程小帮 · AI 工作台",
-    "subtitle": "你的桌面 AI 编码助手，随时待命。",
+    "heroPhrases": {
+      "today": "今天我们来做些什么？",
+      "next": "接下来想先推进哪件事？",
+      "build": "有什么想法要一起做出来？",
+      "ship": "今天把哪件事落地？"
+    },
+    "subtitle": "办公 + 编程，一个就够",
     "heroAlt": "程小帮创意冒险插画",
     "starters": {
       "pptTitle": "做一份 PPT",
@@ -317,8 +428,9 @@
   },
   "palette": {
     "title": "搜索对话",
-    "placeholder": "搜索对话标题…",
+    "placeholder": "搜索标题或内容…",
     "empty": "没有匹配的对话",
+    "searching": "正在搜索…",
     "group": "对话"
   },
   "settings": {
@@ -331,8 +443,58 @@
       "appearance": "外观",
       "general": "常规",
       "providers": "供应商",
+      "usage": "用量统计",
       "skills": "技能与命令",
+      "webSearch": "网络搜索",
       "feishu": "飞书"
+    },
+    "usage": {
+      "title": "用量统计",
+      "overviewTitle": "今日概览",
+      "overviewDesc": "按所有会话的 run usage 汇总 Token，并按模型目录价格折算人民币预估费用。",
+      "todayEstimatedCost": "今日预估费用",
+      "estimatedHint": "按 Token 与模型单价估算，非服务商账单。",
+      "todayTokens": "今日 Token",
+      "tokenBreakdown": "输入 {{input}} · 输出 {{output}}",
+      "todayRuns": "今日运行",
+      "usageRuns": "{{count}} 次返回了 Token usage",
+      "vsSevenDay": "相对近 7 日",
+      "sevenDayAverage": "近 7 日有用量日期均值 {{value}}",
+      "noBaseline": "—",
+      "noBaselineHint": "近 7 日暂无可比较的用量。",
+      "loading": "正在加载用量统计…",
+      "unavailable": "当前环境不支持用量统计",
+      "retry": "重试",
+      "heatmapTitle": "Token 活动",
+      "heatmapDesc": "每日用热力方块展示；每周和累计用条形图展示，悬浮可查看具体日期或区间。",
+      "tokenActivity": "Token 活动",
+      "modeLabel": "切换用量统计视图",
+      "modes": {
+        "daily": "每日",
+        "weekly": "每周",
+        "cumulative": "累计"
+      },
+      "tooltipTokens": "Token",
+      "tooltipCost": "费用",
+      "tooltipRuns": "运行",
+      "summaryLine": "{{tokens}} Token · {{cost}} · {{runs}} 次运行",
+      "detailsTitle": "费用与模型",
+      "detailsDesc": "费用全部为预估值；自定义模型或未知价格只计 Token，不计费用。",
+      "weekEstimatedCost": "本周预估费用",
+      "weekTokens": "本周 {{value}} Token",
+      "totalEstimatedCost": "累计预估费用",
+      "totalTokens": "累计 {{value}} Token",
+      "cacheTokens": "缓存命中 Token",
+      "cacheHint": "缓存命中按目录里的 cache read 单价估算。",
+      "modelRanking": "模型用量排行",
+      "emptyModels": "还没有可统计的模型用量。",
+      "unknownModel": "未知模型",
+      "modelRuns": "{{count}} 次运行",
+      "dataQuality": "统计覆盖情况",
+      "missingUsage": "未返回 Token",
+      "unknownPrice": "价格未知",
+      "fallbackModel": "使用兜底模型",
+      "qualityHint": "旧运行缺少当次模型快照时，会使用会话或供应商当前模型兜底估算。"
     },
     "skills": {
       "title": "技能与命令",
@@ -361,7 +523,9 @@
       "permTitle": "默认权限",
       "permDesc": "新对话默认采用的工具执行权限，可在输入框随时切换。",
       "approval": "审批执行",
-      "approvalDesc": "执行写文件、命令等操作前需要你确认",
+      "approvalDesc": "普通项目改动和常规开发命令自动执行，敏感文件、外部副作用或危险命令再请你确认",
+      "smart": "智能审批",
+      "smartDesc": "普通项目改动和开发命令自动执行，只拦截危险、敏感或外部副作用操作",
       "full": "完全访问",
       "fullDesc": "自动执行所有工具，无需逐个确认（风险更高）",
       "langTitle": "语言",
@@ -369,7 +533,13 @@
       "langZh": "简体中文",
       "langZhDesc": "使用简体中文界面",
       "langEn": "English",
-      "langEnDesc": "Use the English interface"
+      "langEnDesc": "Use the English interface",
+      "logsTitle": "开发日志",
+      "logsDesc": "打开当前开发环境写入的 main、renderer 与 backend 日志目录。",
+      "openLogs": "查看日志",
+      "logsDesktopOnly": "查看日志需要在桌面应用中使用",
+      "logsOpenFailed": "日志目录打开失败",
+      "logsOpened": "已打开日志目录：{{path}}"
     },
     "providers": {
       "title": "供应商",
@@ -412,6 +582,7 @@
       "connectionOk": "连接正常",
       "delete": "删除",
       "deleteNamed": "删除 {{name}}",
+      "deleteTitle": "删除 {{name}}？",
       "deleteConfirm": "确定删除该供应商配置？",
       "deleted": "已删除",
       "statusConfigured": "已配置",
@@ -427,6 +598,26 @@
       }
     },
     "groupIntegrations": "集成",
+    "webSearch": {
+      "title": "网络搜索",
+      "connTitle": "Tavily 搜索",
+      "connDesc": "启用后，Agent 会获得一个纯 Web Search 工具，用于查询实时公网信息并返回来源 URL。",
+      "enable": "启用网络搜索",
+      "enableDesc": "关闭时模型看不到 web_search 工具，也不会发起任何搜索请求。",
+      "tavilyDesc": "纯搜索 API，不绑定任何模型供应商，适合 Agent 调研、查资料和事实核查。",
+      "pureSearch": "纯搜索",
+      "apiKey": "Tavily API Key",
+      "apiKeyKeepHint": "已保存，留空保持不变",
+      "pricingHint": "默认使用 Tavily Basic Search；保存不会自动消耗额度，只有手动测试或 Agent 调用工具时才会请求。",
+      "getApiKey": "获取 API Key",
+      "missingKey": "启用网络搜索前需要填写 Tavily API Key。",
+      "save": "保存",
+      "saving": "保存中…",
+      "saved": "已保存",
+      "test": "测试搜索",
+      "testing": "测试中…",
+      "testOk": "搜索测试通过"
+    },
     "feishu": {
       "title": "飞书机器人",
       "connTitle": "连接配置",
@@ -464,10 +655,26 @@
     "providerRequired": "请先配置至少一个带 API Key 的模型。",
     "openFolderDesktopOnly": "打开文件夹需要在桌面端里使用，浏览器预览没有系统文件选择权限。",
     "addContextDesktopOnly": "添加文件上下文需要在桌面端里使用，浏览器预览没有系统文件读取权限。",
+    "addDroppedContextDesktopOnly": "拖拽添加文件需要在桌面端里使用，浏览器预览没有系统文件读取权限。",
+    "dropFilePathUnavailable": "拖拽文件没有可读取的本地路径，已跳过。",
+    "dropNoUsableFile": "没有可添加的拖拽文件。",
+    "skipDroppedUnsupported": "跳过 {{name}}：当前暂不支持拖拽文件夹或未知类型文件",
+    "fileReadUnavailable": "缺少文件读取能力",
     "skipFile": "跳过 {{name}}：{{error}}",
     "attachmentBlock": "以下是文件 {{name}} 的内容：\n```\n{{text}}\n```\n",
     "exportFailed": "导出失败，请重试",
-    "openArtifactDesktopOnly": "需要在桌面端打开该文件"
+    "openArtifactDesktopOnly": "需要在桌面端打开该文件",
+    "createBlankProjectFailed": "新建空白项目失败，请重试"
+  },
+  "notifications": {
+    "dismiss": "关闭提示",
+    "scheduledTask": {
+      "completedTitle": "定时任务「{{name}}」已完成",
+      "failedTitle": "定时任务「{{name}}」失败",
+      "abortedTitle": "定时任务「{{name}}」已中止",
+      "savedToSession": "结果已写入原会话。",
+      "errorDetail": "错误：{{error}}"
+    }
   },
   "export": {
     "toolCall": "工具调用",
@@ -476,8 +683,9 @@
   },
   "plan": {
     "heading": "计划",
-    "statusDraft": "草稿",
+    "statusDraft": "待确认",
     "statusAwaiting": "待确认",
+    "statusApproved": "已确认",
     "statusExecuting": "执行中",
     "statusCompleted": "已完成",
     "statusRejected": "已拒绝",
@@ -493,13 +701,62 @@
     "remaining": "预计还需 {{n}} 步",
     "staleAwaiting": "计划未确认（运行已结束）",
     "bookmarkLabel": "计划进度 {{index}} / {{total}}，点击回到计划卡",
-    "rejectedHistory": "已否决的计划"
+    "rejectedHistory": "已否决的计划",
+    "expand": "展开计划",
+    "collapse": "收起计划",
+    "approvalTitle": "实施此计划？",
+    "approveAction": "是，实施此计划",
+    "adjustPlaceholder": "否，请告知程小帮如何调整",
+    "submitAdjustment": "提交"
   },
   "skills": {
     "sourceShort": {
       "builtin": "内",
+      "market": "市",
       "global": "全",
       "project": "项"
-    }
+    },
+    "title": "技能",
+    "subtitle": "内置技能开箱即用；从技能市场把常用技能添加到「我的技能」，也可以导入或创建自定义技能。",
+    "mine": "我的技能",
+    "mineEmpty": "还没有已启用的技能。",
+    "market": "技能市场",
+    "marketHint": "添加后即可在对话中通过 /技能名 调用，模型也会在任务匹配时自动使用。",
+    "marketEmpty": "没有匹配的市场技能。",
+    "categoryFilter": "技能市场分类筛选",
+    "category": {
+      "all": "全部",
+      "coding": "编程",
+      "office": "办公",
+      "other": "其他"
+    },
+    "source": {
+      "builtin": "内置",
+      "market": "市场",
+      "custom": "自定义"
+    },
+    "add": "添加",
+    "added": "已添加",
+    "remove": "移除",
+    "alwaysOn": "始终启用",
+    "delete": "删除",
+    "deleteTitle": "删除自定义技能「{{name}}」？",
+    "deleteConfirm": "确定删除自定义技能「{{name}}」？技能文件会从磁盘移除。",
+    "manage": "管理技能",
+    "addCustom": "添加技能",
+    "addCustomHint": "粘贴包含 SKILL.md 的 GitHub 链接快速导入，或交给程小帮在对话中帮你创建。",
+    "importUrlLabel": "GitHub 链接",
+    "importUrlHint": "支持仓库、目录或 SKILL.md 文件链接，要求仓库公开可访问。",
+    "import": "导入",
+    "importing": "导入中…",
+    "or": "或",
+    "chatCreateTitle": "通过对话创建",
+    "chatCreateHint": "在对话中用自然语言描述你想要的技能，或把一个 GitHub 链接发给程小帮，它会帮你抓取内容、生成并安装这个技能。",
+    "chatCreateCta": "去对话创建",
+    "chatCreatePrompt": "我想创建一个新技能。我的需求是：",
+    "viewDetail": "查看「{{name}}」详情",
+    "detailLoading": "正在加载技能详情…",
+    "detailUnavailable": "无法加载技能内容。",
+    "close": "关闭"
   }
 }

@@ -6,12 +6,15 @@ export const toolNameSchema = z.enum([
   "edit_file",
   "list_directory",
   "shell",
+  "shell_status",
+  "shell_cancel",
   "git_status",
   "git_diff",
   "glob",
   "search",
   "make_directory",
   "fetch_url",
+  "web_search",
   "create_pptx",
   "create_docx",
   "create_xlsx",
@@ -20,7 +23,10 @@ export const toolNameSchema = z.enum([
   "update_plan",
   "ask_user",
   "btw",
-  "use_skill"
+  "use_skill",
+  "todo_create",
+  "todo_update",
+  "memory"
 ]);
 export type ToolName = z.infer<typeof toolNameSchema>;
 
@@ -32,6 +38,29 @@ export interface AssistantToolCall {
   arguments: string;
 }
 
+export const smartApprovalVerdictSchema = z.enum(["allow", "deny", "ask_user"]);
+export type SmartApprovalVerdict = z.infer<typeof smartApprovalVerdictSchema>;
+
+export const smartApprovalRiskSchema = z.enum(["low", "medium", "high"]);
+export type SmartApprovalRisk = z.infer<typeof smartApprovalRiskSchema>;
+
+export const toolCallApprovalSchema = z.object({
+  kind: z.literal("smart"),
+  source: z.enum(["rule", "model", "fallback"]),
+  verdict: smartApprovalVerdictSchema,
+  risk: smartApprovalRiskSchema,
+  score: z.number().min(0).max(1),
+  reason: z.string().min(1),
+  decidedAt: z.string().min(1),
+  userDecision: z
+    .object({
+      approved: z.boolean(),
+      decidedAt: z.string().min(1)
+    })
+    .optional()
+});
+export type ToolCallApproval = z.infer<typeof toolCallApprovalSchema>;
+
 export const toolCallSchema = z.object({
   id: z.string().min(1),
   runId: z.string().min(1),
@@ -39,11 +68,41 @@ export const toolCallSchema = z.object({
   // still get persisted/rendered (as failed) instead of masquerading as shell.
   name: z.string().min(1),
   args: z.record(z.string(), z.unknown()),
-  status: z.enum(["pending_approval", "running", "completed", "rejected", "failed"]),
+  status: z.enum([
+    "pending_smart_approval",
+    "pending_approval",
+    "running",
+    "completed",
+    "rejected",
+    "failed"
+  ]),
   result: z.string().optional(),
+  approval: toolCallApprovalSchema.optional(),
   /** When execution actually began (post-approval), ISO timestamp. */
   startedAt: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
 export type ToolCall = z.infer<typeof toolCallSchema>;
+
+export const toolActivityArgsPreviewSchema = z
+  .object({
+    path: z.string().optional(),
+    command: z.string().optional(),
+    query: z.string().optional(),
+    pattern: z.string().optional(),
+    url: z.string().optional(),
+    title: z.string().optional(),
+    name: z.string().optional()
+  })
+  .strict();
+export type ToolActivityArgsPreview = z.infer<typeof toolActivityArgsPreviewSchema>;
+
+export const toolActivitySchema = z.object({
+  contentIndex: z.number().int().nonnegative(),
+  toolCallId: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  argsPreview: toolActivityArgsPreviewSchema,
+  updatedAt: z.string()
+});
+export type ToolActivity = z.infer<typeof toolActivitySchema>;

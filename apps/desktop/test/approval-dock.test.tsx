@@ -35,6 +35,15 @@ describe("ApprovalDock", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("does not render while a tool is pending smart approval", () => {
+    useAppStore.setState({
+      pendingTool: pendingTool({ status: "pending_smart_approval" }),
+      approve: vi.fn()
+    });
+    const { container } = render(<ApprovalDock />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("shows the shell command preview and submits an approval", () => {
     const approve = vi.fn();
     useAppStore.setState({ pendingTool: pendingTool(), approve });
@@ -79,7 +88,7 @@ describe("ApprovalDock", () => {
     useAppStore.setState({
       pendingTool: pendingTool({
         name: "ask_user",
-        args: { question: "继续吗？", options: ["继续", "停止"], allowFreeText: false }
+        args: { questions: [{ question: "继续吗？", options: ["继续", "停止"], allowFreeText: false }] }
       }),
       approve
     });
@@ -90,9 +99,61 @@ describe("ApprovalDock", () => {
     await waitFor(() =>
       expect(approve).toHaveBeenCalledWith("tool_1", {
         approved: true,
-        answer: { optionLabel: "继续" }
+        answer: { answers: [{ question: "继续吗？", optionLabel: "继续" }] }
       })
     );
     expect(screen.queryByTestId("approval-dock")).not.toBeInTheDocument();
+  });
+
+  it("renders propose_plan as an implementation choice and turns off plan mode when approved", () => {
+    const approve = vi.fn();
+    useAppStore.setState({
+      planMode: true,
+      pendingTool: pendingTool({
+        name: "propose_plan",
+        args: { markdown: "# 示例计划\n\n## Summary\n先确认。" }
+      }),
+      approve
+    });
+    render(<ApprovalDock />);
+
+    expect(screen.getByTestId("plan-approval-dock")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /是，实施此计划/ }));
+
+    expect(approve).toHaveBeenCalledWith("tool_1", { approved: true });
+    expect(useAppStore.getState().planMode).toBe(false);
+    expect(screen.queryByTestId("plan-approval-dock")).not.toBeInTheDocument();
+  });
+
+  it("forwards propose_plan adjustment text without turning off plan mode", () => {
+    const approve = vi.fn();
+    useAppStore.setState({
+      planMode: true,
+      pendingTool: pendingTool({
+        name: "propose_plan",
+        args: { markdown: "# 示例计划\n\n## Summary\n先确认。" }
+      }),
+      approve
+    });
+    render(<ApprovalDock />);
+
+    fireEvent.change(screen.getByLabelText("否，请告知程小帮如何调整"), {
+      target: { value: "请补充测试计划" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提交" }));
+
+    expect(approve).toHaveBeenCalledWith("tool_1", {
+      approved: false,
+      answer: {
+        answers: [
+          {
+            id: "plan_adjustment",
+            question: "否，请告知程小帮如何调整",
+            text: "请补充测试计划"
+          }
+        ]
+      }
+    });
+    expect(useAppStore.getState().planMode).toBe(true);
   });
 });

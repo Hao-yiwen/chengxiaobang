@@ -29,7 +29,10 @@ export function ToolCallGroup({ toolCalls, onOpenFile }: ToolCallGroupProps) {
   const [open, setOpen] = useState(false);
 
   const active = toolCalls.find(
-    (toolCall) => toolCall.status === "running" || toolCall.status === "pending_approval"
+    (toolCall) =>
+      toolCall.status === "running" ||
+      toolCall.status === "pending_approval" ||
+      toolCall.status === "pending_smart_approval"
   );
   const failedCount = toolCalls.filter(
     (toolCall) => toolCall.status === "failed" || toolCall.status === "rejected"

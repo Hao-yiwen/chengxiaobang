@@ -120,7 +120,7 @@ export function OpenInIdeButton() {
           type="button"
           title={t("ide.openProjectInApp")}
           aria-label={t("ide.openProjectInApp")}
-          className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-canvas px-3 text-foreground transition-colors hover:bg-canvas-soft-2 data-[state=open]:bg-canvas-soft-2"
+          className="flex h-7 items-center gap-1.5 rounded-md border border-border/60 bg-canvas-soft px-2.5 text-foreground transition-colors hover:bg-canvas-soft-2 data-[state=open]:bg-canvas-soft-2"
         >
           {triggerOpener?.iconDataUrl ? (
             <img

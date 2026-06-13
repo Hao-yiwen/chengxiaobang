@@ -1,5 +1,8 @@
 import type { Model, SimpleStreamOptions, ThinkingLevel, Usage } from "@earendil-works/pi-ai";
 import {
+  resolveModelContextInfo,
+  resolveModelPricingInfo,
+  resolveModelInputModalities,
   resolveProviderModelOption,
   type ProviderConfig,
   type ReasoningMode,
@@ -20,6 +23,20 @@ const PROVIDER_SLUGS: Partial<Record<ProviderConfig["kind"], string>> = {
 /** 将 OpenAI-compatible 供应商配置转换成 pi 模型描述。 */
 export function buildModel(provider: ProviderConfig): Model<"openai-completions"> {
   const reasoning = usesPiReasoning(provider);
+  const context = resolveModelContextInfo(provider.kind, provider.model);
+  const pricing = resolveModelPricingInfo(provider.kind, provider.model);
+  const inputModalities = resolveModelInputModalities(provider.kind, provider.model);
+  const piInputModalities = inputModalities.filter(
+    (modality): modality is "text" | "image" => modality === "text" || modality === "image"
+  );
+  console.info("[pi-model] 构建模型能力", {
+    providerId: provider.id,
+    kind: provider.kind,
+    model: provider.model,
+    inputModalities,
+    piInputModalities,
+    reasoningMode: provider.reasoningMode ?? "default"
+  });
   return {
     id: provider.model,
     name: provider.name,
@@ -30,9 +47,14 @@ export function buildModel(provider: ProviderConfig): Model<"openai-completions"
     reasoning,
     ...(reasoning ? { thinkingLevelMap: thinkingLevelMap(provider) } : {}),
     ...(reasoning ? { compat: compatOverride(provider) } : {}),
-    input: ["text"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 131_072,
+    input: piInputModalities.length > 0 ? piInputModalities : ["text"],
+    cost: {
+      input: pricing.inputCostPerMillion ?? 0,
+      output: pricing.outputCostPerMillion ?? 0,
+      cacheRead: pricing.cacheReadCostPerMillion ?? 0,
+      cacheWrite: pricing.cacheWriteCostPerMillion ?? 0
+    },
+    contextWindow: context.contextWindowTokens ?? 131_072,
     maxTokens: 8192
   };
 }
@@ -63,7 +85,8 @@ export function toTokenUsage(usage: Usage): TokenUsage {
     promptTokens: usage.input + usage.cacheRead + usage.cacheWrite,
     completionTokens: usage.output,
     totalTokens: usage.totalTokens,
-    ...(usage.cacheRead > 0 ? { cachedPromptTokens: usage.cacheRead } : {})
+    ...(usage.cacheRead > 0 ? { cachedPromptTokens: usage.cacheRead } : {}),
+    ...(usage.cost.total > 0 ? { costUsd: usage.cost.total } : {})
   };
 }
 

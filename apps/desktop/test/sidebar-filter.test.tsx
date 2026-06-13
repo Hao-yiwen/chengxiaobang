@@ -84,12 +84,21 @@ describe("sidebar sessions", () => {
     render(<App client={createClient()} />);
     // 当前会话标题也会出现在聊天头部，侧边栏断言需要限制在 sidebar 内部。
     const sidebar = within(await screen.findByTestId("app-sidebar"));
-    await sidebar.findByText("旧标题A");
+    const sessionTitle = await sidebar.findByText("旧标题A");
 
     expect(sidebar.queryByText("程小帮")).not.toBeInTheDocument();
     expect(sidebar.queryByLabelText("搜索对话")).not.toBeInTheDocument();
     expect(sidebar.queryByPlaceholderText("搜索对话")).not.toBeInTheDocument();
     expect(sidebar.getByText("另一个B")).toBeInTheDocument();
+    const sessionRow = sessionTitle.closest("div");
+    expect(sessionRow).toHaveClass("mx-1", "min-w-0");
+    expect(sessionRow).not.toHaveClass("mr-1");
+    expect(sessionTitle).toHaveClass("min-w-0", "flex-1", "truncate");
+    expect(sessionTitle.closest("button")).toHaveClass("overflow-hidden", "pr-7");
+    expect(sessionRow?.querySelector('button[title="置顶"]')?.parentElement).toHaveClass(
+      "absolute",
+      "right-1"
+    );
     // 未分组会话不再包一层"独立对话"分组，直接平铺在"对话"区块下。
     expect(sidebar.queryByText("独立对话")).not.toBeInTheDocument();
     expect(sidebar.getByText("demo").closest("button")?.querySelector("svg")).toBeTruthy();
@@ -99,6 +108,13 @@ describe("sidebar sessions", () => {
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(sidebar.getByText("对话")).not.toHaveClass("border-t");
+    expect(
+      screen.getByTestId("app-sidebar").querySelector('[data-scrollbar-hidden="true"]')
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("app-sidebar").querySelector('[data-sidebar-bottom-fade="true"]')).toHaveClass(
+      "pointer-events-none",
+      "bg-gradient-to-b"
+    );
     // 第 9 个项目会话仍受每组最多展示 8 条的限制。
     expect(sidebar.queryByText("唯一目标")).not.toBeInTheDocument();
   });

@@ -2,6 +2,7 @@
 name: word
 description: 撰写并生成结构化的 Word 文档（.docx），如报告、方案、说明书、纪要等。
 metadata:
+  category: office
   author: chengxiaobang
   version: "1.0"
 ---
@@ -13,8 +14,13 @@ metadata:
 1. **确定文档类型与目标读者**，信息不足时补全合理假设，不要反复追问。
 2. **搭建提纲**：标题 → 概述 → 若干带小标题的章节 → 结论 / 建议。层级用标题级别（`heading` 的 `level` 1–3）表达。
 3. **撰写正文**：段落用 `paragraph`；并列项用 `bullets`；步骤/排序用 `ordered`；引用或要点强调用 `quote`。语言专业、简洁。
-4. **调用工具生成**：使用 `create_docx` 工具，`path` 位于工作目录下（如 `项目方案.docx`）。
-5. **总结**：告知文件位置与结构，并询问是否需要修改。
+4. **写入规格文件**：用基础文件写入能力在工作目录中创建一个 JSON 规格文件（例如 `document-spec.json`），内容格式见下方示例。
+5. **执行脚本生成**：用基础 shell 能力执行本技能自带脚本 `scripts/create-docx.mjs`：
+   ```bash
+   node "<技能目录>/scripts/create-docx.mjs" document-spec.json 项目方案.docx
+   ```
+   技能正文开头会给出本技能目录位置，脚本路径相对该目录。第二个参数是输出 `.docx` 路径，省略时会读取 JSON 里的 `path` 字段。
+6. **总结**：告知文件位置与结构，并询问是否需要修改。
 
 ## document 规格示例
 

@@ -31,6 +31,21 @@ export const sessionSchema = z.object({
 });
 export type Session = z.infer<typeof sessionSchema>;
 
+export const sessionSearchResultSchema = z.discriminatedUnion("matchType", [
+  z.object({
+    session: sessionSchema,
+    matchType: z.literal("title")
+  }),
+  z.object({
+    session: sessionSchema,
+    matchType: z.literal("content"),
+    messageId: z.string().min(1),
+    role: z.enum(["user", "assistant"]),
+    snippet: z.string()
+  })
+]);
+export type SessionSearchResult = z.infer<typeof sessionSearchResultSchema>;
+
 export const sessionInputSchema = z.object({
   projectId: z.string().min(1).nullable().optional(),
   title: z.string().min(1).optional(),

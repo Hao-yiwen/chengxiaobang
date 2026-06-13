@@ -1,5 +1,12 @@
-import type { ScheduledTask, ScheduledTaskStatus } from "@chengxiaobang/shared";
+import type {
+  AppEvent,
+  ScheduledTask,
+  ScheduledTaskEvent,
+  ScheduledTaskStatus,
+  ScheduledTaskTrigger
+} from "@chengxiaobang/shared";
 import type { AgentRunner } from "../agent/agent-runner";
+import type { EventHub } from "../events/event-hub";
 import type { StateStore } from "../repository/state-store";
 import { computeNextRunAt } from "./schedule";
 
@@ -27,10 +34,12 @@ export class TaskScheduler {
   private readonly intervalMs: number;
   private readonly runTimeoutMs: number;
   private readonly now: () => Date;
+  private readonly eventHub?: EventHub<AppEvent>;
 
   constructor(options: {
     store: StateStore;
     runner: AgentRunner;
+    eventHub?: EventHub<AppEvent>;
     intervalMs?: number;
     runTimeoutMs?: number;
     /** 测试缝：注入当前时间。 */
@@ -41,6 +50,7 @@ export class TaskScheduler {
     this.intervalMs = options.intervalMs ?? DEFAULT_TICK_INTERVAL_MS;
     this.runTimeoutMs = options.runTimeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
     this.now = options.now ?? (() => new Date());
+    this.eventHub = options.eventHub;
   }
 
   start(): void {
@@ -75,7 +85,7 @@ export class TaskScheduler {
         (task) => task.enabled && task.nextRunAt && new Date(task.nextRunAt) <= now
       );
       for (const task of due) {
-        await this.execute(task);
+        await this.execute(task, "schedule");
       }
     } catch (error) {
       console.error("[task-scheduler] tick 失败:", error);
@@ -90,10 +100,10 @@ export class TaskScheduler {
     if (!task) {
       throw new Error("定时任务不存在");
     }
-    await this.execute(task);
+    await this.execute(task, "manual");
   }
 
-  private async execute(task: ScheduledTask): Promise<void> {
+  private async execute(task: ScheduledTask, trigger: ScheduledTaskTrigger): Promise<void> {
     if (this.busyTaskIds.has(task.id)) {
       console.warn(`[task-scheduler] 跳过：任务执行中 taskId=${task.id}`);
       return;
@@ -118,6 +128,14 @@ export class TaskScheduler {
       console.info(
         `[task-scheduler] 开始执行 taskId=${task.id} name=${task.name} sessionId=${task.sessionId} fullAccess=${task.fullAccess}`
       );
+      this.publishTaskEvent({
+        type: "scheduled_task_started",
+        taskId: task.id,
+        sessionId: task.sessionId,
+        name: task.name,
+        trigger,
+        occurredAt: now.toISOString()
+      });
       let status: ScheduledTaskStatus = "completed";
       let errorText: string | undefined;
       try {
@@ -146,7 +164,11 @@ export class TaskScheduler {
               );
               this.runner.abort(event.runId);
             }, this.runTimeoutMs);
-          } else if (event.type === "tool_call" && event.toolCall.status === "pending_approval") {
+          } else if (
+            event.type === "tool_call" &&
+            (event.toolCall.status === "pending_approval" ||
+              event.toolCall.status === "pending_smart_approval")
+          ) {
             // 无人值守：任何等待确认的工具一律拒绝（只读语义；fullAccess 下
             // 正常不会出现 pending，这里是防挂死兜底）。
             console.info(
@@ -171,6 +193,17 @@ export class TaskScheduler {
         lastStatus: status,
         lastError: errorText ?? null
       });
+      this.publishTaskEvent({
+        type: "scheduled_task_finished",
+        taskId: task.id,
+        sessionId: task.sessionId,
+        name: task.name,
+        trigger,
+        status,
+        ...(runId ? { runId } : {}),
+        ...(errorText ? { error: errorText } : {}),
+        occurredAt: this.now().toISOString()
+      });
       console.info(
         `[task-scheduler] 执行结束 taskId=${task.id} status=${status}` +
           (errorText ? ` error=${errorText}` : "")
@@ -184,5 +217,17 @@ export class TaskScheduler {
       }
       this.busyTaskIds.delete(task.id);
     }
+  }
+
+  private publishTaskEvent(event: ScheduledTaskEvent): void {
+    if (!this.eventHub) {
+      return;
+    }
+    console.info("[task-scheduler] 发布定时任务事件", {
+      type: event.type,
+      taskId: event.taskId,
+      sessionId: event.sessionId
+    });
+    this.eventHub.publish(event);
   }
 }

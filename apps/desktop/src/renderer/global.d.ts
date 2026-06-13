@@ -1,5 +1,6 @@
 export {};
 
+import type { MessageAttachment } from "@chengxiaobang/shared";
 import type { PreviewKind } from "../common/file-preview";
 
 declare module "react" {
@@ -50,6 +51,46 @@ export type QuickLookThumbnailResult =
   | { ok: true; path: string; url: string }
   | { ok: false; path: string; error: string };
 
+export type OcrRecognizeResult =
+  | {
+      ok: true;
+      path: string;
+      name: string;
+      text: string;
+      size: number;
+      pageCount: number;
+      processedPages: number;
+      warnings: string[];
+      elapsedMs: number;
+    }
+  | { ok: false; path: string; name: string; error: string; size: number };
+
+export interface NativeAttachmentImage {
+  name: string;
+  mimeType: string;
+  dataBase64: string;
+  size: number;
+  pageIndex?: number;
+}
+
+export type PrepareNativeImagesResult =
+  | {
+      ok: true;
+      path: string;
+      name: string;
+      size: number;
+      images: NativeAttachmentImage[];
+      pageCount: number;
+      processedPages: number;
+      warnings: string[];
+      elapsedMs: number;
+    }
+  | { ok: false; path: string; name: string; error: string; size: number };
+
+export type SaveAttachmentSnapshotsResult =
+  | { ok: true; attachments: MessageAttachment[]; totalBytes: number; elapsedMs: number }
+  | { ok: false; error: string };
+
 export interface InstalledProjectOpener {
   id: string;
   name: string;
@@ -84,6 +125,7 @@ declare global {
       getBackendInfo(): Promise<{ baseURL: string; token: string } | undefined>;
       pickDirectory(): Promise<string | undefined>;
       pickFiles(): Promise<string[]>;
+      getPathForFile?(file: File): string;
       readFileText(filePath: string): Promise<ReadFileResult>;
       getFilePreviewInfo?(
         filePath: string,
@@ -99,13 +141,20 @@ declare global {
       ): Promise<ReadFilePreviewBufferResult>;
       createFileUrl?(filePath: string): Promise<FileUrlResult>;
       createQuickLookThumbnail?(filePath: string): Promise<QuickLookThumbnailResult>;
+      ocrRecognize?(filePath: string): Promise<OcrRecognizeResult>;
+      prepareNativeImages?(filePath: string): Promise<PrepareNativeImagesResult>;
+      saveAttachmentSnapshots?(filePaths: string[]): Promise<SaveAttachmentSnapshotsResult>;
       openPath?(filePath: string): Promise<{ ok: boolean; error?: string }>;
       detectProjectOpeners?(): Promise<InstalledProjectOpener[]>;
       openProjectInApp?(
         appPath: string,
         targetPath: string
       ): Promise<{ ok: boolean; error?: string }>;
+      createProjectFolder?(
+        name: string
+      ): Promise<{ ok: boolean; path?: string; name?: string; error?: string }>;
       openSkillsDir?(): Promise<{ ok: boolean; path: string }>;
+      openLogDir?(): Promise<{ ok: boolean; path?: string; error?: string }>;
       setThemeSource?(source: "light" | "dark" | "system"): Promise<void>;
       terminalStart?(input: TerminalStartInput): Promise<TerminalIpcResult>;
       terminalWrite?(id: string, data: string): Promise<TerminalIpcResult>;

@@ -7,10 +7,13 @@ import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
 import type {
+  ActiveRunSnapshot,
+  AppEvent,
   Message,
   Project,
   ProviderConfig,
   ProviderInput,
+  RunRecord,
   Session,
   ToolCall
 } from "@chengxiaobang/shared";
@@ -43,6 +46,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     rewindSession: vi.fn(async () => []),
     forkSession: vi.fn() as never,
     listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [] })),
+    listActiveRuns: vi.fn(async () => []),
     listSlashCommands: vi.fn(async () => ({
       commands: [
         {
@@ -56,6 +60,11 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
       ],
       diagnostics: []
     })),
+    listSkills: vi.fn(async () => []),
+    setMarketSkillEnabled: vi.fn(async () => []),
+    importSkillFromUrl: vi.fn() as never,
+    createCustomSkill: vi.fn() as never,
+    deleteCustomSkill: vi.fn(async () => true),
     listProviders: vi.fn(async () => [provider]),
     saveProvider: vi.fn() as never,
     deleteProvider: vi.fn(async () => true),
@@ -89,6 +98,13 @@ describe("App", () => {
 
     render(<App client={client} />);
 
+    expect(await screen.findByAltText("程小帮人物")).toHaveClass(
+      "home-mascot",
+      "object-contain",
+      "md:size-48"
+    );
+    expect(screen.getByTestId("home-hero-phrase")).toBeInTheDocument();
+    expect(screen.queryByText("程小帮 · AI 工作台")).not.toBeInTheDocument();
     expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
     expect(screen.getByLabelText("输入消息")).toBeInTheDocument();
     expect(screen.getByTestId("composer-shell")).toHaveClass("rounded-xl");
@@ -313,6 +329,29 @@ describe("App", () => {
     unsubscribe();
   });
 
+  it("keeps long sidebar project names constrained with ellipsis", async () => {
+    const longName = "2022-Machine-Learning-Specialization-Super-Long-Workspace-Name";
+    const project: Project = {
+      id: "project_long",
+      name: longName,
+      path: "/tmp/2022-Machine-Learning-Specialization-Super-Long-Workspace-Name",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const client = createClient({
+      listProjects: vi.fn(async () => [project])
+    });
+
+    render(<App client={client} />);
+
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+    const label = await sidebar.findByText(longName);
+
+    expect(label).toHaveClass("block", "min-w-0", "max-w-[174px]", "truncate");
+    expect(label).toHaveAttribute("title", longName);
+    expect(label.closest("button")).toHaveClass("w-full", "min-w-0", "max-w-full", "flex-1");
+  });
+
   it("restores persisted tool call history for the active session", async () => {
     const session: Session = {
       id: "session_1",
@@ -371,6 +410,436 @@ describe("App", () => {
     fireEvent.click(screen.getByText("浏览目录 ."));
     expect(await screen.findByText("file package.json")).toBeInTheDocument();
     expect(listSessionRuns).toHaveBeenCalledWith("session_1");
+  });
+
+  it("restores a pending approval from the backend active run snapshot after refresh", async () => {
+    const session: Session = {
+      id: "session_1",
+      projectId: null,
+      title: "审批恢复",
+      providerId: "deepseek",
+      accessMode: "approval",
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    const activeRun: ActiveRunSnapshot["run"] = {
+      id: "run_active",
+      sessionId: session.id,
+      status: "running",
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    const pendingTool: ToolCall = {
+      id: "tool_pending",
+      runId: activeRun.id,
+      name: "write_file",
+      args: { path: "active.txt", content: "ok" },
+      status: "pending_approval",
+      createdAt: "2026-06-13T00:00:01.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    const approve = vi.fn(async () => {});
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      listMessages: vi.fn(async () => []),
+      listSessionRuns: vi.fn(async () => ({ runs: [activeRun], toolCalls: [pendingTool] })),
+      listActiveRuns: vi.fn(async () => [{ run: activeRun, toolCalls: [pendingTool] }]),
+      approve: approve as never
+    });
+
+    useAppStore.setState({ view: "chat", activeSessionId: session.id });
+    render(<App client={client} />);
+
+    const dock = await screen.findByTestId("approval-dock");
+    expect(within(dock).getByText("等待批准")).toBeInTheDocument();
+    expect(within(dock).getByText("active.txt")).toBeInTheDocument();
+    expect(useAppStore.getState().activeRunId).toBe(activeRun.id);
+    expect(useAppStore.getState().pendingTool?.id).toBe(pendingTool.id);
+    expect(useAppStore.getState().toolHistory.some((tool) => tool.id === pendingTool.id)).toBe(
+      false
+    );
+
+    fireEvent.click(within(dock).getByRole("button", { name: /允许/ }));
+
+    await waitFor(() =>
+      expect(approve).toHaveBeenCalledWith(pendingTool.id, { approved: true })
+    );
+  });
+
+  it("settles stale pending approvals when refresh finds no backend active snapshot", async () => {
+    const session: Session = {
+      id: "session_1",
+      projectId: null,
+      title: "遗留审批",
+      providerId: "deepseek",
+      accessMode: "approval",
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    const staleRun: ActiveRunSnapshot["run"] = {
+      id: "run_stale",
+      sessionId: session.id,
+      status: "running",
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    const pendingTool: ToolCall = {
+      id: "tool_stale_pending",
+      runId: staleRun.id,
+      name: "shell",
+      args: { command: "python3 - <<'PY'\nprint('hi')\nPY" },
+      status: "pending_approval",
+      createdAt: "2026-06-13T00:00:01.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    const listActiveRuns = vi.fn(async () => []);
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      listMessages: vi.fn(async () => []),
+      listSessionRuns: vi.fn(async () => ({ runs: [staleRun], toolCalls: [pendingTool] })),
+      listActiveRuns
+    });
+
+    useAppStore.setState({
+      view: "chat",
+      activeSessionId: session.id,
+      activeRunId: staleRun.id,
+      isRunning: true,
+      pendingTool
+    });
+    render(<App client={client} />);
+
+    await waitFor(() =>
+      expect(useAppStore.getState().runHistory[0]?.status).toBe("failed")
+    );
+    expect(listActiveRuns).toHaveBeenCalledWith(session.id);
+    expect(screen.queryByTestId("approval-dock")).not.toBeInTheDocument();
+    expect(useAppStore.getState().pendingTool).toBeUndefined();
+    expect(useAppStore.getState().activeRunId).toBeUndefined();
+    expect(useAppStore.getState().isRunning).toBe(false);
+    expect(useAppStore.getState().toolHistory[0]).toMatchObject({
+      id: pendingTool.id,
+      status: "failed",
+      result: expect.stringContaining("运行进程已重启")
+    });
+  });
+
+  it("offers retry for an interrupted failed run at the conversation tail", async () => {
+    const session: Session = {
+      id: "session_retry",
+      projectId: null,
+      title: "可重试会话",
+      providerId: "deepseek",
+      accessMode: "approval",
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:02.000Z"
+    };
+    const userMessage: Message = {
+      id: "msg_retry",
+      sessionId: session.id,
+      role: "user",
+      content: "把这个页面做得更高级一点",
+      createdAt: "2026-06-13T00:00:00.500Z"
+    };
+    const failedRun: RunRecord = {
+      id: "run_interrupted",
+      sessionId: session.id,
+      status: "failed",
+      error: "运行进程已重启，无法继续等待审批或工具结果。请重新发起本次请求。",
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    const skillTool: ToolCall = {
+      id: "tool_skill_ppt",
+      runId: failedRun.id,
+      name: "use_skill",
+      args: { name: "ppt" },
+      status: "completed",
+      result: "已加载技能 ppt",
+      createdAt: "2026-06-13T00:00:00.700Z",
+      updatedAt: "2026-06-13T00:00:00.800Z"
+    };
+    const listMessages = vi
+      .fn()
+      .mockResolvedValueOnce([userMessage])
+      .mockResolvedValue([]);
+    const listSessionRuns = vi
+      .fn()
+      .mockResolvedValueOnce({ runs: [failedRun], toolCalls: [skillTool] })
+      .mockResolvedValue({ runs: [], toolCalls: [] });
+    const rewindSession = vi.fn(async () => [] as Message[]);
+    const streamRun = vi.fn(async (..._args: Parameters<ApiClient["streamRun"]>) => {});
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      listMessages,
+      listSessionRuns,
+      listActiveRuns: vi.fn(async () => []),
+      rewindSession,
+      streamRun: streamRun as never
+    });
+
+    useAppStore.setState({
+      view: "chat",
+      activeSessionId: session.id,
+      events: [
+        {
+          type: "run_end",
+          runId: failedRun.id,
+          status: "failed",
+          error: failedRun.error
+        }
+      ]
+    });
+    render(<App client={client} />);
+
+    expect(await screen.findByText("已加载技能 ppt")).toBeInTheDocument();
+    expect(await screen.findByTestId("run-error-notice")).toHaveTextContent(
+      "运行进程已重启"
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "重试本次请求" }));
+
+    await waitFor(() => expect(rewindSession).toHaveBeenCalledWith(session.id, userMessage.id));
+    await waitFor(() => expect(screen.queryByTestId("run-error-notice")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("已加载技能 ppt")).not.toBeInTheDocument());
+    await waitFor(() => expect(streamRun).toHaveBeenCalled());
+    expect(streamRun.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: session.id,
+      prompt: userMessage.content
+    });
+  });
+
+  it("continues handling global run events after restoring an active run snapshot", async () => {
+    let emit: ((event: AppEvent) => void) | undefined;
+    const session: Session = {
+      id: "session_1",
+      projectId: null,
+      title: "续流恢复",
+      providerId: "deepseek",
+      accessMode: "approval",
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    const activeRun: ActiveRunSnapshot["run"] = {
+      id: "run_active",
+      sessionId: session.id,
+      status: "running",
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    const pendingTool: ToolCall = {
+      id: "tool_pending",
+      runId: activeRun.id,
+      name: "write_file",
+      args: { path: "active.txt", content: "ok" },
+      status: "pending_approval",
+      createdAt: "2026-06-13T00:00:01.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    const runningTool: ToolCall = {
+      ...pendingTool,
+      status: "running",
+      startedAt: "2026-06-13T00:00:02.000Z",
+      updatedAt: "2026-06-13T00:00:02.000Z"
+    };
+    const completedTool: ToolCall = {
+      ...runningTool,
+      status: "completed",
+      result: "写入完成",
+      updatedAt: "2026-06-13T00:00:03.000Z"
+    };
+    const listActiveRuns = vi
+      .fn()
+      .mockResolvedValueOnce([{ run: activeRun, toolCalls: [pendingTool] }])
+      .mockResolvedValue([]);
+    const listSessionRuns = vi
+      .fn()
+      .mockResolvedValueOnce({ runs: [activeRun], toolCalls: [pendingTool] })
+      .mockResolvedValue({
+        runs: [{ ...activeRun, status: "completed" as const }],
+        toolCalls: [completedTool]
+      });
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      listMessages: vi.fn(async () => []),
+      listSessionRuns,
+      listActiveRuns,
+      subscribeAppEvents: vi.fn((listener: (event: AppEvent) => void) => {
+        emit = listener;
+        return vi.fn();
+      })
+    });
+
+    useAppStore.setState({ view: "chat", activeSessionId: session.id });
+    render(<App client={client} />);
+    await screen.findByTestId("approval-dock");
+
+    act(() => {
+      emit?.({ type: "tool_call", runId: activeRun.id, toolCall: runningTool });
+    });
+    await waitFor(() => expect(useAppStore.getState().pendingTool).toBeUndefined());
+    expect(useAppStore.getState().runningTool?.id).toBe(runningTool.id);
+
+    act(() => {
+      emit?.({ type: "tool_call", runId: activeRun.id, toolCall: completedTool });
+      emit?.({ type: "run_end", runId: activeRun.id, status: "completed" });
+    });
+
+    await waitFor(() => expect(useAppStore.getState().isRunning).toBe(false));
+    expect(useAppStore.getState().activeRunId).toBeUndefined();
+    expect(useAppStore.getState().pendingTool).toBeUndefined();
+    await waitFor(() => expect(listSessionRuns).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps failed run errors visible after restoring an active session", async () => {
+    const session: Session = {
+      id: "session_1",
+      projectId: null,
+      title: "超限会话",
+      providerId: "deepseek",
+      accessMode: "approval",
+      createdAt: "2026-06-08T00:00:00.000Z",
+      updatedAt: "2026-06-08T00:00:02.000Z"
+    };
+    const message: Message = {
+      id: "msg_1",
+      sessionId: session.id,
+      role: "user",
+      content: "读取所有文件",
+      createdAt: "2026-06-08T00:00:00.000Z"
+    };
+    const retryMessage: Message = {
+      id: "msg_2",
+      sessionId: session.id,
+      role: "user",
+      content: "继续",
+      createdAt: "2026-06-08T00:00:03.000Z"
+    };
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      listMessages: vi.fn(async () => [message, retryMessage]),
+      listSessionRuns: vi.fn(async () => ({
+        runs: [
+          {
+            id: "run_1",
+            sessionId: session.id,
+            status: "failed" as const,
+            error: "400 Invalid request: token limit",
+            createdAt: "2026-06-08T00:00:00.000Z",
+            updatedAt: "2026-06-08T00:00:02.000Z"
+          }
+        ],
+        toolCalls: []
+      }))
+    });
+
+    useAppStore.setState({ view: "chat", activeSessionId: session.id });
+    render(<App client={client} />);
+
+    const notice = await screen.findByTestId("run-error-notice");
+    expect(notice).toHaveTextContent("400 Invalid request: token limit");
+    expect(
+      screen.getByText("读取所有文件").compareDocumentPosition(notice) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      notice.compareDocumentPosition(screen.getByText("继续")) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(screen.getByLabelText("输入消息")).toBeInTheDocument();
+  });
+
+  it("renders btw tool calls as aside notes and converts one into a composer draft", async () => {
+    const session: Session = {
+      id: "session_1",
+      projectId: null,
+      title: "旁注测试",
+      providerId: "deepseek",
+      accessMode: "approval",
+      createdAt: "2026-06-08T00:00:00.000Z",
+      updatedAt: "2026-06-08T00:00:05.000Z"
+    };
+    const message: Message = {
+      id: "msg_1",
+      sessionId: session.id,
+      role: "user",
+      content: "检查一下项目",
+      createdAt: "2026-06-08T00:00:00.000Z"
+    };
+    const btw = (id: string, note: string, index: number, suggestion?: string): ToolCall => ({
+      id,
+      runId: "run_1",
+      name: "btw",
+      args: suggestion ? { note, suggestion } : { note },
+      status: "completed",
+      result: "已记录旁注",
+      createdAt: `2026-06-08T00:00:0${index}.000Z`,
+      updatedAt: `2026-06-08T00:00:0${index}.000Z`
+    });
+    const toolCalls = [
+      btw("tool_btw_1", "测试目录缺少覆盖率配置", 1, "补一个 vitest coverage"),
+      btw("tool_btw_2", "旧 util 可以后续清理", 2),
+      btw("tool_btw_3", "README 示例有点旧", 3),
+      btw("tool_btw_4", "设置页文案可以统一", 4)
+    ];
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      listMessages: vi.fn(async () => [message]),
+      listSessionRuns: vi.fn(async () => ({
+        runs: [
+          {
+            id: "run_1",
+            sessionId: session.id,
+            status: "completed" as const,
+            createdAt: "2026-06-08T00:00:00.000Z",
+            updatedAt: "2026-06-08T00:00:05.000Z"
+          }
+        ],
+        toolCalls
+      }))
+    });
+
+    useAppStore.setState({ view: "chat", activeSessionId: session.id });
+    render(<App client={client} />);
+
+    expect(await screen.findByText("测试目录缺少覆盖率配置")).toBeInTheDocument();
+    Object.defineProperty(screen.getByTestId("chat-scroll"), "clientWidth", {
+      configurable: true,
+      value: 1200
+    });
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("测试目录缺少覆盖率配置").closest("aside")).toHaveAttribute(
+        "data-layout",
+        "gutter-wide"
+      )
+    );
+    const contentColumn = screen.getByTestId("chat-content-column");
+    const composerColumn = screen.getByTestId("chat-composer-column");
+    expect(contentColumn).toHaveClass("chat-primary-column");
+    expect(composerColumn).toHaveClass("chat-primary-column");
+    expect(screen.getByTestId("chat-aside-overlay")).toBeInTheDocument();
+    const anchors = screen.getAllByTestId("chat-aside-anchor");
+    expect(anchors).toHaveLength(3);
+    for (const anchor of anchors) {
+      expect(anchor).toHaveClass("h-0");
+    }
+    expect(screen.getByText("建议：补一个 vitest coverage")).toBeInTheDocument();
+    expect(screen.getByText("旧 util 可以后续清理")).toBeInTheDocument();
+    expect(screen.getByText("旁注 × 2")).toBeInTheDocument();
+    expect(screen.queryByText("README 示例有点旧")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("旁注 × 2"));
+    expect(await screen.findByText("README 示例有点旧")).toBeInTheDocument();
+    expect(screen.getByText("设置页文案可以统一")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByText("转为任务")[0]);
+    expect(screen.getByLabelText("输入消息")).toHaveValue(
+      "接下来：测试目录缺少覆盖率配置（建议：补一个 vitest coverage）"
+    );
+    expect(screen.getByText("已转")).toHaveAttribute("aria-label", "已转为任务");
   });
 
   it("renders a reasoning-only turn as a settled panel before the tools it preceded", async () => {
@@ -494,6 +963,72 @@ describe("App", () => {
     resolveStream?.();
   });
 
+  it("shows a single preparing activity and then relies on the timeline tool row", async () => {
+    type StreamRunEvent = Parameters<ApiClient["streamRun"]>[1] extends (
+      event: infer E
+    ) => void
+      ? E
+      : never;
+    let emit: ((event: StreamRunEvent) => void) | undefined;
+    let resolveStream: (() => void) | undefined;
+    const runningTool: ToolCall = {
+      id: "tool_1",
+      runId: "run_1",
+      name: "write_file",
+      args: { path: "out.txt", content: "完整内容不应出现在状态条里" },
+      status: "running",
+      startedAt: "2026-06-13T00:00:01.000Z",
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    const client = createClient({
+      streamRun: vi.fn(async (_input, onEvent) => {
+        emit = onEvent;
+        onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+        onEvent({
+          type: "tool_activity",
+          runId: "run_1",
+          activity: {
+            contentIndex: 0,
+            toolCallId: "tool_1",
+            name: "write_file",
+            argsPreview: { path: "out.txt" },
+            updatedAt: "2026-06-13T00:00:00.500Z"
+          }
+        });
+        return new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        });
+      })
+    });
+
+    render(<App client={client} />);
+
+    fireEvent.change(await screen.findByLabelText("输入消息"), {
+      target: { value: "写一个很大的文件" }
+    });
+    fireEvent.click(screen.getByTitle("发送"));
+
+    await waitFor(() => {
+      const statuses = screen.getAllByTestId("tool-activity-status");
+      expect(statuses).toHaveLength(1);
+      expect(statuses[0]).toHaveTextContent("正在准备工具调用：写入 out.txt");
+    });
+    expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
+
+    act(() => {
+      emit?.({ type: "tool_call", runId: "run_1", toolCall: runningTool });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("tool-activity-status")).not.toBeInTheDocument()
+    );
+    expect(screen.queryByText(/正在调用工具/)).not.toBeInTheDocument();
+    expect(screen.getByText("写入 out.txt")).toBeInTheDocument();
+    expect(screen.queryByText(/完整内容/)).not.toBeInTheDocument();
+    resolveStream?.();
+  });
+
   it("can abort a running stream from the composer", async () => {
     let emit: ((event: Parameters<ApiClient["streamRun"]>[1] extends (event: infer E) => void ? E : never) => void) | undefined;
     let resolveStream: (() => void) | undefined;
@@ -559,6 +1094,84 @@ describe("App", () => {
       await within(screen.getByTestId("app-sidebar")).findByText("修复登录报错")
     ).toBeInTheDocument();
     resolveStream?.();
+  });
+
+  it("shows a loading marker on the running sidebar session", async () => {
+    let emit: ((event: AppEvent) => void) | undefined;
+    const session: Session = {
+      id: "session_1",
+      projectId: null,
+      title: "AI 日报会话",
+      providerId: "deepseek",
+      accessMode: "approval",
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:00.000Z"
+    };
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      subscribeAppEvents: vi.fn((listener: (event: AppEvent) => void) => {
+        emit = listener;
+        return vi.fn();
+      })
+    });
+
+    render(<App client={client} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+    await sidebar.findByText("AI 日报会话");
+
+    act(() => {
+      emit?.({
+        type: "scheduled_task_started",
+        taskId: "task_1",
+        sessionId: "session_1",
+        name: "AI 日报",
+        trigger: "schedule",
+        occurredAt: "2026-06-13T01:00:00.000Z"
+      });
+    });
+    expect(sidebar.getByTitle("正在处理")).toBeInTheDocument();
+
+    act(() => {
+      emit?.({
+        type: "scheduled_task_finished",
+        taskId: "task_1",
+        sessionId: "session_1",
+        name: "AI 日报",
+        trigger: "schedule",
+        status: "completed",
+        occurredAt: "2026-06-13T01:01:00.000Z"
+      });
+    });
+    await waitFor(() => expect(sidebar.queryByTitle("正在处理")).not.toBeInTheDocument());
+  });
+
+  it("shows a top-right toast when a scheduled task finishes", async () => {
+    let emit: ((event: AppEvent) => void) | undefined;
+    const client = createClient({
+      subscribeAppEvents: vi.fn((listener: (event: AppEvent) => void) => {
+        emit = listener;
+        return vi.fn();
+      })
+    });
+
+    render(<App client={client} />);
+    await waitFor(() => expect(client.listProjects).toHaveBeenCalled());
+
+    act(() => {
+      emit?.({
+        type: "scheduled_task_finished",
+        taskId: "task_1",
+        sessionId: "session_1",
+        name: "AI 日报",
+        trigger: "schedule",
+        status: "failed",
+        error: "模型超时",
+        occurredAt: "2026-06-13T01:01:00.000Z"
+      });
+    });
+
+    expect(await screen.findByText("定时任务「AI 日报」失败")).toBeInTheDocument();
+    expect(screen.getByText("错误：模型超时")).toBeInTheDocument();
   });
 
   it("sends with Enter and keeps Shift+Enter for newlines", async () => {
@@ -754,6 +1367,12 @@ describe("App", () => {
     const projectName = screen.getAllByText("demo")[0];
     fireEvent.contextMenu(projectName);
     fireEvent.click(await screen.findByText("删除项目"));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).getByText("确定删除该项目及其全部对话？项目目录中的文件不会被删除。")
+    ).toBeInTheDocument();
+    expect(window.confirm).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
     await waitFor(() => expect(deleteProject).toHaveBeenCalledWith("project_1"));
     expect(screen.queryByText("项目里的对话")).not.toBeInTheDocument();
     expect(screen.queryByText("demo")).not.toBeInTheDocument();
@@ -789,7 +1408,12 @@ describe("App", () => {
     expect(await screen.findByText("新标题")).toBeInTheDocument();
     expect(updateSession).toHaveBeenCalledWith("session_1", { title: "新标题" });
 
-    fireEvent.click(screen.getByTitle("删除会话"));
+    fireEvent.contextMenu(screen.getByText("新标题"));
+    fireEvent.click(await screen.findByText("删除会话"));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("确定删除该对话？")).toBeInTheDocument();
+    expect(window.confirm).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
     await waitFor(() => expect(deleteSession).toHaveBeenCalledWith("session_1"));
     expect(screen.queryByText("新标题")).not.toBeInTheDocument();
   });
@@ -870,7 +1494,7 @@ describe("App", () => {
     // ...and the streamed reasoning is captured into a collapsible panel.
     expect(await screen.findByText(/已深度思考/)).toBeInTheDocument();
     expect(screen.getByText("先拆解问题")).toBeInTheDocument();
-    // The persisted turn duration renders as a subtle footer (3400ms → 3s).
-    expect(screen.getByText("用时 3 秒")).toBeInTheDocument();
+    // 单轮耗时仍可持久化，但聊天正文下方不再展示耗时脚注。
+    expect(screen.queryByText("用时 3 秒")).not.toBeInTheDocument();
   });
 });

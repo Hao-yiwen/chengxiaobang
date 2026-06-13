@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import { accessModeSchema } from "./access-mode";
 import { messageSchema } from "./message";
-import { planStepSchema } from "./plan";
 import { projectSchema } from "./project";
 import { runRecordSchema } from "./run";
 import { sessionSchema } from "./session";
@@ -33,7 +32,7 @@ export const sessionDebugContextSchema = z.object({
     .object({
       toolCallId: z.string().min(1),
       title: z.string().min(1),
-      steps: z.array(planStepSchema),
+      markdown: z.string().min(1),
       confirmed: z.boolean(),
       finished: z.boolean()
     })

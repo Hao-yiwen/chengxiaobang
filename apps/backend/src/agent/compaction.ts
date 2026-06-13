@@ -1,7 +1,7 @@
 import { streamSimple } from "@earendil-works/pi-ai";
 import type { Context } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import type { ProviderConfig, Session, StreamEvent } from "@chengxiaobang/shared";
+import type { ProviderConfig, Session, StreamEvent, TokenUsage } from "@chengxiaobang/shared";
 import type { StateStore, StoredMessage } from "../repository/state-store";
 import { buildModel, buildModelStreamOptions, toTokenUsage } from "../model/pi-model";
 
@@ -44,6 +44,107 @@ export function buildCompactionContext(rows: StoredMessage[]): Context {
   };
 }
 
+export function compactableMessages(
+  messages: StoredMessage[],
+  compactedUpToMessageId?: string
+): StoredMessage[] {
+  const cutoffIndex = compactedUpToMessageId
+    ? messages.findIndex((message) => message.id === compactedUpToMessageId)
+    : -1;
+  const visible = messages.filter(
+    (message, index) => index > cutoffIndex && message.kind !== "compaction_summary"
+  );
+  return visible.slice(0, Math.max(0, visible.length - COMPACT_KEEP_RECENT));
+}
+
+export interface CompactionResult {
+  status: "completed" | "aborted";
+  compacted: boolean;
+  usage?: TokenUsage;
+  compactedUpToMessageId?: string;
+}
+
+export async function* compactSessionHistory(options: {
+  store: StateStore;
+  session: Session;
+  provider: ProviderConfig;
+  apiKey: string;
+  runId: string;
+  clientRequestId?: string;
+  signal: AbortSignal;
+  streamFn?: StreamFn;
+  emitNoopMessage?: boolean;
+  introDelta?: string;
+}): AsyncGenerator<StreamEvent, CompactionResult> {
+  const { store, session, runId, signal } = options;
+  const messages = await store.listMessages(session.id);
+  const toSummarize = compactableMessages(messages, session.compactedUpToMessageId);
+
+  if (toSummarize.length === 0) {
+    if (options.emitNoopMessage) {
+      const notice = await store.addMessage({
+        sessionId: session.id,
+        role: "assistant",
+        content: "当前对话内容较少，无需压缩。"
+      });
+      yield { type: "message", runId, message: notice };
+    }
+    return { status: "completed", compacted: false };
+  }
+
+  if (options.introDelta) {
+    yield { type: "delta", runId, channel: "thinking", delta: options.introDelta };
+  }
+
+  // 多次压缩时把旧摘要也纳入新摘要输入，避免较早上下文丢失。
+  const summaryRows = messages.filter((message) => message.kind === "compaction_summary");
+  const context = buildCompactionContext([...summaryRows, ...toSummarize]);
+
+  const streamFunction = options.streamFn ?? streamSimple;
+  const stream = await streamFunction(buildModel(options.provider), context, {
+    apiKey: options.apiKey,
+    ...buildModelStreamOptions(options.provider),
+    signal
+  });
+
+  let summaryText = "";
+  for await (const event of stream) {
+    if (signal.aborted) {
+      break;
+    }
+    if (event.type === "text_delta") {
+      summaryText += event.delta;
+      yield { type: "delta", runId, channel: "thinking", delta: event.delta };
+    } else if (event.type === "thinking_delta") {
+      yield { type: "delta", runId, channel: "thinking", delta: event.delta };
+    }
+  }
+  const result = await stream.result();
+  if (result.stopReason === "error") {
+    throw new Error(result.errorMessage ?? "模型请求失败");
+  }
+
+  if (signal.aborted || summaryText.trim().length === 0) {
+    return { status: "aborted", compacted: false };
+  }
+
+  const summaryMessage = await store.addMessage({
+    sessionId: session.id,
+    role: "assistant",
+    kind: "compaction_summary",
+    content: summaryText.trim()
+  });
+  const compactedUpToMessageId = toSummarize[toSummarize.length - 1].id;
+  await store.updateSession(session.id, { compactedUpToMessageId });
+  yield { type: "message", runId, message: summaryMessage };
+  return {
+    status: "completed",
+    compacted: true,
+    compactedUpToMessageId,
+    usage: toTokenUsage(result.usage)
+  };
+}
+
 /**
  * Summarize older history into a compaction summary message and move the
  * session's compaction pointer, so future runs send [summary + recent
@@ -55,6 +156,7 @@ export async function* runCompaction(options: {
   provider: ProviderConfig;
   apiKey: string;
   runId: string;
+  clientRequestId?: string;
   signal: AbortSignal;
   streamFn?: StreamFn;
 }): AsyncGenerator<StreamEvent> {
@@ -63,88 +165,42 @@ export async function* runCompaction(options: {
     type: "run_started",
     runId,
     sessionId: session.id,
+    ...(options.clientRequestId ? { clientRequestId: options.clientRequestId } : {}),
     providerId: options.provider.id,
     model: options.provider.model,
     ...(options.provider.reasoningMode ? { reasoningMode: options.provider.reasoningMode } : {})
   };
   try {
-    const messages = await store.listMessages(session.id);
-    const cutoffIndex = session.compactedUpToMessageId
-      ? messages.findIndex((message) => message.id === session.compactedUpToMessageId)
-      : -1;
-    const visible = messages.filter(
-      (message, index) => index > cutoffIndex && message.kind !== "compaction_summary"
-    );
-    const toSummarize = visible.slice(0, Math.max(0, visible.length - COMPACT_KEEP_RECENT));
-
-    if (toSummarize.length === 0) {
-      const notice = await store.addMessage({
-        sessionId: session.id,
-        role: "assistant",
-        content: "当前对话内容较少，无需压缩。"
-      });
-      yield { type: "message", runId, message: notice };
-      await store.updateRunStatus(runId, "completed");
-      yield { type: "run_end", runId, status: "completed" };
-      return;
-    }
-
-    // Fold the previous summary (if any) into the new one so repeated
-    // /compact never loses earlier context.
-    const summaryRows = messages.filter((message) => message.kind === "compaction_summary");
-    const context = buildCompactionContext([...summaryRows, ...toSummarize]);
-
-    const streamFunction = options.streamFn ?? streamSimple;
-    const stream = await streamFunction(buildModel(options.provider), context, {
+    const result = yield* compactSessionHistory({
+      store,
+      session,
+      provider: options.provider,
       apiKey: options.apiKey,
-      ...buildModelStreamOptions(options.provider),
-      signal
+      runId,
+      signal,
+      streamFn: options.streamFn,
+      emitNoopMessage: true
     });
-
-    let summaryText = "";
-    for await (const event of stream) {
-      if (signal.aborted) {
-        break;
-      }
-      // Streamed as thinking so the renderer shows live progress in the
-      // reasoning panel without treating it as a chat answer.
-      if (event.type === "text_delta") {
-        summaryText += event.delta;
-        yield { type: "delta", runId, channel: "thinking", delta: event.delta };
-      } else if (event.type === "thinking_delta") {
-        yield { type: "delta", runId, channel: "thinking", delta: event.delta };
-      }
-    }
-    const result = await stream.result();
-    if (result.stopReason === "error") {
-      throw new Error(result.errorMessage ?? "模型请求失败");
-    }
-
-    if (signal.aborted || summaryText.trim().length === 0) {
+    if (result.status === "aborted") {
       await store.updateRunStatus(runId, "aborted");
       yield { type: "run_end", runId, status: "aborted" };
       return;
     }
-
-    const summaryMessage = await store.addMessage({
-      sessionId: session.id,
-      role: "assistant",
-      kind: "compaction_summary",
-      content: summaryText.trim()
-    });
-    await store.updateSession(session.id, {
-      compactedUpToMessageId: toSummarize[toSummarize.length - 1].id
-    });
-    yield { type: "message", runId, message: summaryMessage };
-    await store.updateRunStatus(runId, "completed");
-    yield { type: "run_end", runId, status: "completed", usage: toTokenUsage(result.usage) };
+    if (!result.compacted) {
+      await store.updateRunStatus(runId, "completed");
+      yield { type: "run_end", runId, status: "completed" };
+      return;
+    }
+    await store.updateRunStatus(runId, "completed", result.usage);
+    yield { type: "run_end", runId, status: "completed", usage: result.usage };
   } catch (error) {
-    await store.updateRunStatus(runId, "failed");
+    const errorText = error instanceof Error ? error.message : String(error);
+    await store.updateRunStatus(runId, "failed", undefined, errorText);
     yield {
       type: "run_end",
       runId,
       status: "failed",
-      error: error instanceof Error ? error.message : String(error)
+      error: errorText
     };
   }
 }

@@ -89,11 +89,25 @@ export const builtinSlashCommands: SlashCommand[] = [
   }
 ];
 
+export interface SlashCommandServiceOptions {
+  /** 随应用分发的市场技能目录；默认 builtin 根旁的 skills-market。 */
+  marketRoot?: string;
+  /** 已激活市场技能名集合；未注入时市场技能一律不加载。 */
+  enabledMarketSkills?: () => Promise<Set<string>>;
+}
+
 export class SlashCommandService {
+  private readonly marketRoot: string;
+  private readonly enabledMarketSkills?: () => Promise<Set<string>>;
+
   constructor(
     private readonly globalRoot = join(homedir(), ".chengxiaobang"),
-    private readonly builtinRoot = builtinResourceRoot()
-  ) {}
+    private readonly builtinRoot = builtinResourceRoot(),
+    options: SlashCommandServiceOptions = {}
+  ) {
+    this.marketRoot = options.marketRoot ?? join(builtinResourceRoot(), "skills-market");
+    this.enabledMarketSkills = options.enabledMarketSkills;
+  }
 
   async list(project?: Project): Promise<{
     commands: SlashCommand[];
@@ -204,7 +218,42 @@ export class SlashCommandService {
       );
       await env.cleanup();
     }
+    resources.push(...(await this.loadMarketSkills(diagnostics)));
     return resources;
+  }
+
+  /** 市场技能与内置技能同根分发，但只有被用户激活的才进入命令/技能清单。 */
+  private async loadMarketSkills(
+    diagnostics: SlashCommandDiagnostic[]
+  ): Promise<LoadedResource[]> {
+    if (!this.enabledMarketSkills) {
+      return [];
+    }
+    const enabled = await this.enabledMarketSkills();
+    if (enabled.size === 0) {
+      return [];
+    }
+    const env = new NodeExecutionEnv({ cwd: this.marketRoot });
+    try {
+      const skillResult = await loadSkills(env, [this.marketRoot]);
+      diagnostics.push(
+        ...skillResult.diagnostics.map((diagnostic) => ({
+          type: "warning" as const,
+          message: diagnostic.message,
+          path: diagnostic.path,
+          source: "market" as const
+        }))
+      );
+      return skillResult.skills
+        .filter((skill) => enabled.has(skill.name))
+        .map((skill) => ({
+          kind: "skill" as const,
+          source: "market" as const,
+          skill
+        }));
+    } finally {
+      await env.cleanup();
+    }
   }
 }
 
@@ -302,9 +351,12 @@ function compareCommands(a: SlashCommand, b: SlashCommand): number {
 
 function sourceRank(source: SlashCommandSource): number {
   if (source === "project") {
-    return 2;
+    return 3;
   }
   if (source === "global") {
+    return 2;
+  }
+  if (source === "market") {
     return 1;
   }
   return 0;
