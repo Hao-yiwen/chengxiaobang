@@ -99,6 +99,13 @@ async function resolveResourcesPath() {
 }
 
 async function verifyPackagedResources(resourcesPath, bunPath, backendEntry) {
+  const canvasPackage = join(
+    resourcesPath,
+    "app.asar.unpacked",
+    "node_modules",
+    "@napi-rs",
+    "canvas"
+  );
   const requiredPaths = [
     resourcesPath,
     bunPath,
@@ -109,18 +116,66 @@ async function verifyPackagedResources(resourcesPath, bunPath, backendEntry) {
     join(resourcesPath, "app.asar.unpacked", "node_modules", "node-pty"),
     join(resourcesPath, "app.asar.unpacked", "node_modules", "sharp"),
     join(resourcesPath, "app.asar.unpacked", "node_modules", "onnxruntime-node"),
-    join(resourcesPath, "app.asar.unpacked", "node_modules", "@napi-rs", "canvas")
+    canvasPackage
   ];
   for (const path of requiredPaths) {
     if (!existsSync(path)) {
       throw new Error(`打包资源缺失: ${path}`);
     }
   }
-  const napiScope = join(resourcesPath, "app.asar.unpacked", "node_modules", "@napi-rs");
-  const napiEntries = await readdir(napiScope).catch(() => []);
-  if (!napiEntries.some((name) => name.startsWith("canvas-"))) {
-    throw new Error(`未找到 @napi-rs/canvas 平台原生包: ${napiScope}`);
+  const canvasNative = await findCanvasNativeBinding(resourcesPath, canvasPackage);
+  if (!canvasNative) {
+    const candidates = getCanvasNativeCandidates(resourcesPath, canvasPackage)
+      .map((candidate) => candidate.path)
+      .join(", ");
+    throw new Error(`未找到 @napi-rs/canvas 当前平台 native 资源，已检查: ${candidates}`);
   }
+  console.info("[smoke] 已找到 @napi-rs/canvas native 资源", {
+    platform: process.platform,
+    arch: process.arch,
+    path: canvasNative.path,
+    type: canvasNative.type
+  });
+}
+
+async function findCanvasNativeBinding(resourcesPath, canvasPackage) {
+  for (const candidate of getCanvasNativeCandidates(resourcesPath, canvasPackage)) {
+    if (!existsSync(candidate.path)) {
+      continue;
+    }
+    if (candidate.type === "file") {
+      return candidate;
+    }
+    const entries = await readdir(candidate.path).catch(() => []);
+    if (entries.some((entry) => entry.endsWith(".node"))) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function getCanvasNativeCandidates(resourcesPath, canvasPackage) {
+  const napiScope = join(resourcesPath, "app.asar.unpacked", "node_modules", "@napi-rs");
+  if (process.platform === "win32" && process.arch === "x64") {
+    return [
+      { type: "file", path: join(canvasPackage, "skia.win32-x64-msvc.node") },
+      { type: "file", path: join(canvasPackage, "skia.win32-x64-gnu.node") },
+      { type: "directory", path: join(napiScope, "canvas-win32-x64-msvc") },
+      { type: "directory", path: join(napiScope, "canvas-win32-x64-gnu") }
+    ];
+  }
+  if (process.platform === "darwin") {
+    const archSuffix = process.arch === "arm64" ? "arm64" : "x64";
+    return [
+      { type: "file", path: join(canvasPackage, "skia.darwin-universal.node") },
+      { type: "file", path: join(canvasPackage, `skia.darwin-${archSuffix}.node`) },
+      { type: "directory", path: join(napiScope, "canvas-darwin-universal") },
+      { type: "directory", path: join(napiScope, `canvas-darwin-${archSuffix}`) }
+    ];
+  }
+  return [
+    { type: "file", path: join(canvasPackage, `skia.${process.platform}-${process.arch}.node`) }
+  ];
 }
 
 async function waitForHealth(port, child) {

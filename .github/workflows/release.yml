@@ -197,11 +197,19 @@ jobs:
               throw "打包资源缺失: $path"
             }
           }
-          $napiScope = Join-Path $resources "app.asar.unpacked/node_modules/@napi-rs"
-          $canvasNative = Get-ChildItem $napiScope -Directory -Filter "canvas-*" -ErrorAction SilentlyContinue
-          if ($canvasNative.Count -eq 0) {
-            throw "未找到 @napi-rs/canvas 平台原生包: $napiScope"
+          $canvasPackage = Join-Path $resources "app.asar.unpacked/node_modules/@napi-rs/canvas"
+          $canvasCandidates = @(
+            (Join-Path $canvasPackage "skia.win32-x64-msvc.node"),
+            (Join-Path $canvasPackage "skia.win32-x64-gnu.node"),
+            (Join-Path $resources "app.asar.unpacked/node_modules/@napi-rs/canvas-win32-x64-msvc"),
+            (Join-Path $resources "app.asar.unpacked/node_modules/@napi-rs/canvas-win32-x64-gnu")
+          )
+          $canvasNative = $canvasCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $canvasNative) {
+            $canvasCandidates | ForEach-Object { Write-Host "检查 @napi-rs/canvas native 候选: $_" }
+            throw "未找到 @napi-rs/canvas Windows x64 native 资源"
           }
+          Write-Host "已找到 @napi-rs/canvas native 资源: $canvasNative"
 
       - name: Smoke packaged backend
         run: pnpm --filter @chengxiaobang/desktop run smoke:packaged-backend

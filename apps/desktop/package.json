@@ -85,6 +85,11 @@
     "xlsx": "^0.18.5",
     "zustand": "^5.0.14"
   },
+  "optionalDependencies": {
+    "@napi-rs/canvas-darwin-arm64": "1.0.0",
+    "@napi-rs/canvas-darwin-x64": "1.0.0",
+    "@napi-rs/canvas-win32-x64-msvc": "1.0.0"
+  },
   "devDependencies": {
     "electron": "39.2.6",
     "electron-builder": "24.13.3",

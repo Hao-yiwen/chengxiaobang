@@ -297,6 +297,16 @@ importers:
       zustand:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.2.7)(react@19.2.1)(use-sync-external-store@1.6.0(react@19.2.1))
+    optionalDependencies:
+      '@napi-rs/canvas-darwin-arm64':
+        specifier: 1.0.0
+        version: 1.0.0
+      '@napi-rs/canvas-darwin-x64':
+        specifier: 1.0.0
+        version: 1.0.0
+      '@napi-rs/canvas-win32-x64-msvc':
+        specifier: 1.0.0
+        version: 1.0.0
     devDependencies:
       electron:
         specifier: 39.2.6
