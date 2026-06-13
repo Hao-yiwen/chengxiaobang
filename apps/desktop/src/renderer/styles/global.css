@@ -272,6 +272,9 @@
   /* Streamdown Markdown：保留原生结构和 controls，只把视觉压进 DESIGN.md 的灰阶系统。 */
   .markdown-streamdown {
     color: rgb(var(--foreground));
+    font-size: 13px;
+    line-height: 18px;
+    letter-spacing: -0.26px;
     overflow-wrap: anywhere;
   }
 
@@ -483,14 +486,12 @@
     }
   }
 
-  @container (min-width: 1096px) {
+  @container (min-width: 960px) {
     .chat-primary-column {
-      max-width: calc(48rem + 244px);
-      padding-right: 244px;
+      max-width: calc(48rem + 18rem);
+      padding-right: 18rem;
     }
-  }
 
-  @container (min-width: 1160px) {
     .chat-floating-stack {
       display: flex;
     }

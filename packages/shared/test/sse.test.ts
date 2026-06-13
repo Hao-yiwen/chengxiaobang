@@ -35,8 +35,11 @@ describe("SSE helpers", () => {
       expect(parseSseChunk(encodeSseEvent(event))).toEqual([event]);
     }
 
+    expect(encodeSseEvent(events[1], "42")).toContain("id: 42\n");
+    expect(parseSseChunk(encodeSseEvent(events[1], "42"))).toEqual([events[1]]);
+
     // Multiple blocks in one chunk parse in order.
-    expect(parseSseChunk(events.map(encodeSseEvent).join(""))).toEqual(events);
+    expect(parseSseChunk(events.map((event) => encodeSseEvent(event)).join(""))).toEqual(events);
   });
 
   it("round trips app-level scheduled task events", () => {
@@ -61,6 +64,6 @@ describe("SSE helpers", () => {
       }
     ];
 
-    expect(parseSseChunk(events.map(encodeSseEvent).join(""))).toEqual(events);
+    expect(parseSseChunk(events.map((event) => encodeSseEvent(event)).join(""))).toEqual(events);
   });
 });

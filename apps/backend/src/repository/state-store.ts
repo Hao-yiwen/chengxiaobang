@@ -7,6 +7,7 @@ import type {
   ReasoningMode,
   RunRecord,
   ScheduledTask,
+  ScheduledTaskKind,
   ScheduledTaskStatus,
   Session,
   SessionSearchResult,
@@ -88,19 +89,23 @@ export interface CreateScheduledTaskInput {
   sessionId: string;
   name: string;
   prompt: string;
-  cron: string;
+  kind: ScheduledTaskKind;
+  cron?: string;
+  runAt?: string;
   fullAccess: boolean;
-  /** 创建时由 cron 算好（UTC ISO），调度器据此判断到期。 */
+  /** 创建时算好的下一次触发时间（UTC ISO），调度器据此判断到期。 */
   nextRunAt: string;
 }
 
 export interface UpdateScheduledTaskInput {
   name?: string;
   cron?: string;
+  runAt?: string;
   prompt?: string;
   enabled?: boolean;
   fullAccess?: boolean;
-  nextRunAt?: string;
+  /** undefined 保持原值；null 显式清空，通常用于一次性任务执行后过期。 */
+  nextRunAt?: string | null;
   lastRunAt?: string;
   lastStatus?: ScheduledTaskStatus;
   /** undefined preserves the current value; null clears it. */

@@ -81,12 +81,19 @@ export function mapSessionSearchResult(row: Row, query: string): SessionSearchRe
 }
 
 export function mapScheduledTask(row: Row): ScheduledTask {
+  const kind: ScheduledTask["kind"] = row.kind === "once" ? "once" : "recurring";
   return {
     id: String(row.id),
     sessionId: String(row.session_id),
     name: String(row.name),
     prompt: String(row.prompt),
-    cron: String(row.cron),
+    kind,
+    ...(kind === "recurring" && row.cron !== null && row.cron !== undefined && String(row.cron)
+      ? { cron: String(row.cron) }
+      : {}),
+    ...(kind === "once" && row.run_at !== null && row.run_at !== undefined
+      ? { runAt: String(row.run_at) }
+      : {}),
     fullAccess: Number(row.full_access) === 1,
     enabled: Number(row.enabled) === 1,
     ...(row.next_run_at === null || row.next_run_at === undefined

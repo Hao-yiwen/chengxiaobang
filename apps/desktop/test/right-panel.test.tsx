@@ -430,6 +430,22 @@ function todoToolCall(
   };
 }
 
+function historicalTodoToolCall(partial: Partial<ToolCall>): ToolCall {
+  return {
+    id: "todo_history_1",
+    runId: "run_history",
+    name: "todo_create",
+    args: {
+      title: "历史执行进度",
+      items: [{ id: "s1", title: "历史步骤" }]
+    },
+    status: "completed",
+    createdAt: "2026-06-12T00:00:01.000Z",
+    updatedAt: "2026-06-12T00:00:01.000Z",
+    ...partial
+  };
+}
+
 describe("right panel", () => {
   it("opens on the menu page, navigates back from a tool and closes", async () => {
     const client = createClient();
@@ -511,6 +527,175 @@ describe("right panel", () => {
     expect(screen.getByText("完成")).toBeInTheDocument();
   });
 
+  it("shows historical todo progress after loading a completed session", async () => {
+    const client = createClient({
+      listSessionRuns: vi.fn(async () => ({
+        runs: [
+          {
+            id: "run_history",
+            sessionId: session.id,
+            status: "completed" as const,
+            createdAt: "2026-06-12T00:00:00.000Z",
+            updatedAt: "2026-06-12T00:00:03.000Z"
+          }
+        ],
+        toolCalls: [
+          historicalTodoToolCall({
+            id: "todo_history_1",
+            args: {
+              title: "历史执行进度",
+              items: [
+                { id: "s1", title: "读取项目结构" },
+                { id: "s2", title: "生成总结" }
+              ]
+            }
+          }),
+          historicalTodoToolCall({
+            id: "todo_history_2",
+            name: "todo_update",
+            args: {
+              itemId: "s1",
+              status: "completed",
+              note: "项目结构读取完成"
+            },
+            createdAt: "2026-06-12T00:00:02.000Z",
+            updatedAt: "2026-06-12T00:00:02.000Z"
+          })
+        ]
+      }))
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+
+    expect(useAppStore.getState().progressPanelOpen).toBe(false);
+    expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
+    expect(screen.getByText("最近清单")).toBeInTheDocument();
+    expect(screen.getByText("历史执行进度")).toBeInTheDocument();
+    expect(screen.getByText("项目结构读取完成")).toBeInTheDocument();
+  });
+
+  it("keeps completed historical todo progress visible", async () => {
+    const client = createClient({
+      listSessionRuns: vi.fn(async () => ({
+        runs: [
+          {
+            id: "run_history",
+            sessionId: session.id,
+            status: "completed" as const,
+            createdAt: "2026-06-12T00:00:00.000Z",
+            updatedAt: "2026-06-12T00:00:03.000Z"
+          }
+        ],
+        toolCalls: [
+          historicalTodoToolCall({
+            id: "todo_done_1",
+            args: {
+              title: "已完成的历史进度",
+              items: [{ id: "s1", title: "完成页面" }]
+            }
+          }),
+          historicalTodoToolCall({
+            id: "todo_done_2",
+            name: "todo_update",
+            args: { itemId: "s1", status: "completed", note: "页面已完成" },
+            createdAt: "2026-06-12T00:00:02.000Z",
+            updatedAt: "2026-06-12T00:00:02.000Z"
+          })
+        ]
+      }))
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+
+    expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
+    expect(screen.getByText("已完成的历史进度")).toBeInTheDocument();
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
+    expect(screen.getByText("页面已完成")).toBeInTheDocument();
+  });
+
+  it("hides historical progress after switching to a session without todo history", async () => {
+    const client = createClient({
+      listSessions: vi.fn(async () => [session, secondSession]),
+      listSessionRuns: vi.fn(async (sessionId: string) =>
+        sessionId === session.id
+          ? {
+              runs: [
+                {
+                  id: "run_history",
+                  sessionId: session.id,
+                  status: "completed" as const,
+                  createdAt: "2026-06-12T00:00:00.000Z",
+                  updatedAt: "2026-06-12T00:00:03.000Z"
+                }
+              ],
+              toolCalls: [historicalTodoToolCall({})]
+            }
+          : { runs: [], toolCalls: [] }
+      )
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+    expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
+
+    await selectSession("另一个项目对话");
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("progress-floating-panel")).not.toBeInTheDocument()
+    );
+  });
+
+  it("does not show stale historical progress while a new run has no todo yet", async () => {
+    const client = createClient({
+      listSessionRuns: vi.fn(async () => ({
+        runs: [
+          {
+            id: "run_history",
+            sessionId: session.id,
+            status: "completed" as const,
+            createdAt: "2026-06-12T00:00:00.000Z",
+            updatedAt: "2026-06-12T00:00:03.000Z"
+          }
+        ],
+        toolCalls: [historicalTodoToolCall({})]
+      }))
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+    expect(await screen.findByText("历史执行进度")).toBeInTheDocument();
+
+    act(() => {
+      useAppStore
+        .getState()
+        .handleRunEvent({ type: "run_started", runId: "run_todo", sessionId: session.id }, { force: true });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("progress-floating-panel")).not.toBeInTheDocument()
+    );
+
+    act(() => {
+      useAppStore.getState().handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall("todo_1", "todo_create", {
+            title: "当前运行进度",
+            items: [{ id: "s1", title: "开始执行" }]
+          })
+        },
+        { force: true }
+      );
+    });
+
+    expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
+    expect(screen.getByText("当前运行")).toBeInTheDocument();
+    expect(screen.getByText("当前运行进度")).toBeInTheDocument();
+  });
+
   it("keeps progress updates in the floating panel without opening the right panel", async () => {
     const client = createClient();
     render(<App client={client} />);
@@ -543,7 +728,8 @@ describe("right panel", () => {
     expect(useAppStore.getState().progressPanelOpen).toBe(true);
     expect(useAppStore.getState().rightPanelOpen).toBe(false);
     expect(screen.queryByTestId("right-panel")).not.toBeInTheDocument();
-    expect(panel).toHaveClass("chat-progress-floating", "shadow-overlay");
+    expect(panel).toHaveClass("chat-progress-floating", "bg-card");
+    expect(panel).not.toHaveClass("shadow-overlay", "backdrop-blur-sm", "bg-card/95");
     expect(scrollRegion).toHaveClass("overflow-x-hidden", "[scrollbar-gutter:stable]");
 
     act(() => {
@@ -791,6 +977,90 @@ describe("right panel", () => {
       allowCwdFallback: false
     });
     expect(bridge.createFileUrl).toHaveBeenCalledWith("/tmp/demo/page.html");
+  });
+
+  it("lists declared markdown artifacts in the floating artifact panel", async () => {
+    const bridge = installPreviewBridge({
+      kind: "markdown",
+      text: "# 日报\n\n正文"
+    });
+    const client = createClient({
+      listMessages: vi.fn(async () => [artifactMessage("AI日报_2026-06-13.md")])
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+
+    const panel = await screen.findByTestId("artifact-floating-panel");
+    expect(within(panel).getByText("1 个产物")).toBeInTheDocument();
+    const artifactButton = within(panel).getByRole("button", {
+      name: /AI日报_2026-06-13\.md/u
+    });
+
+    fireEvent.click(artifactButton);
+
+    expect(await screen.findByText("正文")).toBeInTheDocument();
+    expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("AI日报_2026-06-13.md", {
+      projectPath: project.path,
+      sessionId: session.id,
+      allowCwdFallback: false
+    });
+    expect(bridge.readFilePreviewText).toHaveBeenCalledWith(
+      "/tmp/demo/AI日报_2026-06-13.md",
+      {
+        maxBytes: 524288
+      }
+    );
+  });
+
+  it("restores legacy HTML tool artifacts in the floating artifact panel", async () => {
+    const bridge = installPreviewBridge({
+      kind: "html",
+      fileUrl: "file:///tmp/demo/page.html"
+    });
+    const client = createClient({
+      listMessages: vi.fn(async () => []),
+      listSessionRuns: vi.fn(async () => ({
+        runs: [],
+        toolCalls: [
+          {
+            id: "tool_html",
+            runId: "run_html",
+            name: "write_file",
+            args: { path: "page.html", content: "<!doctype html>" },
+            status: "completed",
+            createdAt: "2026-06-08T00:00:01.000Z",
+            updatedAt: "2026-06-08T00:00:02.000Z"
+          },
+          {
+            id: "tool_code",
+            runId: "run_code",
+            name: "write_file",
+            args: { path: "src/App.tsx", content: "export {}" },
+            status: "completed",
+            createdAt: "2026-06-08T00:00:03.000Z",
+            updatedAt: "2026-06-08T00:00:04.000Z"
+          }
+        ] satisfies ToolCall[]
+      }))
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+
+    const panel = await screen.findByTestId("artifact-floating-panel");
+    expect(within(panel).getByText("1 个产物")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: /page\.html/u })).toBeInTheDocument();
+    expect(within(panel).queryByText("App.tsx")).not.toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole("button", { name: /page\.html/u }));
+
+    expect(await screen.findByText("HTML / SVG · 17 B")).toBeInTheDocument();
+    expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("page.html", {
+      projectPath: project.path,
+      sessionId: session.id,
+      allowCwdFallback: false
+    });
   });
 
   it("shows artifact floating panel above the progress floating panel", async () => {

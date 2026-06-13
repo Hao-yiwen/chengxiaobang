@@ -106,7 +106,11 @@ export function assessToolApprovalRisk(
     };
   }
 
-  if (toolName === "schedule_create" || toolName === "schedule_cancel") {
+  if (
+    toolName === "schedule_create" ||
+    toolName === "schedule_create_once" ||
+    toolName === "schedule_cancel"
+  ) {
     return {
       risk: "medium",
       requiresGate: true,

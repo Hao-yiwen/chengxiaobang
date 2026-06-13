@@ -6,6 +6,7 @@ import { ApprovalDock } from "./components/ApprovalDock";
 import { ChatView } from "./components/ChatView";
 import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
+import { ConnectPhoneView } from "./components/ConnectPhoneView";
 import { ConfirmDialogProvider } from "./components/ConfirmDialog";
 import { HomeMascot } from "./components/HomeMascot";
 import { HomeStarters } from "./components/HomeStarters";
@@ -195,6 +196,8 @@ export function App(props: { client?: ApiClient }) {
                     <TasksView />
                   ) : view === "skills" ? (
                     <SkillsView />
+                  ) : view === "connectPhone" ? (
+                    <ConnectPhoneView />
                   ) : view === "home" ? (
                     <div className="flex min-h-0 flex-1 overflow-y-auto px-6 py-10 sm:px-8 sm:py-12">
                       <div className="m-auto flex w-full max-w-[62rem] flex-col items-center">

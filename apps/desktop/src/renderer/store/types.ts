@@ -42,7 +42,7 @@ import type { ApiClient } from "../lib/api";
 import type { Locale } from "../i18n";
 
 export type Theme = "light" | "dark" | "system";
-export type View = "home" | "chat" | "settings" | "tasks" | "skills";
+export type View = "home" | "chat" | "settings" | "tasks" | "skills" | "connectPhone";
 export type RightPanelMode = "changes" | "terminal" | "browser" | "files" | "chat";
 export type ScheduledTaskFinishedEvent = Extract<ScheduledTaskEvent, { type: "scheduled_task_finished" }>;
 export type SessionRunHistory = { runs: RunRecord[]; toolCalls: ToolCall[] };
@@ -300,7 +300,7 @@ export interface AppState {
     options?: RunPromptOptions
   ): Promise<void>;
   removeQueuedRun(id: string): void;
-  updateQueuedRun(id: string, content: string): void;
+  editQueuedRunInComposer(id: string): void;
   clearQueuedRuns(sessionId?: string): void;
   resumeQueuedRuns(sessionId?: string): Promise<void>;
   sendQueuedRunAsSteering(id: string): Promise<void>;

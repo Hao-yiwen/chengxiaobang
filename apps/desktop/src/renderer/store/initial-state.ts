@@ -18,6 +18,7 @@ import type {
   WebSearchConfig
 } from "@chengxiaobang/shared";
 import { DEFAULT_LOCALE, type Locale } from "../i18n";
+import { DEFAULT_RIGHT_PANEL_WIDTH } from "./helpers/right-panel";
 import type {
   AppState,
   Attachment,
@@ -96,7 +97,7 @@ export const initialState =  {
   sidebarOpen: true,
   rightPanelOpen: false,
   rightPanelMode: null as RightPanelMode | null,
-  rightPanelWidth: 380,
+  rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH,
   previewFile: undefined as PreviewFileState | undefined,
   browserUrl: "",
   rightPanelBySession: {} as Record<string, RightPanelSessionState>,

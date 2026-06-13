@@ -84,7 +84,9 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       session_id text not null,
       name text not null,
       prompt text not null,
+      kind text not null default 'recurring',
       cron text not null,
+      run_at text,
       full_access integer not null default 0,
       enabled integer not null default 1,
       next_run_at text,
@@ -132,6 +134,8 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
   ensureColumn(connection, "providers", "models", "text");
   ensureColumn(connection, "projects", "pinned_at", "text");
   ensureColumn(connection, "sessions", "pinned_at", "text");
+  ensureColumn(connection, "scheduled_tasks", "kind", "text not null default 'recurring'");
+  ensureColumn(connection, "scheduled_tasks", "run_at", "text");
   migrateProviderPresets(connection);
   markInterruptedRunsFromPreviousProcess(connection);
 }

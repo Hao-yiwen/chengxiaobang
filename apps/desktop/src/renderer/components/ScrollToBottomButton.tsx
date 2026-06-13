@@ -1,7 +1,7 @@
 import { ArrowDownIcon as ArrowDown } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 
-/** Floating control shown when the user has scrolled away from the newest content. */
+/** 用户离开最新内容时显示的回到底部浮动按钮。 */
 export function ScrollToBottomButton({ onClick }: { onClick: () => void }) {
   const { t } = useTranslation();
   return (
@@ -10,7 +10,7 @@ export function ScrollToBottomButton({ onClick }: { onClick: () => void }) {
       aria-label={t("chat.scrollToBottom")}
       title={t("chat.scrollToBottom")}
       onClick={onClick}
-      className="absolute inset-x-0 bottom-4 z-10 mx-auto w-fit animate-scale-in rounded-full border bg-card p-2 text-muted-foreground shadow-overlay transition-colors hover:bg-muted hover:text-foreground"
+      className="pointer-events-auto animate-scale-in rounded-full border bg-card p-2 text-muted-foreground shadow-overlay transition-colors hover:bg-muted hover:text-foreground"
     >
       <ArrowDown className="size-4" />
     </button>

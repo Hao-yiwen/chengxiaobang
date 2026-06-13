@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
@@ -24,6 +24,7 @@ const task: ScheduledTask = {
   sessionId: "session_1",
   name: "AI 日报",
   prompt: "生成今天的 AI 日报",
+  kind: "recurring",
   cron: "0 9 * * *",
   fullAccess: false,
   enabled: true,
@@ -32,6 +33,21 @@ const task: ScheduledTask = {
   lastStatus: "completed",
   createdAt: "2026-06-12T00:00:00.000Z",
   updatedAt: "2026-06-13T01:00:00.000Z"
+};
+
+const expiredTask: ScheduledTask = {
+  id: "task_expired",
+  sessionId: "session_1",
+  name: "一次性提醒",
+  prompt: "提醒我整理周报",
+  kind: "once",
+  runAt: "2026-06-13T10:00:00.000Z",
+  fullAccess: false,
+  enabled: false,
+  lastRunAt: "2026-06-13T10:00:00.000Z",
+  lastStatus: "completed",
+  createdAt: "2026-06-12T00:00:00.000Z",
+  updatedAt: "2026-06-13T10:00:00.000Z"
 };
 
 const project: Project = {
@@ -106,17 +122,47 @@ afterEach(() => {
 
 describe("TasksView", () => {
   it("opens from the sidebar entry and lists scheduled tasks", async () => {
-    const client = createClient();
+    const client = createClient({ listTasks: vi.fn(async () => [task, expiredTask]) });
     render(<App client={client} />);
     await waitFor(() => expect(client.listProjects).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText("定时任务"));
 
     await waitFor(() => expect(client.listTasks).toHaveBeenCalled());
+    expect(screen.getByText("正在运行的任务")).toBeInTheDocument();
+    const activeGrid = screen.getByTestId("tasks-grid");
+    expect(activeGrid).toHaveClass("sm:grid-cols-2");
     expect(await screen.findByText("AI 日报")).toBeInTheDocument();
-    expect(screen.getByText("生成今天的 AI 日报")).toBeInTheDocument();
-    expect(screen.getByText("cron：0 9 * * *")).toBeInTheDocument();
-    expect(screen.getByText("成功")).toBeInTheDocument();
+    expect(within(activeGrid).getByText("生成今天的 AI 日报")).toBeInTheDocument();
+    expect(within(activeGrid).getByText("成功")).toBeInTheDocument();
+    expect(within(activeGrid).queryByText("一次性提醒")).not.toBeInTheDocument();
+    expect(screen.queryByText("cron：0 9 * * *")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "展开 1 个已过期任务" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
+    expect(
+      screen.queryByRole("button", { name: "查看「一次性提醒」详情" })
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看「AI 日报」详情" }));
+
+    expect(await screen.findByText("任务详情")).toBeInTheDocument();
+    expect(screen.getByText("cron")).toBeInTheDocument();
+    expect(screen.getByText("0 9 * * *")).toBeInTheDocument();
+    expect(screen.getByText("需要审批")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await waitFor(() => expect(screen.queryByText("0 9 * * *")).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "展开 1 个已过期任务" }));
+
+    const expiredGrid = await screen.findByTestId("expired-tasks-grid");
+    expect(within(expiredGrid).queryByRole("switch")).not.toBeInTheDocument();
+    expect(within(expiredGrid).getByText(/计划执行/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看「一次性提醒」详情" }));
+
+    expect(await screen.findByText("计划执行时间")).toBeInTheDocument();
+    expect(screen.queryByText("cron")).not.toBeInTheDocument();
   });
 
   it("toggles, runs and deletes a task through the api client", async () => {

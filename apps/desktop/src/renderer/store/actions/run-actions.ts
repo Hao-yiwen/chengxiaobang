@@ -12,6 +12,7 @@ import { appendMessage, upsertSession, upsertToolCall } from "../helpers/collect
 import {
   clearActiveComposerDraft,
   clearActiveComposerInput,
+  rememberComposerDraft,
   sessionComposerDraftScope,
   switchComposerDraftScope
 } from "../helpers/composer-drafts";
@@ -449,19 +450,41 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
         set((state) => dropQueuedRun(state, id));
       },
 
-      updateQueuedRun(id, content) {
-        const nextContent = content.trimEnd();
-        console.info("[store] 更新排队消息", {
+      editQueuedRunInComposer(id) {
+        const state = get();
+        const item = Object.values(state.queuedRunsBySession)
+          .flat()
+          .find((queued) => queued.id === id);
+        if (!item) {
+          console.warn("[store] 排队消息编辑失败：未找到队列项", { queuedRunId: id });
+          return;
+        }
+        const attachments = item.sourceAttachments.map((attachment) => ({ ...attachment }));
+        const scope = sessionComposerDraftScope(item.sessionId);
+        console.info("[store] 将排队消息撤回到输入框编辑", {
           queuedRunId: id,
-          contentChars: nextContent.length
+          sessionId: item.sessionId,
+          contentChars: item.content.length,
+          attachmentCount: attachments.length,
+          providerId: item.providerId,
+          model: item.model,
+          accessMode: item.accessMode,
+          planMode: item.planMode
         });
-        set((state) => ({
-          queuedRunsBySession: Object.fromEntries(
-            Object.entries(state.queuedRunsBySession).map(([sessionId, items]) => [
-              sessionId,
-              items.map((item) => (item.id === id ? { ...item, content: nextContent } : item))
-            ])
-          )
+        set((current) => ({
+          ...dropQueuedRun(current, id),
+          composerDraftsByScope: rememberComposerDraft(current, "editQueuedRunInComposer", scope, {
+            input: item.content,
+            attachments
+          }),
+          activeComposerDraftScope: scope,
+          input: item.content,
+          attachments,
+          providerId: item.providerId,
+          model: item.model,
+          reasoningMode: item.reasoningMode,
+          accessMode: item.accessMode,
+          planMode: item.planMode
         }));
       },
 

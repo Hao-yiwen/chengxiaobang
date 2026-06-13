@@ -20,6 +20,7 @@ const toolNames = [
   "shell",
   "feishu_send_message",
   "schedule_create",
+  "schedule_create_once",
   "schedule_cancel",
   "create_skill",
   "propose_plan",
@@ -104,6 +105,7 @@ describe("selectAgentTools", () => {
     expect(visible).not.toContain("todo_update");
     expect(visible).toContain("write_file");
     expect(visible).toContain("schedule_create");
+    expect(visible).toContain("schedule_create_once");
     expect(visible).toContain("create_skill");
   });
 

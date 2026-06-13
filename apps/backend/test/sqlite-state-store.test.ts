@@ -1134,11 +1134,17 @@ describe("SqliteStateStore", () => {
       sessionId: session.id,
       name: "AI 日报",
       prompt: "生成今天的 AI 日报",
+      kind: "recurring",
       cron: "0 9 * * *",
       fullAccess: false,
       nextRunAt: "2026-06-13T01:00:00.000Z"
     });
-    expect(task).toMatchObject({ enabled: true, fullAccess: false, cron: "0 9 * * *" });
+    expect(task).toMatchObject({
+      enabled: true,
+      fullAccess: false,
+      kind: "recurring",
+      cron: "0 9 * * *"
+    });
 
     const updated = await first.updateScheduledTask(task.id, {
       enabled: false,
@@ -1164,9 +1170,27 @@ describe("SqliteStateStore", () => {
     // null 显式清空 lastError
     const cleared = await second.updateScheduledTask(task.id, {
       lastStatus: "completed",
-      lastError: null
+      lastError: null,
+      nextRunAt: null
     });
     expect(cleared?.lastError).toBeUndefined();
+    expect(cleared?.nextRunAt).toBeUndefined();
+
+    const onceTask = await second.createScheduledTask({
+      sessionId: session.id,
+      name: "睡觉提醒",
+      prompt: "提醒我睡觉",
+      kind: "once",
+      runAt: "2026-06-14T01:00:00.000Z",
+      fullAccess: false,
+      nextRunAt: "2026-06-14T01:00:00.000Z"
+    });
+    expect(onceTask).toMatchObject({
+      kind: "once",
+      runAt: "2026-06-14T01:00:00.000Z",
+      nextRunAt: "2026-06-14T01:00:00.000Z"
+    });
+    expect(onceTask.cron).toBeUndefined();
     await second.close();
   });
 
@@ -1184,6 +1208,7 @@ describe("SqliteStateStore", () => {
       sessionId: session.id,
       name: "巡检",
       prompt: "检查仓库状态",
+      kind: "recurring",
       cron: "*/5 * * * *",
       fullAccess: true,
       nextRunAt: "2026-06-13T01:00:00.000Z"

@@ -230,7 +230,7 @@ function MarkdownStream({
     <Streamdown
       mode={mode}
       dir="auto"
-      className={cn("markdown-streamdown text-body-sm text-foreground", className)}
+      className={cn("markdown-streamdown text-foreground", className)}
       controls={STREAMDOWN_CONTROLS}
       translations={STREAMDOWN_TRANSLATIONS}
       linkSafety={STREAMDOWN_LINK_SAFETY}

@@ -16,7 +16,48 @@ import {
 export const RIGHT_PANEL_MIN_WIDTH = 300;
 export const RIGHT_PANEL_MAX_WIDTH = 720;
 export const RIGHT_PANEL_FILE_WIDTH = 480;
-const DEFAULT_RIGHT_PANEL_WIDTH = 380;
+export const DEFAULT_RIGHT_PANEL_WIDTH = 340;
+const LEGACY_DEFAULT_RIGHT_PANEL_WIDTH = 380;
+
+function normalizeStoredRightPanelWidth(width: number | undefined): number | undefined {
+  return width === LEGACY_DEFAULT_RIGHT_PANEL_WIDTH ? DEFAULT_RIGHT_PANEL_WIDTH : width;
+}
+
+function normalizeStoredRightPanelWidths(state: Partial<AppState>): Partial<AppState> {
+  const normalizedRootWidth = normalizeStoredRightPanelWidth(state.rightPanelWidth);
+  let sessionWidthMigrated = false;
+  const rightPanelBySession = Object.fromEntries(
+    Object.entries(state.rightPanelBySession ?? {}).map(([sessionId, snapshot]) => {
+      const normalizedWidth = normalizeStoredRightPanelWidth(snapshot.width);
+      if (normalizedWidth === snapshot.width) {
+        return [sessionId, snapshot];
+      }
+      sessionWidthMigrated = true;
+      return [
+        sessionId,
+        {
+          ...snapshot,
+          width: normalizedWidth ?? DEFAULT_RIGHT_PANEL_WIDTH
+        }
+      ];
+    })
+  );
+  const rootWidthMigrated = normalizedRootWidth !== state.rightPanelWidth;
+  if (!rootWidthMigrated && !sessionWidthMigrated) {
+    return state;
+  }
+  console.info("[store] 迁移右侧面板旧默认宽度", {
+    from: LEGACY_DEFAULT_RIGHT_PANEL_WIDTH,
+    to: DEFAULT_RIGHT_PANEL_WIDTH,
+    rootWidthMigrated,
+    sessionWidthMigrated
+  });
+  return {
+    ...state,
+    ...(rootWidthMigrated ? { rightPanelWidth: normalizedRootWidth } : {}),
+    rightPanelBySession
+  };
+}
 
 export function sanitizeLegacyProgressMode(
   mode: LegacyRightPanelMode | null | undefined
@@ -61,7 +102,7 @@ export function stripLegacyProgressPanelState(state: Partial<AppState>): Partial
 }
 
 export function sanitizePersistedAppState(state: Partial<AppState>): Partial<AppState> {
-  const nextState = stripLegacyProgressPanelState(state);
+  const nextState = normalizeStoredRightPanelWidths(stripLegacyProgressPanelState(state));
   if (nextState.view !== "home") {
     return nextState;
   }

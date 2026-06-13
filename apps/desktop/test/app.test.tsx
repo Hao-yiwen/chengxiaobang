@@ -855,6 +855,15 @@ describe("App", () => {
     const composerColumn = screen.getByTestId("chat-composer-column");
     expect(contentColumn).toHaveClass("chat-primary-column");
     expect(composerColumn).toHaveClass("chat-primary-column");
+    const chatScroll = screen.getByTestId("chat-scroll");
+    Object.defineProperties(chatScroll, {
+      clientHeight: { configurable: true, value: 500 },
+      scrollHeight: { configurable: true, value: 1200 },
+      scrollTop: { configurable: true, value: 0 }
+    });
+    fireEvent.scroll(chatScroll);
+    const scrollToBottomButton = await screen.findByTitle("回到底部");
+    expect(scrollToBottomButton.closest(".chat-primary-column")).toBeInTheDocument();
     expect(screen.getByTestId("chat-aside-overlay")).toBeInTheDocument();
     const anchors = screen.getAllByTestId("chat-aside-anchor");
     expect(anchors).toHaveLength(3);

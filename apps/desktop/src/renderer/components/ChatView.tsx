@@ -726,11 +726,15 @@ export function ChatView() {
       </div>
 
       {!nearBottom ? (
-        <ScrollToBottomButton
-          onClick={() =>
-            bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" })
-          }
-        />
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 px-12">
+          <div className="chat-primary-column flex justify-center">
+            <ScrollToBottomButton
+              onClick={() =>
+                bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" })
+              }
+            />
+          </div>
+        </div>
       ) : null}
     </div>
   );

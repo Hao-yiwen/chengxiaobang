@@ -698,6 +698,63 @@ describe("createApp", () => {
     expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
   });
 
+  it("replays missed global SSE events after the last event id", async () => {
+    const scripted = scriptedStreamFn([{ thinking: "想一想", text: "你好！" }]);
+    const eventApp = createTestApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets, { streamFn: scripted.streamFn })
+    });
+    const firstController = new AbortController();
+    const firstResponse = await eventApp(
+      new Request("http://local/api/events", { signal: firstController.signal })
+    );
+    const firstEventsPromise = collectSseEventsWithIds(
+      firstResponse,
+      firstController,
+      (event) => event.type === "run_started"
+    );
+
+    const startedResponse = await eventApp(
+      jsonRequest("/api/runs", "POST", {
+        prompt: "你好",
+        clientRequestId: "client_replay",
+        accessMode: "approval"
+      })
+    );
+    const started = (await startedResponse.json()) as { runId: string; sessionId: string };
+    const firstEvents = await firstEventsPromise;
+    expect(firstEvents.events.map((event) => event.type)).toEqual(["run_started"]);
+    const lastEventId = firstEvents.ids.at(-1);
+    expect(lastEventId).toEqual(expect.any(String));
+
+    await vi.waitFor(async () => {
+      const run = (await store.listRuns(started.sessionId)).find((item) => item.id === started.runId);
+      expect(run?.status).toBe("completed");
+    });
+
+    const replayController = new AbortController();
+    const replayResponse = await eventApp(
+      new Request(`http://local/api/events?lastEventId=${lastEventId}`, {
+        signal: replayController.signal
+      })
+    );
+    const replayEvents = await collectSseEventsWithIds(
+      replayResponse,
+      replayController,
+      (event) => event.type === "run_end"
+    );
+
+    expect(replayEvents.events.map((event) => event.type)).toEqual([
+      "message",
+      "delta",
+      "delta",
+      "message",
+      "run_end"
+    ]);
+    expect(replayEvents.events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
+  });
+
   it("returns an HTTP error when POST /api/runs fails before run_started", async () => {
     await store.deleteProvider("deepseek");
 
@@ -1103,6 +1160,7 @@ describe("createApp", () => {
       sessionId: session.id,
       name: "AI 日报",
       prompt: "生成日报",
+      kind: "recurring",
       cron: "0 9 * * *",
       fullAccess: false,
       nextRunAt: "2020-01-01T00:00:00.000Z"
@@ -1126,6 +1184,21 @@ describe("createApp", () => {
     const reEnabled = await app(jsonRequest(`/api/tasks/${task.id}`, "PATCH", { enabled: true }));
     const reEnabledBody = (await reEnabled.json()) as { task: { nextRunAt: string } };
     expect(Date.parse(reEnabledBody.task.nextRunAt)).toBeGreaterThan(Date.now());
+
+    const onceTask = await store.createScheduledTask({
+      sessionId: session.id,
+      name: "一次性提醒",
+      prompt: "提醒我睡觉",
+      kind: "once",
+      runAt: "2020-01-01T00:00:00.000Z",
+      fullAccess: false,
+      nextRunAt: "2020-01-01T00:00:00.000Z"
+    });
+    await store.updateScheduledTask(onceTask.id, { enabled: false, nextRunAt: null });
+    const reEnableOnce = await app(
+      jsonRequest(`/api/tasks/${onceTask.id}`, "PATCH", { enabled: true })
+    );
+    expect(reEnableOnce.status).toBe(400);
 
     const missing = await app(jsonRequest("/api/tasks/task_missing", "PATCH", { enabled: false }));
     expect(missing.status).toBe(404);
@@ -1281,6 +1354,47 @@ async function collectSseEvents(
     }
   }
   return events;
+}
+
+async function collectSseEventsWithIds(
+  response: Response,
+  controller: AbortController,
+  shouldStop: (event: StreamEvent) => boolean
+): Promise<{ events: StreamEvent[]; ids: string[] }> {
+  expect(response.status).toBe(200);
+  expect(response.body).toBeTruthy();
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const events: StreamEvent[] = [];
+  const ids: string[] = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split(/\n\n+/);
+    buffer = blocks.pop() ?? "";
+    for (const block of blocks) {
+      const lines = block.split("\n");
+      const data = lines.find((line) => line.startsWith("data: "))?.slice(6);
+      if (!data) {
+        continue;
+      }
+      const event = JSON.parse(data) as StreamEvent;
+      const id = lines.find((line) => line.startsWith("id: "))?.slice(4);
+      events.push(event);
+      if (id) {
+        ids.push(id);
+      }
+      if (shouldStop(event)) {
+        controller.abort();
+        return { events, ids };
+      }
+    }
+  }
+  return { events, ids };
 }
 
 async function seedProvider(

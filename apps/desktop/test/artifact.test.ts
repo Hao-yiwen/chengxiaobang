@@ -3,8 +3,10 @@ import {
   artifactFromPath,
   artifactKind,
   collectArtifactsFromAssistantMessages,
+  collectArtifactsFromSession,
   parseArtifactDeclarations
 } from "../src/renderer/lib/artifact";
+import type { ToolCall } from "@chengxiaobang/shared";
 
 describe("artifactKind", () => {
   it("routes by extension", () => {
@@ -171,6 +173,130 @@ describe("collectArtifactsFromAssistantMessages", () => {
         kind: "docx",
         messageId: "assistant_2",
         declaredAt: "2026-06-08T00:00:02.000Z"
+      }
+    ]);
+    expect(collection.diagnostics).toEqual([{ type: "duplicate_path", path: "page.html" }]);
+  });
+});
+
+describe("collectArtifactsFromSession", () => {
+  function tool(partial: Partial<ToolCall>): ToolCall {
+    return {
+      id: "tool_1",
+      runId: "run_1",
+      name: "write_file",
+      args: {},
+      status: "completed",
+      createdAt: "2026-06-08T00:00:00.000Z",
+      updatedAt: "2026-06-08T00:00:00.000Z",
+      ...partial
+    };
+  }
+
+  it("collects declared markdown files as session artifacts", () => {
+    const collection = collectArtifactsFromSession([
+      {
+        id: "assistant_md",
+        role: "assistant",
+        content: [
+          "日报已生成。",
+          "",
+          "<artifacts>",
+          "  <artifact path=\"AI日报_2026-06-13.md\" />",
+          "</artifacts>"
+        ].join("\n"),
+        createdAt: "2026-06-08T00:00:05.000Z"
+      }
+    ]);
+
+    expect(collection.artifacts).toEqual([
+      {
+        path: "AI日报_2026-06-13.md",
+        name: "AI日报_2026-06-13.md",
+        kind: "markdown",
+        messageId: "assistant_md",
+        declaredAt: "2026-06-08T00:00:05.000Z"
+      }
+    ]);
+    expect(collection.diagnostics).toEqual([]);
+  });
+
+  it("uses completed previewable tool outputs as history fallback", () => {
+    const collection = collectArtifactsFromSession([], [
+      tool({
+        id: "tool_old_html",
+        args: { path: "page.html" },
+        updatedAt: "2026-06-08T00:00:01.000Z"
+      }),
+      tool({
+        id: "tool_code",
+        args: { path: "src/App.tsx" },
+        updatedAt: "2026-06-08T00:00:02.000Z"
+      }),
+      tool({
+        id: "tool_new_html",
+        args: { path: "page.html" },
+        updatedAt: "2026-06-08T00:00:03.000Z"
+      }),
+      tool({
+        id: "tool_failed",
+        status: "failed",
+        args: { path: "failed.html" },
+        updatedAt: "2026-06-08T00:00:04.000Z"
+      })
+    ]);
+
+    expect(collection.artifacts).toEqual([
+      {
+        path: "page.html",
+        name: "page.html",
+        kind: "html",
+        toolCallId: "tool_new_html",
+        declaredAt: "2026-06-08T00:00:03.000Z"
+      }
+    ]);
+    expect(collection.diagnostics).toEqual([{ type: "duplicate_path", path: "page.html" }]);
+  });
+
+  it("keeps XML declarations ahead of tool history fallback", () => {
+    const collection = collectArtifactsFromSession(
+      [
+        {
+          id: "assistant_1",
+          role: "assistant",
+          content: "<artifact path=\"page.html\" />",
+          createdAt: "2026-06-08T00:00:01.000Z"
+        }
+      ],
+      [
+        tool({
+          id: "tool_1",
+          args: { path: "page.html" },
+          updatedAt: "2026-06-08T00:00:02.000Z"
+        }),
+        tool({
+          id: "tool_2",
+          name: "create_xlsx",
+          args: { path: "budget" },
+          updatedAt: "2026-06-08T00:00:03.000Z"
+        })
+      ]
+    );
+
+    expect(collection.artifacts).toEqual([
+      {
+        path: "page.html",
+        name: "page.html",
+        kind: "html",
+        messageId: "assistant_1",
+        declaredAt: "2026-06-08T00:00:01.000Z"
+      },
+      {
+        path: "budget",
+        name: "budget",
+        kind: "spreadsheet",
+        toolCallId: "tool_2",
+        declaredAt: "2026-06-08T00:00:03.000Z"
       }
     ]);
     expect(collection.diagnostics).toEqual([{ type: "duplicate_path", path: "page.html" }]);

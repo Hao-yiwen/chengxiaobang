@@ -69,6 +69,7 @@ const TOOL_ICONS: Record<string, Icon> = {
   btw: NotePencilIcon,
   use_skill: SparkleIcon,
   schedule_create: AlarmIcon,
+  schedule_create_once: AlarmIcon,
   schedule_list: ClockIcon,
   schedule_cancel: ClockCountdownIcon,
   memory: BrainIcon
@@ -115,6 +116,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory> = {
   todo_create: "plan",
   todo_update: "plan",
   schedule_create: "schedule",
+  schedule_create_once: "schedule",
   schedule_list: "schedule",
   schedule_cancel: "schedule",
   memory: "memory"
@@ -174,6 +176,7 @@ type ToolLineKey = `chat.toolLine.${
   | "btw"
   | "use_skill"
   | "schedule_create"
+  | "schedule_create_once"
   | "schedule_list"
   | "schedule_cancel"
   | "memory"
@@ -228,6 +231,8 @@ export function toolLineLabel(toolCall: ToolCall): ToolLineLabel {
       return { key: "chat.toolLine.use_skill", params: { name: stringArg(args, "name") ?? "" } };
     case "schedule_create":
       return { key: "chat.toolLine.schedule_create", params: { name: stringArg(args, "name") ?? "" } };
+    case "schedule_create_once":
+      return { key: "chat.toolLine.schedule_create_once", params: { name: stringArg(args, "name") ?? "" } };
     case "memory":
       return {
         key: "chat.toolLine.memory",

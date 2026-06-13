@@ -40,6 +40,7 @@ const BUILTIN_TOOLS = [
   "btw",
   "use_skill",
   "schedule_create",
+  "schedule_create_once",
   "schedule_list",
   "schedule_cancel",
   "memory"
@@ -102,6 +103,7 @@ describe("toolCategory / categoryIcon", () => {
     expect(toolCategory("propose_plan")).toBe("plan");
     expect(toolCategory("todo_create")).toBe("plan");
     expect(toolCategory("schedule_create")).toBe("schedule");
+    expect(toolCategory("schedule_create_once")).toBe("schedule");
     expect(toolCategory("memory")).toBe("memory");
     expect(toolCategory("nonexistent")).toBe("other");
   });

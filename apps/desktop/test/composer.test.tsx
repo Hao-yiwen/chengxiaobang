@@ -512,6 +512,62 @@ describe("Composer 模型两级下拉（ARCH-SPEC §6.4）", () => {
     await waitFor(() => expect(useAppStore.getState().isRunning).toBe(false));
   });
 
+  it("clears running state on reconnect when the missed run_end is already persisted", async () => {
+    let reconnect: (() => void) | undefined;
+    const subscribeRunEvents = vi.fn(
+      (
+        _listener: (event: StreamEvent) => void,
+        options?: Parameters<NonNullable<ApiClient["subscribeRunEvents"]>>[1]
+      ) => {
+        reconnect = options?.onReconnect;
+        return vi.fn();
+      }
+    );
+    const startRun = vi.fn(async (input: Parameters<NonNullable<ApiClient["startRun"]>>[0]) => ({
+      runId: "run_global",
+      sessionId: "session_global",
+      clientRequestId: input.clientRequestId,
+      providerId: "deepseek",
+      model: "deepseek-v4-flash"
+    }));
+    const assistant: Message = {
+      id: "msg_recovered",
+      sessionId: "session_global",
+      role: "assistant",
+      content: "重连恢复后的回答",
+      createdAt: "2026-06-13T00:00:02.000Z"
+    };
+    const client = createClient({
+      startRun,
+      subscribeRunEvents,
+      listActiveRuns: vi.fn(async () => []),
+      listMessages: vi.fn(async () => [assistant]),
+      listSessionRuns: vi.fn(async () => ({
+        runs: [
+          {
+            id: "run_global",
+            sessionId: "session_global",
+            status: "completed" as const,
+            createdAt: "2026-06-13T00:00:00.000Z",
+            updatedAt: "2026-06-13T00:00:02.000Z"
+          }
+        ],
+        toolCalls: []
+      }))
+    });
+
+    render(<App client={client} />);
+    const input = await screen.findByLabelText("输入消息");
+    fireEvent.change(input, { target: { value: "会丢终态的请求" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(useAppStore.getState().activeRunId).toBe("run_global"));
+    reconnect?.();
+
+    expect(await screen.findByText("重连恢复后的回答")).toBeInTheDocument();
+    await waitFor(() => expect(useAppStore.getState().isRunning).toBe(false));
+  });
+
   it("selects a model: setProviderId + setModel, and the run request carries providerId + model", async () => {
     const listProviderModelOptions = vi.fn(async () => deepseekModelOptions);
     const streamRun = vi.fn(async (..._args: Parameters<ApiClient["streamRun"]>) => {});
@@ -759,6 +815,86 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
     expect(within(shell).queryByTitle("加入排队")).not.toBeInTheDocument();
 
     resolveStream?.();
+  });
+
+  it("moves queued editing into the composer from the more menu", async () => {
+    const client = createClient();
+
+    render(<App client={client} />);
+    await screen.findByTestId("composer-shell");
+    act(() => {
+      useAppStore.setState({
+        view: "chat",
+        activeSessionId: "session_1",
+        activeRunId: "run_1",
+        isRunning: true,
+        input: "临时草稿",
+        attachments: [],
+        providers: [deepseek],
+        providerId: deepseek.id,
+        model: "deepseek-chat",
+        accessMode: "approval",
+        planMode: false,
+        sessions: [
+          {
+            id: "session_1",
+            projectId: null,
+            title: "会话",
+            providerId: deepseek.id,
+            accessMode: "approval",
+            createdAt: "2026-06-13T00:00:00.000Z",
+            updatedAt: "2026-06-13T00:00:00.000Z"
+          }
+        ],
+        queuedRunsBySession: {
+          session_1: [
+            {
+              id: "queue_1",
+              sessionId: "session_1",
+              projectId: null,
+              content: "拉回输入框编辑",
+              sourceAttachments: [
+                {
+                  path: "/tmp/note.txt",
+                  name: "note.txt",
+                  size: 12,
+                  kind: "text"
+                }
+              ],
+              displayAttachments: [
+                {
+                  id: "att_1",
+                  path: "/tmp/note.txt",
+                  name: "note.txt",
+                  size: 12,
+                  kind: "text"
+                }
+              ],
+              providerId: deepseek.id,
+              model: deepseek.model,
+              accessMode: "full_access",
+              planMode: true,
+              createdAt: Date.now()
+            }
+          ]
+        }
+      });
+    });
+
+    expect(screen.queryByLabelText("编辑消息")).not.toBeInTheDocument();
+    fireEvent.pointerDown(await screen.findByLabelText("更多操作"), {
+      button: 0,
+      ctrlKey: false
+    });
+    fireEvent.click(await screen.findByText("编辑消息"));
+
+    await waitFor(() => expect(screen.getByLabelText("输入消息")).toHaveValue("拉回输入框编辑"));
+    const state = useAppStore.getState();
+    expect(state.queuedRunsBySession.session_1).toBeUndefined();
+    expect(state.attachments[0]?.path).toBe("/tmp/note.txt");
+    expect(state.model).toBe(deepseek.model);
+    expect(state.accessMode).toBe("full_access");
+    expect(state.planMode).toBe(true);
   });
 
   it("sends a queued item as steering and removes it after the API accepts it", async () => {

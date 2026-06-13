@@ -14,7 +14,8 @@ import {
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  collectArtifactsFromAssistantMessages,
+  collectArtifactsFromSession,
+  hasArtifactDeclarationMarkup,
   logArtifactCollectionResult,
   type ArtifactSourceMessage,
   type CollectedArtifact
@@ -37,7 +38,7 @@ const KIND_ICON: Partial<Record<CollectedArtifact["kind"], Icon>> = {
   unsupported: FileText
 };
 
-function collectionLogKey(collection: ReturnType<typeof collectArtifactsFromAssistantMessages>) {
+function collectionLogKey(collection: ReturnType<typeof collectArtifactsFromSession>) {
   return [
     collection.artifacts.map((artifact) => artifact.path).join("\u0000"),
     collection.diagnostics
@@ -54,7 +55,9 @@ function collectionLogKey(collection: ReturnType<typeof collectArtifactsFromAssi
 export function ArtifactFloatingPanel() {
   const { t } = useTranslation();
   const messages = useAppStore((state) => state.messages);
+  const toolHistory = useAppStore((state) => state.toolHistory);
   const streamText = useAppStore((state) => state.streamText);
+  const activeRunId = useAppStore((state) => state.activeRunId);
   const openArtifact = useAppStore((state) => state.openArtifact);
 
   const sources = useMemo<ArtifactSourceMessage[]>(() => {
@@ -77,15 +80,31 @@ export function ArtifactFloatingPanel() {
     ];
   }, [messages, streamText]);
 
-  const collection = useMemo(() => collectArtifactsFromAssistantMessages(sources), [sources]);
+  const settledToolHistory = useMemo(
+    () => toolHistory.filter((toolCall) => !activeRunId || toolCall.runId !== activeRunId),
+    [activeRunId, toolHistory]
+  );
+  const collection = useMemo(
+    () => collectArtifactsFromSession(sources, settledToolHistory),
+    [settledToolHistory, sources]
+  );
+  const hasDeclarationMarkup = useMemo(() => hasArtifactDeclarationMarkup(sources), [sources]);
   const logKey = collectionLogKey(collection);
 
   useEffect(() => {
-    if (collection.artifacts.length === 0 && collection.diagnostics.length === 0) {
+    if (
+      collection.artifacts.length === 0 &&
+      collection.diagnostics.length === 0 &&
+      !hasDeclarationMarkup
+    ) {
       return;
     }
-    logArtifactCollectionResult("floating-panel", collection);
-  }, [logKey]);
+    logArtifactCollectionResult("floating-panel", collection, {
+      messageCount: sources.length,
+      toolCallCount: settledToolHistory.length,
+      hasDeclarationMarkup
+    });
+  }, [hasDeclarationMarkup, logKey, settledToolHistory.length, sources.length]);
 
   if (collection.artifacts.length === 0) {
     return null;

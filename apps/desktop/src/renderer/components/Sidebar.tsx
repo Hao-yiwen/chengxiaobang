@@ -4,6 +4,7 @@ import {
   ChatCenteredTextIcon as MessageSquareText,
   CheckIcon as Check,
   ClockIcon as Clock,
+  DeviceMobileIcon as DeviceMobile,
   FileArrowDownIcon as FileDown,
   FolderIcon as Folder,
   FolderOpenIcon as FolderOpen,
@@ -347,6 +348,13 @@ export function Sidebar() {
           compactLabel
           active={view === "skills"}
           onClick={() => setView("skills")}
+        />
+        <SidebarRow
+          icon={<DeviceMobile />}
+          label={t("sidebar.connectPhone")}
+          compactLabel
+          active={view === "connectPhone"}
+          onClick={() => setView("connectPhone")}
         />
       </div>
 

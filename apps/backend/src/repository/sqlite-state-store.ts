@@ -757,7 +757,9 @@ export class SqliteStateStore implements StateStore {
       sessionId: input.sessionId,
       name: input.name,
       prompt: input.prompt,
-      cron: input.cron,
+      kind: input.kind,
+      ...(input.cron ? { cron: input.cron } : {}),
+      ...(input.runAt ? { runAt: input.runAt } : {}),
       fullAccess: input.fullAccess,
       enabled: true,
       nextRunAt: input.nextRunAt,
@@ -766,14 +768,16 @@ export class SqliteStateStore implements StateStore {
     };
     this.run(
       `insert into scheduled_tasks
-       (id, session_id, name, prompt, cron, full_access, enabled, next_run_at, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, session_id, name, prompt, kind, cron, run_at, full_access, enabled, next_run_at, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.sessionId,
         task.name,
         task.prompt,
-        task.cron,
+        task.kind,
+        task.cron ?? "",
+        task.runAt ?? null,
         task.fullAccess ? 1 : 0,
         1,
         task.nextRunAt ?? null,
@@ -783,7 +787,9 @@ export class SqliteStateStore implements StateStore {
     );
     await this.flush();
     console.log(
-      `[sqlite-state-store] 已创建定时任务 id=${task.id} sessionId=${task.sessionId} cron=${task.cron}`
+      `[sqlite-state-store] 已创建定时任务 id=${task.id} sessionId=${task.sessionId} kind=${task.kind}` +
+        (task.cron ? ` cron=${task.cron}` : "") +
+        (task.runAt ? ` runAt=${task.runAt}` : "")
     );
     return task;
   }
@@ -802,10 +808,11 @@ export class SqliteStateStore implements StateStore {
       ...current,
       name: input.name ?? current.name,
       cron: input.cron ?? current.cron,
+      runAt: input.runAt ?? current.runAt,
       prompt: input.prompt ?? current.prompt,
       enabled: input.enabled ?? current.enabled,
       fullAccess: input.fullAccess ?? current.fullAccess,
-      nextRunAt: input.nextRunAt ?? current.nextRunAt,
+      nextRunAt: input.nextRunAt === null ? undefined : input.nextRunAt ?? current.nextRunAt,
       lastRunAt: input.lastRunAt ?? current.lastRunAt,
       lastStatus: input.lastStatus ?? current.lastStatus,
       lastError: input.lastError === null ? undefined : input.lastError ?? current.lastError,
@@ -813,12 +820,13 @@ export class SqliteStateStore implements StateStore {
     };
     this.run(
       `update scheduled_tasks
-       set name = ?, cron = ?, prompt = ?, enabled = ?, full_access = ?, next_run_at = ?,
+       set name = ?, cron = ?, run_at = ?, prompt = ?, enabled = ?, full_access = ?, next_run_at = ?,
            last_run_at = ?, last_status = ?, last_error = ?, updated_at = ?
        where id = ?`,
       [
         next.name,
-        next.cron,
+        next.cron ?? "",
+        next.runAt ?? null,
         next.prompt,
         next.enabled ? 1 : 0,
         next.fullAccess ? 1 : 0,

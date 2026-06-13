@@ -20,7 +20,7 @@ export function QueuedRunStack(props: {
   paused: boolean;
   canSteer: boolean;
   onSteer: (id: string) => void;
-  onEdit: (item: QueuedRunItem) => void;
+  onEdit: (id: string) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
   onResume: () => void;
@@ -74,47 +74,38 @@ export function QueuedRunStack(props: {
           </div>
           {props.canSteer ? (
             <button
-            type="button"
-            title={t("composer.queueSteer")}
-            aria-label={t("composer.queueSteer")}
-            onClick={() => props.onSteer(item.id)}
-            className="inline-flex h-6 flex-none items-center gap-1 rounded-sm border border-border bg-background px-1.5 text-caption font-medium text-foreground transition-colors hover:bg-canvas-soft-2"
-          >
-            <Sparkles className="size-3" />
-            {t("composer.queueSteer")}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          title={t("composer.queueEdit")}
-          aria-label={t("composer.queueEdit")}
-          onClick={() => props.onEdit(item)}
-          className="flex size-6 flex-none items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
-        >
-          <Pencil className="size-3.5" />
-        </button>
-        <button
-          type="button"
-          title={t("composer.queueRemove")}
-          aria-label={t("composer.queueRemove")}
-          onClick={() => props.onRemove(item.id)}
-          className="flex size-6 flex-none items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-destructive"
-        >
-          <Trash className="size-3.5" />
-        </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-              <button
               type="button"
-              title={t("composer.queueMore")}
-              aria-label={t("composer.queueMore")}
-              className="flex size-6 flex-none items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
+              title={t("composer.queueSteer")}
+              aria-label={t("composer.queueSteer")}
+              onClick={() => props.onSteer(item.id)}
+              className="inline-flex h-6 flex-none items-center gap-1 rounded-sm border border-border bg-background px-1.5 text-caption font-medium text-foreground transition-colors hover:bg-canvas-soft-2"
             >
-              <More className="size-3.5" />
+              <Sparkles className="size-3" />
+              {t("composer.queueSteer")}
             </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[160px]">
-              <DropdownMenuItem onSelect={() => props.onEdit(item)}>
+          ) : null}
+          <button
+            type="button"
+            title={t("composer.queueRemove")}
+            aria-label={t("composer.queueRemove")}
+            onClick={() => props.onRemove(item.id)}
+            className="flex size-6 flex-none items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-destructive"
+          >
+            <Trash className="size-3.5" />
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                title={t("composer.queueMore")}
+                aria-label={t("composer.queueMore")}
+                className="flex size-6 flex-none items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
+              >
+                <More className="size-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[160px]">
+              <DropdownMenuItem onSelect={() => props.onEdit(item.id)}>
                 <Pencil className="size-4 text-muted-foreground" />
                 {t("composer.queueEdit")}
               </DropdownMenuItem>

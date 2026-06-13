@@ -24,6 +24,10 @@ export const toolNameSchema = z.enum([
   "ask_user",
   "btw",
   "use_skill",
+  "schedule_create",
+  "schedule_create_once",
+  "schedule_list",
+  "schedule_cancel",
   "todo_create",
   "todo_update",
   "memory"

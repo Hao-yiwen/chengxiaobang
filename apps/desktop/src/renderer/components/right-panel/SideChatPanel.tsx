@@ -44,6 +44,61 @@ export function SideChatPanel() {
     dispatch({ type: "event", event });
   }
 
+  async function recoverSideChatRun(): Promise<void> {
+    const client = getApiClient();
+    const current = stateRef.current;
+    if (!client || !current.running || !current.sessionId || !current.runId) {
+      return;
+    }
+    const sessionId = current.sessionId;
+    const runId = current.runId;
+    try {
+      const [messages, history] = await Promise.all([
+        client.listMessages(sessionId),
+        client.listSessionRuns(sessionId)
+      ]);
+      if (stateRef.current.runId !== runId) {
+        console.info("[side-chat] 跳过过期的运行恢复结果", {
+          sessionId,
+          runId,
+          currentRunId: stateRef.current.runId
+        });
+        return;
+      }
+      const toolCalls = history.toolCalls.filter((toolCall) => toolCall.runId === runId);
+      const run = history.runs.find((item) => item.id === runId);
+      console.info("[side-chat] 重连后恢复运行状态", {
+        sessionId,
+        runId,
+        runStatus: run?.status,
+        messageCount: messages.length,
+        toolCallCount: toolCalls.length
+      });
+      for (const message of messages) {
+        applyRunEvent({ type: "message", runId, message });
+      }
+      for (const toolCall of toolCalls) {
+        applyRunEvent({ type: "tool_call", runId, toolCall });
+      }
+      if (run && run.status !== "running") {
+        applyRunEvent({
+          type: "run_end",
+          runId,
+          status: run.status,
+          ...(run.usage ? { usage: run.usage } : {}),
+          ...(run.error ? { error: run.error } : {})
+        });
+        void useAppStore.getState().loadData();
+      }
+    } catch (error) {
+      console.warn("[side-chat] 重连后恢复运行状态失败", {
+        sessionId,
+        runId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
   useEffect(() => {
     const client = getApiClient();
     if (!client?.subscribeRunEvents) {
@@ -72,6 +127,7 @@ export function SideChatPanel() {
         }
       },
       {
+        onReconnect: () => void recoverSideChatRun(),
         onError: (error: unknown) =>
           console.warn("[side-chat] 全局运行事件流异常", {
             error: error instanceof Error ? error.message : String(error)

@@ -1307,6 +1307,7 @@ describe("AgentRunner", () => {
     expect(headlessTools).not.toContain("todo_update");
     // 定时任务工具对所有 run 可见（含 headless，模型可在执行中管理任务）。
     expect(headlessTools).toContain("schedule_create");
+    expect(headlessTools).toContain("schedule_create_once");
 
     for await (const _event of runner.stream({
       prompt: "普通对话",
@@ -1320,6 +1321,7 @@ describe("AgentRunner", () => {
     expect(interactiveTools).toContain("todo_create");
     expect(interactiveTools).toContain("todo_update");
     expect(interactiveTools).toContain("schedule_create");
+    expect(interactiveTools).toContain("schedule_create_once");
   });
 
   it("auto-compacts long session context before the model loop", async () => {

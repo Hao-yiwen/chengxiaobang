@@ -2,7 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Cron } from "croner";
 import type { StateStore } from "../repository/state-store";
-import { computeNextRunAt, validateCron } from "../tasks/schedule";
+import { computeNextRunAt, normalizeRunAt, validateCron, validateRunAt } from "../tasks/schedule";
 import { textResult } from "./tool-result";
 
 const createParams = Type.Object({
@@ -13,6 +13,23 @@ const createParams = Type.Object({
   }),
   prompt: Type.String({
     description: "每次执行时喂给模型的完整提示词；执行发生在当前会话中，可以依赖已有上下文"
+  }),
+  full_access: Type.Optional(
+    Type.Boolean({
+      description:
+        "默认 false：执行时为只读，写文件/执行命令等操作会被自动拒绝。仅当任务确实需要修改文件或执行命令、且用户明确同意时才设为 true"
+    })
+  )
+});
+
+const createOnceParams = Type.Object({
+  name: Type.String({ description: "任务名称，简短易认，例如「睡觉提醒」" }),
+  run_at: Type.String({
+    description:
+      "一次性任务的绝对执行时间，必须带时区，例如 2026-06-13T01:53:00+08:00。适用于「明天 9 点提醒我」「某天某时执行一次」。"
+  }),
+  prompt: Type.String({
+    description: "执行时喂给模型的完整提示词；执行发生在当前会话中，可以依赖已有上下文"
   }),
   full_access: Type.Optional(
     Type.Boolean({
@@ -62,7 +79,7 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
     name: "schedule_create",
     label: "创建定时任务",
     description:
-      "创建一个定时任务：按 cron 周期在当前会话中自动执行指定提示词。适用于「每天/每周/每隔一段时间做某事」类需求。创建前先把用户的时间表达换算成 5 字段 cron。",
+      "创建一个周期定时任务：按 cron 周期在当前会话中自动执行指定提示词。仅适用于「每天/每周/每隔一段时间做某事」类重复需求；一次性提醒必须使用 schedule_create_once。",
     parameters: createParams,
     execute: async (_toolCallId, params) => {
       if (runtime.feishuChatId) {
@@ -80,6 +97,7 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
         sessionId: runtime.sessionId,
         name: params.name,
         prompt: params.prompt,
+        kind: "recurring",
         cron: params.cron,
         fullAccess: params.full_access ?? false,
         nextRunAt: computeNextRunAt(params.cron, new Date())
@@ -101,10 +119,51 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
     }
   };
 
+  const scheduleCreateOnce: AgentTool<typeof createOnceParams> = {
+    name: "schedule_create_once",
+    label: "创建一次性任务",
+    description:
+      "创建一个一次性定时任务：在指定绝对时间只执行一次。适用于「明天 9 点提醒我」「某个日期执行一次」类需求；不要用 5 字段 cron 表达一次性任务。",
+    parameters: createOnceParams,
+    execute: async (_toolCallId, params) => {
+      if (runtime.feishuChatId) {
+        console.warn(
+          `[schedule-tools] 飞书会话拒绝创建一次性任务 sessionId=${runtime.sessionId}`
+        );
+        throw new Error("飞书会话暂不支持定时任务（执行结果无法回发飞书），请在桌面端会话中创建。");
+      }
+      const runAtError = validateRunAt(params.run_at);
+      if (runAtError) {
+        console.warn(`[schedule-tools] run_at 校验失败 runAt=${params.run_at}: ${runAtError}`);
+        throw new Error(runAtError);
+      }
+      const runAt = normalizeRunAt(params.run_at);
+      const task = await runtime.store.createScheduledTask({
+        sessionId: runtime.sessionId,
+        name: params.name,
+        prompt: params.prompt,
+        kind: "once",
+        runAt,
+        fullAccess: params.full_access ?? false,
+        nextRunAt: runAt
+      });
+      console.info(
+        `[schedule-tools] 已创建一次性任务 id=${task.id} sessionId=${runtime.sessionId} runAt=${runAt} fullAccess=${task.fullAccess}`
+      );
+      return textResult(
+        [
+          `已创建一次性任务「${task.name}」（id: ${task.id}）。`,
+          `计划执行时间：${formatLocal(runAt)}（${task.fullAccess ? "完全访问" : "只读执行"}）`,
+          "执行完成后任务会进入侧边栏「定时任务」页的已过期任务。"
+        ].join("\n")
+      );
+    }
+  };
+
   const scheduleList: AgentTool<typeof listParams> = {
     name: "schedule_list",
     label: "查看定时任务",
-    description: "列出当前所有定时任务（含 ID、cron、启用状态、下次/上次执行时间）。",
+    description: "列出当前所有定时任务（含 ID、类型、启用状态、下次/上次执行时间）。",
     parameters: listParams,
     execute: async () => {
       const tasks = await runtime.store.listScheduledTasks();
@@ -113,9 +172,12 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
       }
       const lines = tasks.map((task) => {
         const parts = [
-          `- ${task.name}（id: ${task.id}）cron: ${task.cron}`,
+          task.kind === "once"
+            ? `- ${task.name}（id: ${task.id}）一次性任务`
+            : `- ${task.name}（id: ${task.id}）周期任务 cron: ${task.cron ?? "未知"}`,
           task.enabled ? "已启用" : "已停用",
           task.sessionId === runtime.sessionId ? "本会话" : `会话 ${task.sessionId}`,
+          task.kind === "once" && task.runAt ? `计划 ${formatLocal(task.runAt)}` : "",
           task.nextRunAt ? `下次 ${formatLocal(task.nextRunAt)}` : "",
           task.lastRunAt ? `上次 ${formatLocal(task.lastRunAt)}（${task.lastStatus ?? "未知"}）` : ""
         ];
@@ -141,5 +203,5 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
     }
   };
 
-  return [scheduleCreate, scheduleList, scheduleCancel];
+  return [scheduleCreate, scheduleCreateOnce, scheduleList, scheduleCancel];
 }

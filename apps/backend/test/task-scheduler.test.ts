@@ -38,7 +38,7 @@ describe("TaskScheduler", () => {
       sessionWorkspacePath: (sessionId) => join(dir, "sessions", sessionId)
     });
     const eventHub = options.events
-      ? ({ publish: (event: AppEvent) => options.events?.push(event) } as EventHub<AppEvent>)
+      ? ({ publish: (event: AppEvent) => options.events?.push(event) } as unknown as EventHub<AppEvent>)
       : undefined;
     return {
       scheduler: new TaskScheduler({
@@ -61,6 +61,7 @@ describe("TaskScheduler", () => {
       sessionId: session.id,
       name: "AI 日报",
       prompt: "生成今天的 AI 日报",
+      kind: "recurring",
       cron: "*/5 * * * *",
       fullAccess: options.fullAccess ?? false,
       nextRunAt: PAST
@@ -90,6 +91,38 @@ describe("TaskScheduler", () => {
     // 补跑语义：nextRunAt 以 now 为基推进到未来，而不是按旧值连环追赶。
     expect(Date.parse(updated!.nextRunAt!)).toBeGreaterThan(before);
     expect(Date.parse(updated!.lastRunAt!)).toBeGreaterThanOrEqual(before);
+  });
+
+  it("expires one-time tasks after the first scheduled execution", async () => {
+    await seedProvider(store, secrets);
+    const session = await store.createSession({
+      projectId: null,
+      title: "提醒会话",
+      accessMode: "approval"
+    });
+    const task = await store.createScheduledTask({
+      sessionId: session.id,
+      name: "睡觉提醒",
+      prompt: "提醒我睡觉",
+      kind: "once",
+      runAt: PAST,
+      fullAccess: false,
+      nextRunAt: PAST
+    });
+    const { scheduler } = schedulerWith([{ text: "该睡觉了" }]);
+
+    await scheduler.tick();
+
+    const messages = await store.listMessages(session.id);
+    expect(messages.map((message) => message.content)).toEqual(["提醒我睡觉", "该睡觉了"]);
+    const updated = await store.getScheduledTask(task.id);
+    expect(updated).toMatchObject({
+      kind: "once",
+      enabled: false,
+      lastStatus: "completed"
+    });
+    expect(updated?.nextRunAt).toBeUndefined();
+    expect(updated?.runAt).toBe(PAST);
   });
 
   it("publishes start and finish events for scheduled executions", async () => {
@@ -134,6 +167,32 @@ describe("TaskScheduler", () => {
     expect(updated?.lastError).toContain("模型");
     // 失败也已推进 nextRunAt，不会在每个 tick 重复打失败的任务。
     expect(Date.parse(updated!.nextRunAt!)).toBeGreaterThan(Date.now() - 1000);
+  });
+
+  it("records one-time task failures without scheduling another run", async () => {
+    const session = await store.createSession({
+      projectId: null,
+      title: "失败提醒",
+      accessMode: "approval"
+    });
+    const task = await store.createScheduledTask({
+      sessionId: session.id,
+      name: "失败一次",
+      prompt: "执行一次",
+      kind: "once",
+      runAt: PAST,
+      fullAccess: false,
+      nextRunAt: PAST
+    });
+    const { scheduler } = schedulerWith([]);
+
+    await scheduler.tick();
+
+    const updated = await store.getScheduledTask(task.id);
+    expect(updated?.lastStatus).toBe("failed");
+    expect(updated?.lastError).toContain("模型");
+    expect(updated?.enabled).toBe(false);
+    expect(updated?.nextRunAt).toBeUndefined();
   });
 
   it("publishes manual run failures with the task error", async () => {
@@ -206,6 +265,7 @@ describe("TaskScheduler", () => {
       sessionId: futureSession.id,
       name: "未来任务",
       prompt: "稍后再说",
+      kind: "recurring",
       cron: "0 9 * * *",
       fullAccess: false,
       nextRunAt: "2999-01-01T00:00:00.000Z"

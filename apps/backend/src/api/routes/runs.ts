@@ -40,7 +40,15 @@ export function runRoutes(context: AppContext): Hono {
     return c.json({ runs });
   });
 
-  app.get("/events", (c) => eventStreamResponse(context.eventHub, c.req.raw.signal));
+  app.get("/events", (c) =>
+    eventStreamResponse(context.eventHub, {
+      signal: c.req.raw.signal,
+      lastEventId:
+        c.req.query("lastEventId")?.trim() ||
+        c.req.header("last-event-id")?.trim() ||
+        c.req.header("Last-Event-ID")?.trim()
+    })
+  );
 
   app.post("/runs/:runId/abort", (c) => {
     return c.json({ aborted: context.runner.abort(c.req.param("runId")) });
@@ -117,7 +125,10 @@ function runStreamResponse(runner: AgentRunner, input: RunRequest): Response {
   });
 }
 
-function eventStreamResponse(eventHub: EventHub<AppEvent>, signal: AbortSignal): Response {
+function eventStreamResponse(
+  eventHub: EventHub<AppEvent>,
+  options: { signal: AbortSignal; lastEventId?: string }
+): Response {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
@@ -130,8 +141,11 @@ function eventStreamResponse(eventHub: EventHub<AppEvent>, signal: AbortSignal):
       }, HEARTBEAT_MS);
 
       try {
-        for await (const event of eventHub.subscribe(signal)) {
-          controller.enqueue(encoder.encode(encodeSseEvent(event)));
+        for await (const envelope of eventHub.subscribeEnvelopes({
+          signal: options.signal,
+          afterId: options.lastEventId
+        })) {
+          controller.enqueue(encoder.encode(encodeSseEvent(envelope.event, envelope.id)));
         }
       } catch (error) {
         console.warn("[api] /api/events 事件流中断", {

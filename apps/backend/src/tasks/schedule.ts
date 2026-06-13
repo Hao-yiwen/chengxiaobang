@@ -33,3 +33,22 @@ export function computeNextRunAt(cron: string, from: Date): string {
   }
   return next.toISOString();
 }
+
+/** 一次性任务必须使用带时区的绝对时间，避免“明天 9 点”被不同进程解释成不同时区。 */
+export function validateRunAt(runAt: string, from: Date = new Date()): string | undefined {
+  if (!/(?:[zZ]|[+-]\d{2}:\d{2})$/.test(runAt.trim())) {
+    return "run_at 必须是带时区的 ISO 8601 时间，例如 2026-06-13T01:53:00+08:00";
+  }
+  const date = new Date(runAt);
+  if (Number.isNaN(date.getTime())) {
+    return `run_at 时间无效：${runAt}`;
+  }
+  if (date <= from) {
+    return "run_at 必须晚于当前时间";
+  }
+  return undefined;
+}
+
+export function normalizeRunAt(runAt: string): string {
+  return new Date(runAt).toISOString();
+}

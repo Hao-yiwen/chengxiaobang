@@ -1006,7 +1006,28 @@ export class AgentRunner {
       options.controller.signal,
       this.streamFn
     )
-      .then(() => queue.end())
+      .then(async () => {
+        if (!translator.finished) {
+          const error = "模型循环已结束，但未返回终态事件。";
+          console.error("[agent-runner] 运行缺少终态事件，执行兜底收尾", {
+            runId: options.runId,
+            sessionId: options.sessionId,
+            aborted: options.controller.signal.aborted,
+            error
+          });
+          try {
+            await translator.finish(
+              options.controller.signal.aborted
+                ? { status: "aborted" }
+                : { status: "failed", error }
+            );
+          } catch (finishError) {
+            queue.fail(finishError);
+            return;
+          }
+        }
+        queue.end();
+      })
       .catch(async (error) => {
         // pi 会通过 stopReason 报告模型错误；这里的 rejection 属于基础设施失败
         //（持久化或契约误用），要收尾 run，不能让它一直停在 running。

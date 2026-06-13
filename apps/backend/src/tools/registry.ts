@@ -18,8 +18,9 @@ const MUTATING_TOOLS = new Set<string>([
   "shell",
   // 主动向外发消息也需要用户同意；审批门控也能保证飞书只读运行不会自行发消息。
   "feishu_send_message",
-  // 创建/取消定时任务会改变后台行为，需用户在审批卡上看到 cron 后确认。
+  // 创建/取消定时任务会改变后台行为，需用户在审批卡上看到 cron 或执行时间后确认。
   "schedule_create",
+  "schedule_create_once",
   "schedule_cancel",
   // 安装技能会向全局技能目录写入文件、改变后续可用能力，需用户确认。
   "create_skill"

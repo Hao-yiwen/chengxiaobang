@@ -150,8 +150,9 @@ export function isStreamEvent(event: AppEvent): event is StreamEvent {
   return !event.type.startsWith("scheduled_task_");
 }
 
-export function encodeSseEvent(event: AppEvent): string {
-  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+export function encodeSseEvent(event: AppEvent, id?: string): string {
+  const idLine = id ? `id: ${id}\n` : "";
+  return `${idLine}event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
 export function parseSseChunk(chunk: string): AppEvent[] {

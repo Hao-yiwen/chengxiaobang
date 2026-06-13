@@ -40,4 +40,28 @@ describe("EventHub", () => {
 
     expect(seen).toEqual([1]);
   });
+
+  it("按 last event id 回放断线期间的事件", async () => {
+    const hub = new EventHub<string>();
+    const first = hub.publish("a");
+    hub.publish("b");
+    hub.publish("c");
+    const controller = new AbortController();
+    const seen: string[] = [];
+    const task = (async () => {
+      for await (const envelope of hub.subscribeEnvelopes({
+        signal: controller.signal,
+        afterId: first.id
+      })) {
+        seen.push(envelope.event);
+        if (seen.length === 2) {
+          controller.abort();
+        }
+      }
+    })();
+
+    await task;
+
+    expect(seen).toEqual(["b", "c"]);
+  });
 });

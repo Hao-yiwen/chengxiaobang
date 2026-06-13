@@ -481,6 +481,7 @@ describe("feishu_send_message tool", () => {
     expect(requiresApproval("feishu_send_message")).toBe(true);
     expect(requiresApproval("write_file")).toBe(true);
     expect(requiresApproval("shell")).toBe(true);
+    expect(requiresApproval("schedule_create_once")).toBe(true);
     expect(requiresApproval("shell_status")).toBe(false);
     expect(requiresApproval("shell_cancel")).toBe(false);
     expect(requiresApproval("read_file")).toBe(false);

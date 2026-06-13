@@ -246,6 +246,66 @@ describe("side chat panel", () => {
     emit?.({ type: "run_end", runId: "run_side", status: "completed" });
   });
 
+  it("recovers a completed side run after the global stream reconnects", async () => {
+    let reconnect: (() => void) | undefined;
+    const subscribeRunEvents = vi.fn(
+      (
+        _listener: (event: StreamEvent) => void,
+        options?: Parameters<NonNullable<ApiClient["subscribeRunEvents"]>>[1]
+      ) => {
+        reconnect = options?.onReconnect;
+        return vi.fn();
+      }
+    );
+    const startRun = vi.fn(async (input: Parameters<NonNullable<ApiClient["startRun"]>>[0]) => ({
+      runId: "run_side",
+      sessionId: "session_side",
+      clientRequestId: input.clientRequestId,
+      providerId: provider.id,
+      model: provider.model
+    }));
+    const listMessages = vi.fn(async () => [
+      message("m_recovered_user", "user", "走全局流"),
+      message("m_recovered_assistant", "assistant", "恢复后的回答")
+    ]);
+    const listSessionRuns = vi.fn(async () => ({
+      runs: [
+        {
+          id: "run_side",
+          sessionId: "session_side",
+          status: "completed" as const,
+          createdAt: "2026-06-08T00:00:00.000Z",
+          updatedAt: "2026-06-08T00:00:02.000Z"
+        }
+      ],
+      toolCalls: []
+    }));
+    const client = createClient({
+      startRun,
+      subscribeRunEvents,
+      listMessages,
+      listSessionRuns
+    });
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await openSideChat();
+
+    const input = await screen.findByLabelText("问点什么，回车发送");
+    fireEvent.change(input, { target: { value: "走全局流" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(startRun).toHaveBeenCalled());
+    reconnect?.();
+
+    expect(await screen.findByText("恢复后的回答")).toBeInTheDocument();
+    expect(listMessages).toHaveBeenCalledWith("session_side");
+    expect(listSessionRuns).toHaveBeenCalledWith("session_side");
+    expect(screen.getAllByRole("button", { name: /新对话/ }).some((button) => !button.disabled)).toBe(
+      true
+    );
+  });
+
   it("streams a reply into the panel and reuses the session on the next send", async () => {
     const streamRun = vi.fn(
       async (input: RunRequest, onEvent: (event: StreamEvent) => void) => {

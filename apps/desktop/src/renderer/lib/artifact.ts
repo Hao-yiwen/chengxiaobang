@@ -1,3 +1,4 @@
+import type { ToolCall } from "@chengxiaobang/shared";
 import {
   basenameOf,
   isAbsolutePathLike,
@@ -25,6 +26,7 @@ export interface ArtifactSourceMessage {
 
 export interface CollectedArtifact extends Artifact {
   messageId?: string;
+  toolCallId?: string;
   declaredAt?: string;
 }
 
@@ -44,6 +46,28 @@ export interface CollectedArtifactDeclarations {
   diagnostics: ArtifactDeclarationDiagnostic[];
 }
 
+export interface ArtifactCollectionLogContext {
+  messageCount?: number;
+  toolCallCount?: number;
+  hasDeclarationMarkup?: boolean;
+}
+
+export type ArtifactSourceToolCall = Pick<
+  ToolCall,
+  "id" | "name" | "args" | "status" | "createdAt" | "updatedAt"
+>;
+
+const TOOL_FALLBACK_ARTIFACT_KINDS = new Set<ArtifactKind>([
+  "html",
+  "pdf",
+  "image",
+  "audio",
+  "video",
+  "spreadsheet",
+  "docx",
+  "presentation"
+]);
+
 /** 面向产物协议的文件类型推导别名，实际预览类型仍由文件预览模块决定。 */
 export function artifactKind(path: string): ArtifactKind {
   return previewKindForPath(path);
@@ -51,6 +75,10 @@ export function artifactKind(path: string): ArtifactKind {
 
 export function artifactFromPath(path: string): Artifact {
   return { path, name: basenameOf(path), kind: artifactKind(path) };
+}
+
+function artifactFromPathWithKind(path: string, kind: ArtifactKind): Artifact {
+  return { path, name: basenameOf(path), kind };
 }
 
 export function parseArtifactDeclarations(markdown: string): ParsedArtifactDeclarations {
@@ -109,9 +137,100 @@ export function parseArtifactDeclarations(markdown: string): ParsedArtifactDecla
 export function collectArtifactsFromAssistantMessages(
   messages: ArtifactSourceMessage[]
 ): CollectedArtifactDeclarations {
-  const declared: CollectedArtifact[] = [];
-  const diagnostics: ArtifactDeclarationDiagnostic[] = [];
+  return collectArtifactsFromSession(messages);
+}
 
+export function collectArtifactsFromSession(
+  messages: ArtifactSourceMessage[],
+  toolCalls: ArtifactSourceToolCall[] = []
+): CollectedArtifactDeclarations {
+  const diagnostics: ArtifactDeclarationDiagnostic[] = [];
+  const declared = collectDeclaredArtifacts(messages, diagnostics);
+  const fallback = collectToolCallArtifacts(toolCalls, diagnostics);
+  const seen = new Set<string>();
+  const artifacts: CollectedArtifact[] = [];
+
+  // 最终 XML 声明始终优先；工具历史只补足旧会话或未声明的可预览产物。
+  for (const artifact of [...newestFirst(declared), ...newestFirst(fallback)]) {
+    if (seen.has(artifact.path)) {
+      diagnostics.push({ type: "duplicate_path", path: artifact.path });
+      continue;
+    }
+    seen.add(artifact.path);
+    artifacts.push(artifact);
+  }
+
+  return { artifacts, diagnostics };
+}
+
+export function hasArtifactDeclarationMarkup(messages: ArtifactSourceMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      message.role === "assistant" &&
+      Boolean(message.content && /<artifacts?\b/iu.test(message.content))
+  );
+}
+
+export function logArtifactDeclarationResult(
+  source: string,
+  parsed: ParsedArtifactDeclarations
+): void {
+  if (parsed.artifacts.length > 0) {
+    console.info("[artifact] 已解析最终产物声明", artifactLogPayload({
+      source,
+      artifactCount: parsed.artifacts.length,
+      paths: parsed.artifacts.map((artifact) => artifact.path)
+    }));
+  }
+  for (const diagnostic of parsed.diagnostics) {
+    console.warn("[artifact] 已忽略无效最终产物声明", artifactLogPayload({
+      source,
+      ...diagnostic
+    }));
+  }
+}
+
+export function logArtifactCollectionResult(
+  source: string,
+  collection: CollectedArtifactDeclarations,
+  context: ArtifactCollectionLogContext = {}
+): void {
+  if (collection.artifacts.length > 0) {
+    console.info("[artifact] 已汇总当前会话产物", artifactLogPayload({
+      source,
+      messageCount: context.messageCount,
+      toolCallCount: context.toolCallCount,
+      artifactCount: collection.artifacts.length,
+      paths: collection.artifacts.map((artifact) => artifact.path)
+    }));
+  } else if (context.hasDeclarationMarkup) {
+    console.warn("[artifact] 检测到最终产物声明但外侧面板没有可展示产物", artifactLogPayload({
+      source,
+      messageCount: context.messageCount,
+      toolCallCount: context.toolCallCount,
+      artifactCount: 0,
+      diagnosticCount: collection.diagnostics.length
+    }));
+  }
+  for (const diagnostic of collection.diagnostics) {
+    console.warn("[artifact] 汇总当前会话产物时已忽略无效产物来源", artifactLogPayload({
+      source,
+      messageCount: context.messageCount,
+      toolCallCount: context.toolCallCount,
+      ...diagnostic
+    }));
+  }
+}
+
+function artifactLogPayload(payload: Record<string, unknown>): string {
+  return JSON.stringify(payload);
+}
+
+function collectDeclaredArtifacts(
+  messages: ArtifactSourceMessage[],
+  diagnostics: ArtifactDeclarationDiagnostic[]
+): CollectedArtifact[] {
+  const declared: CollectedArtifact[] = [];
   for (const message of messages) {
     if (message.role !== "assistant" || !message.content) {
       continue;
@@ -126,59 +245,65 @@ export function collectArtifactsFromAssistantMessages(
       });
     }
   }
+  return declared;
+}
 
-  const seen = new Set<string>();
+function collectToolCallArtifacts(
+  toolCalls: ArtifactSourceToolCall[],
+  diagnostics: ArtifactDeclarationDiagnostic[]
+): CollectedArtifact[] {
   const artifacts: CollectedArtifact[] = [];
-  // 会话面板展示“最新声明优先”，同一路径只保留最后一次最终声明。
-  for (let index = declared.length - 1; index >= 0; index -= 1) {
-    const artifact = declared[index];
-    if (seen.has(artifact.path)) {
-      diagnostics.push({ type: "duplicate_path", path: artifact.path });
+  for (const toolCall of toolCalls) {
+    if (toolCall.status !== "completed") {
       continue;
     }
-    seen.add(artifact.path);
-    artifacts.push(artifact);
+    const path = typeof toolCall.args.path === "string" ? toolCall.args.path : undefined;
+    if (!path) {
+      continue;
+    }
+    const normalized = normalizeArtifactPath(path);
+    if (!normalized) {
+      diagnostics.push({ type: "invalid_path", path });
+      continue;
+    }
+    const kind = toolArtifactKind(toolCall.name, normalized);
+    if (!kind) {
+      continue;
+    }
+    artifacts.push({
+      ...artifactFromPathWithKind(normalized, kind),
+      toolCallId: toolCall.id,
+      declaredAt: toolCall.updatedAt || toolCall.createdAt
+    });
   }
-
-  return { artifacts, diagnostics };
+  return artifacts;
 }
 
-export function logArtifactDeclarationResult(
-  source: string,
-  parsed: ParsedArtifactDeclarations
-): void {
-  if (parsed.artifacts.length > 0) {
-    console.info("[artifact] 已解析最终产物声明", {
-      source,
-      count: parsed.artifacts.length,
-      paths: parsed.artifacts.map((artifact) => artifact.path)
-    });
+function toolArtifactKind(toolName: string, path: string): ArtifactKind | undefined {
+  if (toolName === "create_pptx") {
+    return "presentation";
   }
-  for (const diagnostic of parsed.diagnostics) {
-    console.warn("[artifact] 已忽略无效最终产物声明", {
-      source,
-      ...diagnostic
-    });
+  if (toolName === "create_docx") {
+    return "docx";
   }
+  if (toolName === "create_xlsx") {
+    return "spreadsheet";
+  }
+  if (toolName !== "write_file") {
+    return undefined;
+  }
+  const kind = artifactKind(path);
+  return TOOL_FALLBACK_ARTIFACT_KINDS.has(kind) ? kind : undefined;
 }
 
-export function logArtifactCollectionResult(
-  source: string,
-  collection: CollectedArtifactDeclarations
-): void {
-  if (collection.artifacts.length > 0) {
-    console.info("[artifact] 已汇总当前会话产物", {
-      source,
-      count: collection.artifacts.length,
-      paths: collection.artifacts.map((artifact) => artifact.path)
-    });
-  }
-  for (const diagnostic of collection.diagnostics) {
-    console.warn("[artifact] 汇总当前会话产物时已忽略声明", {
-      source,
-      ...diagnostic
-    });
-  }
+function newestFirst<T extends { declaredAt?: string }>(items: T[]): T[] {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const byDate = (right.item.declaredAt ?? "").localeCompare(left.item.declaredAt ?? "");
+      return byDate || right.index - left.index;
+    })
+    .map(({ item }) => item);
 }
 
 function pathAttribute(tag: string): string | undefined {

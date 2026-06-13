@@ -5,7 +5,7 @@ import {
   MinusCircleIcon as MinusCircle,
   type Icon
 } from "@phosphor-icons/react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   deriveTodoState,
@@ -24,24 +24,70 @@ const STATUS_ICON: Record<TodoStatus, Icon> = {
   skipped: MinusCircle
 };
 
+type ProgressTodoSource = "active" | "history";
+
+interface ProgressTodoView {
+  todo: TodoState;
+  source: ProgressTodoSource;
+}
+
 /** 对话右侧的轻量进度浮层：只展示 AI 当前 todo，不占用右侧工作区面板。 */
 export function ProgressFloatingPanel() {
   const { t } = useTranslation();
-  const open = useAppStore((state) => state.progressPanelOpen);
   const toolHistory = useAppStore((state) => state.toolHistory);
   const activeRunId = useAppStore((state) => state.activeRunId);
-  const todo = useMemo(() => {
-    const active = activeRunId
+  const progressView = useMemo<ProgressTodoView | undefined>(() => {
+    const activeTodo = activeRunId
       ? deriveTodoState(toolHistory, { runId: activeRunId })
       : undefined;
-    return active ?? deriveTodoState(toolHistory);
+    if (activeRunId) {
+      return activeTodo ? { todo: activeTodo, source: "active" } : undefined;
+    }
+    const historyTodo = deriveTodoState(toolHistory);
+    return historyTodo ? { todo: historyTodo, source: "history" } : undefined;
   }, [activeRunId, toolHistory]);
+  const hasTodoHistory = useMemo(
+    () =>
+      toolHistory.some(
+        (toolCall) => toolCall.name === "todo_create" || toolCall.name === "todo_update"
+      ),
+    [toolHistory]
+  );
+  const logKey = progressView
+    ? [
+        progressView.source,
+        progressView.todo.runId,
+        progressView.todo.toolCallId,
+        progressView.todo.finished ? "finished" : "open",
+        progressView.todo.items.map((item) => `${item.id}:${item.status}`).join("|")
+      ].join("\u0000")
+    : `hidden:${activeRunId ?? "none"}:${toolHistory.length}:${hasTodoHistory ? "todo" : "empty"}`;
 
-  if (!open || !todo) {
+  useEffect(() => {
+    if (progressView) {
+      console.info("[progress-floating-panel] 展示会话进度浮层", {
+        source: progressView.source,
+        runId: progressView.todo.runId,
+        toolCallId: progressView.todo.toolCallId,
+        itemCount: progressView.todo.items.length,
+        finished: progressView.todo.finished
+      });
+      return;
+    }
+    if (hasTodoHistory) {
+      console.warn("[progress-floating-panel] 会话存在 todo 历史但当前不展示进度浮层", {
+        activeRunId,
+        toolCallCount: toolHistory.length
+      });
+    }
+  }, [activeRunId, hasTodoHistory, logKey, progressView, toolHistory.length]);
+
+  if (!progressView) {
     return null;
   }
 
-  const showingActiveRun = Boolean(activeRunId && todo.runId === activeRunId);
+  const { todo } = progressView;
+  const showingActiveRun = progressView.source === "active";
   const done = todo.items.filter(
     (item) => item.status === "completed" || item.status === "skipped"
   ).length;
@@ -52,7 +98,7 @@ export function ProgressFloatingPanel() {
     <aside
       data-testid="progress-floating-panel"
       aria-label={t("rightPanel.progress")}
-      className="chat-progress-floating pointer-events-auto rounded-xl border bg-card/95 shadow-overlay backdrop-blur-sm"
+      className="chat-progress-floating pointer-events-auto rounded-xl border bg-card"
     >
       <header className="min-w-0 border-b px-4 pb-3 pt-4">
         <div className="min-w-0">

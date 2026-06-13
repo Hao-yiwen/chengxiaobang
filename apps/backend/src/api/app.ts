@@ -9,7 +9,7 @@ import { registerRoutes } from "./routes/index";
 export type { AppContext, AppOptions } from "./context";
 
 const ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
-const ALLOWED_HEADERS = ["Content-Type", "x-chengxiaobang-token"];
+const ALLOWED_HEADERS = ["Content-Type", "x-chengxiaobang-token", "Last-Event-ID"];
 
 export function createApp(options: AppOptions): (request: Request) => Promise<Response> {
   const context: AppContext = {

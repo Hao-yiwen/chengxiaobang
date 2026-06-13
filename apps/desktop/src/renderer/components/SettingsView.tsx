@@ -2,7 +2,6 @@ import {
   ArrowLeftIcon as ArrowLeft,
   ArrowSquareOutIcon as ExternalLink,
   ChartBarIcon as ChartBar,
-  ChatCenteredTextIcon as MessageSquareText,
   CircleHalfTiltIcon as SunMoon,
   FolderOpenIcon as FolderOpen,
   GlobeIcon as Globe,
@@ -43,7 +42,6 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
-import { FeishuSection } from "@/components/settings/FeishuSection";
 import { OptionCard } from "@/components/settings/OptionCard";
 import { SectionShell, SettingBlock } from "@/components/settings/SectionShell";
 import { UsageStatsSection } from "@/components/settings/UsageStatsSection";
@@ -68,8 +66,7 @@ type SectionId =
   | "providers"
   | "usage"
   | "skills"
-  | "webSearch"
-  | "feishu";
+  | "webSearch";
 
 interface NavDef {
   id: SectionId;
@@ -79,8 +76,7 @@ interface NavDef {
     | "settings.nav.providers"
     | "settings.nav.usage"
     | "settings.nav.skills"
-    | "settings.nav.webSearch"
-    | "settings.nav.feishu";
+    | "settings.nav.webSearch";
   icon: Icon;
   groupKey: "settings.groupPersonal" | "settings.groupModel" | "settings.groupIntegrations";
 }
@@ -98,8 +94,7 @@ const NAV_DEFS: NavDef[] = [
   { id: "providers", labelKey: "settings.nav.providers", icon: Boxes, groupKey: "settings.groupModel" },
   { id: "usage", labelKey: "settings.nav.usage", icon: ChartBar, groupKey: "settings.groupModel" },
   { id: "skills", labelKey: "settings.nav.skills", icon: Sparkles, groupKey: "settings.groupModel" },
-  { id: "webSearch", labelKey: "settings.nav.webSearch", icon: Globe, groupKey: "settings.groupIntegrations" },
-  { id: "feishu", labelKey: "settings.nav.feishu", icon: MessageSquareText, groupKey: "settings.groupIntegrations" }
+  { id: "webSearch", labelKey: "settings.nav.webSearch", icon: Globe, groupKey: "settings.groupIntegrations" }
 ];
 
 export function SettingsView() {
@@ -220,7 +215,6 @@ export function SettingsView() {
           {section === "usage" ? <UsageStatsSection /> : null}
           {section === "skills" ? <SkillsSection /> : null}
           {section === "webSearch" ? <WebSearchSection /> : null}
-          {section === "feishu" ? <FeishuSection /> : null}
         </div>
       </div>
     </div>

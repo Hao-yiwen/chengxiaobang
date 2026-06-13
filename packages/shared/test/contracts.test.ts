@@ -74,6 +74,10 @@ describe("toolNameSchema", () => {
       "web_search",
       "todo_create",
       "todo_update",
+      "schedule_create",
+      "schedule_create_once",
+      "schedule_list",
+      "schedule_cancel",
       "memory",
       "shell_status",
       "shell_cancel"

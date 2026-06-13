@@ -13,12 +13,14 @@ import { cn } from "@/lib/utils";
 import { getApiClient } from "@/store";
 
 type HeatmapMode = "daily" | "weekly" | "cumulative";
+type SimpleTranslate = (key: string, options?: Record<string, unknown>) => string;
 
 const HEATMAP_MODE_KEYS: HeatmapMode[] = ["daily", "weekly", "cumulative"];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function UsageStatsSection() {
   const { t, i18n } = useTranslation();
+  const translate = t as unknown as SimpleTranslate;
   const [stats, setStats] = useState<UsageStats>();
   const [mode, setMode] = useState<HeatmapMode>("daily");
   const [loading, setLoading] = useState(true);
@@ -130,7 +132,7 @@ export function UsageStatsSection() {
                 <div>
                   <h3 className="text-body-lg font-medium">{t("settings.usage.tokenActivity")}</h3>
                   <p className="text-caption text-muted-foreground">
-                    {summaryLine(t, stats, mode)}
+                    {summaryLine(translate, stats, mode)}
                   </p>
                 </div>
                 <ToggleGroup
@@ -441,7 +443,7 @@ function bucketsForMode(stats: UsageStats, mode: HeatmapMode): UsageStatsBucket[
 }
 
 function summaryLine(
-  t: ReturnType<typeof useTranslation>["t"],
+  t: SimpleTranslate,
   stats: UsageStats,
   mode: HeatmapMode
 ): string {

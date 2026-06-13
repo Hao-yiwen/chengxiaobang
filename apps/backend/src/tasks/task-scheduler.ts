@@ -154,13 +154,17 @@ export class TaskScheduler {
     let runId: string | undefined;
     try {
       const now = this.now();
-      // 先推进并落盘（sqlite store 每写必 flush），保证 at-most-once。
-      await this.store.updateScheduledTask(task.id, {
-        nextRunAt: computeNextRunAt(task.cron, now),
-        lastRunAt: now.toISOString()
-      });
+      // 先推进/清空并落盘（sqlite store 每写必 flush），保证 at-most-once。
+      const beforeRunUpdate =
+        task.kind === "once"
+          ? { nextRunAt: null, enabled: false, lastRunAt: now.toISOString() }
+          : {
+              nextRunAt: computeNextRunAt(task.cron!, now),
+              lastRunAt: now.toISOString()
+            };
+      await this.store.updateScheduledTask(task.id, beforeRunUpdate);
       console.info(
-        `[task-scheduler] 开始执行 taskId=${task.id} name=${task.name} sessionId=${task.sessionId} fullAccess=${task.fullAccess}`
+        `[task-scheduler] 开始执行 taskId=${task.id} name=${task.name} kind=${task.kind} sessionId=${task.sessionId} fullAccess=${task.fullAccess}`
       );
       this.publishTaskEvent({
         type: "scheduled_task_started",

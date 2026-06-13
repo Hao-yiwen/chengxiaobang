@@ -49,6 +49,10 @@ type EventSubscriptionOptions = {
   onError?: (error: unknown) => void;
 };
 
+type ReadSseStreamOptions = {
+  onEventId?: (id: string) => void;
+};
+
 export interface ApiClient {
   listProjects(): Promise<Project[]>;
   createProject(input: { path: string; name?: string }): Promise<Project>;
@@ -162,6 +166,7 @@ export async function createApiClient(): Promise<ApiClient> {
     EventSubscriptionOptions | undefined
   >();
   let eventStreamAbort: AbortController | undefined;
+  let lastAppEventId: string | undefined;
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${baseURL}${path}`, {
@@ -218,8 +223,14 @@ export async function createApiClient(): Promise<ApiClient> {
       try {
         while (!controller.signal.aborted && listenerCount() > 0) {
           try {
-            console.info("[api] 连接全局应用事件流", { reconnecting });
-            const response = await fetch(`${baseURL}/api/events`, {
+            const eventPath = lastAppEventId
+              ? `/api/events?lastEventId=${encodeURIComponent(lastAppEventId)}`
+              : "/api/events";
+            console.info("[api] 连接全局应用事件流", {
+              reconnecting,
+              lastEventId: lastAppEventId
+            });
+            const response = await fetch(`${baseURL}${eventPath}`, {
               headers,
               signal: controller.signal
             });
@@ -231,7 +242,11 @@ export async function createApiClient(): Promise<ApiClient> {
               emitReconnect();
             }
             reconnecting = true;
-            await readSseStream<AppEvent>(response.body, dispatchAppEvent);
+            await readSseStream<AppEvent>(response.body, dispatchAppEvent, {
+              onEventId: (id) => {
+                lastAppEventId = id;
+              }
+            });
             if (!controller.signal.aborted && listenerCount() > 0) {
               console.warn("[api] 全局应用事件流已关闭，准备重连");
             }
@@ -659,7 +674,8 @@ function objectHeaders(headers: HeadersInit | undefined): Record<string, string>
 
 export async function readSseStream<T extends AppEvent = AppEvent>(
   body: ReadableStream<Uint8Array>,
-  onEvent: (event: T) => void
+  onEvent: (event: T) => void,
+  options: ReadSseStreamOptions = {}
 ): Promise<void> {
   const decoder = new TextDecoder();
   const reader = body.getReader();
@@ -673,12 +689,14 @@ export async function readSseStream<T extends AppEvent = AppEvent>(
     const blocks = buffer.split(/\n\n+/);
     buffer = blocks.pop() ?? "";
     for (const block of blocks) {
-      const data = block
-        .split("\n")
-        .find((line) => line.startsWith("data: "))
-        ?.slice(6);
+      const lines = block.split("\n");
+      const eventId = lines.find((line) => line.startsWith("id: "))?.slice(4);
+      const data = lines.find((line) => line.startsWith("data: "))?.slice(6);
       if (data) {
         onEvent(JSON.parse(data) as T);
+        if (eventId) {
+          options.onEventId?.(eventId);
+        }
       }
     }
   }

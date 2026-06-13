@@ -160,7 +160,7 @@ export function Composer() {
   const submit = useAppStore((state) => state.submit);
   const abortRun = useAppStore((state) => state.abortRun);
   const removeQueuedRun = useAppStore((state) => state.removeQueuedRun);
-  const updateQueuedRun = useAppStore((state) => state.updateQueuedRun);
+  const editQueuedRunInComposer = useAppStore((state) => state.editQueuedRunInComposer);
   const clearQueuedRuns = useAppStore((state) => state.clearQueuedRuns);
   const resumeQueuedRuns = useAppStore((state) => state.resumeQueuedRuns);
   const sendQueuedRunAsSteering = useAppStore((state) => state.sendQueuedRunAsSteering);
@@ -183,8 +183,6 @@ export function Composer() {
   const [blankDialogOpen, setBlankDialogOpen] = useState(false);
   const [blankName, setBlankName] = useState("");
   const [creatingBlank, setCreatingBlank] = useState(false);
-  const [editingQueueId, setEditingQueueId] = useState<string>();
-  const [editingQueueContent, setEditingQueueContent] = useState("");
   const filteredProjects = useMemo(() => {
     const query = projectQuery.trim().toLowerCase();
     if (!query) {
@@ -241,7 +239,6 @@ export function Composer() {
     atToken !== undefined &&
     atToken.start !== dismissedAtStart &&
     fileSuggestions.length > 0;
-  const editingQueuedRun = queuedRuns.find((item) => item.id === editingQueueId);
   const activeSuggestionMenu = showSlashMenu ? "slash" : showFileMenu ? "file" : undefined;
   // 已插入的斜杠命令 / @ 文件引用打灰底标记，与普通输入区分。
   const highlightRanges = useMemo(
@@ -679,9 +676,9 @@ export function Composer() {
           paused={queuePaused}
           canSteer={currentComposerRunning && Boolean(activeRunId)}
           onSteer={(id) => void sendQueuedRunAsSteering(id)}
-          onEdit={(item) => {
-            setEditingQueueId(item.id);
-            setEditingQueueContent(item.content);
+          onEdit={(id) => {
+            editQueuedRunInComposer(id);
+            window.requestAnimationFrame(() => textareaRef.current?.focus());
           }}
           onRemove={removeQueuedRun}
           onClear={() => clearQueuedRuns(activeSessionId)}
@@ -1311,56 +1308,6 @@ export function Composer() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={Boolean(editingQueuedRun)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingQueueId(undefined);
-            setEditingQueueContent("");
-          }
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t("composer.queueEditTitle")}</DialogTitle>
-            <DialogDescription>{t("composer.queueEditHint")}</DialogDescription>
-          </DialogHeader>
-          <Textarea
-            autoFocus
-            value={editingQueueContent}
-            onChange={(event) => setEditingQueueContent(event.target.value)}
-            className="min-h-[120px]"
-            aria-label={t("composer.queueEditTitle")}
-          />
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setEditingQueueId(undefined);
-                setEditingQueueContent("");
-              }}
-            >
-              {t("composer.cancel")}
-            </Button>
-            <Button
-              disabled={
-                editingQueueContent.trim().length === 0 &&
-                (editingQueuedRun?.displayAttachments.length ?? 0) === 0
-              }
-              onClick={() => {
-                if (!editingQueuedRun) {
-                  return;
-                }
-                updateQueuedRun(editingQueuedRun.id, editingQueueContent);
-                setEditingQueueId(undefined);
-                setEditingQueueContent("");
-              }}
-            >
-              {t("composer.queueEditSave")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
