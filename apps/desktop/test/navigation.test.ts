@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isTrustedAppWindowUrl,
   localPathFromFileUrl,
   shouldAllowWebviewSrc,
   shouldOpenExternalFromAppWindow
@@ -53,5 +54,34 @@ describe("shouldAllowWebviewSrc", () => {
 describe("localPathFromFileUrl", () => {
   it("decodes local file URLs into paths", () => {
     expect(localPathFromFileUrl("file:///tmp/page%20one.html")).toBe("/tmp/page one.html");
+  });
+});
+
+describe("isTrustedAppWindowUrl", () => {
+  it("trusts only the configured Vite origin in dev", () => {
+    expect(
+      isTrustedAppWindowUrl("http://127.0.0.1:5173/src/main.tsx", {
+        devServerUrl: "http://127.0.0.1:5173"
+      })
+    ).toBe(true);
+    expect(
+      isTrustedAppWindowUrl("https://example.com", {
+        devServerUrl: "http://127.0.0.1:5173"
+      })
+    ).toBe(false);
+  });
+
+  it("trusts only the packaged renderer file", () => {
+    expect(
+      isTrustedAppWindowUrl("file:///Applications/App.app/Contents/Resources/dist/index.html#chat", {
+        rendererFilePath: "/Applications/App.app/Contents/Resources/dist/index.html"
+      })
+    ).toBe(true);
+    expect(
+      isTrustedAppWindowUrl("file:///Users/me/secrets.html", {
+        rendererFilePath: "/Applications/App.app/Contents/Resources/dist/index.html"
+      })
+    ).toBe(false);
+    expect(isTrustedAppWindowUrl("data:text/html,boom")).toBe(false);
   });
 });

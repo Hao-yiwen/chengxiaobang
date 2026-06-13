@@ -22,7 +22,7 @@ metadata:
 3. **撰写内容**：每条要点精炼成一句话；标题有信息量（避免“介绍”“概述”这类空标题）。可在 `notes` 写演讲备注。
 4. **写入规格文件**：用基础文件写入能力在工作目录中创建一个 JSON 规格文件（例如 `deck-spec.json`），内容格式见下方示例。
 5. **执行脚本生成**：用基础 shell 能力执行本技能自带脚本 `scripts/create-pptx.mjs`：
-   ```bash
+   ```text
    node "<技能目录>/scripts/create-pptx.mjs" deck-spec.json 产品发布.pptx
    ```
    技能正文开头会给出本技能目录位置，脚本路径相对该目录。第二个参数是输出 `.pptx` 路径，省略时会读取 JSON 里的 `path` 字段。

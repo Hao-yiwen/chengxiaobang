@@ -15,6 +15,8 @@ import { builtinResourceRoot } from "../paths";
 const ENABLED_SETTING_KEY = "skills.enabledMarketSkills";
 
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const SKILL_IMPORT_TIMEOUT_MS = 10_000;
+const SKILL_IMPORT_MAX_BYTES = 256 * 1024;
 
 type SettingsStore = Pick<StateStore, "getSetting" | "setSetting">;
 
@@ -143,20 +145,30 @@ export class SkillMarketService {
     const failures: string[] = [];
     for (const candidate of candidates) {
       console.info(`[skill-market] 尝试拉取技能文件 url=${candidate}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), SKILL_IMPORT_TIMEOUT_MS);
       try {
-        const response = await fetch(candidate);
+        const response = await fetch(candidate, { signal: controller.signal });
         if (response.ok) {
-          content = await response.text();
+          content = await readResponseTextWithLimit(response, SKILL_IMPORT_MAX_BYTES);
           hitUrl = candidate;
           break;
         }
         failures.push(`${candidate} -> HTTP ${response.status}`);
       } catch (error) {
-        failures.push(`${candidate} -> ${String(error)}`);
+        failures.push(`${candidate} -> ${skillImportFailureText(error)}`);
+      } finally {
+        clearTimeout(timeout);
       }
     }
     if (!content) {
       console.warn(`[skill-market] 技能文件拉取失败: ${failures.join("; ")}`);
+      if (failures.some((failure) => failure.includes("超过大小上限"))) {
+        throw new SkillMarketError(`技能文件超过大小上限（${formatBytes(SKILL_IMPORT_MAX_BYTES)}）`);
+      }
+      if (failures.some((failure) => failure.includes("请求超时"))) {
+        throw new SkillMarketError("拉取 SKILL.md 超时，请稍后重试");
+      }
       throw new SkillMarketError("拉取 SKILL.md 失败，请确认链接指向包含 SKILL.md 的公开仓库或目录");
     }
     const meta = parseSkillFile(content);
@@ -336,7 +348,7 @@ export function resolveSkillFileUrls(url: string): string[] {
   } catch {
     return [];
   }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+  if (parsed.protocol !== "https:" || !isAllowedSkillImportHost(parsed.hostname)) {
     return [];
   }
   const path = parsed.pathname.replace(/\/+$/, "");
@@ -344,7 +356,7 @@ export function resolveSkillFileUrls(url: string): string[] {
     return path.endsWith(".md") ? [parsed.href] : [`${parsed.origin}${path}/SKILL.md`];
   }
   if (parsed.hostname !== "github.com") {
-    return path.endsWith(".md") ? [parsed.href] : [];
+    return [];
   }
   const segments = path.split("/").filter(Boolean);
   if (segments.length < 2) {
@@ -361,4 +373,59 @@ export function resolveSkillFileUrls(url: string): string[] {
   }
   // 仓库根：默认分支用 HEAD。
   return [`${rawBase}/HEAD/SKILL.md`];
+}
+
+function isAllowedSkillImportHost(hostname: string): boolean {
+  return hostname === "github.com" || hostname === "raw.githubusercontent.com";
+}
+
+function skillImportFailureText(error: unknown): string {
+  if (error instanceof SkillMarketError) {
+    return error.message;
+  }
+  if (error instanceof Error && error.name === "AbortError") {
+    return `请求超时（${SKILL_IMPORT_TIMEOUT_MS}ms）`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function readResponseTextWithLimit(response: Response, maxBytes: number): Promise<string> {
+  const declaredLength = Number(response.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new SkillMarketError(`技能文件超过大小上限（${formatBytes(maxBytes)}）`);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > maxBytes) {
+      throw new SkillMarketError(`技能文件超过大小上限（${formatBytes(maxBytes)}）`);
+    }
+    return text;
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    if (!value) {
+      continue;
+    }
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      console.warn("[skill-market] 技能文件超过大小上限，已中止读取", {
+        maxBytes,
+        totalBytes: total
+      });
+      throw new SkillMarketError(`技能文件超过大小上限（${formatBytes(maxBytes)}）`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
+}
+
+function formatBytes(bytes: number): string {
+  return `${Math.round(bytes / 1024)}KB`;
 }

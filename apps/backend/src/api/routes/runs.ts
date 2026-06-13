@@ -80,7 +80,7 @@ function runStreamResponse(runner: AgentRunner, input: RunRequest): Response {
         console.error("[api] /api/runs/stream 运行失败:", message);
         controller.enqueue(
           encoder.encode(
-            encodeSseEvent({ type: "run_end", runId: "setup", status: "failed", error: message })
+            encodeSseEvent({ type: "setup_error", error: message })
           )
         );
       } finally {

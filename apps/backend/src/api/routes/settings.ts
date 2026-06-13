@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import {
   feishuConfigInputSchema,
+  feishuInstallPollInputSchema,
+  feishuInstallStartInputSchema,
   providerInputSchema,
   usageStatsSchema,
   webSearchConfigInputSchema
@@ -29,6 +31,46 @@ export function settingsRoutes(context: AppContext): Hono {
       config: feishuConfig,
       status: context.feishuService.getStatus()
     });
+  });
+
+  app.post("/feishu/install/start", async (c) => {
+    if (!context.feishuInstallService) {
+      return c.json({ error: "飞书扫码安装服务不可用" }, 404);
+    }
+    const input = feishuInstallStartInputSchema.parse(await c.req.json());
+    console.info("[settings-routes] 生成飞书扫码连接", { domain: input.domain });
+    return c.json(await context.feishuInstallService.start(input.domain));
+  });
+
+  app.post("/feishu/install/poll", async (c) => {
+    if (!context.feishuInstallService || !context.feishuConfigService || !context.feishuService) {
+      return c.json({ error: "飞书服务不可用" }, 404);
+    }
+    const input = feishuInstallPollInputSchema.parse(await c.req.json());
+    console.debug("[settings-routes] 轮询飞书扫码连接", {
+      deviceCodePrefix: input.deviceCode.slice(0, 8)
+    });
+    const result = await context.feishuInstallService.poll(input.deviceCode);
+    if (!result.done) {
+      return c.json(result);
+    }
+
+    const current = await context.feishuConfigService.load();
+    const config = await context.feishuConfigService.save({
+      enabled: true,
+      appId: result.appId,
+      appSecret: result.appSecret,
+      domain: result.domain,
+      fullAccess: current.fullAccess
+    });
+    await context.feishuService.restart();
+    const status = context.feishuService.getStatus();
+    console.info("[settings-routes] 飞书扫码连接已保存并重启", {
+      appId: config.appId,
+      domain: config.domain,
+      status: status.status
+    });
+    return c.json({ done: true, config, status });
   });
 
   app.get("/feishu/status", (c) => {

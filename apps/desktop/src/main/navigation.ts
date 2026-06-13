@@ -1,9 +1,15 @@
 import { extname } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export interface ExternalNavigationContext {
   currentUrl?: string;
   devServerUrl?: string;
+}
+
+export interface TrustedAppWindowContext {
+  devServerUrl?: string;
+  rendererFilePath?: string;
 }
 
 export function isHttpUrl(url: string): boolean {
@@ -55,6 +61,21 @@ export function shouldOpenExternalFromAppWindow(
     return false;
   }
   return true;
+}
+
+export function isTrustedAppWindowUrl(
+  url: string,
+  context: TrustedAppWindowContext = {}
+): boolean {
+  if (isHttpUrl(url)) {
+    const origin = originOf(url);
+    return Boolean(origin && sameOrigin(origin, context.devServerUrl));
+  }
+  const path = localPathFromFileUrl(url);
+  if (!path || !context.rendererFilePath) {
+    return false;
+  }
+  return resolve(path) === resolve(context.rendererFilePath);
 }
 
 function sameOrigin(origin: string, candidateUrl?: string): boolean {

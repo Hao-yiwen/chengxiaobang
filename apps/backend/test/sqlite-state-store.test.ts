@@ -54,6 +54,36 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
+  it("persists concurrent writes through the serialized flush queue", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const session = await first.createSession({
+      projectId: null,
+      title: "并发写入",
+      accessMode: "approval"
+    });
+
+    await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        first.addMessage({
+          sessionId: session.id,
+          role: "user",
+          content: `message-${index}`
+        })
+      )
+    );
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    const messages = await second.listMessages(session.id);
+    expect(messages.map((message) => message.content).sort()).toEqual(
+      Array.from({ length: 20 }, (_, index) => `message-${index}`).sort()
+    );
+    await second.close();
+  });
+
   it("deletes a project together with its sessions and history", async () => {
     const store = new SqliteStateStore(join(dir, "state.sqlite"));
     await store.initialize();

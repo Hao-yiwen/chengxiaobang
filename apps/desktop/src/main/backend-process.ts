@@ -73,6 +73,8 @@ export interface BackendRuntimeCheckResult {
 export interface BackendStopOptions {
   forceKillAfterMs?: number;
   killProcess?: (pid: number, signal: NodeJS.Signals) => void;
+  killProcessTree?: (pid: number, force: boolean) => void;
+  platform?: NodeJS.Platform;
 }
 
 const DEFAULT_BACKEND_START_TIMEOUT_MS = 45_000;
@@ -88,7 +90,9 @@ export function resolveBackendCommand(options: {
   token: string;
   resourcesPath: string;
   isPackaged: boolean;
+  platform?: NodeJS.Platform;
 }): BackendCommand {
+  const platform = options.platform ?? process.platform;
   const backendEntry = options.isPackaged
     ? join(options.resourcesPath, "backend", "main.js")
     : resolve(projectRoot(), "apps/backend/src/main.ts");
@@ -105,12 +109,16 @@ export function resolveBackendCommand(options: {
   ];
   const env = { ...process.env };
   const root = projectRoot();
-  const bundledBun = join(options.resourcesPath, "bun");
+  const bundledBun = join(options.resourcesPath, backendRuntimeResourceName(platform));
   const devBun = join(root, "node_modules", "bun", "bin", "bun.exe");
   const devBunShim = resolve(root, "node_modules/.bin/bun");
+  const devBunWinShims = [
+    resolve(root, "node_modules/.bin/bun.cmd"),
+    resolve(root, "node_modules/.bin/bun.exe")
+  ];
   const bunBinary = process.env.BUN_BINARY ?? (options.isPackaged
     ? firstExisting([bundledBun])
-    : firstExisting([devBun, devBunShim]));
+    : firstExisting([devBun, ...(platform === "win32" ? devBunWinShims : []), devBunShim]));
 
   // 开发模式用 Bun watch 自动重启后端，避免每次改后端都重启 Electron。
   const dev = !options.isPackaged;
@@ -295,7 +303,7 @@ function firstExisting(paths: string[]): string | undefined {
 
 export function prepareBackendRuntimeCommand(
   command: BackendCommand,
-  options: { dataDir: string; isPackaged: boolean; signRuntime?: boolean }
+  options: { dataDir: string; isPackaged: boolean; signRuntime?: boolean; platform?: NodeJS.Platform }
 ): BackendCommand {
   if (options.isPackaged || process.env.BUN_BINARY || !isWorkspaceBunBinary(command.command)) {
     return command;
@@ -308,10 +316,11 @@ export function prepareBackendRuntimeCommand(
     }
 
     const runtimeDir = join(options.dataDir, "runtime");
-    const extension = process.platform === "win32" ? ".exe" : "";
+    const platform = options.platform ?? process.platform;
+    const extension = platform === "win32" ? ".exe" : "";
     const target = join(
       runtimeDir,
-      `bun-dev-${process.platform}-${process.arch}-${sourceStat.size}${extension}`
+      `bun-dev-${platform}-${process.arch}-${sourceStat.size}${extension}`
     );
     mkdirSync(runtimeDir, { recursive: true });
 
@@ -319,12 +328,16 @@ export function prepareBackendRuntimeCommand(
       !existsSync(target) || !isDevBunRuntimePreparedForSource(target, sourceStat);
     if (targetNeedsCopy) {
       copyFileSync(command.command, target);
-      chmodSync(target, 0o755);
+      if (platform !== "win32") {
+        chmodSync(target, 0o755);
+      }
       console.info(
         `[main] 已准备开发态 Bun 运行时缓存 source=${command.command} target=${target} size=${sourceStat.size}`
       );
     } else {
-      chmodSync(target, 0o755);
+      if (platform !== "win32") {
+        chmodSync(target, 0o755);
+      }
       console.info(
         `[main] 使用开发态 Bun 运行时缓存 source=${command.command} target=${target} size=${sourceStat.size}`
       );
@@ -495,6 +508,7 @@ export function formatBackendStartupFailure(
   const lines = [
     `${reason}（port=${diagnostics.port}, pid=${child?.pid ?? "unknown"}, timeout=${diagnostics.timeoutMs}ms）`,
     `command=${diagnostics.command.command} ${diagnostics.command.args.join(" ")}`,
+    `platform=${process.platform} arch=${process.arch}`,
     `dataDir=${diagnostics.dataDir}`,
     "可通过 CHENGXIAOBANG_BACKEND_START_TIMEOUT_MS=60000 临时调大启动等待时间"
   ];
@@ -630,8 +644,16 @@ export function stopBackendChild(child: ChildProcess, options: BackendStopOption
     return;
   }
   const killProcess = options.killProcess ?? process.kill;
+  const killProcessTree = options.killProcessTree ?? killBackendProcessTree;
   const forceKillAfterMs = options.forceKillAfterMs ?? BACKEND_STOP_FORCE_KILL_AFTER_MS;
-  const target = signalBackendChild(child, "SIGTERM", killProcess, "请求停止");
+  const target = signalBackendChild(
+    child,
+    "SIGTERM",
+    killProcess,
+    killProcessTree,
+    options.platform ?? process.platform,
+    "请求停止"
+  );
   if (target === "none" || !Number.isFinite(forceKillAfterMs) || forceKillAfterMs <= 0) {
     return;
   }
@@ -644,7 +666,14 @@ export function stopBackendChild(child: ChildProcess, options: BackendStopOption
     console.warn(
       `[main] 后端进程在 ${forceKillAfterMs}ms 内未退出，开始强制清理 pid=${child.pid ?? "unknown"}`
     );
-    signalBackendChild(child, "SIGKILL", killProcess, "强制停止");
+    signalBackendChild(
+      child,
+      "SIGKILL",
+      killProcess,
+      killProcessTree,
+      options.platform ?? process.platform,
+      "强制停止"
+    );
   }, forceKillAfterMs);
 
   const clearForceTimer = () => {
@@ -666,9 +695,25 @@ function signalBackendChild(
   child: ChildProcess,
   signal: NodeJS.Signals,
   killProcess: (pid: number, signal: NodeJS.Signals) => void,
+  killProcessTree: (pid: number, force: boolean) => void,
+  platform: NodeJS.Platform,
   action: string
-): "process-group" | "process" | "none" {
-  if (process.platform !== "win32" && child.pid) {
+): "process-group" | "process-tree" | "process" | "none" {
+  if (platform === "win32" && child.pid) {
+    try {
+      killProcessTree(child.pid, signal === "SIGKILL");
+      console.info(
+        `[main] ${action}后端进程树 pid=${child.pid} signal=${signal} force=${signal === "SIGKILL"}`
+      );
+      return "process-tree";
+    } catch (error) {
+      console.warn(
+        `[main] ${action}后端进程树失败 pid=${child.pid} signal=${signal}，回退为停止主进程`,
+        error
+      );
+    }
+  }
+  if (platform !== "win32" && child.pid) {
     try {
       killProcess(-child.pid, signal);
       console.info(`[main] ${action}后端进程组 pid=${child.pid} signal=${signal}`);
@@ -686,4 +731,18 @@ function signalBackendChild(
   }
   console.warn(`[main] ${action}后端主进程失败 pid=${child.pid ?? "unknown"} signal=${signal}`);
   return "none";
+}
+
+function backendRuntimeResourceName(platform: NodeJS.Platform): string {
+  return platform === "win32" ? "bun.exe" : "bun";
+}
+
+function killBackendProcessTree(pid: number, force: boolean): void {
+  const args = ["/PID", String(pid), "/T"];
+  if (force) {
+    args.push("/F");
+  }
+  execFileSync("taskkill", args, {
+    stdio: ["ignore", "pipe", "pipe"]
+  });
 }

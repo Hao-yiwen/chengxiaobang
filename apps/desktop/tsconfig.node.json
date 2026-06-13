@@ -8,6 +8,7 @@
   "include": [
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
+    "test/app-menu.test.ts",
     "test/backend-process.test.ts",
     "test/logging.test.ts",
     "test/paths.test.ts",

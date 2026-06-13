@@ -5,6 +5,10 @@ import type {
   ActiveRunSnapshot,
   FeishuConfig,
   FeishuConfigInput,
+  FeishuInstallPollInput,
+  FeishuInstallPollResult,
+  FeishuInstallStartInput,
+  FeishuInstallStartResult,
   FeishuStatus,
   GitChangesResult,
   GitInfo,
@@ -117,6 +121,8 @@ export interface ApiClient {
   saveFeishuConfig(
     input: FeishuConfigInput
   ): Promise<{ config: FeishuConfig; status: FeishuStatus }>;
+  startFeishuInstall?(input: FeishuInstallStartInput): Promise<FeishuInstallStartResult>;
+  pollFeishuInstall?(input: FeishuInstallPollInput): Promise<FeishuInstallPollResult>;
   getFeishuStatus(): Promise<FeishuStatus>;
   getWebSearchConfig?(): Promise<WebSearchConfig>;
   saveWebSearchConfig?(input: WebSearchConfigInput): Promise<WebSearchConfig>;
@@ -512,6 +518,18 @@ export async function createApiClient(): Promise<ApiClient> {
     async saveFeishuConfig(input) {
       return request<{ config: FeishuConfig; status: FeishuStatus }>("/api/settings/feishu", {
         method: "PUT",
+        body: JSON.stringify(input)
+      });
+    },
+    async startFeishuInstall(input) {
+      return request<FeishuInstallStartResult>("/api/settings/feishu/install/start", {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+    },
+    async pollFeishuInstall(input) {
+      return request<FeishuInstallPollResult>("/api/settings/feishu/install/poll", {
+        method: "POST",
         body: JSON.stringify(input)
       });
     },

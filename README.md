@@ -1,6 +1,6 @@
 # 程小帮（chengxiaobang）
 
-程小帮是一个 **macOS Electron AI 助手桌面应用**（agentic coding companion）。它在本地拉起一个无头 HTTP 后端，由 [pi](https://www.npmjs.com/package/@earendil-works/pi-agent-core) 驱动 agent 循环，桌面端通过 SSE 实时消费模型输出、工具调用与审批事件。
+程小帮是一个 **macOS / Windows Electron AI 助手桌面应用**（agentic coding companion）。它在本地拉起一个无头 HTTP 后端，由 [pi](https://www.npmjs.com/package/@earendil-works/pi-agent-core) 驱动 agent 循环，桌面端通过 SSE 实时消费模型输出、工具调用与审批事件。
 
 技术栈：**pnpm + TypeScript monorepo，全仓 ESM**，后端运行时强制 **Bun**，桌面端为 **Electron + React + Vite + Tailwind**。
 
@@ -15,9 +15,9 @@
 | Node.js | ≥ 20（建议 LTS） | 跑 pnpm、Vite、tsup、Electron |
 | pnpm | 11.0.9（见 `packageManager`） | 唯一包管理器，推荐 `corepack enable` 自动对齐版本 |
 | Bun | 1.3.14（作为 devDependency 安装） | **后端运行时**，无需全局安装，仓库内已捆绑 |
-| 操作系统 | macOS | 桌面打包目标为 mac（dmg + zip）；开发可在 macOS 进行 |
+| 操作系统 | macOS、Windows 10/11 x64 | 桌面打包目标为 mac（dmg + zip）和 Windows（NSIS）；Windows 包建议在 Windows 本机构建 |
 
-密钥（provider API Key）在 macOS 通过 **Keychain**（`security` CLI）存储，其他平台为内存实现。
+密钥（provider API Key）在 macOS 通过 **Keychain**（`security` CLI）存储，在 Windows 通过 **Credential Manager** 存储，其他平台为内存实现。
 
 ```bash
 corepack enable        # 对齐 pnpm 版本（可选但推荐）
@@ -68,10 +68,13 @@ pnpm --filter @chengxiaobang/backend dev
 | `pnpm dev` | 起全套开发环境（见上） |
 | `pnpm build` | 按序构建 shared → backend → desktop（打包前必须执行） |
 | `pnpm package:mac` | `build` 后 `electron-builder --mac`，产出 dmg + zip |
+| `pnpm package:win` | `build` 后 `electron-builder --win --x64`，产出 Windows NSIS 安装包 |
 | `pnpm typecheck` | 先 build shared，再全仓 `tsc --noEmit` |
 | `pnpm test` | Vitest 全量；单文件 `pnpm test <path>`，按名过滤 `pnpm test -t "<name>"` |
 
 构建为何要按序：desktop 把后端 `dist/` 作为 extra resource 打入，且 backend/desktop 的 typecheck 依赖 shared 已 build 出的 `dist/` 类型。
+
+Windows v1 支持 Windows 10/11 x64。CI 会在 `windows-latest` 上执行 install/typecheck/test/build；Release 会分别在 macOS 和 Windows runner 构建产物，Windows job 会校验 `bun.exe`、backend、OCR 模型和 native 依赖，并用打包资源启动一次 backend `/api/health` 冒烟。Windows 自动更新入口本轮不启用，安装包更新以手动下载新版 NSIS 为准。
 
 ---
 
@@ -160,7 +163,7 @@ pnpm test -t "approval"                            # 按名过滤
 
 - **只用 ESM。** 配置 tsup / 打包器时把 `electron` 标为 external —— 打进去会在 Electron 启动时报 `Dynamic require of "fs" is not supported` 崩溃。
 - 后端 `main.js` 打入桌面应用的 `extraResources/backend`；`pi-ai`、`pi-agent-core`、`sql.js` 等被强制打包（`apps/backend/tsup.config.ts` 的 `noExternal`）。**打包产物只能用 Bun 运行。**
-- `bun`、`electron`、`esbuild`、`sharp`、`@google/genai`、`node-pty`、`protobufjs` 在 `onlyBuiltDependencies` / `allowBuilds` 中，原生 / postinstall 构建受控。
+- `bun`、`electron`、`esbuild`、`sharp`、`@google/genai`、`node-pty`、`onnxruntime-node`、`@napi-rs/canvas`、`ppu-paddle-ocr`、`protobufjs` 在 `onlyBuiltDependencies` / `allowBuilds` 中，原生 / postinstall 构建受控；Windows 包必须在 Windows runner / Windows 本机上构建，避免 native optional deps 跨平台错配。
 - UI 文案与多数错误信息为中文，保持一致。
 - **任何 UI 改动动手前必须先读 [`DESIGN.md`](./DESIGN.md)**，以其设计系统为唯一视觉事实源。
 

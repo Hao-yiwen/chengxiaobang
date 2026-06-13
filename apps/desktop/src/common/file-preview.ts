@@ -106,7 +106,15 @@ const DESCRIPTORS: Record<PreviewKind, PreviewDescriptor> = {
 };
 
 export function basenameOf(path: string): string {
-  return path.split(/[\\/]/).pop() ?? path;
+  const trimmed = path.replace(/[\\/]+$/, "");
+  if (!trimmed) {
+    return path;
+  }
+  return trimmed.split(/[\\/]/).pop() ?? trimmed;
+}
+
+export function isAbsolutePathLike(path: string): boolean {
+  return path.startsWith("/") || path.startsWith("\\\\") || /^[A-Za-z]:[\\/]/.test(path);
 }
 
 export function extensionOf(path: string): string {

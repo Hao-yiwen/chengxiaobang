@@ -6,6 +6,7 @@ import {
   nowIso,
   parseSseChunk,
   sessionSearchResultSchema,
+  type FeishuConfig,
   type ProviderConfig,
   type StreamEvent,
   type ToolCall
@@ -20,6 +21,20 @@ import { runCommand } from "../src/tools/shell";
 import { SlashCommandService } from "../src/tools/slash-command-service";
 import { scriptedStreamFn } from "./helpers/scripted-stream";
 
+function createTestApp(options: Parameters<typeof createApp>[0]): (request: Request) => Promise<Response> {
+  return createApp({ allowUnauthenticated: true, ...options });
+}
+
+function listDirectoryCommand(): string {
+  return process.platform === "win32" ? "dir /b" : "ls";
+}
+
+function failingTerminalCommand(exitCode: number, message: string): string {
+  return process.platform === "win32"
+    ? `echo ${message} 1>&2 & exit /b ${exitCode}`
+    : `echo ${message} >&2; exit ${exitCode}`;
+}
+
 describe("createApp", () => {
   let dir: string;
   let store: SqliteStateStore;
@@ -32,7 +47,7 @@ describe("createApp", () => {
     await store.initialize();
     secrets = new MemorySecretStore();
     await seedProvider(store, secrets);
-    app = createApp({
+    app = createTestApp({
       store,
       providerService: new ProviderService(store, secrets, vi.fn()),
       runner: new AgentRunner(store, secrets),
@@ -68,6 +83,31 @@ describe("createApp", () => {
     );
     expect(accepted.status).toBe(200);
     await expect(accepted.json()).resolves.toEqual({ projects: [] });
+  });
+
+  it("rejects protected API routes by default when no token is configured", async () => {
+    const protectedApp = createApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets)
+    });
+
+    const response = await protectedApp(new Request("http://local/api/projects", { method: "GET" }));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: "未授权" });
+  });
+
+  it("rejects untrusted CORS origins before route handling", async () => {
+    const response = await app(
+      new Request("http://local/api/projects", {
+        method: "GET",
+        headers: { Origin: "https://evil.example" }
+      })
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: "不允许的请求来源" });
   });
 
   it("updates and deletes sessions through HTTP API", async () => {
@@ -379,7 +419,7 @@ describe("createApp", () => {
       runner: new AgentRunner(store, secrets),
       bridgeFactory: () => bridge
     });
-    const feishuApp = createApp({
+    const feishuApp = createTestApp({
       store,
       providerService: new ProviderService(store, secrets, vi.fn()),
       runner: new AgentRunner(store, secrets),
@@ -419,12 +459,87 @@ describe("createApp", () => {
     await expect(status.json()).resolves.toMatchObject({ status: { status: "connected" } });
   });
 
+  it("starts and completes the feishu QR install flow without exposing the secret", async () => {
+    const { FeishuConfigService } = await import("../src/feishu/feishu-config-service");
+    const { FeishuInstallService } = await import("../src/feishu/feishu-install-service");
+    const { FeishuService } = await import("../src/feishu/feishu-service");
+    const { FakeFeishuBridge } = await import("./helpers/fake-feishu-bridge");
+    const bridge = new FakeFeishuBridge();
+    const feishuConfigService = new FeishuConfigService(store, secrets);
+    const feishuInstallService = new FeishuInstallService({
+      fetch: vi.fn(async (_url: string, init?: RequestInit) => {
+        const params = new URLSearchParams(String(init?.body ?? ""));
+        if (params.get("action") === "begin") {
+          return new Response(
+            JSON.stringify({
+              verification_uri_complete: "https://open.feishu.cn/page/cli?user_code=QR-CODE",
+              device_code: "device-api",
+              user_code: "QR-CODE",
+              interval: 3,
+              expires_in: 120
+            }),
+            { headers: { "content-type": "application/json" } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            client_id: "cli_qr",
+            client_secret: "qr-secret",
+            user_info: { tenant_brand: "feishu" }
+          }),
+          { headers: { "content-type": "application/json" } }
+        );
+      }) as never
+    });
+    const feishuService = new FeishuService({
+      configService: feishuConfigService,
+      store,
+      runner: new AgentRunner(store, secrets),
+      bridgeFactory: () => bridge
+    });
+    const feishuApp = createTestApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets),
+      feishuConfigService,
+      feishuInstallService,
+      feishuService
+    });
+
+    const started = await feishuApp(
+      jsonRequest("/api/settings/feishu/install/start", "POST", { domain: "feishu" })
+    );
+    expect(started.status).toBe(200);
+    await expect(started.json()).resolves.toMatchObject({
+      ok: true,
+      deviceCode: "device-api",
+      interval: 3
+    });
+
+    const polled = await feishuApp(
+      jsonRequest("/api/settings/feishu/install/poll", "POST", { deviceCode: "device-api" })
+    );
+    expect(polled.status).toBe(200);
+    const body = (await polled.json()) as {
+      done: boolean;
+      config: FeishuConfig;
+      status: { status: string };
+    };
+    expect(body).toMatchObject({
+      done: true,
+      config: { appId: "cli_qr", appSecretRef: "memory:feishu" },
+      status: { status: "connected" }
+    });
+    expect(JSON.stringify(body)).not.toContain("qr-secret");
+    await expect(feishuConfigService.getAppSecret(body.config)).resolves.toBe("qr-secret");
+  });
+
   it("serves, saves and tests the web search config without exposing the API Key", async () => {
     const { WebSearchConfigService } = await import(
       "../src/web-search/web-search-config-service"
     );
     const webSearchConfigService = new WebSearchConfigService(store, secrets);
-    const webSearchApp = createApp({
+    const webSearchApp = createTestApp({
       store,
       providerService: new ProviderService(store, secrets, vi.fn()),
       runner: new AgentRunner(store, secrets),
@@ -468,6 +583,16 @@ describe("createApp", () => {
       new Request("http://local/api/settings/feishu", { method: "GET" })
     );
     expect(response.status).toBe(404);
+    const installStart = await app(
+      jsonRequest("/api/settings/feishu/install/start", "POST", { domain: "feishu" })
+    );
+    expect(installStart.status).toBe(404);
+    await expect(installStart.json()).resolves.toEqual({ error: "飞书扫码安装服务不可用" });
+    const installPoll = await app(
+      jsonRequest("/api/settings/feishu/install/poll", "POST", { deviceCode: "missing" })
+    );
+    expect(installPoll.status).toBe(404);
+    await expect(installPoll.json()).resolves.toEqual({ error: "飞书服务不可用" });
     const status = await app(
       new Request("http://local/api/settings/feishu/status", { method: "GET" })
     );
@@ -486,7 +611,7 @@ describe("createApp", () => {
     expect(response.headers.get("Access-Control-Allow-Methods")).toContain("PATCH");
   });
 
-  it("streams setup failures as a failed run_end event", async () => {
+  it("streams setup failures as setup_error before a run exists", async () => {
     await store.deleteProvider("deepseek");
 
     const response = await app(
@@ -499,13 +624,14 @@ describe("createApp", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toContain("text/event-stream");
     const body = await response.text();
-    expect(body).toContain('"type":"run_end"');
-    expect(body).toContain('"status":"failed"');
+    expect(body).toContain('"type":"setup_error"');
+    expect(body).toContain("请先配置至少一个模型");
+    expect(body).not.toContain('"runId":"setup"');
   });
 
   it("streams a full run as SSE events in contract order", async () => {
     const scripted = scriptedStreamFn([{ thinking: "想一想", text: "你好！" }]);
-    const sseApp = createApp({
+    const sseApp = createTestApp({
       store,
       providerService: new ProviderService(store, secrets, vi.fn()),
       runner: new AgentRunner(store, secrets, { streamFn: scripted.streamFn })
@@ -533,7 +659,7 @@ describe("createApp", () => {
 
   it("starts a run through POST /api/runs and publishes events on the global SSE stream", async () => {
     const scripted = scriptedStreamFn([{ thinking: "想一想", text: "你好！" }]);
-    const eventApp = createApp({
+    const eventApp = createTestApp({
       store,
       providerService: new ProviderService(store, secrets, vi.fn()),
       runner: new AgentRunner(store, secrets, { streamFn: scripted.streamFn })
@@ -603,7 +729,7 @@ describe("createApp", () => {
       streamFn: scripted.streamFn,
       sessionWorkspacePath: (sessionId) => join(dir, "sessions", sessionId)
     });
-    const activeApp = createApp({
+    const activeApp = createTestApp({
       store,
       providerService: new ProviderService(store, secrets, vi.fn()),
       runner
@@ -792,7 +918,7 @@ describe("createApp", () => {
     const response = await app(
       jsonRequest("/api/terminal/exec", "POST", {
         projectId: project.id,
-        command: "ls"
+        command: listDirectoryCommand()
       })
     );
 
@@ -810,7 +936,7 @@ describe("createApp", () => {
     const response = await app(
       jsonRequest("/api/terminal/exec", "POST", {
         projectId: project.id,
-        command: "echo broken >&2; exit 2"
+        command: failingTerminalCommand(2, "broken")
       })
     );
 
@@ -887,7 +1013,7 @@ describe("createApp", () => {
       "---\ndescription: Invalid name\n---\nBody",
       "utf8"
     );
-    const localApp = createApp({
+    const localApp = createTestApp({
       store,
       providerService: new ProviderService(store, new MemorySecretStore(), vi.fn()),
       runner: new AgentRunner(store, new MemorySecretStore()),
@@ -911,7 +1037,7 @@ describe("createApp", () => {
   it("passes full approval decisions through HTTP API", async () => {
     const runner = new AgentRunner(store, secrets);
     const decideSpy = vi.spyOn(runner.approvals, "decide");
-    const localApp = createApp({
+    const localApp = createTestApp({
       store,
       providerService: new ProviderService(store, secrets, vi.fn()),
       runner
@@ -933,7 +1059,7 @@ describe("createApp", () => {
 
   it("lists provider models through HTTP API", async () => {
     const listModels = vi.fn(async () => ["deepseek-v4-flash", "deepseek-chat"]);
-    const localApp = createApp({
+    const localApp = createTestApp({
       store,
       providerService: new ProviderService(store, secrets, vi.fn(), listModels),
       runner: new AgentRunner(store, secrets)
@@ -997,7 +1123,7 @@ describe("createApp", () => {
     expect(runWithoutScheduler.status).toBe(503);
 
     const runNow = vi.fn(async () => {});
-    const schedulerApp = createApp({
+    const schedulerApp = createTestApp({
       store,
       providerService: new ProviderService(store, secrets, vi.fn()),
       runner: new AgentRunner(store, secrets),
@@ -1028,7 +1154,7 @@ describe("createApp", () => {
       "---\nname: code-review\ndescription: 审代码\nmetadata:\n  category: coding\n---\n正文",
       "utf8"
     );
-    const skillsApp = createApp({
+    const skillsApp = createTestApp({
       store,
       providerService: new ProviderService(store, secrets, vi.fn()),
       runner: new AgentRunner(store, secrets),

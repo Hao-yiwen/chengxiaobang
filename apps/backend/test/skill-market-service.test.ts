@@ -208,7 +208,8 @@ describe("SkillMarketService", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://raw.githubusercontent.com/owner/repo/main/skills/imported-skill/SKILL.md"
+      "https://raw.githubusercontent.com/owner/repo/main/skills/imported-skill/SKILL.md",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
     expect(summary).toMatchObject({ name: "imported-skill", source: "custom", enabled: true });
     expect(existsSync(join(dir, "custom", "imported-skill", "SKILL.md"))).toBe(true);
@@ -223,6 +224,23 @@ describe("SkillMarketService", () => {
     await expect(
       service.importFromUrl({ url: "https://github.com/owner/repo" })
     ).rejects.toThrow(/拉取 SKILL\.md 失败/);
+  });
+
+  it("rejects oversized remote skill files", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("x".repeat(300 * 1024), {
+            status: 200,
+            headers: { "content-length": String(300 * 1024) }
+          })
+      )
+    );
+
+    await expect(
+      service.importFromUrl({ url: "https://github.com/owner/repo" })
+    ).rejects.toThrow(/大小上限/);
   });
 });
 
@@ -271,5 +289,7 @@ describe("resolveSkillFileUrls", () => {
     expect(resolveSkillFileUrls("not a url")).toEqual([]);
     expect(resolveSkillFileUrls("ftp://example.com/SKILL.md")).toEqual([]);
     expect(resolveSkillFileUrls("https://example.com/page")).toEqual([]);
+    expect(resolveSkillFileUrls("https://example.com/SKILL.md")).toEqual([]);
+    expect(resolveSkillFileUrls("http://github.com/o/r")).toEqual([]);
   });
 });

@@ -102,6 +102,7 @@ describe("sidebar collapse", () => {
 
   it("在 Electron 窗口中让折叠按钮避开红绿灯并对齐标题让位", async () => {
     window.chengxiaobang = {
+      platform: "darwin",
       getBackendInfo: vi.fn(async () => undefined),
       pickDirectory: vi.fn(async () => undefined),
       pickFiles: vi.fn(async () => []),
@@ -120,5 +121,28 @@ describe("sidebar collapse", () => {
     fireEvent.click(toggle);
 
     expect(container.querySelector("main header")).toHaveClass("pl-[124px]");
+  });
+
+  it("在 Windows 窗口中使用标准标题栏位置", async () => {
+    window.chengxiaobang = {
+      platform: "win32",
+      getBackendInfo: vi.fn(async () => undefined),
+      pickDirectory: vi.fn(async () => undefined),
+      pickFiles: vi.fn(async () => []),
+      readFileText: vi.fn() as never
+    };
+
+    const client = createClient();
+    client.listSessions = vi.fn(async () => [session]);
+    useAppStore.setState({ view: "chat", activeSessionId: session.id, sessions: [session] });
+
+    const { container } = render(<App client={client} />);
+
+    const toggle = await screen.findByTitle("收起侧边栏");
+    expect(toggle).toHaveClass("left-3", "top-3");
+
+    fireEvent.click(toggle);
+
+    expect(container.querySelector("main header")).not.toHaveClass("pl-[124px]");
   });
 });

@@ -5,8 +5,10 @@ export interface ProjectOpenerDefinition {
   name: string;
   /** 候选 .app 包名，按偏好顺序排列，例如优先正式版，再回退 CE 版。 */
   appNames?: string[];
-  /** macOS 系统应用等固定路径，不随用户 Applications 目录变化。 */
+  /** 系统应用或 Windows 安装位置等固定路径，不随搜索目录变化。 */
   absoluteAppPaths?: string[];
+  /** 系统内置打开器可以不依赖 exists 检测，例如 Windows Explorer。 */
+  alwaysAvailable?: boolean;
 }
 
 export interface InstalledProjectOpener {
@@ -39,7 +41,28 @@ export const PROJECT_OPENER_DEFINITIONS: ProjectOpenerDefinition[] = [
   { id: "pycharm", name: "PyCharm", appNames: ["PyCharm.app", "PyCharm CE.app"] }
 ];
 
-export function projectOpenerSearchDirs(home: string): string[] {
+export function projectOpenerDefinitions(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env
+): ProjectOpenerDefinition[] {
+  if (platform === "win32") {
+    return windowsProjectOpenerDefinitions(env);
+  }
+  return PROJECT_OPENER_DEFINITIONS;
+}
+
+export function projectOpenerSearchDirs(
+  home: string,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env
+): string[] {
+  if (platform === "win32") {
+    return uniquePaths([
+      env.LOCALAPPDATA ? join(env.LOCALAPPDATA, "Programs") : undefined,
+      env.ProgramFiles,
+      env["ProgramFiles(x86)"]
+    ]);
+  }
   return ["/Applications", join(home, "Applications")];
 }
 
@@ -65,12 +88,15 @@ export async function detectInstalledProjectOpeners(
     appPath: string,
     opener: ProjectOpenerDefinition
   ) => string | undefined | Promise<string | undefined> = () => undefined
+  ,
+  definitions: ProjectOpenerDefinition[] = PROJECT_OPENER_DEFINITIONS
 ): Promise<InstalledProjectOpener[]> {
   const installed: InstalledProjectOpener[] = [];
-  for (const opener of PROJECT_OPENER_DEFINITIONS) {
-    const appPath = projectOpenerCandidatePaths(opener, searchDirs).find((candidate) =>
-      exists(candidate)
-    );
+  for (const opener of definitions) {
+    const candidates = projectOpenerCandidatePaths(opener, searchDirs);
+    const appPath =
+      candidates.find((candidate) => exists(candidate)) ??
+      (opener.alwaysAvailable ? candidates[0] : undefined);
     if (appPath) {
       let iconDataUrl: string | undefined;
       try {
@@ -91,4 +117,48 @@ export async function detectInstalledProjectOpeners(
     }
   }
   return installed;
+}
+
+function windowsProjectOpenerDefinitions(env: NodeJS.ProcessEnv): ProjectOpenerDefinition[] {
+  const localPrograms = env.LOCALAPPDATA ? join(env.LOCALAPPDATA, "Programs") : undefined;
+  const programFiles = env.ProgramFiles;
+  const programFilesX86 = env["ProgramFiles(x86)"];
+  const systemRoot = env.SystemRoot ?? "C:\\Windows";
+  return [
+    {
+      id: "vscode",
+      name: "VS Code",
+      absoluteAppPaths: uniquePaths([
+        localPrograms ? join(localPrograms, "Microsoft VS Code", "Code.exe") : undefined,
+        programFiles ? join(programFiles, "Microsoft VS Code", "Code.exe") : undefined,
+        programFilesX86 ? join(programFilesX86, "Microsoft VS Code", "Code.exe") : undefined
+      ])
+    },
+    {
+      id: "cursor",
+      name: "Cursor",
+      absoluteAppPaths: uniquePaths([
+        localPrograms ? join(localPrograms, "Cursor", "Cursor.exe") : undefined,
+        programFiles ? join(programFiles, "Cursor", "Cursor.exe") : undefined
+      ])
+    },
+    {
+      id: "windsurf",
+      name: "Windsurf",
+      absoluteAppPaths: uniquePaths([
+        localPrograms ? join(localPrograms, "Windsurf", "Windsurf.exe") : undefined,
+        programFiles ? join(programFiles, "Windsurf", "Windsurf.exe") : undefined
+      ])
+    },
+    {
+      id: "explorer",
+      name: "Explorer",
+      absoluteAppPaths: uniquePaths([join(systemRoot, "explorer.exe"), "explorer.exe"]),
+      alwaysAvailable: true
+    }
+  ];
+}
+
+function uniquePaths(paths: Array<string | undefined>): string[] {
+  return [...new Set(paths.filter((path): path is string => Boolean(path)))];
 }

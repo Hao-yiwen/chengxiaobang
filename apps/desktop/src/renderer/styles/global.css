@@ -193,11 +193,11 @@
 }
 
 @layer components {
-  /* Electron 隐藏标题栏的可拖拽区域。 */
+  /* macOS 隐藏标题栏的可拖拽区域。 */
   .titlebar-drag {
     position: fixed;
     top: 0;
-    /* 左上角是 macOS 红绿灯和侧边栏折叠按钮；拖拽区避开这里，避免 Electron 抢走点击。 */
+    /* 左上角是系统窗口按钮和侧边栏折叠按钮；拖拽区避开这里，避免 Electron 抢走点击。 */
     left: 118px;
     /* 右上角是项目打开器和侧边面板按钮；拖拽区避开这里，避免 Electron 抢走点击。 */
     right: 11rem;
@@ -613,7 +613,7 @@
   }
 }
 
-/* macOS 覆盖式滚动条：窄、低存在感。 */
+/* 覆盖式滚动条：窄、低存在感。 */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

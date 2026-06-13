@@ -36,6 +36,7 @@ const REJECTED_RESULT = "用户拒绝执行该操作";
 const REJECTED_MODEL_HINT = "用户拒绝执行该操作。请考虑其他方式或向用户说明。";
 const TOOL_ACTIVITY_PREVIEW_KEYS = [
   "path",
+  "cwd",
   "command",
   "query",
   "pattern",
@@ -93,6 +94,7 @@ export class RunEventTranslator {
       approvals: ApprovalQueue;
       runId: string;
       sessionId: string;
+      workspacePath: string;
       accessMode: AccessMode;
       strictApproval?: boolean;
       signal: AbortSignal;
@@ -335,7 +337,9 @@ export class RunEventTranslator {
     args: unknown
   ): Promise<void> {
     const normalizedArgs = normalizeArgs(args);
-    const risk = assessToolApprovalRisk(toolName, normalizedArgs);
+    const risk = assessToolApprovalRisk(toolName, normalizedArgs, {
+      workspacePath: this.options.workspacePath
+    });
     const requiresGate =
       risk.requiresGate || Boolean(this.options.strictApproval && requiresApproval(toolName));
     const needsManualApproval =

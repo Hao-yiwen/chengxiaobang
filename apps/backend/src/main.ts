@@ -1,12 +1,14 @@
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { randomUUID } from "node:crypto";
 import type { AppEvent } from "@chengxiaobang/shared";
 import { AgentRunner } from "./agent/agent-runner";
 import { createApp } from "./api/app";
 import { EventHub } from "./events/event-hub";
 import { createLarkBridge } from "./feishu/feishu-bridge";
 import { FeishuConfigService } from "./feishu/feishu-config-service";
+import { FeishuInstallService } from "./feishu/feishu-install-service";
 import { FeishuService } from "./feishu/feishu-service";
 import { ProviderService } from "./model/provider-service";
 import { SqliteStateStore } from "./repository/sqlite-state-store";
@@ -40,6 +42,10 @@ const PARENT_PROCESS_WATCHDOG_INTERVAL_MS = 1_000;
 
 export async function startBackend(config: BackendConfig) {
   await mkdir(config.dataDir, { recursive: true });
+  const authToken = config.token ?? randomUUID();
+  if (!config.token) {
+    console.warn("[backend] 未提供访问 token，已生成本次进程临时 token");
+  }
   const store = new SqliteStateStore(join(config.dataDir, "chengxiaobang.sqlite"));
   await store.initialize();
   const secrets = createSecretStore();
@@ -67,6 +73,7 @@ export async function startBackend(config: BackendConfig) {
     slashCommandService
   });
   const feishuConfigService = new FeishuConfigService(store, secrets);
+  const feishuInstallService = new FeishuInstallService();
   const feishuService = new FeishuService({
     configService: feishuConfigService,
     store,
@@ -82,13 +89,14 @@ export async function startBackend(config: BackendConfig) {
   const server = await startServer({
     port: config.port,
     fetch: createApp({
-      token: config.token,
+      token: authToken,
       store,
       providerService,
       runner,
       slashCommandService,
       skillMarketService,
       feishuConfigService,
+      feishuInstallService,
       feishuService,
       webSearchConfigService,
       taskScheduler,
@@ -97,9 +105,10 @@ export async function startBackend(config: BackendConfig) {
   });
   return {
     port: server.port,
+    token: authToken,
     close: async () => {
       // 先停调度器并中止在飞行的调度 run，避免向已关闭的 store 写入。
-      taskScheduler.stop();
+      await taskScheduler.stop();
       await feishuService.stop();
       await server.close();
       await store.close();
@@ -132,7 +141,7 @@ export function readCliConfig(
 if (isCliEntry()) {
   const config = readCliConfig();
   const backend = await startBackend(config);
-  console.log(JSON.stringify({ ok: true, port: backend.port }));
+  console.log(JSON.stringify({ ok: true, port: backend.port, token: backend.token }));
   let shuttingDown = false;
   let parentWatchdog: ParentProcessWatchdog | undefined;
   const shutdown = async (reason = "shutdown") => {

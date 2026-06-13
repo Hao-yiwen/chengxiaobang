@@ -13,6 +13,7 @@ import { computeNextRunAt } from "./schedule";
 /** 单次执行的整体上限：headless run 卡死（网络挂起等）时强制中止，释放任务。 */
 const DEFAULT_RUN_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_TICK_INTERVAL_MS = 60_000;
+const STOP_WAIT_TIMEOUT_MS = 5_000;
 
 /**
  * 定时任务调度器：轮询 scheduled_tasks，到期任务在其绑定会话中追加一次
@@ -27,8 +28,10 @@ const DEFAULT_TICK_INTERVAL_MS = 60_000;
 export class TaskScheduler {
   private timer?: ReturnType<typeof setInterval>;
   private ticking = false;
+  private stopping = false;
   private readonly busyTaskIds = new Set<string>();
   private readonly inflightRunIds = new Set<string>();
+  private readonly activeExecutions = new Set<Promise<void>>();
   private readonly store: StateStore;
   private readonly runner: AgentRunner;
   private readonly intervalMs: number;
@@ -54,13 +57,15 @@ export class TaskScheduler {
   }
 
   start(): void {
+    this.stopping = false;
     console.info(`[task-scheduler] 启动，轮询间隔 ${this.intervalMs}ms`);
     // 立即 tick：重启期间错过的任务在这里补跑一次。
     void this.tick();
     this.timer = setInterval(() => void this.tick(), this.intervalMs);
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
+    this.stopping = true;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
@@ -70,11 +75,24 @@ export class TaskScheduler {
       console.warn(`[task-scheduler] 关停：中止在飞行的调度 run runId=${runId}`);
       this.runner.abort(runId);
     }
+    const active = [...this.activeExecutions];
+    if (active.length > 0) {
+      console.info(`[task-scheduler] 等待在飞行任务收尾 count=${active.length}`);
+      const settled = await Promise.race([
+        Promise.allSettled(active).then(() => true),
+        sleep(STOP_WAIT_TIMEOUT_MS).then(() => false)
+      ]);
+      if (!settled) {
+        console.warn(
+          `[task-scheduler] 等待任务收尾超时 timeoutMs=${STOP_WAIT_TIMEOUT_MS} remaining=${this.activeExecutions.size}`
+        );
+      }
+    }
     console.info("[task-scheduler] 已停止");
   }
 
   async tick(): Promise<void> {
-    if (this.ticking) {
+    if (this.ticking || this.stopping) {
       return;
     }
     this.ticking = true;
@@ -85,7 +103,10 @@ export class TaskScheduler {
         (task) => task.enabled && task.nextRunAt && new Date(task.nextRunAt) <= now
       );
       for (const task of due) {
-        await this.execute(task, "schedule");
+        if (this.stopping) {
+          break;
+        }
+        await this.runExecution(task, "schedule");
       }
     } catch (error) {
       console.error("[task-scheduler] tick 失败:", error);
@@ -96,11 +117,24 @@ export class TaskScheduler {
 
   /** 手动触发（「立即运行」按钮），跳过到期检查。 */
   async runNow(taskId: string): Promise<void> {
+    if (this.stopping) {
+      throw new Error("定时任务调度器正在停止");
+    }
     const task = await this.store.getScheduledTask(taskId);
     if (!task) {
       throw new Error("定时任务不存在");
     }
-    await this.execute(task, "manual");
+    await this.runExecution(task, "manual");
+  }
+
+  private async runExecution(task: ScheduledTask, trigger: ScheduledTaskTrigger): Promise<void> {
+    const execution = this.execute(task, trigger);
+    this.activeExecutions.add(execution);
+    try {
+      await execution;
+    } finally {
+      this.activeExecutions.delete(execution);
+    }
   }
 
   private async execute(task: ScheduledTask, trigger: ScheduledTaskTrigger): Promise<void> {
@@ -230,4 +264,8 @@ export class TaskScheduler {
     });
     this.eventHub.publish(event);
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

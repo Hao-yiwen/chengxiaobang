@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TerminalSessionManager } from "../src/main/terminal";
+import { resolveTerminalShell, TerminalSessionManager } from "../src/main/terminal";
 
 class FakePty {
   dataListeners: Array<(data: string) => void> = [];
@@ -90,7 +90,7 @@ describe("TerminalSessionManager", () => {
     return dir;
   }
 
-  function managerWithFakePty() {
+  function managerWithFakePty(shell = "/bin/test-shell") {
     const ptys: FakePty[] = [];
     const spawn = vi.fn((_shell: string, _args: string[], _options: unknown) => {
       const pty = new FakePty();
@@ -98,7 +98,7 @@ describe("TerminalSessionManager", () => {
       return pty;
     });
     return {
-      manager: new TerminalSessionManager({ spawn } as never),
+      manager: new TerminalSessionManager({ spawn } as never, () => shell),
       spawn,
       ptys
     };
@@ -113,7 +113,7 @@ describe("TerminalSessionManager", () => {
 
     expect(result).toEqual({ ok: true, id: "pty_1" });
     expect(spawn).toHaveBeenCalledWith(
-      expect.any(String),
+      "/bin/test-shell",
       [],
       expect.objectContaining({
         cols: 120,
@@ -204,4 +204,18 @@ describe("TerminalSessionManager", () => {
       manager.close("pty_real");
     }
   );
+});
+
+describe("resolveTerminalShell", () => {
+  it("uses ComSpec on Windows and falls back to cmd.exe", () => {
+    expect(resolveTerminalShell({ ComSpec: "C:\\Windows\\System32\\cmd.exe" }, "win32")).toBe(
+      "C:\\Windows\\System32\\cmd.exe"
+    );
+    expect(resolveTerminalShell({}, "win32")).toBe("cmd.exe");
+  });
+
+  it("uses SHELL on non-Windows and falls back to zsh", () => {
+    expect(resolveTerminalShell({ SHELL: "/bin/bash" }, "darwin")).toBe("/bin/bash");
+    expect(resolveTerminalShell({}, "linux")).toBe("/bin/zsh");
+  });
 });

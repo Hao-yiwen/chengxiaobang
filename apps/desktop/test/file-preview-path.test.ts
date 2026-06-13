@@ -8,6 +8,12 @@ describe("file preview path candidates", () => {
     ]);
   });
 
+  it("keeps Windows absolute paths unchanged", () => {
+    expect(previewPathCandidates("C:\\Users\\me\\report.xlsx", { cwd: "/repo" })).toEqual([
+      "C:\\Users\\me\\report.xlsx"
+    ]);
+  });
+
   it("tries project path before conversation session workspace", () => {
     expect(
       previewPathCandidates("out/report.xlsx", {
@@ -43,6 +49,15 @@ describe("file preview path candidates", () => {
         sessionId: "session_abc",
         chengxiaobangHome: "/home/.chengxiaobang",
         cwd: "/repo/app"
+      })
+    ).toEqual([]);
+  });
+
+  it("can disable cwd fallback for model-declared artifacts", () => {
+    expect(
+      previewPathCandidates("package.json", {
+        cwd: "/repo/app",
+        allowCwdFallback: false
       })
     ).toEqual([]);
   });

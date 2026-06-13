@@ -886,6 +886,7 @@ export class AgentRunner {
       approvals: this.approvals,
       runId: options.runId,
       sessionId: options.sessionId,
+      workspacePath: options.workspacePath,
       accessMode: options.accessMode,
       strictApproval: options.headless || options.viaFeishu,
       signal: options.controller.signal,
@@ -994,7 +995,7 @@ export class AgentRunner {
   ): AsyncGenerator<StreamEvent, "ok" | "aborted" | "failed"> {
     yield { type: "delta", runId, channel: "thinking", delta: "正在准备本地工具调用...\n" };
     const tool = findTool(tools, request.name);
-    const risk = assessToolApprovalRisk(request.name, request.args);
+    const risk = assessToolApprovalRisk(request.name, request.args, { workspacePath });
     const requiresGate = risk.requiresGate || (strictApproval && requiresApproval(request.name));
     const needsManualApproval = requiresGate && accessMode === "approval";
     const needsSmartApproval = requiresGate && accessMode === "smart_approval";

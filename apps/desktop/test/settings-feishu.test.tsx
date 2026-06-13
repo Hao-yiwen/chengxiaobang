@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore } from "../src/renderer/store";
@@ -46,6 +46,15 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
       })
     ),
     saveFeishuConfig: vi.fn() as never,
+    startFeishuInstall: vi.fn(async () => ({
+      ok: true,
+      url: "https://open.feishu.cn/page/cli?user_code=QR-CODE",
+      deviceCode: "device-qr",
+      userCode: "QR-CODE",
+      interval: 3,
+      expiresIn: 120
+    })),
+    pollFeishuInstall: vi.fn(async () => ({ done: false })),
     getFeishuStatus: vi.fn(async (): Promise<FeishuStatus> => ({ status: "disconnected" })),
     approve: vi.fn() as never,
     abort: vi.fn() as never,
@@ -60,11 +69,15 @@ beforeEach(() => {
   resetAppStore();
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 async function openFeishuSettings(client: ApiClient): Promise<void> {
   render(<App client={client} />);
   fireEvent.click(await screen.findByText("设置"));
   fireEvent.click(await screen.findByText("飞书"));
-  await screen.findByText("配置指引");
+  await screen.findByText("使用指引");
 }
 
 describe("Feishu settings section", () => {
@@ -86,6 +99,9 @@ describe("Feishu settings section", () => {
 
     await openFeishuSettings(client);
 
+    expect(screen.getByText("扫码连接")).toBeInTheDocument();
+    expect(screen.getByText("生成二维码")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("展开手动配置"));
     await waitFor(() =>
       expect(screen.getByLabelText("App ID")).toHaveValue("cli_existing")
     );
@@ -113,6 +129,7 @@ describe("Feishu settings section", () => {
 
     await openFeishuSettings(client);
 
+    fireEvent.click(screen.getByText("展开手动配置"));
     fireEvent.change(screen.getByLabelText("App ID"), { target: { value: "cli_new" } });
     fireEvent.change(screen.getByLabelText("App Secret"), { target: { value: "shh" } });
     fireEvent.click(screen.getByLabelText("启用飞书机器人"));
@@ -129,6 +146,77 @@ describe("Feishu settings section", () => {
     );
     expect(await screen.findByText("已保存")).toBeInTheDocument();
     expect(await screen.findByText("已连接")).toBeInTheDocument();
+  });
+
+  it("starts polling after showing a QR code and reflects a successful install", async () => {
+    const startFeishuInstall = vi.fn(async () => ({
+      ok: true,
+      url: "https://open.feishu.cn/page/cli?user_code=QR-CODE",
+      deviceCode: "device-success",
+      userCode: "QR-CODE",
+      interval: 3,
+      expiresIn: 120
+    }));
+    const pollFeishuInstall = vi.fn(async () => ({
+      done: true,
+      config: {
+        enabled: true,
+        appId: "cli_scan",
+        appSecretRef: "memory:feishu",
+        domain: "lark",
+        fullAccess: false
+      } satisfies FeishuConfig,
+      status: { status: "connected" } satisfies FeishuStatus
+    }));
+    const client = createClient({
+      startFeishuInstall: startFeishuInstall as never,
+      pollFeishuInstall: pollFeishuInstall as never
+    });
+
+    await openFeishuSettings(client);
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByText("生成二维码"));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(startFeishuInstall).toHaveBeenCalledWith({ domain: "feishu" });
+    expect(screen.getByText("等待扫码确认")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    expect(pollFeishuInstall).toHaveBeenCalledWith({ deviceCode: "device-success" });
+    expect(screen.getByText("扫码连接完成")).toBeInTheDocument();
+    expect(screen.getByText("已连接")).toBeInTheDocument();
+  });
+
+  it("marks the QR code as expired and allows retry", async () => {
+    const startFeishuInstall = vi.fn(async () => ({
+      ok: true,
+      url: "https://open.feishu.cn/page/cli?user_code=EXP",
+      deviceCode: "device-expired",
+      userCode: "EXP",
+      interval: 30,
+      expiresIn: 1
+    }));
+    const client = createClient({ startFeishuInstall: startFeishuInstall as never });
+
+    await openFeishuSettings(client);
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByText("生成二维码"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("等待扫码确认")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(screen.getByText("二维码已过期，请重新生成")).toBeInTheDocument();
+    expect(screen.getByText("重新生成")).toBeInTheDocument();
   });
 
   it("warns loudly when full access is toggled on", async () => {

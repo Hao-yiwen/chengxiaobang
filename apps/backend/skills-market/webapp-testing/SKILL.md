@@ -23,19 +23,28 @@ metadata:
 
 动态应用先把服务跑起来：
 
-1. **后台启动**服务，并把输出重定向到日志文件，记下端口：
-   ```bash
-   npm run dev > /tmp/webapp-test.log 2>&1 &
-   echo $!   # 记下 PID，结束后要清理
+1. **后台启动**服务，并把输出重定向到日志文件，记下端口。用程小帮 `shell` 工具时优先传 `background: true`，命令本身保持平台原生写法：
+   ```sh
+   # macOS / Linux
+   npm run dev > /tmp/webapp-test.log 2>&1
+   ```
+   ```cmd
+   :: Windows cmd
+   npm run dev > "%TEMP%\webapp-test.log" 2>&1
    ```
 2. **等待就绪**：轮询健康端点或首页，而不是固定 sleep 一个猜的秒数：
-   ```bash
+   ```sh
+   # macOS / Linux
    for i in $(seq 1 30); do curl -sf http://localhost:3000/ >/dev/null && break; sleep 1; done
+   ```
+   ```cmd
+   :: Windows cmd（显式用 PowerShell -NoProfile 做轮询，避免依赖用户 profile）
+   powershell -NoProfile -Command "for ($i=0; $i -lt 30; $i++) { curl.exe -sf http://localhost:3000/ *> $null; if ($LASTEXITCODE -eq 0) { exit 0 }; Start-Sleep -Seconds 1 }; exit 1"
    ```
    起不来时**先读日志文件**找原因（端口占用、缺环境变量、依赖未装），不要盲目重试。
 3. **curl 逐项验证**：
-   - 页面可达：`curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/` 期望 200。
-   - 接口契约：`curl -s http://localhost:3000/api/items | head -c 500`，检查状态码、Content-Type 与响应结构。
+   - 页面可达：macOS / Linux 用 `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/`；Windows cmd 用 `curl.exe -s -o NUL -w "%{http_code}" http://localhost:3000/`，期望 200。
+   - 接口契约：macOS / Linux 用 `curl -s http://localhost:3000/api/items | head -c 500`；Windows cmd 可用 `powershell -NoProfile -Command "[string]$body = curl.exe -s http://localhost:3000/api/items; if ($body.Length -gt 500) { $body.Substring(0, 500) } else { $body }"`，检查状态码、Content-Type 与响应结构。
    - 写接口：带上请求体与头，验证成功响应和至少一个错误分支（如缺参数返回 400）。
 
 很多"页面坏了"在这一层就能定位（接口 500、路由 404），无需动用浏览器。
@@ -53,10 +62,18 @@ metadata:
 
 无论成功失败都要执行：
 
-```bash
+```sh
+# macOS / Linux
 kill <记下的 PID> 2>/dev/null || true
 # 不确定 PID 时按端口清理：
 lsof -ti:3000 | xargs kill 2>/dev/null || true
+```
+
+```cmd
+:: Windows cmd
+taskkill /PID <记下的 PID> /T /F
+:: 不确定 PID 时按端口清理：
+for /f "tokens=5" %p in ('netstat -ano ^| findstr :3000') do taskkill /PID %p /T /F
 ```
 
 留下野进程会占着端口，让下一次测试莫名失败。临时日志/文件也一并清理或告知位置。

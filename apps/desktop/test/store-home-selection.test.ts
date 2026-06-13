@@ -60,6 +60,11 @@ function createClient(): ApiClient {
 
 beforeEach(() => {
   window.localStorage.clear();
+  Object.defineProperty(window, "chengxiaobang", {
+    value: undefined,
+    configurable: true,
+    writable: true
+  });
   resetAppStore();
 });
 
@@ -106,6 +111,33 @@ describe("store home selection restore", () => {
     expect(useAppStore.getState().activeSessionId).toBeUndefined();
     expect(useAppStore.getState().activeProjectId).toBeUndefined();
     expect(useAppStore.getState().planMode).toBe(false);
+  });
+
+  it("uses the last Windows path segment as the opened project name", async () => {
+    const winPath = "C:\\Users\\me\\repo";
+    const winProject: Project = {
+      ...project,
+      id: "project_win",
+      name: "repo",
+      path: winPath
+    };
+    const createProject = vi.fn(async () => winProject);
+    const client = {
+      ...createClient(),
+      createProject,
+      listProjects: vi.fn(async () => [winProject])
+    } as unknown as ApiClient;
+    Object.defineProperty(window, "chengxiaobang", {
+      value: {
+        pickDirectory: vi.fn(async () => winPath)
+      },
+      configurable: true
+    });
+
+    await useAppStore.getState().initClient(client);
+    await useAppStore.getState().openFolder();
+
+    expect(createProject).toHaveBeenCalledWith({ path: winPath, name: "repo" });
   });
 
   it("keeps composer text drafts isolated between home and sessions", async () => {

@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
@@ -16,6 +16,7 @@ export const ABORT_EXIT_CODE = 130;
 
 const FORCE_KILL_AFTER_MS = 1_000;
 const COMMAND_LOG_MAX_CHARS = 200;
+const SHELL_CAPTURE_MAX_BYTES = 256 * 1024;
 export const DEFAULT_SHELL_BACKGROUND_AFTER_MS = 15_000;
 export const SHELL_BACKGROUND_OUTPUT_DIR = ".chengxiaobang/shell-outputs";
 
@@ -48,11 +49,32 @@ export type ShellCommandResult =
   | ({ kind: "completed"; outputPath: string; relativeOutputPath: string } & TerminalExecResult)
   | { kind: "background"; command: BackgroundShellCommandSnapshot };
 
+export interface ResolvedShellCommand {
+  command: string;
+  args: string[];
+}
+
 interface BackgroundShellCommandRecord {
   snapshot: BackgroundShellCommandSnapshot;
   child: ChildProcessWithoutNullStreams;
   terminationReason?: "abort" | "cancel";
   forceKillTimer?: ReturnType<typeof setTimeout>;
+}
+
+export function resolveShellCommand(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): ResolvedShellCommand {
+  if (platform === "win32") {
+    return {
+      command: env.ComSpec ?? "cmd.exe",
+      args: ["/d", "/s", "/c"]
+    };
+  }
+  return {
+    command: env.SHELL ?? "/bin/zsh",
+    args: ["-lc"]
+  };
 }
 
 /**
@@ -76,13 +98,14 @@ export function runCommand(
   }
 
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.env.SHELL ?? "/bin/zsh", ["-lc", command], {
+    const shell = resolveShellCommand();
+    const child = spawn(shell.command, [...shell.args, command], {
       cwd,
       env: process.env,
       detached: process.platform !== "win32"
     });
-    let stdout = "";
-    let stderr = "";
+    const stdout = createOutputCapture();
+    const stderr = createOutputCapture();
     let terminationReason: "timeout" | "abort" | undefined;
     let settled = false;
     let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
@@ -147,10 +170,10 @@ export function runCommand(
     };
 
     child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
+      appendCapturedOutput(stdout, chunk);
     });
     child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
+      appendCapturedOutput(stderr, chunk);
     });
     child.on("error", (error) => {
       settled = true;
@@ -160,12 +183,12 @@ export function runCommand(
     child.on("close", (code) => {
       settled = true;
       cleanup();
-      const output = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
+      const { output, truncated } = combineCapturedOutput(stdout, stderr);
       if (terminationReason) {
-        resolvePromise(interruptedResult(terminationReason, output));
+        resolvePromise(interruptedResult(terminationReason, output, truncated));
         return;
       }
-      resolvePromise({ output, exitCode: code ?? -1 });
+      resolvePromise({ output, exitCode: code ?? -1, ...(truncated ? { truncated } : {}) });
     });
 
     if (options.signal?.aborted) {
@@ -201,7 +224,8 @@ export async function runShellCommand(
   return new Promise((resolvePromise, reject) => {
     const startedAt = nowIso();
     const outputStream = createWriteStream(outputPath, { flags: "w" });
-    const child = spawn(process.env.SHELL ?? "/bin/zsh", ["-lc", command], {
+    const shell = resolveShellCommand();
+    const child = spawn(shell.command, [...shell.args, command], {
       cwd,
       env: process.env,
       detached: process.platform !== "win32"
@@ -218,8 +242,8 @@ export async function runShellCommand(
       ...(child.pid ? { pid: child.pid } : {})
     };
     const record: BackgroundShellCommandRecord = { snapshot, child };
-    let stdout = "";
-    let stderr = "";
+    const stdout = createOutputCapture();
+    const stderr = createOutputCapture();
     let releasedToBackground = false;
     let settled = false;
     let abortListener: (() => void) | undefined;
@@ -275,12 +299,12 @@ export async function runShellCommand(
 
     child.stdout.on("data", (chunk) => {
       const text = String(chunk);
-      stdout += text;
+      appendCapturedOutput(stdout, text);
       outputStream.write(text);
     });
     child.stderr.on("data", (chunk) => {
       const text = String(chunk);
-      stderr += text;
+      appendCapturedOutput(stderr, text);
       outputStream.write(text);
     });
     child.on("error", (error) => {
@@ -309,7 +333,7 @@ export async function runShellCommand(
       clearTimeout(backgroundTimer);
       cleanupAbortListener();
       clearBackgroundForceKill(record);
-      const output = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
+      const { output, truncated } = combineCapturedOutput(stdout, stderr);
       const at = nowIso();
       snapshot.exitCode = record.terminationReason ? ABORT_EXIT_CODE : (code ?? -1);
       snapshot.status = record.terminationReason
@@ -336,7 +360,7 @@ export async function runShellCommand(
           kind: "completed",
           outputPath,
           relativeOutputPath,
-          ...interruptedResult("abort", output)
+          ...interruptedResult("abort", output, truncated)
         });
         return;
       }
@@ -345,7 +369,8 @@ export async function runShellCommand(
         outputPath,
         relativeOutputPath,
         output,
-        exitCode: code ?? -1
+        exitCode: code ?? -1,
+        ...(truncated ? { truncated } : {})
       });
     });
 
@@ -393,12 +418,67 @@ function normalizeRunCommandOptions(options: RunCommandOptions | number): RunCom
   return options;
 }
 
-function interruptedResult(reason: "timeout" | "abort", output: string): TerminalExecResult {
+function interruptedResult(
+  reason: "timeout" | "abort",
+  output: string,
+  truncated = false
+): TerminalExecResult {
   const message = reason === "timeout" ? "（命令执行超时，已终止）" : "（命令执行已中止）";
   return {
     output: [output, message].filter(Boolean).join("\n"),
-    exitCode: reason === "timeout" ? TIMEOUT_EXIT_CODE : ABORT_EXIT_CODE
+    exitCode: reason === "timeout" ? TIMEOUT_EXIT_CODE : ABORT_EXIT_CODE,
+    ...(truncated ? { truncated } : {})
   };
+}
+
+interface OutputCapture {
+  text: string;
+  bytes: number;
+  truncated: boolean;
+}
+
+function createOutputCapture(): OutputCapture {
+  return { text: "", bytes: 0, truncated: false };
+}
+
+function appendCapturedOutput(capture: OutputCapture, chunk: unknown): void {
+  if (capture.truncated) {
+    return;
+  }
+  const text = String(chunk);
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (capture.bytes + bytes <= SHELL_CAPTURE_MAX_BYTES) {
+    capture.text += text;
+    capture.bytes += bytes;
+    return;
+  }
+  const remaining = Math.max(0, SHELL_CAPTURE_MAX_BYTES - capture.bytes);
+  if (remaining > 0) {
+    capture.text += Buffer.from(text).subarray(0, remaining).toString("utf8");
+    capture.bytes = SHELL_CAPTURE_MAX_BYTES;
+  }
+  capture.truncated = true;
+  console.warn("[shell] 前台命令输出超过捕获上限，已截断", {
+    maxBytes: SHELL_CAPTURE_MAX_BYTES
+  });
+}
+
+function combineCapturedOutput(
+  stdout: OutputCapture,
+  stderr: OutputCapture
+): { output: string; truncated: boolean } {
+  const truncated = stdout.truncated || stderr.truncated;
+  const output = [stdout.text.trim(), stderr.text.trim()].filter(Boolean).join("\n");
+  return {
+    output: [output, truncated ? `（输出已截断，超过 ${formatBytes(SHELL_CAPTURE_MAX_BYTES)} 上限）` : ""]
+      .filter(Boolean)
+      .join("\n"),
+    truncated
+  };
+}
+
+function formatBytes(bytes: number): string {
+  return `${Math.round(bytes / 1024)}KB`;
 }
 
 function sendSignalToProcessGroup(
@@ -411,7 +491,7 @@ function sendSignalToProcessGroup(
   }
   try {
     if (process.platform === "win32") {
-      child.kill(signal);
+      killWindowsProcessTree(child.pid, signal === "SIGKILL");
       return;
     }
     process.kill(-child.pid, signal);
@@ -443,6 +523,16 @@ function sendSignalToProcessGroup(
       }
     }
   }
+}
+
+function killWindowsProcessTree(pid: number, force: boolean): void {
+  const args = ["/PID", String(pid), "/T"];
+  if (force) {
+    args.push("/F");
+  }
+  execFileSync("taskkill", args, {
+    stdio: ["ignore", "pipe", "pipe"]
+  });
 }
 
 const backgroundShellCommands = new Map<string, BackgroundShellCommandRecord>();

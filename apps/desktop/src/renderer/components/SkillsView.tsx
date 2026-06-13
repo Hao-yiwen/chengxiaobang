@@ -37,8 +37,8 @@ export function SkillsView() {
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
   const skillsAddRequested = useAppStore((state) => state.skillsAddRequested);
   const clearSkillsAddRequest = useAppStore((state) => state.clearSkillsAddRequest);
-  // 侧边栏折叠后，Electron 红绿灯 + 折叠按钮悬浮在头部左侧，标题需要让位。
-  const headerInset = !sidebarOpen && Boolean(window.chengxiaobang);
+  // macOS 隐藏标题栏下折叠按钮悬浮在头部左侧，标题需要让位。
+  const headerInset = !sidebarOpen && window.chengxiaobang?.platform === "darwin";
 
   const [filter, setFilter] = useState<CategoryFilter>("all");
   const [addOpen, setAddOpen] = useState(false);

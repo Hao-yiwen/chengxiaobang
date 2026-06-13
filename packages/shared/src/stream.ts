@@ -18,8 +18,10 @@ export type ScheduledTaskTrigger = "schedule" | "manual";
  * - `tool_call`：每次工具调用状态迁移都会触发，status 字段承载状态机。
  * - `session_updated`：传递 run 中途更新的会话元数据，让客户端不必等 run 结束再刷新。
  * - `run_end`：一个 run 的最终事件。
+ * - `setup_error`：run 尚未创建时的启动失败提示，不应写入 run 历史。
  */
 export type StreamEvent =
+  | { type: "setup_error"; error: string }
   | {
       type: "run_started";
       runId: string;
@@ -69,6 +71,10 @@ export type AppEvent = StreamEvent | ScheduledTaskEvent;
 export type AppEventType = AppEvent["type"];
 
 export const streamEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("setup_error"),
+    error: z.string().min(1)
+  }),
   z.object({
     type: z.literal("run_started"),
     runId: z.string().min(1),

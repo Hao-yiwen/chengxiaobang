@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 contextBridge.exposeInMainWorld("chengxiaobang", {
+  platform: process.platform,
   getBackendInfo: () => ipcRenderer.invoke("backend-info"),
   pickDirectory: () => ipcRenderer.invoke("pick-directory"),
   pickFiles: () => ipcRenderer.invoke("pick-files"),
@@ -35,6 +36,13 @@ contextBridge.exposeInMainWorld("chengxiaobang", {
   installUpdate: () => ipcRenderer.invoke("update:install"),
   setThemeSource: (source: "light" | "dark" | "system") =>
     ipcRenderer.invoke("set-theme-source", source),
+  onNewChatRequested: (listener: () => void) => {
+    const wrapped = () => {
+      listener();
+    };
+    ipcRenderer.on("app-menu:new-chat", wrapped);
+    return () => ipcRenderer.off("app-menu:new-chat", wrapped);
+  },
   terminalStart: (input: { id: string; cwd: string; cols: number; rows: number }) =>
     ipcRenderer.invoke("terminal:start", input),
   terminalWrite: (id: string, data: string) => ipcRenderer.invoke("terminal:write", id, data),

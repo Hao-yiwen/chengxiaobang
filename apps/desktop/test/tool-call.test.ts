@@ -68,6 +68,9 @@ describe("shortenPath", () => {
     expect(shortenPath("src/index.ts")).toBe("src/index.ts");
     expect(shortenPath("/Users/me/Documents/proj/src/index.ts")).toBe("…/src/index.ts");
     expect(shortenPath("/Users/me/Documents/proj/src/index.ts", 3)).toBe("…/proj/src/index.ts");
+    expect(shortenPath("C:\\Users\\me\\Documents\\proj\\src\\index.ts")).toBe(
+      "…/src/index.ts"
+    );
   });
 });
 

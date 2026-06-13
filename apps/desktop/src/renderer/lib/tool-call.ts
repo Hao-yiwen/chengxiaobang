@@ -32,7 +32,7 @@ export function formatDurationMs(ms: number): string {
 
 /** Last `segments` path segments for compact display ("…/src/index.ts"). */
 export function shortenPath(path: string, segments = 2): string {
-  const parts = path.split("/").filter(Boolean);
+  const parts = path.split(/[\\/]/).filter(Boolean);
   if (parts.length <= segments) {
     return path;
   }

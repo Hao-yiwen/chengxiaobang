@@ -18,10 +18,11 @@ metadata:
 
 ### 第一步：读取与清洗
 
-用 shell 执行 Python（优先，pandas 可用时）或 Node 脚本读取数据。Excel 文件可先用 `pip` 确认 `openpyxl` 可用，或建议用户导出为 CSV。
+用 shell 执行 Python（优先，pandas 可用时）或 Node 脚本读取数据。macOS / Linux 常用 `python3`，Windows 可用 `py -3` 或 `python`；Excel 文件可先用同一解释器执行 `-m pip show openpyxl` 确认可用，或建议用户导出为 CSV。
 
-```bash
-python3 -c "
+把下面脚本交给当前平台可用的 Python 解释器执行：macOS / Linux 用 `python3 -c "<脚本>"`，Windows cmd 用 `py -3 -c "<脚本>"` 或 `python -c "<脚本>"`。
+
+```python
 import pandas as pd
 df = pd.read_csv('data.csv')
 print('形状:', df.shape)
@@ -29,7 +30,6 @@ print(df.dtypes)
 print('缺失值:\n', df.isna().sum())
 print('重复行:', df.duplicated().sum())
 print(df.head(10))
-"
 ```
 
 清洗动作及记录：

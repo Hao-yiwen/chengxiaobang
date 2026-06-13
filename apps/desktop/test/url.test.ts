@@ -22,9 +22,15 @@ describe("normalizeBrowserUrl", () => {
 });
 
 describe("localPathFromFileUrl", () => {
-  it("returns decoded local paths and rejects non-local URLs", () => {
+  it("returns decoded Unix local paths and rejects non-local URLs", () => {
     expect(localPathFromFileUrl("file:///tmp/demo/page%20one.html")).toBe("/tmp/demo/page one.html");
     expect(localPathFromFileUrl("file://remote-host/tmp/page.html")).toBeUndefined();
     expect(localPathFromFileUrl("https://example.com")).toBeUndefined();
+  });
+
+  it("converts Windows drive file URLs to local paths", () => {
+    expect(localPathFromFileUrl("file:///C:/Users/me/a%20b.html")).toBe(
+      "C:\\Users\\me\\a b.html"
+    );
   });
 });

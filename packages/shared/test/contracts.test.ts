@@ -446,8 +446,9 @@ describe("session 契约", () => {
 });
 
 describe("streamEventSchema", () => {
-  it("解析线上事件模型的 7 种事件", () => {
+  it("解析线上事件模型的 8 种事件", () => {
     const events: StreamEvent[] = [
+      { type: "setup_error", error: "请先配置至少一个模型" },
       { type: "run_started", runId: "run_1", sessionId: "session_1" },
       { type: "message", runId: "run_1", message },
       { type: "delta", runId: "run_1", channel: "text", delta: "好" },
@@ -471,7 +472,7 @@ describe("streamEventSchema", () => {
         usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 }
       }
     ];
-    expect(events).toHaveLength(7);
+    expect(events).toHaveLength(8);
     for (const event of events) {
       expect(streamEventSchema.parse(event)).toEqual(event);
     }

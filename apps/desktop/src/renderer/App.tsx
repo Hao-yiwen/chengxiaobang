@@ -44,8 +44,9 @@ export function App(props: { client?: ApiClient }) {
   const pendingDecisionTool = useAppStore((state) => state.pendingTool);
   const addDroppedContext = useAppStore((state) => state.addDroppedContext);
   const [dragDepth, setDragDepth] = useState(0);
-  // 折叠后 Electron 红绿灯 + 折叠按钮悬浮在主区左上角，头部标题需要让位。
-  const headerInset = !sidebarOpen && Boolean(window.chengxiaobang);
+  // macOS 隐藏标题栏下折叠按钮悬浮在主区左上角，头部标题需要让位。
+  const isMacDesktop = window.chengxiaobang?.platform === "darwin";
+  const headerInset = !sidebarOpen && isMacDesktop;
   const acceptsDroppedContext = view === "home" || view === "chat";
   const dropActive = acceptsDroppedContext && dragDepth > 0;
   const showRightPanel = view === "chat" || (view === "home" && rightPanelOpen);
@@ -59,6 +60,14 @@ export function App(props: { client?: ApiClient }) {
   useEffect(() => {
     void useAppStore.getState().initClient(props.client);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = window.chengxiaobang?.onNewChatRequested?.(() => {
+      console.info("[App] 收到应用菜单新建对话请求");
+      useAppStore.getState().newChat();
+    });
+    return () => unsubscribe?.();
   }, []);
 
   useEffect(() => {
@@ -134,7 +143,7 @@ export function App(props: { client?: ApiClient }) {
     <TooltipProvider delayDuration={300}>
       <ConfirmDialogProvider>
         <div className="flex h-screen overflow-hidden bg-background text-foreground">
-          <div className="titlebar-drag" />
+          {isMacDesktop ? <div className="titlebar-drag" /> : null}
           <CommandPalette />
           <SetupDialog />
           <NotificationToasts />

@@ -36,8 +36,8 @@ export function TasksView() {
   const runTaskNow = useAppStore((state) => state.runTaskNow);
   const deleteTask = useAppStore((state) => state.deleteTask);
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
-  // 侧边栏折叠后，Electron 红绿灯 + 折叠按钮悬浮在头部左侧，标题需要让位。
-  const headerInset = !sidebarOpen && Boolean(window.chengxiaobang);
+  // macOS 隐藏标题栏下折叠按钮悬浮在头部左侧，标题需要让位。
+  const headerInset = !sidebarOpen && window.chengxiaobang?.platform === "darwin";
 
   useEffect(() => {
     console.debug("[tasks-view] 进入任务页，加载定时任务");

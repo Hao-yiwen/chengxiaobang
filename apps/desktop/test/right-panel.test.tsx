@@ -787,7 +787,8 @@ describe("right panel", () => {
     expect(await screen.findByText("HTML / SVG · 17 B")).toBeInTheDocument();
     expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("page.html", {
       projectPath: project.path,
-      sessionId: session.id
+      sessionId: session.id,
+      allowCwdFallback: false
     });
     expect(bridge.createFileUrl).toHaveBeenCalledWith("/tmp/demo/page.html");
   });
@@ -1009,7 +1010,8 @@ describe("right panel", () => {
     expect(await screen.findByText("1 / 2")).toBeInTheDocument();
     expect(screen.getAllByText("AI日报_2026-06-12.pptx").length).toBeGreaterThan(1);
     expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("AI日报_2026-06-12.pptx", {
-      sessionId: conversationSession.id
+      sessionId: conversationSession.id,
+      allowCwdFallback: false
     });
     expect(bridge.readFilePreviewBuffer).toHaveBeenCalledWith("/tmp/session_2/AI日报_2026-06-12.pptx", {
       maxBytes: 26214400

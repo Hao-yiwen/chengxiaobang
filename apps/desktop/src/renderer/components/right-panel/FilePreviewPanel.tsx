@@ -59,14 +59,15 @@ export function FilePreviewPanel() {
   const previewContext = useMemo(
     () => ({
       ...(previewFile?.projectPath ? { projectPath: previewFile.projectPath } : {}),
-      ...(previewFile?.sessionId ? { sessionId: previewFile.sessionId } : {})
+      ...(previewFile?.sessionId ? { sessionId: previewFile.sessionId } : {}),
+      ...(previewFile?.allowCwdFallback === false ? { allowCwdFallback: false } : {})
     }),
-    [previewFile?.projectPath, previewFile?.sessionId]
+    [previewFile?.allowCwdFallback, previewFile?.projectPath, previewFile?.sessionId]
   );
 
   const loadPreview = useCallback(async (
     targetPath: string,
-    context: { projectPath?: string; sessionId?: string }
+    context: { projectPath?: string; sessionId?: string; allowCwdFallback?: boolean }
   ): Promise<PreviewState> => {
     const bridge = window.chengxiaobang;
     if (!bridge?.getFilePreviewInfo) {

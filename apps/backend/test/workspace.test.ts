@@ -2,13 +2,27 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { listProjectFiles, safeResolve } from "../src/tools/workspace";
+import { isPathOutsideWorkspace, listProjectFiles, safeResolve } from "../src/tools/workspace";
 
 describe("safeResolve", () => {
   it("resolves inside the workspace and rejects escapes", () => {
     expect(safeResolve("/tmp/ws", "a/b.txt")).toBe("/tmp/ws/a/b.txt");
     expect(safeResolve("/tmp/ws", ".")).toBe("/tmp/ws");
     expect(() => safeResolve("/tmp/ws", "../outside")).toThrow("超出当前项目范围");
+  });
+
+  it("treats Windows workspace paths as case-insensitive", () => {
+    const base = "C:\\Users\\Me\\Repo";
+
+    expect(isPathOutsideWorkspace(base, "c:\\users\\me\\repo\\src\\index.ts", "win32")).toBe(
+      false
+    );
+    expect(() => safeResolve(base, "c:\\users\\me\\repo\\src\\index.ts", "win32")).not.toThrow();
+    expect(isPathOutsideWorkspace(base, "C:\\Users\\Me\\Other\\index.ts", "win32")).toBe(true);
+    expect(isPathOutsideWorkspace(base, "D:\\Repo\\index.ts", "win32")).toBe(true);
+    expect(() => safeResolve(base, "C:\\Users\\Me\\Other\\index.ts", "win32")).toThrow(
+      "超出当前项目范围"
+    );
   });
 });
 

@@ -12,6 +12,7 @@ import { createAgentTools } from "../src/tools/registry";
 import { SlashCommandService } from "../src/tools/slash-command-service";
 
 describe("session debug context API", () => {
+  const token = "test-token";
   let dir: string;
   let store: SqliteStateStore;
   let app: (request: Request) => Promise<Response>;
@@ -22,6 +23,7 @@ describe("session debug context API", () => {
     await store.initialize();
     const secrets = new MemorySecretStore();
     app = createApp({
+      token,
       store,
       providerService: new ProviderService(store, secrets, vi.fn()),
       runner: new AgentRunner(store, secrets),
@@ -86,7 +88,7 @@ describe("session debug context API", () => {
     });
 
     const response = await app(
-      new Request(`http://local/api/sessions/${session.id}/debug-context?planMode=true`)
+      authRequest(`http://local/api/sessions/${session.id}/debug-context?planMode=true`)
     );
 
     expect(response.status).toBe(200);
@@ -107,9 +109,7 @@ describe("session debug context API", () => {
   });
 
   it("returns 404 for a missing session", async () => {
-    const response = await app(
-      new Request("http://local/api/sessions/session_missing/debug-context")
-    );
+    const response = await app(authRequest("http://local/api/sessions/session_missing/debug-context"));
 
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: "会话不存在" });
@@ -118,6 +118,7 @@ describe("session debug context API", () => {
   it("shows web_search in debug tools when the runtime registry enables it", async () => {
     const secrets = new MemorySecretStore();
     const webApp = createApp({
+      token,
       store,
       providerService: new ProviderService(store, secrets, vi.fn()),
       runner: new AgentRunner(store, secrets, {
@@ -132,7 +133,7 @@ describe("session debug context API", () => {
     });
 
     const response = await webApp(
-      new Request(`http://local/api/sessions/${session.id}/debug-context?planMode=true`)
+      authRequest(`http://local/api/sessions/${session.id}/debug-context?planMode=true`)
     );
 
     const text = await response.text();
@@ -144,4 +145,8 @@ describe("session debug context API", () => {
       ])
     );
   });
+
+  function authRequest(url: string): Request {
+    return new Request(url, { headers: { "x-chengxiaobang-token": token } });
+  }
 });

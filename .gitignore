@@ -8,3 +8,5 @@ coverage/
 .DS_Store
 *.log
 user-data/
+apps/desktop/build/icon.ico
+apps/desktop/build/runtime/

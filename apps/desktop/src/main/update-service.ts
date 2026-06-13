@@ -1,7 +1,7 @@
-import type { IpcMain } from "electron";
 import { BrowserWindow } from "electron";
 import type { ProgressInfo, UpdateInfo } from "electron-updater";
 import type { DesktopUpdateState } from "../common/update";
+import type { TrustedIpcRegistrar } from "./trusted-ipc";
 
 export interface DesktopUpdater {
   autoDownload: boolean;
@@ -275,7 +275,7 @@ export class DesktopUpdateService {
   }
 }
 
-export function registerUpdateIpc(ipcMain: IpcMain, service: DesktopUpdateService): void {
+export function registerUpdateIpc(ipcMain: TrustedIpcRegistrar, service: DesktopUpdateService): void {
   ipcMain.handle("update:get-state", () => service.getState());
   ipcMain.handle("update:check", (_event, input: unknown) =>
     service.checkForUpdates({ manual: readManualFlag(input) })

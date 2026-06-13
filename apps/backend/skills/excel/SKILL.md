@@ -15,7 +15,7 @@ metadata:
 2. **组织数据**：用 `columns` 定义带表头的列（可设 `key` 与列宽 `width`），用 `rows` 提供数据行。行既可以是数组（按列顺序），也可以是对象（以列 `key` 为字段）。需要多个表时用多个 `sheets`。
 3. **写入规格文件**：用基础文件写入能力在工作目录中创建一个 JSON 规格文件（例如 `workbook-spec.json`），内容格式见下方示例。
 4. **执行脚本生成**：用基础 shell 能力执行本技能自带脚本 `scripts/create-xlsx.mjs`：
-   ```bash
+   ```text
    node "<技能目录>/scripts/create-xlsx.mjs" workbook-spec.json 预算表.xlsx
    ```
    技能正文开头会给出本技能目录位置，脚本路径相对该目录。第二个参数是输出 `.xlsx` 路径，省略时会读取 JSON 里的 `path` 字段。

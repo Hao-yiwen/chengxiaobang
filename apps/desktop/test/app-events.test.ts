@@ -73,6 +73,24 @@ describe("app event handling", () => {
     expect(useAppStore.getState().notificationToasts).toHaveLength(0);
   });
 
+  it("shows setup errors without recording a fake run", () => {
+    useAppStore.setState({
+      activeSessionId: session.id,
+      activeRunId: "local_pending",
+      isRunning: true,
+      runHistory: []
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "setup_error",
+      error: "请先配置至少一个模型"
+    });
+
+    expect(useAppStore.getState().isRunning).toBe(false);
+    expect(useAppStore.getState().notice).toBe("请先配置至少一个模型");
+    expect(useAppStore.getState().runHistory).toEqual([]);
+  });
+
   it("tracks non-current run events without taking over the active composer", () => {
     const otherSessionId = "session_other";
 

@@ -1,4 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  nativeTheme,
+  shell,
+  type BrowserWindowConstructorOptions
+} from "electron";
 import electronUpdater from "electron-updater";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -25,9 +34,11 @@ import {
   previewReadLimitForKind,
   type PreviewKind
 } from "../common/file-preview";
+import { installApplicationMenu } from "./app-menu";
 import { startBackendProcess, type BackendProcess } from "./backend-process";
 import {
   detectInstalledProjectOpeners,
+  projectOpenerDefinitions,
   projectOpenerBundleIconFileNames,
   projectOpenerSearchDirs
 } from "./ide";
@@ -37,7 +48,12 @@ import {
   writeStructuredLog,
   writeTerminalLog
 } from "./logging";
-import { isHttpUrl, shouldAllowWebviewSrc, shouldOpenExternalFromAppWindow } from "./navigation";
+import {
+  isHttpUrl,
+  isTrustedAppWindowUrl,
+  shouldAllowWebviewSrc,
+  shouldOpenExternalFromAppWindow
+} from "./navigation";
 import { defaultDataDir, defaultLogDir, devDockIconPath, preloadPath, rendererIndexPath } from "./paths";
 import {
   previewPathCandidates,
@@ -46,6 +62,7 @@ import {
 import { registerOcrIpc } from "./ocr";
 import { registerTerminalIpc, type TerminalSessionManager } from "./terminal";
 import { DesktopUpdateService, registerUpdateIpc } from "./update-service";
+import { createTrustedIpcRegistrar } from "./trusted-ipc";
 
 const MAX_CONTEXT_FILE_BYTES = 256 * 1024;
 const DEFAULT_BLANK_PROJECT_NAME = "未命名项目";
@@ -145,7 +162,10 @@ function normalizePreviewContext(value: unknown): FilePreviewResolveContext {
     ...(typeof input.projectPath === "string" && input.projectPath
       ? { projectPath: input.projectPath }
       : {}),
-    ...(typeof input.sessionId === "string" && input.sessionId ? { sessionId: input.sessionId } : {})
+    ...(typeof input.sessionId === "string" && input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(typeof (input as { allowCwdFallback?: unknown }).allowCwdFallback === "boolean"
+      ? { allowCwdFallback: (input as { allowCwdFallback: boolean }).allowCwdFallback }
+      : {})
   };
 }
 
@@ -199,6 +219,20 @@ function openExternalFromAppWindow(url: string, reason: string): boolean {
   console.info(`[main] 主窗口外链转交系统浏览器 reason=${reason} url=${url}`);
   void shell.openExternal(url);
   return true;
+}
+
+function requestNewChatFromMenu(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.warn("[main] 应用菜单请求新建对话时主窗口不可用");
+    return;
+  }
+  console.info("[main] 应用菜单请求新建对话，转发到渲染层");
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send("app-menu:new-chat");
 }
 
 function messageFromError(error: unknown): string {
@@ -554,8 +588,8 @@ async function createQuickLookThumbnail(target: unknown): Promise<QuickLookThumb
     return { ok: false, path, error: "无效路径" };
   }
   if (process.platform !== "darwin") {
-    console.info(`[main] 非 macOS 环境跳过 Quick Look 缩略图 path=${path}`);
-    return { ok: false, path, error: "当前系统不支持 Quick Look 缩略图" };
+    console.info(`[main] 当前平台跳过 Quick Look 缩略图 path=${path} platform=${process.platform}`);
+    return { ok: false, path, error: "当前平台暂不支持系统缩略图" };
   }
   const tempDir = await mkdtemp(join(tmpdir(), "cxb-preview-ql-"));
   try {
@@ -587,6 +621,19 @@ async function createQuickLookThumbnail(target: unknown): Promise<QuickLookThumb
 }
 
 async function createWindow(): Promise<void> {
+  updateService ??= new DesktopUpdateService({
+    currentVersion: app.getVersion(),
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    updater: autoUpdater
+  });
+  installApplicationMenu({
+    appName: app.getName(),
+    platform: process.platform,
+    updateService,
+    requestNewChat: requestNewChatFromMenu
+  });
+
   backend = await startBackendProcess({
     dataDir: defaultDataDir(),
     resourcesPath: process.resourcesPath,
@@ -594,29 +641,28 @@ async function createWindow(): Promise<void> {
     logger: desktopLogging?.backend
   });
 
-  ipcMain.handle("backend-info", () => backend?.info);
-  terminalManager ??= registerTerminalIpc(ipcMain);
-  registerOcrIpc(ipcMain, {
+  const trustedIpc = createTrustedIpcRegistrar(ipcMain, {
+    devServerUrl: process.env.VITE_DEV_SERVER_URL,
+    rendererFilePath: rendererIndexPath(import.meta.url)
+  });
+
+  trustedIpc.handle("backend-info", () => backend?.info);
+  terminalManager ??= registerTerminalIpc(trustedIpc);
+  registerOcrIpc(trustedIpc, {
     appPath: app.getAppPath(),
     resourcesPath: process.resourcesPath,
     isPackaged: app.isPackaged
   });
-  updateService ??= new DesktopUpdateService({
-    currentVersion: app.getVersion(),
-    isPackaged: app.isPackaged,
-    platform: process.platform,
-    updater: autoUpdater
-  });
-  registerUpdateIpc(ipcMain, updateService);
+  registerUpdateIpc(trustedIpc, updateService);
 
-  ipcMain.handle("open-skills-dir", async () => {
+  trustedIpc.handle("open-skills-dir", async () => {
     const dir = join(homedir(), ".chengxiaobang", "skills");
     await mkdir(dir, { recursive: true });
     await shell.openPath(dir);
     return { ok: true, path: dir };
   });
 
-  ipcMain.handle("open-log-dir", async () => {
+  trustedIpc.handle("open-log-dir", async () => {
     const dir = defaultLogDir();
     await mkdir(dir, { recursive: true });
     const error = await shell.openPath(dir);
@@ -628,7 +674,7 @@ async function createWindow(): Promise<void> {
     return { ok: true, path: dir };
   });
 
-  ipcMain.handle("create-project-folder", async (_event, rawName: unknown) => {
+  trustedIpc.handle("create-project-folder", async (_event, rawName: unknown) => {
     const requested = typeof rawName === "string" ? rawName : "";
     console.info(`[main] 新建空白项目目录 请求 name=${JSON.stringify(requested)}`);
     // 清洗名字：去首尾空白、去掉路径分隔符与前导点，避免越权路径或隐藏目录
@@ -661,7 +707,7 @@ async function createWindow(): Promise<void> {
   });
 
   // 在用户默认应用中打开生成的文件产物（pptx/docx/xlsx 等）。
-  ipcMain.handle("open-path", async (_event, target: unknown) => {
+  trustedIpc.handle("open-path", async (_event, target: unknown) => {
     if (typeof target !== "string" || target.length === 0) {
       console.warn("[main] 打开本地路径收到无效参数");
       return { ok: false, error: "无效路径" };
@@ -675,35 +721,37 @@ async function createWindow(): Promise<void> {
     return { ok: true };
   });
 
-  ipcMain.handle("file-preview:info", (_event, target: unknown, context: unknown) =>
+  trustedIpc.handle("file-preview:info", (_event, target: unknown, context: unknown) =>
     filePreviewInfo(target, context)
   );
-  ipcMain.handle("file-preview:read-text", (_event, target: unknown, options: unknown) =>
+  trustedIpc.handle("file-preview:read-text", (_event, target: unknown, options: unknown) =>
     readFilePreviewText(target, options)
   );
-  ipcMain.handle("file-preview:read-buffer", (_event, target: unknown, options: unknown) =>
+  trustedIpc.handle("file-preview:read-buffer", (_event, target: unknown, options: unknown) =>
     readFilePreviewBuffer(target, options)
   );
-  ipcMain.handle("file-preview:file-url", (_event, target: unknown) => createPreviewFileUrl(target));
-  ipcMain.handle("file-preview:quicklook-thumbnail", (_event, target: unknown) =>
+  trustedIpc.handle("file-preview:file-url", (_event, target: unknown) => createPreviewFileUrl(target));
+  trustedIpc.handle("file-preview:quicklook-thumbnail", (_event, target: unknown) =>
     createQuickLookThumbnail(target)
   );
-  ipcMain.handle("attachment:save-snapshots", (_event, target: unknown) =>
+  trustedIpc.handle("attachment:save-snapshots", (_event, target: unknown) =>
     saveAttachmentSnapshots(target)
   );
 
-  ipcMain.handle("detect-project-openers", async () => {
+  trustedIpc.handle("detect-project-openers", async () => {
+    const loadIconDataUrl = process.platform === "darwin" ? loadProjectOpenerIconDataUrl : undefined;
     const openers = await detectInstalledProjectOpeners(
-      projectOpenerSearchDirs(homedir()),
+      projectOpenerSearchDirs(homedir(), process.platform, process.env),
       existsSync,
-      loadProjectOpenerIconDataUrl
+      loadIconDataUrl,
+      projectOpenerDefinitions(process.platform, process.env)
     );
     console.info(`[main] 项目打开器检测完成 count=${openers.length}`);
     return openers;
   });
 
   // 使用已安装的本机应用打开项目目录。
-  ipcMain.handle("open-project-in-app", async (_event, appPath: unknown, target: unknown) => {
+  trustedIpc.handle("open-project-in-app", async (_event, appPath: unknown, target: unknown) => {
     if (typeof appPath !== "string" || typeof target !== "string" || target.length === 0) {
       console.error(
         `[main] 项目打开器收到无效参数 appPath=${String(appPath)} target=${String(target)}`
@@ -711,15 +759,19 @@ async function createWindow(): Promise<void> {
       return { ok: false, error: "无效参数" };
     }
     const installed = await detectInstalledProjectOpeners(
-      projectOpenerSearchDirs(homedir()),
-      existsSync
+      projectOpenerSearchDirs(homedir(), process.platform, process.env),
+      existsSync,
+      undefined,
+      projectOpenerDefinitions(process.platform, process.env)
     );
     if (!installed.some((opener) => opener.appPath === appPath)) {
       console.error(`[main] 拒绝打开未知项目打开器 appPath=${appPath} target=${target}`);
       return { ok: false, error: "未知项目打开器" };
     }
     return new Promise((resolve) => {
-      execFile("open", ["-a", appPath, target], (error) => {
+      const command = process.platform === "win32" ? appPath : "open";
+      const args = process.platform === "win32" ? [target] : ["-a", appPath, target];
+      execFile(command, args, (error) => {
         if (error) {
           console.error(`[main] 项目打开失败 appPath=${appPath} target=${target}:`, error.message);
           resolve({ ok: false, error: error.message });
@@ -731,13 +783,13 @@ async function createWindow(): Promise<void> {
     });
   });
 
-  ipcMain.handle("set-theme-source", (_event, source: unknown) => {
+  trustedIpc.handle("set-theme-source", (_event, source: unknown) => {
     if (source === "light" || source === "dark" || source === "system") {
       nativeTheme.themeSource = source;
     }
   });
 
-  ipcMain.handle("pick-directory", async () => {
+  trustedIpc.handle("pick-directory", async () => {
     if (!mainWindow) {
       return undefined;
     }
@@ -750,7 +802,7 @@ async function createWindow(): Promise<void> {
     return result.filePaths[0];
   });
 
-  ipcMain.handle("pick-files", async () => {
+  trustedIpc.handle("pick-files", async () => {
     if (!mainWindow) {
       return [];
     }
@@ -763,7 +815,7 @@ async function createWindow(): Promise<void> {
     return result.filePaths;
   });
 
-  ipcMain.handle("read-file-text", async (_event, filePath: unknown): Promise<ReadFileResult> => {
+  trustedIpc.handle("read-file-text", async (_event, filePath: unknown): Promise<ReadFileResult> => {
     const path = typeof filePath === "string" ? filePath : "";
     const name = basename(path);
     try {
@@ -787,15 +839,19 @@ async function createWindow(): Promise<void> {
     }
   });
 
-  mainWindow = new BrowserWindow({
+  const windowOptions: BrowserWindowConstructorOptions = {
     width: 1280,
     height: 820,
     minWidth: 960,
     minHeight: 640,
     title: "程小帮",
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 19, y: 19 },
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff",
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 19, y: 19 }
+        }
+      : {}),
     webPreferences: {
       preload: preloadPath(import.meta.url),
       contextIsolation: true,
@@ -804,7 +860,8 @@ async function createWindow(): Promise<void> {
       // 右侧浏览器面板使用 webview，后续 attach 时会继续收紧权限。
       webviewTag: true
     }
-  });
+  };
+  mainWindow = new BrowserWindow(windowOptions);
 
   mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
     // webview 会打开任意网页，不能给它 preload 或 Node 权限。
@@ -830,9 +887,20 @@ async function createWindow(): Promise<void> {
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (openExternalFromAppWindow(url, "will-navigate")) {
-      event.preventDefault();
+    const trusted = isTrustedAppWindowUrl(url, {
+      devServerUrl: process.env.VITE_DEV_SERVER_URL,
+      rendererFilePath: rendererIndexPath(import.meta.url)
+    });
+    if (trusted) {
+      return;
     }
+    event.preventDefault();
+    if (openExternalFromAppWindow(url, "will-navigate")) {
+      return;
+    }
+    console.warn("[main] 已阻止主窗口导航到不受信任地址", {
+      url
+    });
   });
 
   // 渲染层问题同步到终端，避免白屏时只能手动打开 devtools 排查。

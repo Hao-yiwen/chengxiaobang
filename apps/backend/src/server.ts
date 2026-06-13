@@ -11,6 +11,7 @@ type BunServer = {
 type BunRuntime = {
   serve(options: {
     port: number;
+    hostname?: string;
     idleTimeout: number;
     fetch: (request: Request) => Promise<Response>;
   }): BunServer;
@@ -27,6 +28,7 @@ export async function startServer(options: {
 
   const server = bun.serve({
     port: options.port,
+    hostname: "127.0.0.1",
     // Bun's default idleTimeout (10s) kills quiet SSE streams — e.g. a run
     // waiting on tool approval. Max allowed is 255 seconds; the SSE
     // keep-alive heartbeat keeps streams below it anyway.

@@ -1,10 +1,15 @@
-import { basenameOf, previewKindForPath, type PreviewKind } from "../../common/file-preview";
+import {
+  basenameOf,
+  isAbsolutePathLike,
+  previewKindForPath,
+  type PreviewKind
+} from "../../common/file-preview";
 
 /** 生成物在右侧文件预览工作台里的分类。 */
 export type ArtifactKind = PreviewKind;
 
 export interface Artifact {
-  /** 工具或模型声明中的原始路径：可以是项目相对路径，也可以是绝对路径。 */
+  /** 模型声明中的项目相对路径。 */
   path: string;
   /** 用于界面展示的文件名。 */
   name: string;
@@ -187,7 +192,18 @@ function normalizeArtifactPath(path: string): string | undefined {
   if (!trimmed || /[\u0000\r\n<>]/u.test(trimmed)) {
     return undefined;
   }
-  return trimmed;
+  const normalized = trimmed.replace(/\\/gu, "/").replace(/\/+/gu, "/");
+  if (
+    isAbsolutePathLike(normalized) ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../") ||
+    normalized.endsWith("/..")
+  ) {
+    return undefined;
+  }
+  return normalized.replace(/^\.\//u, "");
 }
 
 function decodeXmlAttribute(value: string): string {

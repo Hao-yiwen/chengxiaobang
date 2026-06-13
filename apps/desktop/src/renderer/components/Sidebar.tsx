@@ -37,14 +37,12 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
-/**
- * 左侧边栏的折叠/展开按钮：固定悬浮在窗口左上角，折叠前后位置不变（macOS 风格）。
- * Electron 下紧贴红绿灯右侧；浏览器（测试/开发）下贴左上角。
- */
+/** 左侧边栏的折叠/展开按钮：固定悬浮在窗口左上角，折叠前后位置不变。 */
 export function SidebarToggle() {
   const { t } = useTranslation();
   const open = useAppStore((state) => state.sidebarOpen);
   const toggleSidebar = useAppStore((state) => state.toggleSidebar);
+  const isMacDesktop = window.chengxiaobang?.platform === "darwin";
   return (
     <button
       type="button"
@@ -55,7 +53,7 @@ export function SidebarToggle() {
       }}
       className={cn(
         "fixed z-[60] flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground [-webkit-app-region:no-drag] max-[840px]:hidden",
-        window.chengxiaobang ? "left-[84px] top-[12px]" : "left-3 top-3"
+        isMacDesktop ? "left-[84px] top-[12px]" : "left-3 top-3"
       )}
     >
       <PanelLeft className="size-4" />
@@ -328,8 +326,8 @@ export function Sidebar() {
       )}
     >
       <div className="flex h-full w-[272px] min-h-0 flex-col px-3 pb-3">
-      {/* Electron 的 hiddenInset 标题栏会让 macOS 红绿灯占据左上角；这里预留一条空白，
-          给红绿灯和悬浮的 SidebarToggle 留出位置。注意不能挂 app-region:drag——
+      {/* macOS hiddenInset 标题栏会占据左上角；这里预留一条空白，
+          给系统按钮和悬浮的 SidebarToggle 留出位置。注意不能挂 app-region:drag——
           它会盖住折叠按钮并抢走点击（窗口拖拽由 .titlebar-drag 提供）。 */}
       <div className="h-10 flex-none" />
 

@@ -225,6 +225,25 @@ describe("resolveBackendCommand", () => {
     expect(command.args).not.toContain("--watch");
   });
 
+  it("uses bundled bun.exe in Windows packaged builds", async () => {
+    delete process.env.BUN_BINARY;
+    const resourcesPath = await mkdtemp(join(tmpdir(), "cxb-resources-"));
+    tempDirs.push(resourcesPath);
+    await writeFile(join(resourcesPath, "bun.exe"), "");
+
+    const command = resolveBackendCommand({
+      port: 3210,
+      dataDir: "C:\\Users\\me\\AppData\\Roaming\\cxb",
+      token: "token",
+      resourcesPath,
+      isPackaged: true,
+      platform: "win32"
+    });
+
+    expect(command.command).toBe(join(resourcesPath, "bun.exe"));
+    expect(command.args).not.toContain("--watch");
+  });
+
   it("checks backend runtime before launching the backend", async () => {
     const result = await checkBackendRuntime({
       command: process.execPath,
@@ -239,9 +258,17 @@ describe("resolveBackendCommand", () => {
   it("fails backend runtime check quickly when the runtime hangs", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "cxb-runtime-check-"));
     tempDirs.push(tempDir);
-    const scriptPath = join(tempDir, "fake-bun");
-    await writeFile(scriptPath, "#!/bin/sh\nsleep 5\n");
-    await chmod(scriptPath, 0o755);
+    const scriptPath =
+      process.platform === "win32" ? join(tempDir, "fake-bun.cmd") : join(tempDir, "fake-bun");
+    await writeFile(
+      scriptPath,
+      process.platform === "win32"
+        ? "@echo off\r\nping 127.0.0.1 -n 6 >nul\r\n"
+        : "#!/bin/sh\nsleep 5\n"
+    );
+    if (process.platform !== "win32") {
+      await chmod(scriptPath, 0o755);
+    }
 
     await expect(
       checkBackendRuntime(
@@ -380,6 +407,27 @@ describe("resolveBackendCommand", () => {
 
     expect(killProcess).toHaveBeenCalledWith(-4321, "SIGTERM");
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
+  it("uses taskkill-style process tree cleanup on Windows", () => {
+    vi.useFakeTimers();
+    const child = createMockBackendChild(4321);
+    const treeKills: Array<{ pid: number; force: boolean }> = [];
+
+    stopBackendChild(child as unknown as ChildProcess, {
+      platform: "win32",
+      forceKillAfterMs: 50,
+      killProcessTree: (pid, force) => {
+        treeKills.push({ pid, force });
+      }
+    });
+
+    expect(treeKills).toEqual([{ pid: 4321, force: false }]);
+    vi.advanceTimersByTime(50);
+    expect(treeKills).toEqual([
+      { pid: 4321, force: false },
+      { pid: 4321, force: true }
+    ]);
   });
 
   it("uses a longer backend startup timeout and allows env override", () => {

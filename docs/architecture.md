@@ -2,7 +2,7 @@
 
 > 最后更新:2026-06-11(agent 循环迁移到 pi 框架之后)
 
-程小帮是一个 macOS Electron 桌面 AI 助手(agentic coding companion):模型通过工具真实地读写本地文件、执行命令、生成 Office 文档,并可通过飞书机器人远程对话。
+程小帮是一个 macOS / Windows Electron 桌面 AI 助手(agentic coding companion):模型通过工具真实地读写本地文件、执行命令、生成 Office 文档,并可通过飞书机器人远程对话。
 
 技术栈:pnpm + TypeScript monorepo,全仓 ESM;后端运行在 **Bun**;agent 循环与模型调用基于 **pi 框架**(`@earendil-works/pi-agent-core` / `@earendil-works/pi-ai`);持久化用 sql.js(SQLite);前端 React + Vite + Tailwind + zustand;测试 Vitest。
 
@@ -30,7 +30,7 @@
 │                        └──── AsyncEventQueue ──→ SSE 流式响应                   │
 │                                                                                 │
 │  tools/(pi AgentTool×15) model/pi-model.ts(pi-ai)  repository/(sql.js)    │
-│  agent/history.ts(无损历史) secrets/(macOS Keychain) feishu/(长连接机器人)│
+│  agent/history.ts(无损历史) secrets/(系统凭据) feishu/(长连接机器人)      │
 └─────────────────────────────────────────────────────────────────────────────────┘
                                    ▲
                 packages/shared:实体 Zod schema、StreamEvent 契约、SSE codec
@@ -65,7 +65,7 @@ chengxiaobang/
 │       │                     #   {pptx,docx,xlsx}-builder
 │       ├── model/            # pi-model(ProviderConfig→pi Model)、provider-service
 │       ├── repository/       # state-store 接口 + sqlite-state-store(sql.js)
-│       ├── secrets/          # secret-store(Keychain / 内存)
+│       ├── secrets/          # secret-store(Keychain / Credential Manager / 内存)
 │       └── feishu/           # feishu-service / feishu-bridge / config / text
 └── apps/desktop/
     └── src/{main,preload,renderer}/
@@ -207,7 +207,7 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
 
 - `registry.ts`:`createAgentTools(workspacePath, getFeishuSender?)` 汇集工厂;`MUTATING_TOOLS` 集合 + `requiresApproval(name)` 是审批门控的唯一事实源。
 - `workspace.ts`:`safeResolve` 强制路径不逃逸工作目录;glob/search 实现(忽略 node_modules/.git/dist 等);`listProjectFiles` 供 @-mention 自动补全。
-- Bash 命令默认最多前台等待 15 秒,也可通过 `background=true` 立即转入后台;输出持续写入工作区文件,再由 `shell_status` 查询状态、`shell_cancel` 主动终止;详见 [Bash 异步执行与后台命令](./shell-background-execution.md)。
+- Shell 命令默认最多前台等待 15 秒,也可通过 `background=true` 立即转入后台;输出持续写入工作区文件,再由 `shell_status` 查询状态、`shell_cancel` 主动终止;详见 [Shell 异步执行与后台命令](./shell-background-execution.md)。
 - 参数校验由 pi 在执行前按 TypeBox schema 完成,非法参数直接变成错误工具结果(不经 beforeToolCall)。
 
 ### 4.6 模型层与压缩
@@ -221,7 +221,7 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
 
 - `repository/sqlite-state-store.ts`(sql.js,整库内存 + 每次写后 flush 到文件):projects / sessions / messages / runs / tool_calls / providers / settings 七张表;schema 迁移用 `ensureColumn`(加列式,向后兼容旧库);内置 provider 预设有就地迁移逻辑。
 - 一切经 `StateStore` 接口,测试与实现解耦。
-- `secrets/secret-store.ts`:darwin 用 macOS Keychain(`security` CLI),其他平台内存实现;库里只存 `apiKeyRef` 引用,永不落明文。
+- `secrets/secret-store.ts`:darwin 用 macOS Keychain(`security` CLI),win32 用 Windows Credential Manager,其他平台内存实现;库里只存 `apiKeyRef` 引用,永不落明文。
 
 ### 4.8 飞书集成
 
@@ -283,8 +283,8 @@ renderer                 backend AgentRunner / pi              SQLite
 
 - **构建顺序**:shared → backend → desktop(`pnpm build`);shared 必须先 build,其 `dist/` 类型被两端 typecheck 消费(`pnpm typecheck` 已编排)。
 - **后端打包**(`apps/backend/tsup.config.ts`):单文件 `dist/main.js`;`noExternal` 强制打入 `sql.js`、`@earendil-works/pi-ai`、`@earendil-works/pi-agent-core`、`pptxgenjs`、`docx`、`exceljs`、lark SDK、`hono`;banner 重建 `require`/`__dirname`/`__filename`(打入的 CJS 依赖需要)。`ws` 的可选原生 peer(`bufferutil`/`utf-8-validate`)标记 external。
-- **运行时是 Bun,不是 Node**:打入的依赖含动态 require,纯 `node dist/main.js` 会崩;`server.ts` 也只接受 `Bun.serve`。dev 与生产统一由 desktop main 进程用 Bun 拉起;冒烟测试用 `node_modules/.bin/bun dist/main.js`。
-- **打包 mac 应用**:`pnpm package:mac`(electron-builder);后端 `dist/` 与 Bun binary 作为 extraResources 一同打入。
+- **运行时是 Bun,不是 Node**:打入的依赖含动态 require,纯 `node dist/main.js` 会崩;`server.ts` 也只接受 `Bun.serve`。dev 与生产统一由 desktop main 进程用 Bun 拉起;开发冒烟可用 `node_modules/.bin/bun dist/main.js`,打包冒烟用 `apps/desktop/scripts/smoke-packaged-backend.mjs` 从 `resources/bun(.exe)` 启动 `backend/main.js` 并轮询 `/api/health`。
+- **打包桌面应用**:`pnpm package:mac` 产出 dmg + zip,`pnpm package:win` 产出 Windows x64 NSIS;后端 `dist/`、平台对应 Bun binary、OCR 模型和 `node-pty`/`sharp`/`onnxruntime-node`/`@napi-rs/canvas` 等 native 依赖一同打入。Windows 包在 Windows runner / Windows 本机构建,Windows v1 不启用自动更新入口。
 - **开发**:`pnpm dev` 一条命令——Vite(渲染层 HMR)+ tsup --watch(main/preload)+ Electron(自动拉起 `bun --watch` 后端),三层全部热更新。
 - 后端也可独立运行:`bun src/main.ts --port <n> --data-dir <dir> --token <t>`。
 

@@ -19,10 +19,23 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   };
   const app = new Hono();
 
+  app.use("*", async (c, next) => {
+    const origin = c.req.header("origin");
+    if (origin && !isAllowedCorsOrigin(origin)) {
+      console.warn("[api] 拒绝不受信任的跨源请求", {
+        origin,
+        method: c.req.method,
+        path: c.req.path
+      });
+      return c.json({ error: "不允许的请求来源" }, 403);
+    }
+    await next();
+  });
+
   app.use(
     "*",
     cors({
-      origin: "*",
+      origin: (origin) => (isAllowedCorsOrigin(origin) ? origin : null),
       allowHeaders: ALLOWED_HEADERS,
       allowMethods: ALLOWED_METHODS
     })
@@ -31,9 +44,15 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
     if (
       c.req.method !== "OPTIONS" &&
       c.req.path !== "/api/health" &&
-      context.token &&
-      c.req.header("x-chengxiaobang-token") !== context.token
+      !context.allowUnauthenticated &&
+      (!context.token || c.req.header("x-chengxiaobang-token") !== context.token)
     ) {
+      console.warn("[api] 拒绝未授权请求", {
+        method: c.req.method,
+        path: c.req.path,
+        hasToken: Boolean(context.token),
+        hasHeader: Boolean(c.req.header("x-chengxiaobang-token"))
+      });
       return c.json({ error: "未授权" }, 401);
     }
     await next();
@@ -46,4 +65,28 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   app.onError((error, c) => c.json({ error: error.message }, 500));
 
   return async (request) => app.fetch(request);
+}
+
+function isAllowedCorsOrigin(origin: string): boolean {
+  if (!origin) {
+    return true;
+  }
+  if (origin === "null" || origin.startsWith("file://")) {
+    return true;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return false;
+  }
+  return (
+    parsed.hostname === "localhost" ||
+    parsed.hostname === "127.0.0.1" ||
+    parsed.hostname === "::1" ||
+    parsed.hostname === "[::1]"
+  );
 }

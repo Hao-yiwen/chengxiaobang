@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export function defaultDataDir(): string {
   return join(homedir(), ".chengxiaobang", "data");
@@ -23,5 +24,5 @@ export function rendererIndexPath(mainModuleUrl: string): string {
 }
 
 function dirnameFromUrl(url: string): string {
-  return new URL(".", url).pathname;
+  return dirname(fileURLToPath(url));
 }

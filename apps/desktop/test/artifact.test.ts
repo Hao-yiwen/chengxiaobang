@@ -76,6 +76,28 @@ describe("parseArtifactDeclarations", () => {
     ]);
   });
 
+  it("rejects absolute and escaping artifact paths", () => {
+    const parsed = parseArtifactDeclarations(
+      [
+        "<artifacts>",
+        "  <artifact path=\"/Users/me/.env\" />",
+        "  <artifact path=\"C:\\\\Users\\\\me\\\\secret.txt\" />",
+        "  <artifact path=\"../outside.txt\" />",
+        "  <artifact path=\"safe/report.md\" />",
+        "</artifacts>"
+      ].join("\n")
+    );
+
+    expect(parsed.artifacts).toEqual([
+      { path: "safe/report.md", name: "report.md", kind: "markdown" }
+    ]);
+    expect(parsed.diagnostics).toEqual([
+      { type: "invalid_path", path: "/Users/me/.env" },
+      { type: "invalid_path", path: "C:\\\\Users\\\\me\\\\secret.txt" },
+      { type: "invalid_path", path: "../outside.txt" }
+    ]);
+  });
+
   it("decodes XML attribute entities and accepts standalone declarations", () => {
     const parsed = parseArtifactDeclarations("完成 <artifact path=\"reports/a&amp;b.md\" />");
 

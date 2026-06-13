@@ -13,6 +13,10 @@ import type {
   ApprovalDecision,
   FeishuConfig,
   FeishuConfigInput,
+  FeishuInstallPollInput,
+  FeishuInstallPollResult,
+  FeishuInstallStartInput,
+  FeishuInstallStartResult,
   FeishuStatus,
   Message,
   MessageAttachment,
@@ -40,7 +44,12 @@ import type {
   WebSearchConfig,
   WebSearchConfigInput
 } from "@chengxiaobang/shared";
-import { previewKindForPath, type PreviewKind } from "../../common/file-preview";
+import {
+  basenameOf,
+  isAbsolutePathLike,
+  previewKindForPath,
+  type PreviewKind
+} from "../../common/file-preview";
 import {
   prepareAttachmentsForRun,
   saveDisplayAttachmentSnapshots,
@@ -99,6 +108,7 @@ export interface PreviewFileState {
   path: string;
   projectPath?: string;
   sessionId?: string;
+  allowCwdFallback?: boolean;
 }
 
 interface RightPanelSessionState {
@@ -306,6 +316,8 @@ interface AppState {
   testProvider(id: string): Promise<void>;
   loadFeishuConfig(): Promise<void>;
   saveFeishuConfig(input: FeishuConfigInput): Promise<void>;
+  startFeishuInstall(input: FeishuInstallStartInput): Promise<FeishuInstallStartResult>;
+  pollFeishuInstall(input: FeishuInstallPollInput): Promise<FeishuInstallPollResult>;
   refreshFeishuStatus(): Promise<void>;
   loadWebSearchConfig(): Promise<void>;
   saveWebSearchConfig(input: WebSearchConfigInput): Promise<void>;
@@ -1117,6 +1129,9 @@ function shouldHandleRunEvent(
   event: StreamEvent,
   force: boolean | undefined
 ): boolean {
+  if (event.type === "setup_error") {
+    return true;
+  }
   if (force || event.type === "session_updated") {
     return true;
   }
@@ -1376,10 +1391,20 @@ function restoredRightPanel(
 > {
   const snapshot = sessionId ? state.rightPanelBySession[sessionId] : undefined;
   if (!snapshot) {
-    console.debug("[store] 目标会话没有右侧面板记忆，默认关闭", { sessionId });
+    const keepOpenOnSessionSwitch = Boolean(
+      sessionId &&
+        state.activeSessionId &&
+        state.activeSessionId !== sessionId &&
+        state.rightPanelOpen &&
+        (state.rightPanelMode === "changes" || state.rightPanelMode === "terminal")
+    );
+    console.debug("[store] 目标会话没有右侧面板记忆", {
+      sessionId,
+      keepOpenOnSessionSwitch
+    });
     return {
       progressPanelOpen: false,
-      rightPanelOpen: false,
+      rightPanelOpen: keepOpenOnSessionSwitch,
       rightPanelMode: null,
       rightPanelWidth: state.rightPanelWidth,
       previewFile: undefined,
@@ -1584,7 +1609,7 @@ export const useAppStore = create<AppState>()(
           path,
           projectPath: project?.path,
           sessionId,
-          pathKind: path.startsWith("/") ? "absolute" : "relative"
+          pathKind: isAbsolutePathLike(path) ? "absolute" : "relative"
         });
         set((state) => {
           const patch: RightPanelPatch = {
@@ -1606,7 +1631,27 @@ export const useAppStore = create<AppState>()(
 
       openArtifact(path, kind) {
         console.info("[store] 打开生成物预览", { path, kind });
-        get().openFilePreview(path);
+        const state = get();
+        const project = selectActiveProject(state);
+        const session = selectActiveSession(state);
+        const sessionId = session?.id ?? state.activeSessionId;
+        set((state) => {
+          const patch: RightPanelPatch = {
+            previewFile: {
+              path,
+              ...(project?.path ? { projectPath: project.path } : {}),
+              ...(sessionId ? { sessionId } : {}),
+              allowCwdFallback: false
+            },
+            rightPanelOpen: true,
+            rightPanelMode: "files",
+            rightPanelWidth: Math.max(state.rightPanelWidth, RIGHT_PANEL_FILE_WIDTH)
+          };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        });
       },
 
       async runTerminalCommand(command) {
@@ -2175,7 +2220,8 @@ export const useAppStore = create<AppState>()(
       },
 
       newChat() {
-        // No model configured -> invite the quick setup right away (from main).
+        console.info("[store] 新建普通对话");
+        // 未配置模型时直接打开轻量配置弹窗，避免用户回到首页后无从开始。
         if (!firstConfiguredProvider(get().providers)) {
           set({ onboardingOpen: true });
         }
@@ -2236,7 +2282,7 @@ export const useAppStore = create<AppState>()(
         if (!dir) {
           return;
         }
-        const project = await apiClient.createProject({ path: dir, name: dir.split("/").pop() });
+        const project = await apiClient.createProject({ path: dir, name: basenameOf(dir) || dir });
         await get().refresh();
         get().clearRunState();
         set((state) => selectNewProjectState(state, project, "openFolder"));
@@ -2784,6 +2830,28 @@ export const useAppStore = create<AppState>()(
 
         set((current) => ({ events: [...current.events, event] }));
         switch (event.type) {
+          case "setup_error":
+            console.warn("[store] run 启动阶段失败", { error: event.error });
+            set((current) => ({
+              isRunning: false,
+              activeRunId: undefined,
+              activeRunClientRequestId: undefined,
+              activeRunModel: undefined,
+              activeRunLastAssistant: undefined,
+              pendingTool: undefined,
+              runningTool: undefined,
+              toolActivity: undefined,
+              streamText: "",
+              thinking: "",
+              thinkingStartedAt: undefined,
+              notice: event.error,
+              ...(current.activeRunId && current.activeSessionId
+                ? clearRunRunning(current, current.activeRunId, current.activeSessionId)
+                : current.activeSessionId
+                  ? clearSessionRunning(current, current.activeSessionId)
+                  : {})
+            }));
+            break;
           case "run_started": {
             const runModel = runModelFromStarted(event);
             set((state) => ({
@@ -3117,6 +3185,24 @@ export const useAppStore = create<AppState>()(
         // only renders on the home/chat views.
         const { config, status } = await apiClient.saveFeishuConfig(input);
         set({ feishuConfig: config, feishuStatus: status });
+      },
+
+      async startFeishuInstall(input) {
+        if (!apiClient?.startFeishuInstall) {
+          return { ok: false, message: "飞书扫码安装服务不可用" };
+        }
+        return apiClient.startFeishuInstall(input);
+      },
+
+      async pollFeishuInstall(input) {
+        if (!apiClient?.pollFeishuInstall) {
+          return { done: false, error: "飞书扫码安装服务不可用" };
+        }
+        const result = await apiClient.pollFeishuInstall(input);
+        if (result.done) {
+          set({ feishuConfig: result.config, feishuStatus: result.status });
+        }
+        return result;
       },
 
       async refreshFeishuStatus() {

@@ -123,6 +123,7 @@ export interface TerminalExitEvent {
 declare global {
   interface Window {
     chengxiaobang?: {
+      platform?: NodeJS.Platform;
       getBackendInfo(): Promise<{ baseURL: string; token: string } | undefined>;
       pickDirectory(): Promise<string | undefined>;
       pickFiles(): Promise<string[]>;
@@ -130,7 +131,7 @@ declare global {
       readFileText(filePath: string): Promise<ReadFileResult>;
       getFilePreviewInfo?(
         filePath: string,
-        context?: { projectPath?: string; sessionId?: string }
+        context?: { projectPath?: string; sessionId?: string; allowCwdFallback?: boolean }
       ): Promise<FilePreviewInfoResult>;
       readFilePreviewText?(
         filePath: string,
@@ -161,6 +162,7 @@ declare global {
       downloadUpdate?(): Promise<DesktopUpdateState>;
       installUpdate?(): Promise<DesktopUpdateState>;
       setThemeSource?(source: "light" | "dark" | "system"): Promise<void>;
+      onNewChatRequested?(listener: () => void): () => void;
       terminalStart?(input: TerminalStartInput): Promise<TerminalIpcResult>;
       terminalWrite?(id: string, data: string): Promise<TerminalIpcResult>;
       terminalResize?(id: string, cols: number, rows: number): Promise<TerminalIpcResult>;

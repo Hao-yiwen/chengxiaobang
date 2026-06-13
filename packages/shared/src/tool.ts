@@ -88,6 +88,7 @@ export type ToolCall = z.infer<typeof toolCallSchema>;
 export const toolActivityArgsPreviewSchema = z
   .object({
     path: z.string().optional(),
+    cwd: z.string().optional(),
     command: z.string().optional(),
     query: z.string().optional(),
     pattern: z.string().optional(),

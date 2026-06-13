@@ -13,7 +13,8 @@
     "typecheck": "pnpm --filter @chengxiaobang/shared build && pnpm -r typecheck",
     "test": "vitest run --config vitest.config.ts",
     "build": "pnpm --filter @chengxiaobang/shared build && pnpm --filter @chengxiaobang/backend build && pnpm --filter @chengxiaobang/desktop build",
-    "package:mac": "pnpm run build && pnpm --filter @chengxiaobang/desktop exec electron-builder --mac"
+    "package:mac": "pnpm run build && pnpm --filter @chengxiaobang/desktop exec electron-builder --mac",
+    "package:win": "pnpm run build && pnpm --filter @chengxiaobang/desktop exec electron-builder --win --x64"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "6.9.1",
@@ -35,12 +36,14 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@napi-rs/canvas",
       "@google/genai",
       "bun",
       "electron",
       "esbuild",
       "node-pty",
       "onnxruntime-node",
+      "ppu-paddle-ocr",
       "protobufjs",
       "sharp"
     ]

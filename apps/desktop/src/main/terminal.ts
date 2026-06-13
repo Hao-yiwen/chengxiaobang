@@ -1,9 +1,10 @@
-import type { IpcMain, WebContents } from "electron";
+import type { WebContents } from "electron";
 import { chmod, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { platform } from "node:os";
 import { dirname, join } from "node:path";
 import * as nodePty from "node-pty";
+import type { TrustedIpcRegistrar } from "./trusted-ipc";
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
@@ -46,11 +47,14 @@ function normalizeDimension(value: unknown, fallback: number, min: number, max: 
     : fallback;
 }
 
-function shellPath(): string {
-  if (platform() === "win32") {
-    return process.env.ComSpec ?? "powershell.exe";
+export function resolveTerminalShell(
+  env: NodeJS.ProcessEnv = process.env,
+  currentPlatform: NodeJS.Platform = platform()
+): string {
+  if (currentPlatform === "win32") {
+    return env.ComSpec ?? "cmd.exe";
   }
-  return process.env.SHELL ?? "/bin/zsh";
+  return env.SHELL ?? "/bin/zsh";
 }
 
 function terminalEnv(): Record<string, string> {
@@ -110,10 +114,12 @@ async function ensureNodePtySpawnHelperExecutable(): Promise<void> {
 export class TerminalSessionManager {
   private readonly sessions = new Map<string, TerminalSession>();
   private readonly ptyModule: PtyModule;
+  private readonly shellResolver: () => string;
   private runtimeReady?: Promise<void>;
 
-  constructor(ptyModule: PtyModule = nodePty) {
+  constructor(ptyModule: PtyModule = nodePty, shellResolver: () => string = resolveTerminalShell) {
     this.ptyModule = ptyModule;
+    this.shellResolver = shellResolver;
   }
 
   async start(owner: WebContents, request: TerminalStartRequest): Promise<TerminalIpcResult> {
@@ -132,7 +138,7 @@ export class TerminalSessionManager {
     try {
       await assertDirectory(cwd);
       await this.ensureRuntimeReady();
-      const shell = shellPath();
+      const shell = this.shellResolver();
       const pty = this.ptyModule.spawn(shell, [], {
         name: "xterm-256color",
         cols,
@@ -166,10 +172,14 @@ export class TerminalSessionManager {
         cols,
         rows
       });
-      console.info(`[terminal] PTY 已启动 id=${id} cwd=${cwd} shell=${shell} size=${cols}x${rows}`);
+      console.info(
+        `[terminal] PTY 已启动 id=${id} platform=${platform()} cwd=${cwd} shell=${shell} size=${cols}x${rows}`
+      );
       return { ok: true, id };
     } catch (error) {
-      console.error(`[terminal] 启动失败 id=${id} cwd=${cwd}: ${messageFromError(error)}`);
+      console.error(
+        `[terminal] 启动失败 id=${id} platform=${platform()} cwd=${cwd}: ${messageFromError(error)}`
+      );
       return { ok: false, error: messageFromError(error) };
     }
   }
@@ -249,7 +259,7 @@ function parseStartRequest(input: unknown): TerminalStartRequest {
 }
 
 export function registerTerminalIpc(
-  ipc: IpcMain,
+  ipc: TrustedIpcRegistrar,
   manager = new TerminalSessionManager()
 ): TerminalSessionManager {
   ipc.handle("terminal:start", (event, input) => manager.start(event.sender, parseStartRequest(input)));

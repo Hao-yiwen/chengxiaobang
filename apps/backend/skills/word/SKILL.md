@@ -16,7 +16,7 @@ metadata:
 3. **撰写正文**：段落用 `paragraph`；并列项用 `bullets`；步骤/排序用 `ordered`；引用或要点强调用 `quote`。语言专业、简洁。
 4. **写入规格文件**：用基础文件写入能力在工作目录中创建一个 JSON 规格文件（例如 `document-spec.json`），内容格式见下方示例。
 5. **执行脚本生成**：用基础 shell 能力执行本技能自带脚本 `scripts/create-docx.mjs`：
-   ```bash
+   ```text
    node "<技能目录>/scripts/create-docx.mjs" document-spec.json 项目方案.docx
    ```
    技能正文开头会给出本技能目录位置，脚本路径相对该目录。第二个参数是输出 `.docx` 路径，省略时会读取 JSON 里的 `path` 字段。

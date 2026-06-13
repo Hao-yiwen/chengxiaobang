@@ -4,6 +4,7 @@ import { encodeSseEvent, parseSseChunk, type AppEvent, type StreamEvent } from "
 describe("SSE helpers", () => {
   it("round trips stream events", () => {
     const events: StreamEvent[] = [
+      { type: "setup_error", error: "请先配置模型" },
       {
         type: "run_started",
         runId: "run_1",

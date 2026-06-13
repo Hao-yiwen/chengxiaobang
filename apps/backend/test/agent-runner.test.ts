@@ -46,6 +46,10 @@ function smartDecision(
   };
 }
 
+function longRunningShellCommand(): string {
+  return process.platform === "win32" ? "ping 127.0.0.1 -n 6 >nul" : "sleep 5";
+}
+
 describe("AgentRunner", () => {
   let dir: string;
   let store: SqliteStateStore;
@@ -116,6 +120,37 @@ describe("AgentRunner", () => {
     await expect(readFile(join(dir, "ordinary.txt"), "utf8")).resolves.toBe("hello");
   });
 
+  it("requires approval before direct writes to absolute paths outside the workspace", async () => {
+    const project = await store.createProject({ name: "tmp", path: dir });
+    const outsideDir = await mkdtemp(join(tmpdir(), "cxb-agent-outside-"));
+    const outsideFile = join(outsideDir, "note.txt");
+    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    const transitions: string[] = [];
+    let pendingHadNoStart = false;
+
+    try {
+      for await (const event of runner.stream({
+        prompt: `/write ${outsideFile}\nhello`,
+        projectId: project.id,
+        accessMode: "approval"
+      })) {
+        if (event.type === "tool_call") {
+          transitions.push(event.toolCall.status);
+          if (event.toolCall.status === "pending_approval") {
+            pendingHadNoStart = event.toolCall.startedAt === undefined;
+            runner.approvals.decide(event.toolCall.id, { approved: true });
+          }
+        }
+      }
+
+      expect(transitions).toEqual(["pending_approval", "running", "completed"]);
+      expect(pendingHadNoStart).toBe(true);
+      await expect(readFile(outsideFile, "utf8")).resolves.toBe("hello");
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
   it("runs tools automatically in full access mode", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
     const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
@@ -155,7 +190,7 @@ describe("AgentRunner", () => {
     const startedAt = Date.now();
 
     for await (const event of runner.stream({
-      prompt: "/shell sleep 5",
+      prompt: `/shell ${longRunningShellCommand()}`,
       projectId: project.id,
       accessMode: "full_access"
     })) {
@@ -201,6 +236,46 @@ describe("AgentRunner", () => {
     expect(transitions).toEqual(["running", "completed"]);
     expect(completedApproval).toBeUndefined();
     await expect(readFile(join(dir, "smart.txt"), "utf8")).resolves.toBe("hello");
+  });
+
+  it("智能审批把工作区外 direct 写入升级为人工确认", async () => {
+    const project = await store.createProject({ name: "tmp", path: dir });
+    const outsideDir = await mkdtemp(join(tmpdir(), "cxb-agent-smart-outside-"));
+    const outsideFile = join(outsideDir, "smart.txt");
+    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    const transitions: string[] = [];
+    let approval: ToolCallApproval | undefined;
+
+    try {
+      for await (const event of runner.stream({
+        prompt: `/write ${outsideFile}\nhello`,
+        projectId: project.id,
+        accessMode: "smart_approval"
+      })) {
+        if (event.type === "tool_call") {
+          transitions.push(event.toolCall.status);
+          approval = event.toolCall.approval;
+          if (event.toolCall.status === "pending_approval") {
+            runner.approvals.decide(event.toolCall.id, { approved: true });
+          }
+        }
+      }
+
+      expect(transitions).toEqual([
+        "pending_smart_approval",
+        "pending_approval",
+        "running",
+        "completed"
+      ]);
+      expect(approval).toMatchObject({
+        source: "rule",
+        verdict: "ask_user",
+        userDecision: { approved: true }
+      });
+      await expect(readFile(outsideFile, "utf8")).resolves.toBe("hello");
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
   });
 
   it("智能审批自动拒绝高风险 direct 工具", async () => {
@@ -999,6 +1074,95 @@ describe("AgentRunner", () => {
     expect(toolNames(calls[1])).not.toContain("create_pptx");
     expect(toolNames(calls[1])).not.toContain("create_docx");
     expect(toolNames(calls[1])).not.toContain("create_xlsx");
+  });
+
+  it("allows a loaded skill to read resources from its absolute skill directory", async () => {
+    const projectPath = join(dir, "project");
+    const globalRoot = join(dir, "global");
+    const skillDir = join(globalRoot, "skills", "daily-report");
+    const resourcePath = join(skillDir, "scripts", "template.md");
+    await mkdir(projectPath, { recursive: true });
+    await mkdir(join(skillDir, "scripts"), { recursive: true });
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      "---\nname: daily-report\ndescription: 生成日报\n---\n请读取 scripts/template.md 获取日报模板。",
+      "utf8"
+    );
+    await writeFile(resourcePath, "日报模板内容", "utf8");
+    const project = await store.createProject({ name: "project", path: projectPath });
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [{ id: "call_skill", name: "use_skill", arguments: { name: "daily-report" } }]
+      },
+      {
+        toolCalls: [{ id: "call_read", name: "read_file", arguments: { path: resourcePath } }]
+      },
+      { text: "已读取日报技能模板" }
+    ], {
+      slashCommandService: new SlashCommandService(globalRoot, join(dir, "builtin"))
+    });
+    const events: StreamEvent[] = [];
+
+    for await (const event of runner.stream({
+      prompt: "按日报技能生成日报",
+      projectId: project.id,
+      accessMode: "approval"
+    })) {
+      events.push(event);
+    }
+
+    const completedRead = events.find(
+      (event) =>
+        event.type === "tool_call" &&
+        event.toolCall.name === "read_file" &&
+        event.toolCall.status === "completed"
+    );
+    expect(completedRead?.type).toBe("tool_call");
+    if (completedRead?.type === "tool_call") {
+      expect(completedRead.toolCall.result).toContain("日报模板内容");
+    }
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
+  });
+
+  it("allows model-requested writes to absolute skill resource paths after approval", async () => {
+    const projectPath = join(dir, "project-write");
+    const outsideDir = await mkdtemp(join(tmpdir(), "cxb-agent-skill-write-"));
+    const outsideFile = join(outsideDir, "generated.md");
+    await mkdir(projectPath, { recursive: true });
+    const project = await store.createProject({ name: "project-write", path: projectPath });
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          {
+            id: "call_write",
+            name: "write_file",
+            arguments: { path: outsideFile, content: "技能生成内容" }
+          }
+        ]
+      },
+      { text: "已写入" }
+    ]);
+    const transitions: string[] = [];
+
+    try {
+      for await (const event of runner.stream({
+        prompt: "把技能资源写到指定绝对路径",
+        projectId: project.id,
+        accessMode: "approval"
+      })) {
+        if (event.type === "tool_call") {
+          transitions.push(event.toolCall.status);
+          if (event.toolCall.status === "pending_approval") {
+            runner.approvals.decide(event.toolCall.id, { approved: true });
+          }
+        }
+      }
+
+      expect(transitions).toEqual(["pending_approval", "running", "completed"]);
+      await expect(readFile(outsideFile, "utf8")).resolves.toBe("技能生成内容");
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
   });
 
   it("expands slash skills into script instructions on the first model turn", async () => {

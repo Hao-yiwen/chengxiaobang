@@ -1,5 +1,5 @@
-import { readFile, readdir, stat } from "node:fs/promises";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { lstat, mkdir, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
 import type { ProjectFileEntry } from "@chengxiaobang/shared";
 
 /** Build-output and dependency dirs that file walks always skip. */
@@ -17,14 +17,216 @@ const IGNORED_DIRS = new Set([
 const MAX_SEARCH_RESULTS = 200;
 const MAX_GLOB_RESULTS = 500;
 
-/** Resolve a workspace-relative path, refusing anything that escapes the workspace. */
-export function safeResolve(basePath: string, targetPath: string): string {
-  const base = resolve(basePath);
-  const target = resolve(base, targetPath);
-  if (target !== base && !target.startsWith(`${base}${sep}`)) {
+interface PathTools {
+  resolve(...paths: string[]): string;
+  isAbsolute(path: string): boolean;
+  sep: string;
+}
+
+const nativePathTools: PathTools = { resolve, isAbsolute, sep };
+
+function pathToolsFor(platform: NodeJS.Platform = process.platform): PathTools {
+  return platform === "win32" ? win32 : nativePathTools;
+}
+
+function normalizeForContainment(path: string, platform: NodeJS.Platform): string {
+  const trimmed = path.replace(/[\\/]+$/u, "");
+  return platform === "win32" ? trimmed.toLowerCase() : trimmed;
+}
+
+/** 判断 target 是否等于 base 或位于 base 之下；Windows 文件系统路径按大小写不敏感处理。 */
+export function isSameOrChildPath(
+  basePath: string,
+  targetPath: string,
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  const tools = pathToolsFor(platform);
+  const base = normalizeForContainment(tools.resolve(basePath), platform);
+  const target = normalizeForContainment(tools.resolve(targetPath), platform);
+  return target === base || target.startsWith(`${base}${tools.sep}`);
+}
+
+/** 解析工作区相对路径，并拒绝越界访问。 */
+export function safeResolve(
+  basePath: string,
+  targetPath: string,
+  platform: NodeJS.Platform = process.platform
+): string {
+  const tools = pathToolsFor(platform);
+  const base = tools.resolve(basePath);
+  const target = tools.resolve(base, targetPath);
+  if (!isSameOrChildPath(base, target, platform)) {
     throw new Error("路径超出当前项目范围");
   }
   return target;
+}
+
+export interface ToolPathResolution {
+  target: string;
+  outsideWorkspace: boolean;
+}
+
+export function isPathOutsideWorkspace(
+  basePath: string,
+  targetPath: string,
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  const tools = pathToolsFor(platform);
+  const base = tools.resolve(basePath);
+  const target = tools.isAbsolute(targetPath)
+    ? tools.resolve(targetPath)
+    : tools.resolve(base, targetPath);
+  return !isSameOrChildPath(base, target, platform);
+}
+
+/** 解析工具路径：相对路径仍限定在工作目录内，显式绝对路径允许操作。 */
+export function resolveToolPath(
+  basePath: string,
+  targetPath: string,
+  platform: NodeJS.Platform = process.platform
+): ToolPathResolution {
+  const tools = pathToolsFor(platform);
+  const base = tools.resolve(basePath);
+  if (tools.isAbsolute(targetPath)) {
+    const target = tools.resolve(targetPath);
+    return {
+      target,
+      outsideWorkspace: isPathOutsideWorkspace(base, target, platform)
+    };
+  }
+  try {
+    return { target: safeResolve(base, targetPath, platform), outsideWorkspace: false };
+  } catch (error) {
+    console.warn("[workspace] 拒绝越界的相对工具路径", { basePath: base, targetPath });
+    throw error;
+  }
+}
+
+export async function resolveExistingWorkspacePath(
+  basePath: string,
+  targetPath: string
+): Promise<string> {
+  const base = await realpath(resolve(basePath));
+  if (isAbsolute(targetPath)) {
+    console.warn("[workspace] 拒绝工具访问显式绝对路径", { basePath: base, targetPath });
+    throw new Error("路径超出当前项目范围");
+  }
+  const target = safeResolve(base, targetPath);
+  const resolvedTarget = await realpath(target);
+  if (!isSameOrChildPath(base, resolvedTarget)) {
+    console.warn("[workspace] 拒绝访问真实路径超出工作目录的目标", {
+      basePath: base,
+      targetPath,
+      resolvedTarget
+    });
+    throw new Error("路径超出当前项目范围");
+  }
+  return resolvedTarget;
+}
+
+export async function resolveWritableWorkspacePath(
+  basePath: string,
+  targetPath: string,
+  options: { createParentDirs?: boolean } = {}
+): Promise<string> {
+  const base = await realpath(resolve(basePath));
+  if (isAbsolute(targetPath)) {
+    console.warn("[workspace] 拒绝工具写入显式绝对路径", { basePath: base, targetPath });
+    throw new Error("路径超出当前项目范围");
+  }
+  const target = safeResolve(base, targetPath);
+  const parent = dirname(target);
+  await assertNearestExistingAncestorInside(base, parent);
+  if (options.createParentDirs) {
+    await mkdir(parent, { recursive: true });
+  }
+  try {
+    const resolvedTarget = await realpath(target);
+    if (!isSameOrChildPath(base, resolvedTarget)) {
+      console.warn("[workspace] 拒绝写入真实路径超出工作目录的目标", {
+        basePath: base,
+        targetPath,
+        resolvedTarget
+      });
+      throw new Error("路径超出当前项目范围");
+    }
+  } catch (error) {
+    if (!isMissingPathError(error)) {
+      throw error;
+    }
+  }
+  const resolvedParent = await realpath(parent);
+  if (!isSameOrChildPath(base, resolvedParent)) {
+    console.warn("[workspace] 拒绝写入真实父目录超出工作目录的目标", {
+      basePath: base,
+      targetPath,
+      resolvedParent
+    });
+    throw new Error("路径超出当前项目范围");
+  }
+  return target;
+}
+
+export async function createWorkspaceDirectory(
+  basePath: string,
+  targetPath: string
+): Promise<string> {
+  const base = await realpath(resolve(basePath));
+  if (isAbsolute(targetPath)) {
+    console.warn("[workspace] 拒绝工具创建显式绝对路径目录", { basePath: base, targetPath });
+    throw new Error("路径超出当前项目范围");
+  }
+  const target = safeResolve(base, targetPath);
+  await assertNearestExistingAncestorInside(base, target);
+  await mkdir(target, { recursive: true });
+  const resolvedTarget = await realpath(target);
+  if (!isSameOrChildPath(base, resolvedTarget)) {
+    console.warn("[workspace] 拒绝创建真实路径超出工作目录的目录", {
+      basePath: base,
+      targetPath,
+      resolvedTarget
+    });
+    throw new Error("路径超出当前项目范围");
+  }
+  return target;
+}
+
+async function assertNearestExistingAncestorInside(base: string, target: string): Promise<void> {
+  let current = target;
+  for (;;) {
+    try {
+      await lstat(current);
+      const resolved = await realpath(current);
+      if (!isSameOrChildPath(base, resolved)) {
+        console.warn("[workspace] 拒绝穿过真实路径超出工作目录的父级", {
+          basePath: base,
+          target,
+          ancestor: current,
+          resolved
+        });
+        throw new Error("路径超出当前项目范围");
+      }
+      return;
+    } catch (error) {
+      if (!isMissingPathError(error)) {
+        throw error;
+      }
+      const next = dirname(current);
+      if (next === current) {
+        throw error;
+      }
+      current = next;
+    }
+  }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    ((error as NodeJS.ErrnoException).code === "ENOENT" ||
+      (error as NodeJS.ErrnoException).code === "ENOTDIR")
+  );
 }
 
 /**
@@ -37,7 +239,7 @@ export async function listProjectFiles(
   query: string,
   limit = 50
 ): Promise<string[]> {
-  const root = resolve(basePath);
+  const root = await realpath(resolve(basePath));
   const needle = query.trim().toLowerCase();
   const cappedLimit = Math.max(1, Math.min(limit, 200));
   const files: string[] = [];
@@ -73,8 +275,8 @@ export async function listProjectDirectoryEntries(
   basePath: string,
   directory = "."
 ): Promise<ProjectFileEntry[]> {
-  const root = resolve(basePath);
-  const current = safeResolve(root, directory || ".");
+  const root = await realpath(resolve(basePath));
+  const current = await resolveExistingWorkspacePath(root, directory || ".");
   const info = await stat(current);
   if (!info.isDirectory()) {
     throw new Error("路径不是目录");
@@ -160,7 +362,7 @@ function globToRegExp(pattern: string): RegExp {
 }
 
 export async function globFiles(basePath: string, pattern: string): Promise<string> {
-  const root = resolve(basePath);
+  const root = await realpath(resolve(basePath));
   const matcher = globToRegExp(pattern);
   const matches: string[] = [];
   const budget = { count: MAX_GLOB_RESULTS * 8 };
@@ -191,7 +393,7 @@ export async function searchFiles(
   scope: string,
   query: string
 ): Promise<string> {
-  const root = resolve(basePath);
+  const root = await realpath(resolve(basePath));
   const needle = query.toLowerCase();
   const results: string[] = [];
   const budget = { count: 20_000 };

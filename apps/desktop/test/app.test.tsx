@@ -88,6 +88,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
 
 beforeEach(() => {
   window.localStorage.clear();
+  delete window.chengxiaobang;
   resetAppStore();
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
@@ -199,6 +200,40 @@ describe("App", () => {
     await act(async () => {
       useAppStore.getState().setLocale("zh");
     });
+  });
+
+  it("starts a fresh home chat when the native app menu requests New Chat", async () => {
+    let newChatListener: (() => void) | undefined;
+    const unsubscribe = vi.fn();
+    window.chengxiaobang = {
+      onNewChatRequested: vi.fn((listener: () => void) => {
+        newChatListener = listener;
+        return unsubscribe;
+      })
+    } as unknown as NonNullable<Window["chengxiaobang"]>;
+    const client = createClient();
+    const { unmount } = render(<App client={client} />);
+    await screen.findByText("做一份 PPT");
+
+    await act(async () => {
+      useAppStore.setState({
+        view: "chat",
+        activeProjectId: "project_1",
+        activeSessionId: "session_1",
+        planMode: true
+      });
+      newChatListener?.();
+    });
+
+    expect(useAppStore.getState()).toMatchObject({
+      view: "home",
+      activeProjectId: undefined,
+      activeSessionId: undefined,
+      planMode: false
+    });
+
+    unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
   it("restores the latest persisted session and messages", async () => {

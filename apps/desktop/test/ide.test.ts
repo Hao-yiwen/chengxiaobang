@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   detectInstalledProjectOpeners,
+  projectOpenerDefinitions,
   projectOpenerBundleIconFileNames,
   projectOpenerSearchDirs,
   PROJECT_OPENER_DEFINITIONS
@@ -12,6 +13,20 @@ describe("projectOpenerSearchDirs", () => {
     expect(projectOpenerSearchDirs("/Users/me")).toEqual([
       "/Applications",
       join("/Users/me", "Applications")
+    ]);
+  });
+
+  it("returns Windows program roots on Windows", () => {
+    expect(
+      projectOpenerSearchDirs("C:\\Users\\me", "win32", {
+        LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local",
+        ProgramFiles: "C:\\Program Files",
+        "ProgramFiles(x86)": "C:\\Program Files (x86)"
+      })
+    ).toEqual([
+      join("C:\\Users\\me\\AppData\\Local", "Programs"),
+      "C:\\Program Files",
+      "C:\\Program Files (x86)"
     ]);
   });
 });
@@ -148,6 +163,29 @@ describe("detectInstalledProjectOpeners", () => {
       "idea",
       "goland",
       "pycharm"
+    ]);
+  });
+
+  it("finds Windows project openers and keeps Explorer as fallback", async () => {
+    const env = {
+      LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local",
+      ProgramFiles: "C:\\Program Files",
+      SystemRoot: "C:\\Windows"
+    };
+    const definitions = projectOpenerDefinitions("win32", env);
+    const codePath = join(env.LOCALAPPDATA, "Programs", "Microsoft VS Code", "Code.exe");
+    const exists = (path: string) => path === codePath;
+
+    await expect(
+      detectInstalledProjectOpeners([], exists, undefined, definitions)
+    ).resolves.toEqual([
+      { id: "vscode", name: "VS Code", appPath: codePath, iconDataUrl: undefined },
+      {
+        id: "explorer",
+        name: "Explorer",
+        appPath: join(env.SystemRoot, "explorer.exe"),
+        iconDataUrl: undefined
+      }
     ]);
   });
 });

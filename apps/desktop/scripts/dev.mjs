@@ -12,11 +12,12 @@ import { existsSync, watch } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { resolveWorkspaceBin } from "./dev-bin.mjs";
 import { cleanupStaleDevBackends } from "./dev-process-cleanup.mjs";
 
 const desktopDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(desktopDir, "../..");
-const bin = (name) => resolve(repoRoot, "node_modules/.bin", name);
+const bin = (name) => resolveWorkspaceBin(name, { desktopDir, repoRoot });
 
 const VITE_HOST = "127.0.0.1";
 const VITE_PORT = 5173;
@@ -40,6 +41,11 @@ function run(command, args, opts = {}) {
     ...opts
   });
   children.push(child);
+  child.on("error", (error) => {
+    if (shuttingDown) return;
+    console.error(`\n[dev] 启动子进程失败 command=${command} error=${error.message}`);
+    shutdown(1);
+  });
   child.on("exit", (code) => {
     if (!shuttingDown && child !== electron) {
       console.error(`\n[dev] ${command} exited (code ${code}); shutting down.`);
@@ -67,7 +73,7 @@ async function waitFor(predicate, { timeout, label }) {
   throw new Error(`Timed out waiting for ${label}`);
 }
 
-const electronBin = resolve(desktopDir, "node_modules/.bin/electron");
+const electronBin = bin("electron");
 
 function startElectron() {
   electron = run(electronBin, ["."], {

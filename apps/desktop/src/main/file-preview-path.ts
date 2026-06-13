@@ -1,11 +1,13 @@
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve, sep } from "node:path";
+import { isAbsolutePathLike } from "../common/file-preview";
 
 export interface FilePreviewResolveContext {
   projectPath?: string;
   sessionId?: string;
   chengxiaobangHome?: string;
   cwd?: string;
+  allowCwdFallback?: boolean;
 }
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -41,7 +43,7 @@ export function previewPathCandidates(
   if (!trimmed) {
     return [];
   }
-  if (isAbsolute(trimmed)) {
+  if (isAbsolute(trimmed) || isAbsolutePathLike(trimmed)) {
     return [trimmed];
   }
 
@@ -61,9 +63,11 @@ export function previewPathCandidates(
     }
   }
 
-  const cwdCandidate = safeResolveWithin(context.cwd ?? process.cwd(), trimmed);
-  if (cwdCandidate) {
-    candidates.push(cwdCandidate);
+  if (context.allowCwdFallback !== false) {
+    const cwdCandidate = safeResolveWithin(context.cwd ?? process.cwd(), trimmed);
+    if (cwdCandidate) {
+      candidates.push(cwdCandidate);
+    }
   }
 
   return [...new Set(candidates)];

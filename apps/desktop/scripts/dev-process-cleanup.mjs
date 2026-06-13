@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { resolve } from "node:path";
 
 const execFileAsync = promisify(execFile);
 
@@ -21,13 +20,27 @@ export function isDevBackendProcess(processInfo, { repoRoot, currentPid = proces
   if (processInfo.pid === currentPid) return false;
 
   const command = normalizeCommand(processInfo.command);
-  const executable = command.trim().split(/\s+/, 1)[0] ?? "";
-  const backendEntry = normalizeCommand(resolve(repoRoot, "apps/backend/src/main.ts"));
+  const executable = firstCommandToken(command);
+  const backendEntry = `${normalizeCommand(repoRoot).replace(/\/+$/, "")}/apps/backend/src/main.ts`;
   return (
     command.includes(backendEntry) &&
     command.includes("--watch") &&
     isBunExecutable(executable)
   );
+}
+
+export function parseWindowsProcessList(output) {
+  const parsed = JSON.parse(output || "[]");
+  const rows = Array.isArray(parsed) ? parsed : [parsed];
+  return rows
+    .filter((row) => row && typeof row === "object")
+    .map((row) => ({
+      pid: Number(row.ProcessId),
+      ppid: Number(row.ParentProcessId),
+      pgid: 0,
+      command: typeof row.CommandLine === "string" ? row.CommandLine : ""
+    }))
+    .filter((row) => Number.isFinite(row.pid) && row.pid > 0 && row.command.length > 0);
 }
 
 export function collectDevBackendCleanupTargets(processes, options) {
@@ -58,8 +71,7 @@ export async function cleanupStaleDevBackends({
   killImpl = process.kill
 }) {
   if (process.platform === "win32") {
-    logger.warn("[dev] 当前启动前后端清理暂不支持 Windows，已跳过。");
-    return { matchedProcesses: [], processGroups: [], pids: [] };
+    return cleanupStaleWindowsDevBackends({ repoRoot, logger, execFileImpl });
   }
 
   let stdout;
@@ -83,6 +95,42 @@ export async function cleanupStaleDevBackends({
   signalTargets(targets, "SIGTERM", killImpl, logger);
   await delay(waitMs);
   signalTargets(targets, "SIGKILL", killImpl, logger);
+  return targets;
+}
+
+async function cleanupStaleWindowsDevBackends({ repoRoot, logger, execFileImpl }) {
+  let stdout;
+  try {
+    ({ stdout } = await execFileImpl("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress"
+    ]));
+  } catch (error) {
+    logger.warn(`[dev] 检查 Windows 旧后端进程失败，继续启动：${error.message}`);
+    return { matchedProcesses: [], processGroups: [], pids: [] };
+  }
+
+  const targets = collectDevBackendCleanupTargets(parseWindowsProcessList(stdout), { repoRoot });
+  if (targets.matchedProcesses.length === 0) {
+    logger.log("[dev] 未发现需要清理的旧后端进程。");
+    return targets;
+  }
+
+  const summary = targets.matchedProcesses
+    .map((processInfo) => `${processInfo.pid}:${processInfo.command}`)
+    .join("; ");
+  logger.warn(`[dev] 启动前清理 Windows 旧后端进程：${summary}`);
+  for (const pid of targets.pids) {
+    try {
+      await execFileImpl("taskkill", ["/PID", String(pid), "/T", "/F"]);
+    } catch (error) {
+      logger.warn(`[dev] taskkill 失败 pid=${pid} error=${error.message}`);
+    }
+  }
   return targets;
 }
 
@@ -111,6 +159,15 @@ function delay(ms) {
 
 function normalizeCommand(value) {
   return value.replaceAll("\\", "/");
+}
+
+function firstCommandToken(command) {
+  const trimmed = command.trim();
+  if (trimmed.startsWith('"')) {
+    const end = trimmed.indexOf('"', 1);
+    return end >= 0 ? trimmed.slice(1, end) : trimmed.slice(1);
+  }
+  return trimmed.split(/\s+/, 1)[0] ?? "";
 }
 
 function isBunExecutable(executable) {

@@ -30,8 +30,20 @@ export function localPathFromFileUrl(input: string): string | undefined {
     if (url.protocol !== "file:" || url.host) {
       return undefined;
     }
-    return decodeURIComponent(url.pathname);
+    return localPathFromFileHref(url.href);
   } catch {
     return undefined;
   }
+}
+
+export function localPathFromFileHref(href: string): string | undefined {
+  const prefix = "file://";
+  if (!href.toLowerCase().startsWith(prefix)) {
+    return undefined;
+  }
+  const path = decodeURIComponent(href.slice(prefix.length).split(/[?#]/, 1)[0] ?? "");
+  if (/^\/[A-Za-z]:(?:\/|$)/.test(path)) {
+    return path.slice(1).replace(/\//g, "\\");
+  }
+  return path;
 }

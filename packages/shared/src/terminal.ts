@@ -9,6 +9,7 @@ export type TerminalExecRequest = z.infer<typeof terminalExecRequestSchema>;
 
 export const terminalExecResultSchema = z.object({
   output: z.string(),
-  exitCode: z.number().int()
+  exitCode: z.number().int(),
+  truncated: z.boolean().optional()
 });
 export type TerminalExecResult = z.infer<typeof terminalExecResultSchema>;

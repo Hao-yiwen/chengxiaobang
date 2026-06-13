@@ -96,6 +96,33 @@ describe("builtin agent tools", () => {
     await expect(run(tools, "read_file", { path: "notes/todo.md" })).resolves.toBe("world");
   });
 
+  it("operates on explicit absolute file paths", async () => {
+    const outsideDir = await mkdtemp(join(tmpdir(), "cxb-tools-outside-"));
+    try {
+      const outsideFile = join(outsideDir, "resource.txt");
+      await writeFile(outsideFile, "外部技能资源", "utf8");
+
+      await expect(run(tools, "read_file", { path: outsideFile })).resolves.toBe("外部技能资源");
+      await expect(run(tools, "list_directory", { path: outsideDir })).resolves.toContain(
+        "file resource.txt"
+      );
+      const createdFile = join(outsideDir, "created.txt");
+      await expect(
+        run(tools, "write_file", { path: createdFile, content: "x" })
+      ).resolves.toContain("已写入");
+      await run(tools, "edit_file", { path: createdFile, oldText: "x", newText: "y" });
+      await expect(readFile(createdFile, "utf8")).resolves.toBe("y");
+      await expect(
+        run(tools, "make_directory", { path: join(outsideDir, "nested") })
+      ).resolves.toContain("已创建目录");
+      await expect(run(tools, "list_directory", { path: outsideDir })).resolves.toContain(
+        "dir  nested"
+      );
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
   it("reads file line ranges when requested", async () => {
     await writeFile(join(dir, "notes.txt"), "one\ntwo\nthree\nfour", "utf8");
 
@@ -270,16 +297,47 @@ describe("builtin agent tools", () => {
     await expect(run(tools, "search", { query: "needle" })).resolves.toContain("a.txt:2");
   });
 
+  it("searches and globs explicit absolute directories", async () => {
+    const outsideDir = await mkdtemp(join(tmpdir(), "cxb-tools-search-"));
+    try {
+      await mkdir(join(outsideDir, "src"), { recursive: true });
+      await writeFile(join(outsideDir, "src", "outside.ts"), "const needle = true;", "utf8");
+      await writeFile(join(outsideDir, "README.md"), "needle docs", "utf8");
+
+      await expect(
+        run(tools, "glob", { path: outsideDir, pattern: "**/*.ts" })
+      ).resolves.toContain("src/outside.ts");
+      await expect(run(tools, "search", { path: outsideDir, query: "needle" })).resolves.toContain(
+        "src/outside.ts:1"
+      );
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
   it("runs shell commands and throws on non-zero exit", async () => {
     await expect(run(tools, "shell", { command: "echo hi" })).resolves.toContain("hi");
-    await expect(run(tools, "shell", { command: "exit 3" })).rejects.toThrow("退出码 3");
+    await expect(run(tools, "shell", { command: failingShellCommand(3) })).rejects.toThrow(
+      "退出码 3"
+    );
+  });
+
+  it("runs shell commands with an explicit absolute cwd", async () => {
+    const outsideDir = await mkdtemp(join(tmpdir(), "cxb-tools-shell-"));
+    try {
+      await expect(
+        run(tools, "shell", { command: printWorkingDirectoryCommand(), cwd: outsideDir })
+      ).resolves.toContain(outsideDir);
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
   });
 
   it("moves slow shell commands to the background and writes output to a file", async () => {
     const shellTools = createShellTools(dir, { backgroundAfterMs: 50 });
 
     const result = await run(shellTools, "shell", {
-      command: "sleep 0.2; echo background-done"
+      command: delayedEchoCommand("background-done")
     });
     const id = parseBackgroundId(result);
     const outputPath = parseOutputPath(result);
@@ -298,7 +356,7 @@ describe("builtin agent tools", () => {
     const startedAt = Date.now();
 
     const result = await run(shellTools, "shell", {
-      command: "sleep 5; echo should-not-print",
+      command: longCommandWithTrailingEcho("should-not-print"),
       background: true
     });
     const id = parseBackgroundId(result);
@@ -314,11 +372,35 @@ describe("builtin agent tools", () => {
     );
   });
 
+  it("returns an absolute background output path for shell commands outside the workspace", async () => {
+    const outsideDir = await mkdtemp(join(tmpdir(), "cxb-tools-shell-outside-"));
+    const shellTools = createShellTools(dir, { backgroundAfterMs: 10_000 });
+    try {
+      const result = await run(shellTools, "shell", {
+        command: delayedEchoCommand("outside-background"),
+        cwd: outsideDir,
+        background: true
+      });
+      const id = parseBackgroundId(result);
+      const outputPath = parseOutputPath(result);
+
+      expect(outputPath).toContain(outsideDir);
+      await waitFor(async () => {
+        const status = await run(shellTools, "shell_status", { id });
+        expect(status).toContain("状态：completed");
+        expect(status).toContain(outputPath);
+      });
+      await expect(readFile(outputPath, "utf8")).resolves.toContain("outside-background");
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
   it("cancels a background shell command by id", async () => {
     const shellTools = createShellTools(dir, { backgroundAfterMs: 50 });
 
     const result = await run(shellTools, "shell", {
-      command: "sleep 5; echo should-not-print"
+      command: longCommandWithTrailingEcho("should-not-print")
     });
     const id = parseBackgroundId(result);
     const outputPath = parseOutputPath(result);
@@ -407,8 +489,9 @@ describe("feishu_send_message tool", () => {
   });
 
   it("classifies ordinary writes as low risk but keeps sensitive writes gated", () => {
+    const workspacePath = join(tmpdir(), "cxb-risk-workspace");
     expect(
-      assessToolApprovalRisk("write_file", { path: "src/app.ts", content: "x" })
+      assessToolApprovalRisk("write_file", { path: "src/app.ts", content: "x" }, { workspacePath })
     ).toMatchObject({
       risk: "low",
       requiresGate: false
@@ -419,9 +502,62 @@ describe("feishu_send_message tool", () => {
         requiresGate: true,
         smartVerdict: "ask_user"
       });
+    expect(
+      assessToolApprovalRisk("write_file", {
+        path: "C:\\Users\\me\\repo\\.ssh\\id_rsa",
+        content: "x"
+      })
+    ).toMatchObject({
+      risk: "high",
+      requiresGate: true,
+      smartVerdict: "ask_user"
+    });
+    expect(
+      assessToolApprovalRisk("write_file", {
+        path: "C:\\Users\\me\\repo\\credentials.json",
+        content: "x"
+      })
+    ).toMatchObject({
+      risk: "high",
+      requiresGate: true,
+      smartVerdict: "ask_user"
+    });
+    expect(
+      assessToolApprovalRisk(
+        "write_file",
+        { path: "c:\\users\\me\\repo\\src\\app.ts", content: "x" },
+        { workspacePath: "C:\\Users\\Me\\Repo", platform: "win32" }
+      )
+    ).toMatchObject({
+      risk: "low",
+      requiresGate: false
+    });
+    expect(
+      assessToolApprovalRisk(
+        "write_file",
+        { path: "C:\\Users\\Me\\Other\\app.ts", content: "x" },
+        { workspacePath: "C:\\Users\\Me\\Repo", platform: "win32" }
+      )
+    ).toMatchObject({
+      risk: "high",
+      requiresGate: true,
+      smartVerdict: "ask_user"
+    });
+    expect(
+      assessToolApprovalRisk(
+        "write_file",
+        { path: join(tmpdir(), "cxb-outside-write.txt"), content: "x" },
+        { workspacePath }
+      )
+    ).toMatchObject({
+      risk: "high",
+      requiresGate: true,
+      smartVerdict: "ask_user"
+    });
   });
 
   it("classifies routine shell commands separately from dangerous shell commands", () => {
+    const workspacePath = join(tmpdir(), "cxb-risk-workspace");
     expect(assessToolApprovalRisk("shell", { command: "pwd" })).toMatchObject({
       risk: "low",
       requiresGate: false
@@ -430,11 +566,68 @@ describe("feishu_send_message tool", () => {
       risk: "low",
       requiresGate: false
     });
+    expect(
+      assessToolApprovalRisk(
+        "shell",
+        { command: "pwd", cwd: join(tmpdir(), "cxb-outside-cwd") },
+        { workspacePath }
+      )
+    ).toMatchObject({
+      risk: "high",
+      requiresGate: true,
+      smartVerdict: "ask_user"
+    });
+    expect(
+      assessToolApprovalRisk(
+        "shell",
+        { command: "dir", cwd: "c:\\users\\me\\repo\\src" },
+        { workspacePath: "C:\\Users\\Me\\Repo", platform: "win32" }
+      )
+    ).toMatchObject({
+      risk: "low",
+      requiresGate: false
+    });
+    expect(
+      assessToolApprovalRisk(
+        "shell",
+        { command: "dir", cwd: "C:\\Users\\Me\\Other" },
+        { workspacePath: "C:\\Users\\Me\\Repo", platform: "win32" }
+      )
+    ).toMatchObject({
+      risk: "high",
+      requiresGate: true,
+      smartVerdict: "ask_user"
+    });
     expect(assessToolApprovalRisk("shell", { command: "rm -rf build" })).toMatchObject({
       risk: "high",
       requiresGate: true,
       smartVerdict: "deny"
     });
+    for (const command of [
+      "rmdir /s /q build",
+      "del /s *.log",
+      "format C:",
+      'powershell -NoProfile -Command "Remove-Item -Recurse build"'
+    ]) {
+      expect(assessToolApprovalRisk("shell", { command })).toMatchObject({
+        risk: "high",
+        requiresGate: true,
+        smartVerdict: "deny"
+      });
+    }
+    for (const command of ["taskkill /PID 1234 /T /F", "Stop-Process -Id 1234"]) {
+      expect(assessToolApprovalRisk("shell", { command })).toMatchObject({
+        risk: "high",
+        requiresGate: true,
+        smartVerdict: "ask_user"
+      });
+    }
+    for (const command of ["dir", "type package.json", "where node"]) {
+      expect(assessToolApprovalRisk("shell", { command })).toMatchObject({
+        risk: "low",
+        requiresGate: false
+      });
+    }
     expect(assessToolApprovalRisk("shell", { command: "echo hi; echo bye" })).toMatchObject({
       risk: "medium",
       requiresGate: true,
@@ -442,6 +635,26 @@ describe("feishu_send_message tool", () => {
     });
   });
 });
+
+function failingShellCommand(exitCode: number): string {
+  return process.platform === "win32" ? `exit /b ${exitCode}` : `exit ${exitCode}`;
+}
+
+function printWorkingDirectoryCommand(): string {
+  return process.platform === "win32" ? "cd" : "pwd";
+}
+
+function delayedEchoCommand(text: string): string {
+  return process.platform === "win32"
+    ? `ping 127.0.0.1 -n 2 >nul & echo ${text}`
+    : `sleep 0.2; echo ${text}`;
+}
+
+function longCommandWithTrailingEcho(text: string): string {
+  return process.platform === "win32"
+    ? `ping 127.0.0.1 -n 6 >nul & echo ${text}`
+    : `sleep 5; echo ${text}`;
+}
 
 function parseBackgroundId(result: string): string {
   const match = result.match(/后台命令 ID：(\S+)/);
@@ -459,7 +672,7 @@ function parseOutputPath(result: string): string {
   return match[1];
 }
 
-async function waitFor(assertion: () => Promise<void>, timeoutMs = 1_500): Promise<void> {
+async function waitFor(assertion: () => Promise<void>, timeoutMs = 4_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
   while (Date.now() < deadline) {

@@ -61,6 +61,9 @@ export function SideChatPanel() {
           }
           return;
         }
+        if (!("runId" in event)) {
+          return;
+        }
         if (current.runId && event.runId === current.runId) {
           applyRunEvent(event);
           if (event.type === "run_end") {

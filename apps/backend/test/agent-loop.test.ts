@@ -23,6 +23,16 @@ async function drain(stream: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]
   return events;
 }
 
+function delayedEchoShellCommand(text: string): string {
+  return process.platform === "win32"
+    ? `ping 127.0.0.1 -n 2 >nul & echo ${text}`
+    : `sleep 0.2; echo ${text}`;
+}
+
+function longRunningShellCommand(): string {
+  return process.platform === "win32" ? "ping 127.0.0.1 -n 6 >nul" : "sleep 5";
+}
+
 describe("AgentRunner agentic loop (pi)", () => {
   let dir: string;
   let store: SqliteStateStore;
@@ -392,7 +402,7 @@ describe("AgentRunner agentic loop (pi)", () => {
           {
             id: "call_shell",
             name: "shell",
-            arguments: { command: "sleep 0.2; echo loop-background-done" }
+            arguments: { command: delayedEchoShellCommand("loop-background-done") }
           }
         ]
       },
@@ -440,7 +450,7 @@ describe("AgentRunner agentic loop (pi)", () => {
             id: "call_shell_background",
             name: "shell",
             arguments: {
-              command: "sleep 0.2; echo requested-background-done",
+              command: delayedEchoShellCommand("requested-background-done"),
               background: true
             }
           }
@@ -729,7 +739,11 @@ describe("AgentRunner agentic loop (pi)", () => {
   it("aborts a running model-requested shell tool promptly", async () => {
     const project = await store.createProject({ name: "proj", path: dir });
     const { runner, calls } = runnerWith([
-      { toolCalls: [{ id: "call_1", name: "shell", arguments: { command: "sleep 5" } }] },
+      {
+        toolCalls: [
+          { id: "call_1", name: "shell", arguments: { command: longRunningShellCommand() } }
+        ]
+      },
       { text: "不应该被调用" }
     ]);
     const events: StreamEvent[] = [];
@@ -810,7 +824,7 @@ function parseBackgroundOutputPath(result: string): string {
 async function waitForFileToContain(
   path: string,
   expected: string,
-  timeoutMs = 1_500
+  timeoutMs = 4_000
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastContent = "";

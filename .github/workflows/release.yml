@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 jobs:
-  publish:
+  build-mac:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -34,22 +34,61 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build mac distributables
-        run: pnpm run build && pnpm --filter @chengxiaobang/desktop exec electron-builder --mac --publish never -c.npmRebuild=false
+      - name: Validate mac signing secrets
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          missing=0
+          for name in CSC_LINK CSC_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name 未配置，无法进行 Developer ID 签名和 Apple 公证"
+              missing=1
+            fi
+          done
+          has_apple_id_credentials=0
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]; then
+            has_apple_id_credentials=1
+          fi
+          has_api_key_credentials=0
+          if [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then
+            has_api_key_credentials=1
+          fi
+          if [ "$has_apple_id_credentials" -eq 0 ] && [ "$has_api_key_credentials" -eq 0 ]; then
+            echo "::error::未配置 Apple 公证凭据。请配置 APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD，或 APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER"
+            missing=1
+          fi
+          exit "$missing"
 
-      - name: Verify artifacts exist
+      - name: Build mac distributables
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: pnpm run build && pnpm --filter @chengxiaobang/desktop exec electron-builder --mac --publish never -c.npmRebuild=false -c.mac.forceCodeSigning=true
+
+      - name: Verify mac artifacts
         shell: bash
         run: |
           if [ ! -d apps/desktop/out ]; then
             echo "::error::没有找到 electron-builder 输出目录 apps/desktop/out"
             exit 1
           fi
-          files=$(find apps/desktop/out -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" -o -name "latest-mac.yml" \))
           installers=$(find apps/desktop/out -type f \( -name "*.dmg" -o -name "*.zip" \) ! -name "*.blockmap")
           blockmaps=$(find apps/desktop/out -type f -name "*.blockmap")
           metadata=$(find apps/desktop/out -type f -name "latest-mac.yml")
           if [ -z "$installers" ] || [ -z "$blockmaps" ] || [ -z "$metadata" ]; then
-            echo "::error::没有找到完整自动更新产物（期望 .dmg/.zip、.blockmap 与 latest-mac.yml）"
+            echo "::error::没有找到完整 mac 自动更新产物（期望 .dmg/.zip、.blockmap 与 latest-mac.yml）"
             find apps/desktop/out -type f || true
             exit 1
           fi
@@ -60,7 +99,101 @@ jobs:
               exit 1
             fi
           done < <(sed -n 's/^path: //p' apps/desktop/out/latest-mac.yml)
-          echo "$files"
+
+      - name: Upload mac artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-artifacts
+          path: |
+            apps/desktop/out/*.dmg
+            apps/desktop/out/*.zip
+            apps/desktop/out/*.blockmap
+            apps/desktop/out/latest-mac.yml
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+          run_install: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows distributables
+        run: pnpm run build && pnpm --filter @chengxiaobang/desktop exec electron-builder --win --x64 --publish never -c.npmRebuild=false
+
+      - name: Verify Windows artifacts and packaged resources
+        shell: pwsh
+        run: |
+          $out = "apps/desktop/out"
+          if (-not (Test-Path $out)) {
+            throw "没有找到 electron-builder 输出目录 apps/desktop/out"
+          }
+          $installers = Get-ChildItem $out -Recurse -File -Filter "*.exe" | Where-Object { $_.Name -notlike "*.blockmap" }
+          $blockmaps = Get-ChildItem $out -Recurse -File -Filter "*.blockmap"
+          $metadata = Join-Path $out "latest.yml"
+          if ($installers.Count -eq 0 -or $blockmaps.Count -eq 0 -or -not (Test-Path $metadata)) {
+            Get-ChildItem $out -Recurse -File | Select-Object -ExpandProperty FullName
+            throw "没有找到完整 Windows 产物（期望 .exe、.blockmap 与 latest.yml）"
+          }
+          $resources = Join-Path $out "win-unpacked/resources"
+          $required = @(
+            (Join-Path $resources "bun.exe"),
+            (Join-Path $resources "backend/main.js"),
+            (Join-Path $resources "ocr/pp-ocrv6-small/det.onnx"),
+            (Join-Path $resources "ocr/pp-ocrv6-small/rec.onnx"),
+            (Join-Path $resources "ocr/pp-ocrv6-small/dict.txt"),
+            (Join-Path $resources "app.asar.unpacked/node_modules/node-pty"),
+            (Join-Path $resources "app.asar.unpacked/node_modules/sharp"),
+            (Join-Path $resources "app.asar.unpacked/node_modules/onnxruntime-node"),
+            (Join-Path $resources "app.asar.unpacked/node_modules/@napi-rs/canvas")
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) {
+              throw "打包资源缺失: $path"
+            }
+          }
+          $napiScope = Join-Path $resources "app.asar.unpacked/node_modules/@napi-rs"
+          $canvasNative = Get-ChildItem $napiScope -Directory -Filter "canvas-*" -ErrorAction SilentlyContinue
+          if ($canvasNative.Count -eq 0) {
+            throw "未找到 @napi-rs/canvas 平台原生包: $napiScope"
+          }
+
+      - name: Smoke packaged backend
+        run: pnpm --filter @chengxiaobang/desktop run smoke:packaged-backend
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            apps/desktop/out/*.exe
+            apps/desktop/out/*.blockmap
+            apps/desktop/out/latest.yml
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-latest
+    needs:
+      - build-mac
+      - build-windows
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-upload
 
       - name: Upload to GitHub Release
         shell: bash
@@ -74,9 +207,9 @@ jobs:
             gh release create "$TAG" --title "程小帮 $TAG" --notes "程小帮 $TAG" --repo "$GITHUB_REPOSITORY"
           fi
 
-          mkdir -p dist-upload
-          while IFS= read -r -d '' file; do
-            cp "$file" "dist-upload/$(basename "$file")"
-          done < <(find apps/desktop/out -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" -o -name "latest-mac.yml" \) -print0)
-
-          gh release upload "$TAG" dist-upload/* --repo "$GITHUB_REPOSITORY" --clobber
+          mapfile -d '' files < <(find dist-upload -type f -print0)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::没有找到待上传的 Release 产物"
+            exit 1
+          fi
+          gh release upload "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber

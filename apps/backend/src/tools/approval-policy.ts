@@ -1,5 +1,7 @@
+import { isAbsolute, win32 } from "node:path";
 import type { ToolCallApproval } from "@chengxiaobang/shared";
 import { isMutatingTool } from "./registry";
+import { isPathOutsideWorkspace } from "./workspace";
 
 export interface ToolApprovalAssessment {
   risk: ToolCallApproval["risk"];
@@ -8,9 +10,15 @@ export interface ToolApprovalAssessment {
   smartVerdict?: ToolCallApproval["verdict"];
 }
 
+export interface ToolApprovalContext {
+  workspacePath?: string;
+  platform?: NodeJS.Platform;
+}
+
 export function assessToolApprovalRisk(
   toolName: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  context: ToolApprovalContext = {}
 ): ToolApprovalAssessment {
   if (!isMutatingTool(toolName)) {
     return {
@@ -30,6 +38,14 @@ export function assessToolApprovalRisk(
         reason: `工具会修改敏感文件 ${path || "（路径缺失）"}，需要你确认。`
       };
     }
+    if (isExplicitOutsideWorkspace(path, context.workspacePath, context.platform)) {
+      return {
+        risk: "high",
+        requiresGate: true,
+        smartVerdict: "ask_user",
+        reason: `工具会修改工作目录外的绝对路径 ${path}，需要你确认。`
+      };
+    }
     return {
       risk: "low",
       requiresGate: false,
@@ -39,6 +55,7 @@ export function assessToolApprovalRisk(
 
   if (toolName === "shell") {
     const command = typeof args.command === "string" ? args.command : "";
+    const cwd = typeof args.cwd === "string" ? args.cwd : "";
     const dangerous = dangerousShellReason(command);
     if (dangerous) {
       return {
@@ -55,6 +72,14 @@ export function assessToolApprovalRisk(
         requiresGate: true,
         smartVerdict: "ask_user",
         reason: sensitive
+      };
+    }
+    if (isExplicitOutsideWorkspace(cwd, context.workspacePath, context.platform)) {
+      return {
+        risk: "high",
+        requiresGate: true,
+        smartVerdict: "ask_user",
+        reason: `命令将在工作目录外的绝对路径 ${cwd} 中执行，需要你确认。`
       };
     }
     if (isLowRiskShellCommand(command)) {
@@ -107,9 +132,21 @@ export function assessToolApprovalRisk(
 }
 
 export function isSensitivePath(path: string): boolean {
-  return /(^|\/)(?:\.env(?:$|[.-])|\.npmrc|\.pypirc|\.netrc|id_rsa|id_ed25519|credentials?|secrets?|private[-_]?key)/i.test(
+  return /(^|[\\/])(?:\.env(?:$|[.\\/ -])|\.npmrc(?:$|[.\\/ -])|\.pypirc(?:$|[.\\/ -])|\.netrc(?:$|[.\\/ -])|id_rsa(?:$|[.\\/ -])|id_ed25519(?:$|[.\\/ -])|credentials?(?:$|[.\\/ -])|secrets?(?:$|[.\\/ -])|private[-_]?key(?:$|[.\\/ -]))/i.test(
     path
   );
+}
+
+function isExplicitOutsideWorkspace(
+  path: string,
+  workspacePath?: string,
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  const pathIsAbsolute = platform === "win32" ? win32.isAbsolute(path) : isAbsolute(path);
+  if (!path || !pathIsAbsolute) {
+    return false;
+  }
+  return workspacePath ? isPathOutsideWorkspace(workspacePath, path, platform) : true;
 }
 
 export function dangerousShellReason(command: string): string | undefined {
@@ -138,6 +175,25 @@ export function dangerousShellReason(command: string): string | undefined {
   if (/\bsecurity\s+delete\b/.test(normalized)) {
     return "命令会删除钥匙串内容，智能审批已拒绝。";
   }
+  if (/(^|[;&|]\s*)(?:del|erase)\b[^;&|]*\/s\b/.test(normalized)) {
+    return "命令包含递归删除文件，智能审批已拒绝。";
+  }
+  if (/(^|[;&|]\s*)(?:rd|rmdir)\b[^;&|]*\/s\b/.test(normalized)) {
+    return "命令包含递归删除目录，智能审批已拒绝。";
+  }
+  if (/(^|[;&|]\s*)format(?:\.com)?(?:\s|$)/.test(normalized)) {
+    return "命令包含格式化磁盘操作，智能审批已拒绝。";
+  }
+  if (/(^|[;&|]\s*)reg(?:\.exe)?\s+delete\b/.test(normalized)) {
+    return "命令会删除 Windows 注册表项，智能审批已拒绝。";
+  }
+  if (
+    /\b(?:powershell|pwsh)(?:\.exe)?\b[^;&|]*\bremove-item\b[^;&|]*(?:-(?:r|recurse|force)\b)/.test(
+      normalized
+    )
+  ) {
+    return "命令包含 PowerShell 递归或强制删除，智能审批已拒绝。";
+  }
   return undefined;
 }
 
@@ -151,6 +207,12 @@ export function sensitiveShellReason(command: string): string | undefined {
   }
   if (/\b(?:killall|pkill)\b/.test(normalized)) {
     return "命令会终止进程，需要你确认。";
+  }
+  if (/\b(?:taskkill|stop-process|stop-service)\b/.test(normalized)) {
+    return "命令会终止 Windows 进程或服务，需要你确认。";
+  }
+  if (/(^|[;&|]\s*)(?:net|sc)(?:\.exe)?\s+stop\b/.test(normalized)) {
+    return "命令会停止 Windows 服务，需要你确认。";
   }
   if (/\bchmod\s+(?:-r\s+)?777\b/.test(normalized) || /\b(?:chmod|chown)\s+-r\b/.test(normalized)) {
     return "命令会批量修改权限或归属，需要你确认。";
@@ -186,6 +248,11 @@ const LOW_RISK_SHELL_PATTERNS = [
   /^head(?:\s|$)/,
   /^tail(?:\s|$)/,
   /^wc(?:\s|$)/,
+  /^dir(?:\s|$)/,
+  /^type\s+[^;&|>]+$/,
+  /^where(?:\.exe)?(?:\s|$)/,
+  /^findstr(?:\s|$)/,
+  /^ver$/,
   /^git\s+(?:status|diff|show|log|branch|rev-parse|ls-files)(?:\s|$)/,
   /^(?:pnpm|npm|bun)\s+(?:test|run\s+test|typecheck|run\s+typecheck|lint|run\s+lint|build|run\s+build|dev|run\s+dev|start|run\s+start|preview|run\s+preview|storybook|run\s+storybook)(?:\s|$)/,
   /^bun\s+test(?:\s|$)/,

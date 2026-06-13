@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { IpcMain } from "electron";
 import type { PaddleOcrService as PaddleOcrServiceInstance } from "ppu-paddle-ocr";
 import type { Sharp, SharpOptions } from "sharp";
 import { previewKindForPath } from "../common/file-preview";
+import type { TrustedIpcRegistrar } from "./trusted-ipc";
 
 const OCR_MAX_PDF_PAGES = 10;
 const OCR_IMAGE_MAX_SIDE = 1600;
@@ -57,7 +57,7 @@ export interface OcrRuntimeOptions {
 
 let servicePromise: Promise<PaddleOcrServiceInstance> | undefined;
 
-export function registerOcrIpc(ipcMain: IpcMain, options: OcrRuntimeOptions): void {
+export function registerOcrIpc(ipcMain: TrustedIpcRegistrar, options: OcrRuntimeOptions): void {
   ipcMain.handle("ocr:recognize", (_event, target: unknown) => recognizePath(target, options));
   ipcMain.handle("attachment:prepare-native-images", (_event, target: unknown) =>
     prepareNativeImages(target, options)

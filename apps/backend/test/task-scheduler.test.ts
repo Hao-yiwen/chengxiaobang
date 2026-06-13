@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nowIso, type AppEvent, type ProviderConfig } from "@chengxiaobang/shared";
 import { AgentRunner } from "../src/agent/agent-runner";
 import type { EventHub } from "../src/events/event-hub";
@@ -243,6 +243,39 @@ describe("TaskScheduler", () => {
 
     // busy 防重入：只有一次执行落库（user + assistant 各一条）。
     expect(await store.listMessages(session.id)).toHaveLength(2);
+  });
+
+  it("waits for in-flight scheduled runs to settle during stop", async () => {
+    const { task } = await seedSessionAndTask();
+    let releaseRun!: () => void;
+    let markStarted!: () => void;
+    const runStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const releasePromise = new Promise<void>((resolve) => {
+      releaseRun = resolve;
+    });
+    const runner = {
+      activeSessionIds: new Set<string>(),
+      approvals: { decide: vi.fn() },
+      abort: vi.fn(() => releaseRun()),
+      stream: async function* () {
+        yield { type: "run_started", runId: "run_stop", sessionId: task.sessionId } as const;
+        markStarted();
+        await releasePromise;
+        yield { type: "run_end", runId: "run_stop", status: "aborted" } as const;
+      }
+    } as unknown as AgentRunner;
+    const scheduler = new TaskScheduler({ store, runner });
+
+    const running = scheduler.runNow(task.id);
+    await runStarted;
+    await scheduler.stop();
+    await running;
+
+    expect(runner.abort).toHaveBeenCalledWith("run_stop");
+    const updated = await store.getScheduledTask(task.id);
+    expect(updated?.lastStatus).toBe("aborted");
   });
 
   it("runNow throws for unknown tasks", async () => {

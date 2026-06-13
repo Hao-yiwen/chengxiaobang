@@ -36,7 +36,7 @@ export function createSmartApprovalJudge(): SmartApprovalJudge {
 }
 
 export async function decideSmartApproval(input: SmartApprovalInput): Promise<ToolCallApproval> {
-  const rule = ruleDecision(input.toolName, input.args);
+  const rule = ruleDecision(input.toolName, input.args, input.workspacePath);
   if (rule) {
     console.info("[smart-approval] 规则裁决完成", {
       runId: input.runId,
@@ -173,9 +173,10 @@ function smartApprovalModelScore(option: ProviderModelOption): number {
 
 function ruleDecision(
   toolName: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  workspacePath: string
 ): ToolCallApproval | undefined {
-  const assessment = assessToolApprovalRisk(toolName, args);
+  const assessment = assessToolApprovalRisk(toolName, args, { workspacePath });
   if (!assessment.requiresGate) {
     return approval("rule", "allow", assessment.risk, 0.1, assessment.reason);
   }

@@ -43,6 +43,7 @@ const INTERRUPTED_RUN_ERROR =
 
 export class SqliteStateStore implements StateStore {
   private db?: Database;
+  private flushQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly dbPath: string) {}
 
@@ -1134,10 +1135,19 @@ export class SqliteStateStore implements StateStore {
   }
 
   private async flush(): Promise<void> {
-    if (!this.db) {
-      return;
-    }
-    await writeFile(this.dbPath, Buffer.from(this.db.export()));
+    const task = this.flushQueue.then(async () => {
+      if (!this.db) {
+        return;
+      }
+      await writeFile(this.dbPath, Buffer.from(this.db.export()));
+    });
+    this.flushQueue = task.catch((error) => {
+      console.error("[sqlite-store] flush 失败，后续写入仍会继续排队", {
+        dbPath: this.dbPath,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+    await task;
   }
 
   private get database(): Database {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   cleanupStaleDevBackends,
   collectDevBackendCleanupTargets,
+  parseWindowsProcessList,
   parseProcessList
 } from "../scripts/dev-process-cleanup.mjs";
 
@@ -63,5 +64,32 @@ describe("dev-process-cleanup", () => {
     expect(killImpl).toHaveBeenNthCalledWith(1, -26155, "SIGTERM");
     expect(killImpl).toHaveBeenNthCalledWith(2, -26155, "SIGKILL");
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("启动前清理旧后端进程"));
+  });
+
+  it("parses Windows process JSON and matches quoted Bun paths", () => {
+    const windowsRepoRoot = "C:\\Users\\me\\chengxiaobang";
+    const windowsBackendEntry = `${windowsRepoRoot}\\apps\\backend\\src\\main.ts`;
+    const processes = parseWindowsProcessList(
+      JSON.stringify([
+        {
+          ProcessId: 88,
+          ParentProcessId: 1,
+          CommandLine: `"C:\\Program Files\\Bun\\bun.exe" --no-orphans --watch "${windowsBackendEntry}" --port 31031`
+        },
+        {
+          ProcessId: 99,
+          ParentProcessId: 1,
+          CommandLine: "powershell.exe Get-Process"
+        }
+      ])
+    );
+
+    const targets = collectDevBackendCleanupTargets(processes, {
+      repoRoot: windowsRepoRoot,
+      currentPid: 99999
+    });
+
+    expect(targets.matchedProcesses.map((processInfo) => processInfo.pid)).toEqual([88]);
+    expect(targets.pids).toEqual([88]);
   });
 });

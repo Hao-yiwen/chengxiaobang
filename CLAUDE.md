@@ -2,7 +2,7 @@
 
 本文件为 Claude Code(claude.ai/code)及其他编码 agent 在本仓库工作时提供指引(`AGENTS.md` 是指向本文件的软链)。
 
-程小帮是一个 macOS Electron AI 助手桌面应用(agentic coding companion)。pnpm + TypeScript monorepo,全仓 ESM。
+程小帮是一个 macOS / Windows Electron AI 助手桌面应用(agentic coding companion)。pnpm + TypeScript monorepo,全仓 ESM。
 
 ## 工程准则
 
@@ -96,6 +96,7 @@
 - `pnpm dev` — 一条命令起全套开发环境:Vite(渲染层 HMR)+ `tsup --watch`(main/preload)+ Electron。Electron 自己经 `bun --watch` 拉起后端,所以**三层保存即热更新**(渲染层 = HMR,后端 = bun 同端口重启,main/preload = 重编译 + Electron 自动重启)。关窗或 Ctrl+C 全部收掉。见 `apps/desktop/scripts/dev.mjs`。
 - `pnpm build` — 按序构建:shared → backend → desktop。打包前必须执行,因为 desktop 把后端 `dist/` 作为 extra resource 打入。
 - `pnpm package:mac` — `pnpm build` 后 `electron-builder --mac`(dmg + zip)。
+- `pnpm package:win` — `pnpm build` 后 `electron-builder --win --x64`(NSIS)。
 - `pnpm typecheck` — 先构建 shared(其他包消费它的类型),再全仓 `tsc --noEmit`。
 - `pnpm test` — Vitest(配置:`vitest.config.ts`)。单文件:`pnpm test apps/backend/test/agent-runner.test.ts`;按名过滤:`pnpm test -t "approval"`。测试在各包 `test/` 目录;`@chengxiaobang/*` 导入别名由 Vitest 配置解析。
 
@@ -107,7 +108,7 @@
 
 **`packages/shared`** — API/IPC 契约的唯一事实源。所有实体(Provider、Project、Session、Message、ToolCall、RunRequest)都是 Zod schema + 推导类型;后端用它们 `.parse()` 请求,渲染层导入同一份类型。还拥有 `StreamEvent` 联合类型与 SSE codec(`encodeSseEvent`/`parseSseChunk`)。改这里的契约,两端必须跟随。它必须**先 build**,backend/desktop 的 typecheck 才能过(跨包消费其 `dist/` 类型)。
 
-**`apps/backend`** — 无头本地 HTTP 服务,**不是** Electron 进程。Hono 风格的 `fetch` handler(`api/app.ts`)由 `Bun.serve` 提供服务(`server.ts`,强制 Bun;dev 与生产分别用 `node_modules/.bin/bun` 和捆绑的 Bun binary 启动)。agent 循环是 **pi 的 `runAgentLoopContinue`**(`@earendil-works/pi-agent-core`),由 `agent/agent-runner.ts` 驱动:pi 事件经 `agent/pi-events.ts`(`RunEventTranslator`,同时独占 run 级持久化)翻译为 `StreamEvent`,经 `POST /api/runs/stream` 以 SSE 流出。状态经 sql.js 落 SQLite(`repository/sqlite-state-store.ts`,藏在 `StateStore` 接口后);assistant/tool 消息行带 backend-only 的 `payload` 列(pi 原始消息 JSON),多轮工具调用历史得以无损回放(`agent/history.ts`)。密钥在 darwin 用 macOS Keychain(`security` CLI),其他平台内存实现(`secrets/secret-store.ts`)。模型调用走 **pi-ai**(`streamSimple`);`model/pi-model.ts` 把 `ProviderConfig` 映射为 pi `Model`(provider 兼容差异——DeepSeek `reasoning_content`、Moonshot 怪癖——按 slug/baseUrl 自动探测)。内置 provider 为 DeepSeek 和 Kimi(shared 的 `defaultProviders`)。工具是 TypeBox schema 的 pi `AgentTool`(`tools/registry.ts` 汇集 fs/shell/web/office/feishu 工具工厂)。**定时任务**:模型在会话中经 `tools/schedule-tools.ts`(`schedule_create/list/cancel`,5 字段 cron,croner 解析)创建,任务绑定创建它的会话;`tasks/task-scheduler.ts` 轮询到期任务并在原会话中追加 headless run(`stream()` 的进程内 `headless` 参数:隐藏 `ask_user`、不覆写会话设置,待审批工具一律自动拒绝),先推进 `nextRunAt` 再执行(at-most-once,重启后补跑一次)。**技能市场**:内置技能(`apps/backend/skills/`,word/ppt/excel)始终激活;市场技能(`apps/backend/skills-market/`,编程/办公各 9 个,均随 dist 分发,见 `scripts/build-skills.mjs`)默认不激活,激活集合以 JSON 数组存 settings KV(`tools/skill-market-service.ts`),`SlashCommandService` 经注入的 `enabledMarketSkills` 回调过滤加载(source 为 `market`,优先级 builtin < market < global < project);自定义技能经 GitHub 链接导入或手动创建,落 `~/.chengxiaobang/skills/`(即 global 根,装好即被拾取)。REST 入口 `api/routes/skills.ts`,桌面端 UI 是侧边栏「技能」页(`SkillsView`)。注意:`paths.ts` 的 `builtinResourceRoot()` 靠探测 `skills` 目录定位资源根,**不要在 `src/` 下新建名为 `skills` 的目录**(会遮蔽资源根导致内置技能消失)。
+**`apps/backend`** — 无头本地 HTTP 服务,**不是** Electron 进程。Hono 风格的 `fetch` handler(`api/app.ts`)由 `Bun.serve` 提供服务(`server.ts`,强制 Bun;dev 与生产分别用 `node_modules/.bin/bun` 和捆绑的 Bun binary 启动)。agent 循环是 **pi 的 `runAgentLoopContinue`**(`@earendil-works/pi-agent-core`),由 `agent/agent-runner.ts` 驱动:pi 事件经 `agent/pi-events.ts`(`RunEventTranslator`,同时独占 run 级持久化)翻译为 `StreamEvent`,经 `POST /api/runs/stream` 以 SSE 流出。状态经 sql.js 落 SQLite(`repository/sqlite-state-store.ts`,藏在 `StateStore` 接口后);assistant/tool 消息行带 backend-only 的 `payload` 列(pi 原始消息 JSON),多轮工具调用历史得以无损回放(`agent/history.ts`)。密钥在 darwin 用 macOS Keychain(`security` CLI),win32 用 Windows Credential Manager,其他平台内存实现(`secrets/secret-store.ts`)。模型调用走 **pi-ai**(`streamSimple`);`model/pi-model.ts` 把 `ProviderConfig` 映射为 pi `Model`(provider 兼容差异——DeepSeek `reasoning_content`、Moonshot 怪癖——按 slug/baseUrl 自动探测)。内置 provider 为 DeepSeek 和 Kimi(shared 的 `defaultProviders`)。工具是 TypeBox schema 的 pi `AgentTool`(`tools/registry.ts` 汇集 fs/shell/web/office/feishu 工具工厂)。**定时任务**:模型在会话中经 `tools/schedule-tools.ts`(`schedule_create/list/cancel`,5 字段 cron,croner 解析)创建,任务绑定创建它的会话;`tasks/task-scheduler.ts` 轮询到期任务并在原会话中追加 headless run(`stream()` 的进程内 `headless` 参数:隐藏 `ask_user`、不覆写会话设置,待审批工具一律自动拒绝),先推进 `nextRunAt` 再执行(at-most-once,重启后补跑一次)。**技能市场**:内置技能(`apps/backend/skills/`,word/ppt/excel)始终激活;市场技能(`apps/backend/skills-market/`,编程/办公各 9 个,均随 dist 分发,见 `scripts/build-skills.mjs`)默认不激活,激活集合以 JSON 数组存 settings KV(`tools/skill-market-service.ts`),`SlashCommandService` 经注入的 `enabledMarketSkills` 回调过滤加载(source 为 `market`,优先级 builtin < market < global < project);自定义技能经 GitHub 链接导入或手动创建,落 `~/.chengxiaobang/skills/`(即 global 根,装好即被拾取)。REST 入口 `api/routes/skills.ts`,桌面端 UI 是侧边栏「技能」页(`SkillsView`)。注意:`paths.ts` 的 `builtinResourceRoot()` 靠探测 `skills` 目录定位资源根,**不要在 `src/` 下新建名为 `skills` 的目录**(会遮蔽资源根导致内置技能消失)。
 
 **`apps/desktop`** — Electron 应用。**main 进程拉起并监督后端**(`main/backend-process.ts`):随机端口 + 随机 token,轮询 `/api/health` 就绪后经 `backend-info` IPC 把 `{baseURL, token}` 暴露给渲染层。每次启动应用 = 新端口上的全新后端。渲染层(React + Vite + Tailwind)是沙箱的;`preload/index.ts` 只暴露最小的 `window.chengxiaobang` bridge(backend info、原生文件/目录选择器、读文件)。`renderer/lib/api.ts` 据 bridge 的 baseURL/token 构建类型化 `ApiClient` 并消费 SSE 流。main 进程在 dev 加载 `VITE_DEV_SERVER_URL`,打包后加载 `dist/renderer/index.html`。
 
@@ -127,5 +128,5 @@
 
 - **只用 ESM。**配置 `tsup`/打包器时把 `electron` 标为 `--external`——打进去会在 Electron 启动时报 `Dynamic require of "fs" is not supported` 崩溃。
 - 后端 `main.js` 打入桌面应用的 `extraResources/backend`;`pi-ai`、`pi-agent-core`、`sql.js` 等被强制打包(`apps/backend/tsup.config.ts` 的 `noExternal`)。打包产物**只能用 Bun 运行**,纯 node 会因动态 require 崩溃。
-- `bun`、`electron`、`esbuild`、`sharp`、`@google/genai`、`protobufjs` 在 `onlyBuiltDependencies` / `allowBuilds` 中——原生/postinstall 构建是受控的。
+- `bun`、`electron`、`esbuild`、`sharp`、`@google/genai`、`node-pty`、`onnxruntime-node`、`@napi-rs/canvas`、`ppu-paddle-ocr`、`protobufjs` 在 `onlyBuiltDependencies` / `allowBuilds` 中——原生/postinstall 构建是受控的。Windows 包必须在 Windows runner / Windows 本机构建，避免 native optional deps 跨平台错配；Windows v1 安装包暂按手动更新处理，不启用 Windows 自动更新入口。
 - UI 文案与多数错误信息为中文,保持一致。
