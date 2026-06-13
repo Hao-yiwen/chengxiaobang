@@ -269,10 +269,8 @@
       "todo_create": "Created todo \"{{title}}\"",
       "todo_update": "Updated todo progress",
       "ask_user": "Asked you a question",
-      "btw": "Left a side note",
       "use_skill": "Loaded skill {{name}}",
       "schedule_create": "Created scheduled task \"{{name}}\"",
-      "schedule_create_once": "Created one-time task \"{{name}}\"",
       "schedule_list": "Listed scheduled tasks",
       "schedule_cancel": "Cancelled a scheduled task",
       "memory": "Accessed memory {{path}}",
@@ -349,13 +347,6 @@
       "missing": "{{count}} questions still need answers",
       "structuredHint": "These answers will be submitted together",
       "invalidArgs": "Failed to parse the question"
-    },
-    "asideNote": {
-      "convert": "Turn into a task",
-      "converted": "Noted",
-      "convertedFull": "Converted to a task",
-      "suggestionPrefix": "Suggestion: ",
-      "aggregate": "Notes × {{count}}"
     },
     "copyReceipt": "✓",
     "lastRunModel": "This run used {{provider}} · {{model}}"
@@ -596,7 +587,7 @@
       "langEn": "English",
       "langEnDesc": "Use the English interface",
       "logsTitle": "Developer logs",
-      "logsDesc": "Open the folder containing main, renderer, and backend logs for this dev environment.",
+      "logsDesc": "Open the date and three-hour segment folders containing main, renderer, and backend logs.",
       "openLogs": "View logs",
       "logsDesktopOnly": "Viewing logs requires the desktop app",
       "logsOpenFailed": "Failed to open the log folder",

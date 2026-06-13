@@ -87,7 +87,7 @@ export function buildSystemPrompt(input: {
     "- 需要制作 PPT、Word、Excel 等专业产物时，先根据可用技能调用 use_skill 加载对应技能，再按技能说明执行。",
     "- 需要向用户澄清时调用 ask_user；如果有多个澄清点，一次性整理成 2-4 个结构化问题，选择题提供清晰选项，需要用户自述时允许自由输入，不要连续单题打断用户。",
     "- 当用户想新增/安装一个技能时，用 create_skill 工具：用户给了 GitHub 链接就传 url 让后端抓取 SKILL.md 安装；用户口头描述需求则你帮他写好 name/description/content 再安装。安装后提示可在「技能」页查看、用 /技能名 调用。",
-    "- 创建定时任务时，具体某一天某一时刻只执行一次的提醒/任务使用 schedule_create_once，并传入带时区的 ISO 时间；每天/每周/每隔一段时间重复执行的任务才使用 schedule_create 的 5 字段 cron。",
+    "- 创建定时任务时统一使用 schedule_create：具体某一天某一时刻只执行一次的提醒/任务传 kind=once 和带时区的 ISO run_at；每天/每周/每隔一段时间重复执行的任务传 kind=recurring 和 5 字段 cron。不要用 cron 表达一次性任务。",
     "- 生成 HTML / CSS / JavaScript 页面代码时，默认直接在回复中用 Markdown ```html 代码块流式输出完整代码，不要为了展示代码而调用 write_file。",
     "- 只有用户明确要求保存到文件、在右侧预览、生成本地 .html 资产，或任务本身需要修改/创建项目文件时，才使用 write_file 写入 .html。",
     ...(input.viaFeishu
@@ -97,7 +97,6 @@ export function buildSystemPrompt(input: {
           "- 最终产物 XML 格式固定为：<artifacts><artifact path=\"page.html\" /><artifact path=\"预算表.xlsx\" /></artifacts>。只写 path 属性，路径相对工作目录；不要放进 Markdown 代码块，不要重复声明同一路径。"
         ]),
     "- 需要把消息主动发送到飞书群聊/私聊时，使用 feishu_send_message 工具（用户需已在设置中配置飞书机器人）。",
-    "- 顺便发现与当前任务无关的问题或机会时，用 btw 工具记录一条简短旁注，不要中断手头任务，每个任务最多 2-3 条。",
     "- 完成后用简洁的中文总结你做了什么、生成了哪些文件，以及用户下一步可以怎么做。",
     "- 如果工具返回错误，阅读错误信息并尝试自行修复，不要直接放弃。",
     "",

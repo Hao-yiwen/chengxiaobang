@@ -6,6 +6,15 @@
 
 ## 工程准则
 
+### 跨平台兼容
+
+**当前是 macOS 和 Windows 共用同一套代码,两端都必须可用。**
+
+- 默认所有功能、修复、依赖、路径处理、运行时逻辑和打包配置都要同时考虑 macOS 与 Windows,不要只按单端环境假设实现。
+- 除非确实是系统能力差异(如 Keychain / Credential Manager、签名公证、窗口行为或原生依赖打包),不要把业务逻辑写死成 `darwin` 或 `win32` 单端分支。
+- 必须处理平台差异时,优先把共享逻辑留在平台无关层,只在靠近系统 API、文件路径、进程管理、打包脚本等边缘位置做平台分支。
+- 验证时能跑哪端就记录哪端结果;无法在当前机器覆盖另一端时,至少用类型检查、单测、路径/脚本审查确认没有引入明显的单端假设。
+
 ### 1. 写码前先思考
 
 **不要假设,不要隐藏困惑,主动暴露取舍。**
@@ -80,8 +89,8 @@
 ### 日志与排查
 
 - 开发新功能或修改关键路径时必须补充适当日志,尤其是错误分支、重要业务入口/出口、网络请求/响应、跨进程 IPC、状态变更和长任务调度。日志要包含足够上下文(如 id、路径、参数摘要、错误信息),避免只写"失败了"这类无诊断价值的内容。
-- 运行态日志由 Electron main 进程统一持久化到 `~/.chengxiaobang/data/logs/`,按来源拆成 `main.log`、`renderer.log`、`backend.log`。本地 `pnpm dev` 默认注入 `CHENGXIAOBANG_LOG_LEVEL=debug`,因此开发时会记录 debug 日志;打包运行未显式设置时仍默认记录 `info` 及以上级别。
-- 排查问题时优先按当前日志链路定位:主进程/启动/窗口/IPC 问题看 `main.log`;前端白屏、组件报错和渲染层 `console` 输出看 `renderer.log`;后端启动、Bun 进程 stdout/stderr、API/agent/tool 执行问题看 `backend.log`。
+- 运行态日志由 Electron main 进程统一持久化到 `~/.chengxiaobang/data/logs/`,按本地日期和 3 小时时间段分片,路径形如 `logs/2026-06-14/09-12/main.log`、`renderer.log`、`backend.log`。本地 `pnpm dev` 默认注入 `CHENGXIAOBANG_LOG_LEVEL=debug`,因此开发时会记录 debug 日志;打包运行未显式设置时仍默认记录 `info` 及以上级别。
+- 排查问题时优先按当前日志链路定位:先进入对应日期与时间段目录;主进程/启动/窗口/IPC 问题看 `main.log`;前端白屏、组件报错和渲染层 `console` 输出看 `renderer.log`;后端启动、Bun 进程 stdout/stderr、API/agent/tool 执行问题看 `backend.log`。
 - 不要只依赖终端临时输出。遇到用户反馈"跑起来后出错""前端没反应""后端超时"等问题时,先读取上述日志文件,再结合代码和复现步骤判断根因。
 
 ### UI 实现必须遵循 DESIGN.md

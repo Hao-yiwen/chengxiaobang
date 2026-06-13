@@ -207,7 +207,7 @@
     pointer-events: none;
   }
 
-  /* 聊天主列按容器宽度左偏，为右侧旁注和后续侧栏预留空间。 */
+  /* 聊天主列按容器宽度左偏，为后续侧栏预留空间。 */
   .chat-layout-scope {
     container-type: inline-size;
   }

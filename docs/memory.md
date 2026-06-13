@@ -122,7 +122,7 @@ tools/registry.ts
 - **敏感信息**：系统提示明令禁止写入密码/API Key（官方亦依赖模型自律 + 提示约束；如需更强保证，未来可在 `create`/`str_replace` 执行层加正则过滤）。
 - **体积失控**：单文件 view 输出 32KB 截断；系统提示快照 50 条目截断。记忆文件本身不限制大小——协议要求模型保持精炼，撑大只会先反噬它自己的快照可读性。
 - **删除保护**：根目录不可删；`create`/`rename` 不可覆盖已有内容。
-- **可观测性**：每次写操作（create/str_replace/insert/delete/rename）记 info 日志（路径+摘要），排查"它为什么记住了/忘了"时看 `backend.log`。
+- **可观测性**：每次写操作（create/str_replace/insert/delete/rename）记 info 日志（路径+摘要），排查"它为什么记住了/忘了"时看对应日期与 3 小时时间段目录下的 `backend.log`。
 
 ## 8. 测试（apps/backend/test/memory-tools.test.ts 等）
 

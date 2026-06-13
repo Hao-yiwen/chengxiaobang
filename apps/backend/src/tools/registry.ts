@@ -20,7 +20,6 @@ const MUTATING_TOOLS = new Set<string>([
   "feishu_send_message",
   // 创建/取消定时任务会改变后台行为，需用户在审批卡上看到 cron 或执行时间后确认。
   "schedule_create",
-  "schedule_create_once",
   "schedule_cancel",
   // 安装技能会向全局技能目录写入文件、改变后续可用能力，需用户确认。
   "create_skill"
@@ -40,8 +39,8 @@ const READ_ONLY_TOOLS = new Set<string>([
   "schedule_list"
 ]);
 
-// memory 在起草阶段也可见：制定计划前先查记忆，规划中的发现也值得随手记录。
-const DRAFT_EXTRA_TOOLS = new Set<string>(["propose_plan", "ask_user", "btw", "use_skill", "memory"]);
+// memory 在起草阶段也可见：制定计划前先查记忆。
+const DRAFT_EXTRA_TOOLS = new Set<string>(["propose_plan", "ask_user", "use_skill", "memory"]);
 
 export function requiresApproval(name: string): boolean {
   return MUTATING_TOOLS.has(name);

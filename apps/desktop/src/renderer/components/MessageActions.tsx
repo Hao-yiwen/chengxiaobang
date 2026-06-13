@@ -15,21 +15,19 @@ import { useCopy } from "@/lib/use-copy";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
-/**
- * Hover action bar under a chat message: copy for everyone, regenerate on the
- * latest assistant answer, edit-and-resend on user messages. Mutating actions
- * hide while a run is active.
- */
+/** 聊天气泡下方的操作栏：历史消息悬浮展示，当前底部消息可默认展示。 */
 export function MessageActions({
   message,
   isLastAssistant = false,
   onEdit,
-  copyContent
+  copyContent,
+  alwaysVisible = false
 }: {
   message: Message;
   isLastAssistant?: boolean;
   onEdit?: () => void;
   copyContent?: string;
+  alwaysVisible?: boolean;
 }) {
   const { t } = useTranslation();
   const isRunning = useAppStore((state) => state.isRunning);
@@ -41,8 +39,10 @@ export function MessageActions({
   return (
     <div
       className={cn(
-        "mt-0.5 flex items-center gap-2 opacity-0 transition-opacity",
-        "group-hover/msg:opacity-100 focus-within:opacity-100",
+        "mt-1 flex items-center gap-2 transition-opacity",
+        alwaysVisible
+          ? "opacity-100"
+          : "opacity-0 group-hover/msg:opacity-100 focus-within:opacity-100",
         isUser ? "justify-end" : "justify-start"
       )}
     >

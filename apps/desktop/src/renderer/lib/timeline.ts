@@ -15,8 +15,6 @@ export type GroupedTimelineItem =
   | TimelineItem
   | { kind: "tool-group"; at: string; toolCalls: ToolCall[] };
 
-export const ASIDE_INLINE_LIMIT = 2;
-
 export type PlanViewStatus = "draft" | "awaiting" | "approved" | "rejected";
 
 export interface PlanView {
@@ -30,9 +28,7 @@ export type ChatTimelineItem =
   | { kind: "tool"; at: string; toolCall: ToolCall; index: number; residualPending: boolean }
   | { kind: "separator"; at: string }
   | { kind: "plan"; at: string; plan: PlanView }
-  | { kind: "plan-history"; at: string; toolCall: ToolCall; title: string }
-  | { kind: "aside"; at: string; toolCall: ToolCall }
-  | { kind: "aside-group"; at: string; runId: string; toolCalls: ToolCall[] };
+  | { kind: "plan-history"; at: string; toolCall: ToolCall; title: string };
 
 interface ChatTimelineOptions {
   activeRunId?: string;
@@ -65,15 +61,14 @@ export function timelineItems(messages: Message[], toolCalls: ToolCall[]): Timel
   ].sort((left, right) => left.at.localeCompare(right.at));
 }
 
-/** 有专属渲染（提问卡、技能 chip、计划卡、旁注）的工具不进普通分组。 */
+/** 有专属渲染（提问卡、技能 chip、计划卡）的工具不进普通分组。 */
 const UNGROUPABLE_TOOLS = new Set<string>([
   "ask_user",
   "use_skill",
   "propose_plan",
   "update_plan",
   "todo_create",
-  "todo_update",
-  "btw"
+  "todo_update"
 ]);
 
 /** 可并入「连续工具调用」折叠组的普通工具。 */
@@ -141,7 +136,6 @@ export function chatTimeline(
 ): ChatTimelineItem[] {
   const plan = derivePlanView(toolCalls, options);
   const toolIndicesByRun = new Map<string, number>();
-  const asideCountsByRun = new Map<string, number>();
   const result: ChatTimelineItem[] = [];
   let lastVisibleMessageRole: Message["role"] | undefined;
 
@@ -171,11 +165,6 @@ export function chatTimeline(
       appendPlanItem(result, item, toolCall, plan);
       continue;
     }
-    if (toolCall.name === "btw") {
-      appendAsideItem(result, item, toolCall, asideCountsByRun);
-      continue;
-    }
-
     const index = (toolIndicesByRun.get(toolCall.runId) ?? 0) + 1;
     toolIndicesByRun.set(toolCall.runId, index);
     result.push({
@@ -232,30 +221,5 @@ function appendPlanItem(
     at: item.at,
     toolCall,
     title: proposedPlanTitle(parsed.data.markdown)
-  });
-}
-
-function appendAsideItem(
-  result: ChatTimelineItem[],
-  item: TimelineItem & { kind: "tool" },
-  toolCall: ToolCall,
-  asideCountsByRun: Map<string, number>
-): void {
-  const count = (asideCountsByRun.get(toolCall.runId) ?? 0) + 1;
-  asideCountsByRun.set(toolCall.runId, count);
-  if (count <= ASIDE_INLINE_LIMIT) {
-    result.push({ kind: "aside", at: item.at, toolCall });
-    return;
-  }
-  const previous = result[result.length - 1];
-  if (previous?.kind === "aside-group" && previous.runId === toolCall.runId) {
-    previous.toolCalls.push(toolCall);
-    return;
-  }
-  result.push({
-    kind: "aside-group",
-    at: item.at,
-    runId: toolCall.runId,
-    toolCalls: [toolCall]
   });
 }

@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createDesktopLoggers,
   installConsoleFileLogging,
+  logFilePath,
   logRendererConsole,
+  logTimeSegmentLabel,
   rendererConsoleLogLevel,
   resolveLogLevel,
   type LogLevelName,
@@ -40,28 +42,73 @@ describe("desktop logging", () => {
   it("defaults to info logs and enables debug logs only through the environment", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "cxb-logs-"));
     tempDirs.push(tempDir);
+    const now = () => new Date(2026, 5, 14, 10, 30);
 
     const infoLoggers = createDesktopLoggers({
       logDir: join(tempDir, "info"),
-      level: resolveLogLevel({})
+      level: resolveLogLevel({}),
+      now
     });
     infoLoggers.main.debug({ marker: "debug-default" }, "debug default");
     infoLoggers.main.info({ marker: "info-default" }, "info default");
     await infoLoggers.flush();
 
-    const infoLog = await readFile(join(tempDir, "info", "main.log"), "utf8");
+    const infoLog = await readFile(
+      logFilePath("main", join(tempDir, "info"), now()),
+      "utf8"
+    );
     expect(infoLog).toContain("info default");
     expect(infoLog).not.toContain("debug default");
 
     const debugLoggers = createDesktopLoggers({
       logDir: join(tempDir, "debug"),
-      level: resolveLogLevel({ CHENGXIAOBANG_LOG_LEVEL: "debug" })
+      level: resolveLogLevel({ CHENGXIAOBANG_LOG_LEVEL: "debug" }),
+      now
     });
     debugLoggers.main.debug({ marker: "debug-enabled" }, "debug enabled");
     await debugLoggers.flush();
 
-    const debugLog = await readFile(join(tempDir, "debug", "main.log"), "utf8");
+    const debugLog = await readFile(
+      logFilePath("main", join(tempDir, "debug"), now()),
+      "utf8"
+    );
     expect(debugLog).toContain("debug enabled");
+  });
+
+  it("formats three-hour local time segment labels", () => {
+    expect(logTimeSegmentLabel(new Date(2026, 5, 14, 0, 0))).toBe("00-03");
+    expect(logTimeSegmentLabel(new Date(2026, 5, 14, 3, 0))).toBe("03-06");
+    expect(logTimeSegmentLabel(new Date(2026, 5, 14, 23, 59))).toBe("21-24");
+  });
+
+  it("rotates log files when the local three-hour segment changes", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "cxb-logs-"));
+    tempDirs.push(tempDir);
+    let currentTime = new Date(2026, 5, 14, 2, 59);
+    const loggers = createDesktopLoggers({
+      logDir: tempDir,
+      level: resolveLogLevel({}),
+      now: () => currentTime
+    });
+
+    loggers.renderer.info({ marker: "before-rotation" }, "before rotation");
+    currentTime = new Date(2026, 5, 14, 3, 0);
+    loggers.renderer.info({ marker: "after-rotation" }, "after rotation");
+    await loggers.flush();
+
+    const beforeLog = await readFile(
+      join(tempDir, "2026-06-14", "00-03", "renderer.log"),
+      "utf8"
+    );
+    const afterLog = await readFile(
+      join(tempDir, "2026-06-14", "03-06", "renderer.log"),
+      "utf8"
+    );
+
+    expect(beforeLog).toContain("before rotation");
+    expect(beforeLog).not.toContain("after rotation");
+    expect(afterLog).toContain("after rotation");
+    expect(afterLog).not.toContain("before rotation");
   });
 
   it("maps Chromium renderer console levels to file log levels", () => {

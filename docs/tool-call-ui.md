@@ -27,7 +27,7 @@
 
 ### 2.1 分组用独立纯函数,不切换 `chatTimeline()`
 
-`lib/timeline.ts` 中已有更丰富的 `chatTimeline()`(separator/plan/aside-group 等 kind),但其对应渲染器(PlanCard 等)尚未在 ChatView 接线,切换会带出整套未完成 UI。因此分组实现为独立 fold:
+`lib/timeline.ts` 中已有更丰富的 `chatTimeline()`(separator/plan/plan-history 等 kind),但其对应渲染器(PlanCard 等)尚未在 ChatView 接线,切换会带出整套未完成 UI。因此分组实现为独立 fold:
 
 ```ts
 // lib/timeline.ts
@@ -45,7 +45,7 @@ ChatView 只把 `timelineItems(...)` 的结果再过一遍这个 fold;`session-e
 - **仅 ≥2 个连续可分组工具才成组**;单个退化为原 `tool` item(同一形态的单独轻量行),避免"组中组"双层展开。
 - **任何 message 都打断分组**(user 消息、assistant 的工具间叙述都算)。
 - **不可分组、且打断分组**的工具:
-  - 专属渲染类:`ask_user`(问答回执)、`use_skill`(技能 chip)、`propose_plan` / `update_plan` / `btw`(计划/旁注体系);
+  - 专属渲染类:`ask_user`(问答回执)、`use_skill`(技能 chip)、`propose_plan` / `update_plan`(计划体系);
   - 交付物类:`create_pptx/docx/xlsx` 一律独立;`write_file` 当 path 是交付物扩展名(md/html/office/csv/媒体等)时独立——它们完成后渲染为 ArtifactCard。
 
 ### 2.3 交付物判定忽略 status(`isDeliverableToolCall`)

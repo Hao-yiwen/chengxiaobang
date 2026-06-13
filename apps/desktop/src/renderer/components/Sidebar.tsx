@@ -360,7 +360,7 @@ export function Sidebar() {
 
       {/* 原生滚动：Radix ScrollArea 的 viewport 会用 display:table 按内容宽排版，
           导致行的 absolute 悬停按钮相对超宽容器定位、右侧被裁，故改回原生滚动。 */}
-      <div className="relative -mx-1 mt-6 min-h-0 flex-1">
+      <div className="relative -mx-1 mt-4 min-h-0 flex-1">
         <div
           data-scrollbar-hidden="true"
           className="sidebar-scroll-area h-full min-h-0 overflow-y-auto px-1 pb-6"

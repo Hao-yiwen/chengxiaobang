@@ -5,7 +5,6 @@ import {
   appEventSchema,
   askUserAnswerSchema,
   askUserArgsSchema,
-  btwArgsSchema,
   messageSchema,
   proposePlanArgsSchema,
   runRecordSchema,
@@ -69,13 +68,11 @@ describe("toolNameSchema", () => {
       "propose_plan",
       "update_plan",
       "ask_user",
-      "btw",
       "use_skill",
       "web_search",
       "todo_create",
       "todo_update",
       "schedule_create",
-      "schedule_create_once",
       "schedule_list",
       "schedule_cancel",
       "memory",
@@ -319,11 +316,6 @@ describe("新工具参数 schema", () => {
         ]
       }).success
     ).toBe(false);
-  });
-
-  it("btwArgs 解析", () => {
-    expect(btwArgsSchema.parse({ note: "发现一个问题" })).toEqual({ note: "发现一个问题" });
-    expect(btwArgsSchema.safeParse({ note: "" }).success).toBe(false);
   });
 
   it("useSkillArgs 解析", () => {

@@ -38,12 +38,13 @@ describe("schedule tools", () => {
 
   it("schedule_create binds the task to the current session and previews next runs", async () => {
     const result = await tool("schedule_create").execute("tc1", {
+      kind: "recurring",
       name: "AI 日报",
       cron: "0 9 * * *",
       prompt: "生成 AI 日报"
     });
     const text = result.content[0].type === "text" ? result.content[0].text : "";
-    expect(text).toContain("已创建定时任务");
+    expect(text).toContain("已创建周期定时任务");
     expect(text).toContain("接下来的触发时间");
 
     const tasks = await store.listScheduledTasks();
@@ -58,8 +59,9 @@ describe("schedule tools", () => {
     expect(tasks[0].nextRunAt).toBeDefined();
   });
 
-  it("schedule_create_once creates a one-time task with a timezone-aware run_at", async () => {
-    const result = await tool("schedule_create_once").execute("tc_once", {
+  it("schedule_create creates a one-time task with a timezone-aware run_at", async () => {
+    const result = await tool("schedule_create").execute("tc_once", {
+      kind: "once",
       name: "睡觉提醒",
       run_at: "2999-06-13T01:53:00+08:00",
       prompt: "提醒我睡觉"
@@ -81,23 +83,26 @@ describe("schedule tools", () => {
     expect(tasks[0].cron).toBeUndefined();
   });
 
-  it("schedule_create_once rejects run_at without timezone, invalid time, or past time", async () => {
+  it("schedule_create rejects one-time run_at without timezone, invalid time, or past time", async () => {
     await expect(
-      tool("schedule_create_once").execute("tc_no_tz", {
+      tool("schedule_create").execute("tc_no_tz", {
+        kind: "once",
         name: "无时区",
         run_at: "2999-06-13T01:53:00",
         prompt: "x"
       })
     ).rejects.toThrow("带时区");
     await expect(
-      tool("schedule_create_once").execute("tc_bad_time", {
+      tool("schedule_create").execute("tc_bad_time", {
+        kind: "once",
         name: "坏时间",
         run_at: "not-a-timeZ",
         prompt: "x"
       })
     ).rejects.toThrow("时间无效");
     await expect(
-      tool("schedule_create_once").execute("tc_past", {
+      tool("schedule_create").execute("tc_past", {
+        kind: "once",
         name: "过去",
         run_at: "2000-01-01T00:00:00Z",
         prompt: "x"
@@ -109,6 +114,7 @@ describe("schedule tools", () => {
   it("schedule_create rejects invalid cron with a friendly error", async () => {
     await expect(
       tool("schedule_create").execute("tc1", {
+        kind: "recurring",
         name: "坏任务",
         cron: "0 0 9 * * *",
         prompt: "x"
@@ -117,9 +123,46 @@ describe("schedule tools", () => {
     expect(await store.listScheduledTasks()).toHaveLength(0);
   });
 
+  it("schedule_create rejects missing or mixed schedule fields", async () => {
+    await expect(
+      tool("schedule_create").execute("tc_missing_run_at", {
+        kind: "once",
+        name: "少时间",
+        prompt: "x"
+      })
+    ).rejects.toThrow("run_at");
+    await expect(
+      tool("schedule_create").execute("tc_once_with_cron", {
+        kind: "once",
+        name: "混传",
+        cron: "0 9 * * *",
+        run_at: "2999-06-13T01:53:00+08:00",
+        prompt: "x"
+      })
+    ).rejects.toThrow("不要传入 cron");
+    await expect(
+      tool("schedule_create").execute("tc_missing_cron", {
+        kind: "recurring",
+        name: "少 cron",
+        prompt: "x"
+      })
+    ).rejects.toThrow("cron");
+    await expect(
+      tool("schedule_create").execute("tc_recurring_with_run_at", {
+        kind: "recurring",
+        name: "混传",
+        cron: "0 9 * * *",
+        run_at: "2999-06-13T01:53:00+08:00",
+        prompt: "x"
+      })
+    ).rejects.toThrow("不要传入 run_at");
+    expect(await store.listScheduledTasks()).toHaveLength(0);
+  });
+
   it("schedule_create is refused in Feishu-bound sessions", async () => {
     await expect(
       tool("schedule_create", "oc_chat_1").execute("tc1", {
+        kind: "recurring",
         name: "任务",
         cron: "0 9 * * *",
         prompt: "x"
@@ -132,6 +175,7 @@ describe("schedule tools", () => {
     expect(empty.content[0]).toMatchObject({ text: "当前没有定时任务。" });
 
     await tool("schedule_create").execute("tc1", {
+      kind: "recurring",
       name: "巡检",
       cron: "*/10 * * * *",
       prompt: "检查",

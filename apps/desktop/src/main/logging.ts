@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { inspect } from "node:util";
 import pino, { type Logger } from "pino";
 import { defaultLogDir } from "./paths";
@@ -12,6 +12,8 @@ export const LOG_FILE_NAMES = {
 
 export type LogSource = keyof typeof LOG_FILE_NAMES;
 export type LogLevelName = "debug" | "info" | "warn" | "error";
+
+export const LOG_ROTATION_HOURS = 3;
 
 export interface LogWriter {
   debug(fields: Record<string, unknown>, message: string): void;
@@ -55,14 +57,16 @@ export function resolveLogLevel(env: NodeJS.ProcessEnv = process.env): LogLevelN
 export function createDesktopLoggers(options: {
   logDir?: string;
   level?: LogLevelName;
+  now?: () => Date;
 } = {}): DesktopLoggers {
   const logDir = options.logDir ?? defaultLogDir();
   const level = options.level ?? resolveLogLevel();
+  const now = options.now ?? (() => new Date());
   mkdirSync(logDir, { recursive: true });
 
-  const main = createFileLogger("main", logDir, level);
-  const renderer = createFileLogger("renderer", logDir, level);
-  const backend = createFileLogger("backend", logDir, level);
+  const main = createFileLogger("main", logDir, level, now);
+  const renderer = createFileLogger("renderer", logDir, level, now);
+  const backend = createFileLogger("backend", logDir, level, now);
 
   return {
     logDir,
@@ -190,7 +194,29 @@ export function formatConsoleArg(arg: unknown): string {
   return inspect(arg, { depth: 5, breakLength: Infinity });
 }
 
-function createFileLogger(source: LogSource, logDir: string, level: LogLevelName): Logger {
+export function logDateSegment(date: Date): string {
+  return [
+    String(date.getFullYear()),
+    padTwoDigits(date.getMonth() + 1),
+    padTwoDigits(date.getDate())
+  ].join("-");
+}
+
+export function logTimeSegmentLabel(date: Date): string {
+  const startHour = Math.floor(date.getHours() / LOG_ROTATION_HOURS) * LOG_ROTATION_HOURS;
+  return `${padTwoDigits(startHour)}-${padTwoDigits(startHour + LOG_ROTATION_HOURS)}`;
+}
+
+export function logFilePath(source: LogSource, logDir: string, date: Date): string {
+  return join(logDir, logDateSegment(date), logTimeSegmentLabel(date), LOG_FILE_NAMES[source]);
+}
+
+function createFileLogger(
+  source: LogSource,
+  logDir: string,
+  level: LogLevelName,
+  now: () => Date
+): Logger {
   return pino(
     {
       level,
@@ -200,12 +226,98 @@ function createFileLogger(source: LogSource, logDir: string, level: LogLevelName
       },
       timestamp: pino.stdTimeFunctions.isoTime
     },
-    pino.destination({
-      dest: join(logDir, LOG_FILE_NAMES[source]),
+    new RotatingLogDestination(source, logDir, now)
+  );
+}
+
+type PinoFileDestination = ReturnType<typeof pino.destination>;
+
+class RotatingLogDestination {
+  private active:
+    | {
+        path: string;
+        destination: PinoFileDestination;
+      }
+    | undefined;
+
+  private readonly closingDestinations = new Set<PinoFileDestination>();
+
+  constructor(
+    private readonly source: LogSource,
+    private readonly logDir: string,
+    private readonly now: () => Date
+  ) {}
+
+  write(message: string): void {
+    const destination = this.resolveActiveDestination();
+    destination.write(message);
+  }
+
+  flush(callback?: (err?: Error) => void): void {
+    const destinations = [
+      ...(this.active ? [this.active.destination] : []),
+      ...Array.from(this.closingDestinations)
+    ];
+    if (destinations.length === 0) {
+      callback?.();
+      return;
+    }
+
+    let pending = destinations.length;
+    let firstError: Error | undefined;
+    const done = (error?: Error) => {
+      firstError ??= error;
+      pending -= 1;
+      if (pending === 0) {
+        callback?.(firstError);
+      }
+    };
+
+    for (const destination of destinations) {
+      try {
+        destination.flush(done);
+      } catch (error) {
+        done(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+  }
+
+  private resolveActiveDestination(): PinoFileDestination {
+    const nextPath = logFilePath(this.source, this.logDir, this.now());
+    if (this.active?.path === nextPath) {
+      return this.active.destination;
+    }
+
+    if (this.active) {
+      this.closeDestination(this.active.destination);
+    }
+
+    mkdirSync(dirname(nextPath), { recursive: true });
+    const destination = pino.destination({
+      dest: nextPath,
       minLength: 0,
       sync: false
-    })
-  );
+    });
+    this.active = { path: nextPath, destination };
+    return destination;
+  }
+
+  private closeDestination(destination: PinoFileDestination): void {
+    this.closingDestinations.add(destination);
+    const finish = () => {
+      this.closingDestinations.delete(destination);
+      destination.end();
+    };
+    try {
+      destination.flush(finish);
+    } catch {
+      finish();
+    }
+  }
+}
+
+function padTwoDigits(value: number): string {
+  return String(value).padStart(2, "0");
 }
 
 async function flushLoggers(loggers: Logger[]): Promise<void> {

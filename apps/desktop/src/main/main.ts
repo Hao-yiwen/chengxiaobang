@@ -68,7 +68,9 @@ const DEFAULT_BLANK_PROJECT_NAME = "未命名项目";
 const desktopLogging = initializeDesktopLogging({ logDir: defaultLogDir() });
 
 if (desktopLogging) {
-  console.info(`[main] 日志写入目录 logDir=${desktopLogging.logDir} level=${desktopLogging.level}`);
+  console.info(
+    `[main] 日志写入目录 logDir=${desktopLogging.logDir} layout=YYYY-MM-DD/HH-HH/source.log level=${desktopLogging.level}`
+  );
 }
 
 type ReadFileResult =

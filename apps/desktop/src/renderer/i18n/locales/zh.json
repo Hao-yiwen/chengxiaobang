@@ -269,10 +269,8 @@
       "todo_create": "创建 Todo「{{title}}」",
       "todo_update": "更新 Todo 进度",
       "ask_user": "向你提问",
-      "btw": "记录旁注",
       "use_skill": "加载技能 {{name}}",
       "schedule_create": "创建定时任务「{{name}}」",
-      "schedule_create_once": "创建一次性任务「{{name}}」",
       "schedule_list": "查看定时任务",
       "schedule_cancel": "取消定时任务",
       "memory": "访问记忆 {{path}}",
@@ -338,13 +336,6 @@
       "missing": "还有 {{count}} 个问题未回答",
       "structuredHint": "会一次性提交这组回答",
       "invalidArgs": "问题内容解析失败"
-    },
-    "asideNote": {
-      "convert": "转为任务",
-      "converted": "已转",
-      "convertedFull": "已转为任务",
-      "suggestionPrefix": "建议：",
-      "aggregate": "旁注 × {{count}}"
     },
     "copyReceipt": "已录",
     "lastRunModel": "本轮使用 {{provider}} · {{model}}"
@@ -585,7 +576,7 @@
       "langEn": "English",
       "langEnDesc": "Use the English interface",
       "logsTitle": "开发日志",
-      "logsDesc": "打开当前开发环境写入的 main、renderer 与 backend 日志目录。",
+      "logsDesc": "打开按日期与 3 小时时间段分片的 main、renderer 与 backend 日志目录。",
       "openLogs": "查看日志",
       "logsDesktopOnly": "查看日志需要在桌面应用中使用",
       "logsOpenFailed": "日志目录打开失败",

@@ -136,6 +136,46 @@ describe("MessageActions", () => {
     });
   });
 
+  it("shows only the bottom message actions by default", async () => {
+    const secondUserMessage: Message = {
+      ...userMessage,
+      id: "u2",
+      content: "再问一个",
+      createdAt: "2026-06-08T00:00:02.000Z"
+    };
+    const secondAssistantMessage: Message = {
+      ...assistantMessage,
+      id: "a2",
+      content: "第二个答案",
+      createdAt: "2026-06-08T00:00:03.000Z"
+    };
+    const client = createClient({
+      listMessages: vi.fn(async () => [
+        userMessage,
+        assistantMessage,
+        secondUserMessage,
+        secondAssistantMessage
+      ])
+    });
+
+    render(<App client={client} />);
+    await screen.findByText("第二个答案");
+
+    const actionBarOf = (button: HTMLElement) => {
+      const actionBar = button.parentElement;
+      expect(actionBar).not.toBeNull();
+      return actionBar as HTMLElement;
+    };
+    const actionBars = screen.getAllByRole("button", { name: "复制" }).map(actionBarOf);
+
+    expect(actionBars).toHaveLength(4);
+    expect(actionBars[0]).toHaveClass("opacity-0");
+    expect(actionBars[1]).toHaveClass("opacity-0");
+    expect(actionBars[2]).toHaveClass("opacity-0");
+    expect(actionBars[3]).toHaveClass("opacity-100");
+    expect(actionBars[3]).not.toHaveClass("opacity-0");
+  });
+
   it("edits a user message and resends the edited content", async () => {
     const rewindSession = vi.fn(async () => [] as Message[]);
     const streamRun = vi.fn(async () => {});

@@ -4,24 +4,20 @@ import {
   CaretDownIcon as ChevronDown,
   FileIcon as FileAttachment,
   FileImageIcon as FileImage,
-  NotePencilIcon as NotePencil,
   XIcon as X
 } from "@phosphor-icons/react";
 import {
   memo,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
-  useState,
-  type ReactNode
+  useState
 } from "react";
 import { useTranslation } from "react-i18next";
 import type { Message, MessageAttachment, RunRecord, StreamEvent, ToolCall } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { AssistantMarkdownWithArtifacts } from "@/components/AssistantMarkdownWithArtifacts";
-import { AsideNote, type AsideNoteLayout } from "@/components/AsideNote";
 import { ArtifactFloatingPanel } from "@/components/ArtifactFloatingPanel";
 import { Markdown } from "@/components/Markdown";
 import { MessageActions, MessageEditor } from "@/components/MessageActions";
@@ -35,7 +31,6 @@ import { ToolCallRow } from "@/components/ToolCallRow";
 import { parseArtifactDeclarations } from "@/lib/artifact";
 import { anchorScrollTop, contentTop, isNearBottom, tailSpacerHeight } from "@/lib/scroll";
 import {
-  ASIDE_INLINE_LIMIT,
   derivePlanView,
   groupTimelineItems,
   timelineItems,
@@ -45,19 +40,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
-/** 旁注布局断点纯函数，供测试和后续 AsideNote 接线复用。 */
-export function asideLayoutForWidth(width: number): AsideNoteLayout {
-  if (width >= 1096) return "gutter-wide";
-  if (width >= 916) return "gutter-narrow";
-  return "inline";
-}
-
-type AsideTimelineItem =
-  | { kind: "aside"; at: string; toolCall: ToolCall }
-  | { kind: "aside-group"; at: string; runId: string; toolCalls: ToolCall[] };
-
 type PlanTimelineItem = { kind: "plan"; at: string; plan: PlanView };
-type ChatViewTimelineItem = GroupedTimelineItem | AsideTimelineItem | PlanTimelineItem;
+type ChatViewTimelineItem = GroupedTimelineItem | PlanTimelineItem;
 type FailedRunNotice = {
   id: string;
   message: string;
@@ -76,17 +60,6 @@ function isFailedRunEndEvent(
   return event.type === "run_end" && event.status === "failed";
 }
 
-function isAsideTimelineItem(item: ChatViewTimelineRenderItem): item is AsideTimelineItem {
-  return item.kind === "aside" || item.kind === "aside-group";
-}
-
-function asideTimelineItemId(item: AsideTimelineItem): string {
-  if (item.kind === "aside") {
-    return item.toolCall.id;
-  }
-  return `group-${item.runId}-${item.toolCalls[0]?.id ?? item.at}`;
-}
-
 function chatViewTimelineItems(
   messages: Message[],
   toolCalls: ToolCall[],
@@ -102,7 +75,6 @@ function chatViewTimelineItems(
       notice
     }))
   ].sort((left, right) => left.at.localeCompare(right.at));
-  const asideCountsByRun = new Map<string, number>();
   const result: ChatViewTimelineRenderItem[] = [];
 
   for (const item of chronologicalItems) {
@@ -132,29 +104,7 @@ function chatViewTimelineItems(
       }
       continue;
     }
-    if (item.kind !== "tool" || item.toolCall.name !== "btw") {
-      result.push(item);
-      continue;
-    }
-
-    const count = (asideCountsByRun.get(item.toolCall.runId) ?? 0) + 1;
-    asideCountsByRun.set(item.toolCall.runId, count);
-    if (count <= ASIDE_INLINE_LIMIT) {
-      result.push({ kind: "aside", at: item.at, toolCall: item.toolCall });
-      continue;
-    }
-
-    const previous = result[result.length - 1];
-    if (previous?.kind === "aside-group" && previous.runId === item.toolCall.runId) {
-      previous.toolCalls.push(item.toolCall);
-      continue;
-    }
-    result.push({
-      kind: "aside-group",
-      at: item.at,
-      runId: item.toolCall.runId,
-      toolCalls: [item.toolCall]
-    });
+    result.push(item);
   }
 
   return result;
@@ -246,7 +196,6 @@ export function ChatView() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
   const scrollFrame = useRef<number | null>(null);
-  const asideNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   // Message id currently anchored to the viewport top (the just-sent user
   // message), and a snapshot of the previous messages tail so wholesale array
   // replacements (session switch, post-run reload) can be told apart from a
@@ -256,9 +205,6 @@ export function ChatView() {
     { sessionId?: string; lastId?: string; length: number } | undefined
   >(undefined);
   const [nearBottom, setNearBottom] = useState(true);
-  const [asideLayout, setAsideLayout] = useState<AsideNoteLayout>("inline");
-  const [asidePositions, setAsidePositions] = useState<Record<string, number>>({});
-  const [convertedAsideIds, setConvertedAsideIds] = useState<Set<string>>(() => new Set());
 
   const hasActiveTimelineTool = Boolean(runningTool);
   const showActivityStatus =
@@ -293,71 +239,24 @@ export function ChatView() {
     () => chatViewTimelineItems(messages, timelineToolCalls, failedNotices, activeRunId),
     [messages, timelineToolCalls, failedNotices, activeRunId]
   );
-  const asideItems = useMemo(() => items.filter(isAsideTimelineItem), [items]);
-  const activeRunAssistantIds = new Set(
-    events
-      .filter(
-        (event) =>
-          event.type === "message" &&
-          event.runId === activeRunId &&
-          event.message.role === "assistant"
-      )
-      .map((event) => (event.type === "message" ? event.message.id : ""))
+  const activeRunAssistantIds = useMemo(
+    () =>
+      new Set(
+        events
+          .filter(
+            (event) =>
+              event.type === "message" &&
+              event.runId === activeRunId &&
+              event.message.role === "assistant"
+          )
+          .map((event) => (event.type === "message" ? event.message.id : ""))
+      ),
+    [activeRunId, events]
   );
-  const setInput = useAppStore((state) => state.setInput);
-  const convertAsideToTask = useCallback(
-    (toolCallId: string, draft: string) => {
-      setInput(draft);
-      setConvertedAsideIds((current) => {
-        const next = new Set(current);
-        next.add(toolCallId);
-        return next;
-      });
-    },
-    [setInput]
+  const lastActionMessageId = useMemo(
+    () => lastVisibleActionMessageId(items, activeRunAssistantIds),
+    [activeRunAssistantIds, items]
   );
-  const setAsideNodeRef = useCallback(
-    (id: string) => (node: HTMLDivElement | null) => {
-      if (node) {
-        asideNodeRefs.current.set(id, node);
-      } else {
-        asideNodeRefs.current.delete(id);
-      }
-    },
-    []
-  );
-  const measureAsideOverlay = useCallback(() => {
-    const contentColumn = contentColumnRef.current;
-    if (!contentColumn || asideLayout === "inline") {
-      setAsidePositions({});
-      return;
-    }
-
-    const anchors = Array.from(
-      contentColumn.querySelectorAll<HTMLElement>("[data-aside-anchor-id]")
-    );
-    const next: Record<string, number> = {};
-    let nextAvailableTop = 0;
-    for (const anchor of anchors) {
-      const id = anchor.dataset.asideAnchorId;
-      if (!id) {
-        continue;
-      }
-      const node = asideNodeRefs.current.get(id);
-      const top = Math.max(anchor.offsetTop, nextAvailableTop);
-      next[id] = top;
-      nextAvailableTop = top + (node?.offsetHeight ?? 0) + 12;
-    }
-
-    setAsidePositions((current) => {
-      const currentKeys = Object.keys(current);
-      const nextKeys = Object.keys(next);
-      const changed =
-        currentKeys.length !== nextKeys.length ||
-        nextKeys.some((key) => current[key] !== next[key]);
-      return changed ? next : current;
-    });
-  }, [asideLayout]);
 
   // Resize the tail spacer to keep the anchored message's scroll position
   // reachable, and recompute nearBottom (content can grow without a scroll
@@ -368,8 +267,6 @@ export function ChatView() {
     if (!el || !spacer) {
       return;
     }
-    const nextAsideLayout = asideLayoutForWidth(el.clientWidth);
-    setAsideLayout((current) => (current === nextAsideLayout ? current : nextAsideLayout));
     const anchorId = anchorIdRef.current;
     if (anchorId) {
       const node = el.querySelector<HTMLElement>(`[data-message-id="${anchorId}"]`);
@@ -498,37 +395,6 @@ export function ChatView() {
     return () => observer.disconnect();
   }, [syncTailGeometry]);
 
-  useLayoutEffect(() => {
-    if (asideLayout === "inline" || asideItems.length === 0) {
-      setAsidePositions({});
-      return;
-    }
-    if (typeof window.requestAnimationFrame !== "function") {
-      measureAsideOverlay();
-      return;
-    }
-    const frame = window.requestAnimationFrame(measureAsideOverlay);
-    return () => window.cancelAnimationFrame?.(frame);
-  }, [asideLayout, asideItems, convertedAsideIds, measureAsideOverlay]);
-
-  useEffect(() => {
-    if (asideLayout === "inline" || asideItems.length === 0) {
-      return;
-    }
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", measureAsideOverlay);
-      return () => window.removeEventListener("resize", measureAsideOverlay);
-    }
-    const observer = new ResizeObserver(measureAsideOverlay);
-    if (contentColumnRef.current) {
-      observer.observe(contentColumnRef.current);
-    }
-    for (const node of asideNodeRefs.current.values()) {
-      observer.observe(node);
-    }
-    return () => observer.disconnect();
-  }, [asideLayout, asideItems, measureAsideOverlay]);
-
   useEffect(
     () => () => {
       if (scrollFrame.current !== null) {
@@ -537,29 +403,6 @@ export function ChatView() {
     },
     []
   );
-
-  const renderAsideContent = (item: AsideTimelineItem) => {
-    if (item.kind === "aside") {
-      return (
-        <AsideNote
-          toolCall={item.toolCall}
-          layout={asideLayout}
-          converted={convertedAsideIds.has(item.toolCall.id)}
-          onConvertToTask={(draft) => convertAsideToTask(item.toolCall.id, draft)}
-          animateIn={item.toolCall.runId === activeRunId}
-        />
-      );
-    }
-    return (
-      <AsideNoteGroup
-        toolCalls={item.toolCalls}
-        layout={asideLayout}
-        convertedAsideIds={convertedAsideIds}
-        onConvertToTask={convertAsideToTask}
-        animateIn={item.runId === activeRunId}
-      />
-    );
-  };
 
   return (
     // 滚动区铺满主区域；内容列由共享布局左偏，和底部输入列保持同一个锚点。
@@ -582,18 +425,19 @@ export function ChatView() {
         >
           {items.map((item, index) => {
             if (item.kind === "message") {
-              const nextItem = items[index + 1];
-              const hideActions =
-                item.message.role === "assistant" &&
-                (activeRunAssistantIds.has(item.message.id) ||
-                  hasLaterAssistantAnswerInTurn(items, index) ||
-                  Boolean(nextItem && nextItem.kind !== "message"));
+              const hideActions = shouldHideMessageActions(
+                item,
+                index,
+                items,
+                activeRunAssistantIds
+              );
               return (
                 <MessageBubble
                   key={`message-${item.message.id}`}
                   message={item.message}
                   isLastAssistant={item.message.id === lastAssistantId}
                   hideActions={hideActions}
+                  showActionsByDefault={item.message.id === lastActionMessageId}
                 />
               );
             }
@@ -631,30 +475,6 @@ export function ChatView() {
                 />
               );
             }
-            if (item.kind === "aside") {
-              const id = asideTimelineItemId(item);
-              if (asideLayout !== "inline") {
-                return <AsideNoteAnchor key={`aside-anchor-${id}`} id={id} />;
-              }
-              return (
-                <AsideNoteFrame key={`aside-${item.toolCall.id}`}>
-                  {renderAsideContent(item)}
-                </AsideNoteFrame>
-              );
-            }
-            if (item.kind === "aside-group") {
-              const id = asideTimelineItemId(item);
-              if (asideLayout !== "inline") {
-                return <AsideNoteAnchor key={`aside-anchor-${id}`} id={id} />;
-              }
-              return (
-                <AsideNoteFrame
-                  key={`aside-group-${item.runId}-${item.toolCalls[0]?.id ?? item.at}`}
-                >
-                  {renderAsideContent(item)}
-                </AsideNoteFrame>
-              );
-            }
             return (
               <ToolCallRow
                 key={`tool-${item.toolCall.id}`}
@@ -663,27 +483,6 @@ export function ChatView() {
               />
             );
           })}
-
-          {asideLayout !== "inline" && asideItems.length > 0 ? (
-            <div
-              data-testid="chat-aside-overlay"
-              className="pointer-events-none absolute inset-x-0 top-0 z-10"
-            >
-              {asideItems.map((item) => {
-                const id = asideTimelineItemId(item);
-                return (
-                  <div
-                    key={`aside-overlay-${id}`}
-                    ref={setAsideNodeRef(id)}
-                    style={{ top: asidePositions[id] ?? 0 }}
-                    className="pointer-events-auto absolute right-0"
-                  >
-                    {renderAsideContent(item)}
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
 
           {thinking ? (
             <ReasoningPanel text={thinking} streaming startedAt={thinkingStartedAt} />
@@ -773,94 +572,18 @@ function RunErrorNotice({
   );
 }
 
-function AsideNoteAnchor({ id }: { id: string }) {
-  return (
-    <div
-      data-testid="chat-aside-anchor"
-      data-aside-anchor-id={id}
-      aria-hidden="true"
-      className="h-0 self-stretch overflow-visible"
-    />
-  );
-}
-
-function AsideNoteFrame({ children }: { children: ReactNode }) {
-  return <div className="mb-3 self-stretch">{children}</div>;
-}
-
-const ASIDE_GROUP_LAYOUT_CLASSES: Record<AsideNoteLayout, string> = {
-  "gutter-wide": "w-[220px]",
-  "gutter-narrow": "w-[180px]",
-  inline: "my-2 ml-6 max-w-[520px]"
-};
-
-function AsideNoteGroup({
-  toolCalls,
-  layout,
-  convertedAsideIds,
-  onConvertToTask,
-  animateIn
-}: {
-  toolCalls: ToolCall[];
-  layout: AsideNoteLayout;
-  convertedAsideIds: Set<string>;
-  onConvertToTask: (toolCallId: string, draft: string) => void;
-  animateIn: boolean;
-}) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  return (
-    <div
-      data-layout={layout}
-      className={cn(
-        "border-l-2 border-ochre pl-3 text-[13px] leading-[21px] text-secondary-foreground",
-        ASIDE_GROUP_LAYOUT_CLASSES[layout]
-      )}
-    >
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="flex max-w-full items-center gap-1.5 text-[12px] text-ink-3 transition-colors duration-[120ms] hover:text-cinnabar"
-      >
-        <NotePencil className="size-3.5 flex-none" />
-        <span className="min-w-0 truncate">
-          {t("chat.asideNote.aggregate", { count: toolCalls.length })}
-        </span>
-        <ChevronDown
-          className={cn(
-            "size-3.5 flex-none transition-transform duration-200",
-            !open && "-rotate-90"
-          )}
-        />
-      </button>
-      {open ? (
-        <div className="mt-2 space-y-2">
-          {toolCalls.map((toolCall) => (
-            <AsideNote
-              key={toolCall.id}
-              toolCall={toolCall}
-              layout={layout}
-              converted={convertedAsideIds.has(toolCall.id)}
-              onConvertToTask={(draft) => onConvertToTask(toolCall.id, draft)}
-              animateIn={animateIn}
-            />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 // Memoized so per-delta re-renders during streaming skip settled messages —
 // the store preserves referential identity of existing message objects.
 const MessageBubble = memo(function MessageBubble({
   message,
   isLastAssistant = false,
-  hideActions = false
+  hideActions = false,
+  showActionsByDefault = false
 }: {
   message: Message;
   isLastAssistant?: boolean;
   hideActions?: boolean;
+  showActionsByDefault?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const editAndResend = useAppStore((state) => state.editAndResend);
@@ -915,7 +638,11 @@ const MessageBubble = memo(function MessageBubble({
             </div>
           ) : null}
         </div>
-        <MessageActions message={message} onEdit={() => setEditing(true)} />
+        <MessageActions
+          message={message}
+          onEdit={() => setEditing(true)}
+          alwaysVisible={showActionsByDefault}
+        />
       </div>
     );
   }
@@ -941,11 +668,50 @@ const MessageBubble = memo(function MessageBubble({
           message={message}
           isLastAssistant={isLastAssistant}
           copyContent={parsedAssistant?.cleanMarkdown}
+          alwaysVisible={showActionsByDefault}
         />
       )}
     </div>
   );
 });
+
+function shouldHideMessageActions(
+  item: Extract<ChatViewTimelineRenderItem, { kind: "message" }>,
+  currentIndex: number,
+  items: ChatViewTimelineRenderItem[],
+  activeRunAssistantIds: Set<string>
+): boolean {
+  const nextItem = items[currentIndex + 1];
+  return (
+    item.message.role === "assistant" &&
+    (activeRunAssistantIds.has(item.message.id) ||
+      hasLaterAssistantAnswerInTurn(items, currentIndex) ||
+      Boolean(nextItem && nextItem.kind !== "message"))
+  );
+}
+
+function lastVisibleActionMessageId(
+  items: ChatViewTimelineRenderItem[],
+  activeRunAssistantIds: Set<string>
+): string | undefined {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.kind !== "message") {
+      continue;
+    }
+    if (item.message.kind === "compaction_summary") {
+      continue;
+    }
+    if (item.message.role === "assistant" && item.message.content.trim().length === 0) {
+      continue;
+    }
+    if (shouldHideMessageActions(item, index, items, activeRunAssistantIds)) {
+      continue;
+    }
+    return item.message.id;
+  }
+  return undefined;
+}
 
 function hasLaterAssistantAnswerInTurn(
   items: ChatViewTimelineRenderItem[],

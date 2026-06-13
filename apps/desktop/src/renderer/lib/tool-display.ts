@@ -17,7 +17,6 @@ import {
   GlobeIcon,
   ListChecksIcon,
   MagnifyingGlassIcon,
-  NotePencilIcon,
   PaperPlaneTiltIcon,
   PencilSimpleIcon,
   SparkleIcon,
@@ -66,10 +65,8 @@ const TOOL_ICONS: Record<string, Icon> = {
   todo_create: ListChecksIcon,
   todo_update: ListChecksIcon,
   ask_user: ChatCircleDotsIcon,
-  btw: NotePencilIcon,
   use_skill: SparkleIcon,
   schedule_create: AlarmIcon,
-  schedule_create_once: AlarmIcon,
   schedule_list: ClockIcon,
   schedule_cancel: ClockCountdownIcon,
   memory: BrainIcon
@@ -116,7 +113,6 @@ const TOOL_CATEGORIES: Record<string, ToolCategory> = {
   todo_create: "plan",
   todo_update: "plan",
   schedule_create: "schedule",
-  schedule_create_once: "schedule",
   schedule_list: "schedule",
   schedule_cancel: "schedule",
   memory: "memory"
@@ -173,10 +169,8 @@ type ToolLineKey = `chat.toolLine.${
   | "todo_create"
   | "todo_update"
   | "ask_user"
-  | "btw"
   | "use_skill"
   | "schedule_create"
-  | "schedule_create_once"
   | "schedule_list"
   | "schedule_cancel"
   | "memory"
@@ -231,8 +225,6 @@ export function toolLineLabel(toolCall: ToolCall): ToolLineLabel {
       return { key: "chat.toolLine.use_skill", params: { name: stringArg(args, "name") ?? "" } };
     case "schedule_create":
       return { key: "chat.toolLine.schedule_create", params: { name: stringArg(args, "name") ?? "" } };
-    case "schedule_create_once":
-      return { key: "chat.toolLine.schedule_create_once", params: { name: stringArg(args, "name") ?? "" } };
     case "memory":
       return {
         key: "chat.toolLine.memory",
@@ -247,7 +239,6 @@ export function toolLineLabel(toolCall: ToolCall): ToolLineLabel {
     case "feishu_send_message":
     case "update_plan":
     case "ask_user":
-    case "btw":
     case "schedule_list":
     case "schedule_cancel":
       return { key: `chat.toolLine.${name}` };

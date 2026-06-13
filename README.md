@@ -147,7 +147,7 @@ pnpm test -t "approval"                            # 按名过滤
 
 ## 日志与排查
 
-运行态日志由 Electron main 进程统一持久化到 `~/.chengxiaobang/data/logs/`，按来源拆分：
+运行态日志由 Electron main 进程统一持久化到 `~/.chengxiaobang/data/logs/`，按本地日期和 3 小时时间段分片，路径形如 `logs/2026-06-14/09-12/main.log`：
 
 | 文件 | 看什么 |
 | --- | --- |
@@ -155,7 +155,7 @@ pnpm test -t "approval"                            # 按名过滤
 | `renderer.log` | 前端白屏、组件报错、渲染层 `console` 输出 |
 | `backend.log` | 后端启动、Bun 进程 stdout/stderr、API/agent/tool 执行问题 |
 
-本地 `pnpm dev` 默认注入 `CHENGXIAOBANG_LOG_LEVEL=debug`；打包运行默认 `info`。遇到「跑起来后出错 / 前端没反应 / 后端超时」，先读对应日志文件，再结合代码与复现步骤判断根因。
+本地 `pnpm dev` 默认注入 `CHENGXIAOBANG_LOG_LEVEL=debug`；打包运行默认 `info`。遇到「跑起来后出错 / 前端没反应 / 后端超时」，先进入对应日期与时间段目录，再读对应日志文件并结合代码与复现步骤判断根因。
 
 ---
 

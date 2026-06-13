@@ -39,11 +39,6 @@ const askUserParams = Type.Object({
   })
 });
 
-const btwParams = Type.Object({
-  note: Type.String({ description: "顺手记录的旁注" }),
-  suggestion: Type.Optional(Type.String({ description: "可选建议" }))
-});
-
 const useSkillParams = Type.Object({
   name: Type.String({ description: "要加载的技能名称" })
 });
@@ -113,20 +108,6 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
     }
   };
 
-  const btw: AgentTool<typeof btwParams> = {
-    name: "btw",
-    label: "记录旁注",
-    description: "记录与当前任务相关但不应打断主线的简短旁注。",
-    parameters: btwParams,
-    execute: async (_toolCallId, params) => {
-      console.info(
-        `[plan-tools] 记录旁注 note=${params.note}` +
-          (params.suggestion ? ` suggestion=${params.suggestion}` : "")
-      );
-      return textResult("已记录旁注");
-    }
-  };
-
   const useSkill: AgentTool<typeof useSkillParams> = {
     name: "use_skill",
     label: "加载技能",
@@ -143,5 +124,5 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
     }
   };
 
-  return [proposePlan, updatePlan, askUser, btw, useSkill];
+  return [proposePlan, updatePlan, askUser, useSkill];
 }

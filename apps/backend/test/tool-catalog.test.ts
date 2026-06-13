@@ -20,13 +20,11 @@ const toolNames = [
   "shell",
   "feishu_send_message",
   "schedule_create",
-  "schedule_create_once",
   "schedule_cancel",
   "create_skill",
   "propose_plan",
   "update_plan",
   "ask_user",
-  "btw",
   "use_skill",
   "memory",
   "todo_create",
@@ -56,7 +54,6 @@ describe("selectAgentTools", () => {
     expect(visible).toContain("write_file");
     expect(visible).toContain("shell");
     expect(visible).toContain("ask_user");
-    expect(visible).toContain("btw");
     expect(visible).toContain("use_skill");
     expect(visible).toContain("todo_create");
     expect(visible).toContain("todo_update");
@@ -78,7 +75,6 @@ describe("selectAgentTools", () => {
       "schedule_list",
       "propose_plan",
       "ask_user",
-      "btw",
       "use_skill",
       "memory"
     ]);
@@ -105,7 +101,6 @@ describe("selectAgentTools", () => {
     expect(visible).not.toContain("todo_update");
     expect(visible).toContain("write_file");
     expect(visible).toContain("schedule_create");
-    expect(visible).toContain("schedule_create_once");
     expect(visible).toContain("create_skill");
   });
 
@@ -118,7 +113,6 @@ describe("selectAgentTools", () => {
       expect(visible).not.toContain("todo_update");
     }
     const draft = names({ planPhase: "draft", viaFeishu: true });
-    expect(draft).toContain("btw");
     expect(draft).toContain("use_skill");
   });
 

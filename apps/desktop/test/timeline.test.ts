@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message, ToolCall } from "@chengxiaobang/shared";
 import {
-  ASIDE_INLINE_LIMIT,
   chatTimeline,
   derivePlanView,
   groupTimelineItems,
@@ -135,8 +134,7 @@ describe("groupTimelineItems", () => {
       "propose_plan",
       "update_plan",
       "todo_create",
-      "todo_update",
-      "btw"
+      "todo_update"
     ]) {
       const t1 = tool("read_file", { at: "2026-06-11T00:00:01.000Z" });
       const t2 = tool(name, { at: "2026-06-11T00:00:02.000Z", args: planArgs });
@@ -339,31 +337,6 @@ describe("chatTimeline", () => {
     const pending = tool("write_file", { status: "pending_approval", id: "t_pending" });
     const items = chatTimeline([], [pending], { pendingToolId: "t_pending" });
     expect(items).toEqual([]);
-  });
-
-  it("aggregates btw asides from the third note of a run onward", () => {
-    const at = (n: number) => `2026-06-11T00:00:0${n}.000Z`;
-    const notes = [1, 2, 3, 4].map((n) =>
-      tool("btw", { args: { note: `旁注${n}` }, at: at(n), runId: "run_1" })
-    );
-    const items = chatTimeline([], notes);
-    expect(kinds(items)).toEqual(["aside", "aside", "aside-group"]);
-    const group = items[2];
-    if (group?.kind !== "aside-group") {
-      throw new Error("expected aside-group item");
-    }
-    expect(group.toolCalls.map((tc) => tc.args.note)).toEqual(["旁注3", "旁注4"]);
-    expect(ASIDE_INLINE_LIMIT).toBe(2);
-  });
-
-  it("does not aggregate btw asides across different runs", () => {
-    const at = (n: number) => `2026-06-11T00:00:0${n}.000Z`;
-    const notes = [
-      tool("btw", { args: { note: "a" }, runId: "run_1", at: at(1) }),
-      tool("btw", { args: { note: "b" }, runId: "run_1", at: at(2) }),
-      tool("btw", { args: { note: "c" }, runId: "run_2", at: at(3) })
-    ];
-    expect(kinds(chatTimeline([], notes))).toEqual(["aside", "aside", "aside"]);
   });
 
   it("flags residual pending_approval rows from non-active runs", () => {

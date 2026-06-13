@@ -284,7 +284,7 @@ run 完成、失败或中止时，`ActiveRunRegistry.forget(runId)` 会：
 - `[agent-runner] 移除活跃 run`
 - `[run-routes] 收到运行中引导`
 
-桌面端日志看 `renderer.log`，后端 agent 与 API 日志看 `backend.log`。
+桌面端日志按 `logs/YYYY-MM-DD/HH-HH/` 分片；前端问题看对应时间段的 `renderer.log`，后端 agent 与 API 日志看同目录下的 `backend.log`。
 
 ## 测试覆盖
 

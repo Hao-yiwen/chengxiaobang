@@ -85,12 +85,6 @@ export function askUserAnswerText(answer: AskUserAnswer): string {
   return answer.answers.map(askUserAnswerItemText).filter(Boolean).join("\n");
 }
 
-export const btwArgsSchema = z.object({
-  note: z.string().min(1),
-  suggestion: z.string().min(1).optional()
-});
-export type BtwArgs = z.infer<typeof btwArgsSchema>;
-
 export const useSkillArgsSchema = z.object({
   name: z.string().min(1)
 });
