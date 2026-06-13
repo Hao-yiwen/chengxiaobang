@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld("chengxiaobang", {
   createProjectFolder: (name: string) => ipcRenderer.invoke("create-project-folder", name),
   openSkillsDir: () => ipcRenderer.invoke("open-skills-dir"),
   openLogDir: () => ipcRenderer.invoke("open-log-dir"),
+  getUpdateState: () => ipcRenderer.invoke("update:get-state"),
+  checkForUpdates: (input?: { manual?: boolean }) => ipcRenderer.invoke("update:check", input),
+  downloadUpdate: () => ipcRenderer.invoke("update:download"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
   setThemeSource: (source: "light" | "dark" | "system") =>
     ipcRenderer.invoke("set-theme-source", source),
   terminalStart: (input: { id: string; cwd: string; cols: number; rows: number }) =>
@@ -53,5 +57,12 @@ contextBridge.exposeInMainWorld("chengxiaobang", {
     };
     ipcRenderer.on("terminal:exit", wrapped);
     return () => ipcRenderer.off("terminal:exit", wrapped);
+  },
+  onUpdateState: (listener: (state: unknown) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      listener(payload);
+    };
+    ipcRenderer.on("update:state", wrapped);
+    return () => ipcRenderer.off("update:state", wrapped);
   }
 });

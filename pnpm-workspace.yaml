@@ -7,6 +7,6 @@ allowBuilds:
   electron: true
   esbuild: true
   node-pty: true
-  onnxruntime-node: set this to true or false
+  onnxruntime-node: true
   protobufjs: true
   sharp: true

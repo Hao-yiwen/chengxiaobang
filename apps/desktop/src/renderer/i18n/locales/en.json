@@ -550,7 +550,19 @@
       "openLogs": "View logs",
       "logsDesktopOnly": "Viewing logs requires the desktop app",
       "logsOpenFailed": "Failed to open the log folder",
-      "logsOpened": "Opened log folder: {{path}}"
+      "logsOpened": "Opened log folder: {{path}}",
+      "updateTitle": "App updates",
+      "updateDesc": "Check GitHub Releases for a newer Chengxiaobang build.",
+      "checkUpdate": "Check for updates",
+      "updateChecking": "Checking",
+      "updateDesktopOnly": "Checking for updates requires the desktop app",
+      "updateStarted": "Started checking for updates",
+      "updateAvailable": "New version found. See the update popup in the lower-left corner.",
+      "updateDownloaded": "Update downloaded. See the update popup in the lower-left corner.",
+      "updateDownloading": "Update is downloading",
+      "updateNotAvailable": "You are on the latest version",
+      "updateDisabled": "Auto update is disabled in this environment",
+      "updateFailed": "Update check failed"
     },
     "providers": {
       "title": "Providers",
@@ -719,6 +731,27 @@
     "approveAction": "Yes, implement this plan",
     "adjustPlaceholder": "No, tell Chengxiaobang what to change",
     "submitAdjustment": "Submit"
+  },
+  "updates": {
+    "availableTitle": "Version {{version}} is available",
+    "availableDesc": "Current version {{current}} can be updated.",
+    "download": "Download update",
+    "downloadingTitle": "Downloading update",
+    "downloadingDesc": "Version {{version}} is downloading.",
+    "progress": "{{percent}}%",
+    "downloadedTitle": "Update downloaded",
+    "downloadedDesc": "Version {{version}} is ready. Restart to finish installing.",
+    "install": "Restart & install",
+    "notAvailableTitle": "You are up to date",
+    "notAvailableDesc": "Current version {{current}} has no available update.",
+    "disabledTitle": "Auto update unavailable",
+    "disabledDesc": "This environment does not support auto update.",
+    "errorTitle": "Update failed",
+    "errorDesc": "The update flow hit a problem.",
+    "retry": "Retry",
+    "checkingTitle": "Checking for updates",
+    "checkingDesc": "Connecting to GitHub Releases.",
+    "dismiss": "Dismiss update notice"
   },
   "skills": {
     "sourceShort": {

@@ -44,12 +44,22 @@ jobs:
             echo "::error::没有找到 electron-builder 输出目录 apps/desktop/out"
             exit 1
           fi
-          files=$(find apps/desktop/out -type f \( -name "*.dmg" -o -name "*.zip" \) ! -name "*.blockmap")
-          if [ -z "$files" ]; then
-            echo "::error::没有找到 electron-builder 产物（期望 apps/desktop/out 下有 .dmg 或 .zip）"
+          files=$(find apps/desktop/out -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" -o -name "latest-mac.yml" \))
+          installers=$(find apps/desktop/out -type f \( -name "*.dmg" -o -name "*.zip" \) ! -name "*.blockmap")
+          blockmaps=$(find apps/desktop/out -type f -name "*.blockmap")
+          metadata=$(find apps/desktop/out -type f -name "latest-mac.yml")
+          if [ -z "$installers" ] || [ -z "$blockmaps" ] || [ -z "$metadata" ]; then
+            echo "::error::没有找到完整自动更新产物（期望 .dmg/.zip、.blockmap 与 latest-mac.yml）"
             find apps/desktop/out -type f || true
             exit 1
           fi
+          while IFS= read -r asset; do
+            if [ ! -f "apps/desktop/out/$asset" ]; then
+              echo "::error::latest-mac.yml 引用的资产不存在：$asset"
+              find apps/desktop/out -type f || true
+              exit 1
+            fi
+          done < <(sed -n 's/^path: //p' apps/desktop/out/latest-mac.yml)
           echo "$files"
 
       - name: Upload to GitHub Release
@@ -64,11 +74,9 @@ jobs:
             gh release create "$TAG" --title "程小帮 $TAG" --notes "程小帮 $TAG" --repo "$GITHUB_REPOSITORY"
           fi
 
-          # GitHub Release 资产名会弱化非 ASCII 字符，上传前统一替换成 ASCII 前缀。
           mkdir -p dist-upload
           while IFS= read -r -d '' file; do
-            name=$(basename "$file")
-            cp "$file" "dist-upload/${name//程小帮/chengxiaobang}"
-          done < <(find apps/desktop/out -type f \( -name "*.dmg" -o -name "*.zip" \) ! -name "*.blockmap" -print0)
+            cp "$file" "dist-upload/$(basename "$file")"
+          done < <(find apps/desktop/out -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" -o -name "latest-mac.yml" \) -print0)
 
           gh release upload "$TAG" dist-upload/* --repo "$GITHUB_REPOSITORY" --clobber

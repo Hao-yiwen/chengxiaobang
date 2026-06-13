@@ -1,5 +1,6 @@
 import {
   ArrowLeftIcon as ArrowLeft,
+  ArrowClockwiseIcon as RefreshCw,
   ArrowSquareOutIcon as ExternalLink,
   ChartBarIcon as ChartBar,
   ChatCenteredTextIcon as MessageSquareText,
@@ -20,6 +21,7 @@ import {
   XIcon as X,
   type Icon
 } from "@phosphor-icons/react";
+import type { TFunction } from "i18next";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -53,6 +55,7 @@ import {
   reasoningModeSummary,
   supportedReasoningMode
 } from "@/components/ProviderModelControls";
+import type { UpdateStatus } from "../../common/update";
 import { API_KEY_URLS, PROVIDER_KIND_OPTIONS, PROVIDER_PRESETS } from "@/lib/provider-presets";
 import {
   isCatalogProvider,
@@ -272,6 +275,8 @@ function GeneralSection() {
   const locale = useAppStore((state) => state.locale);
   const setLocale = useAppStore((state) => state.setLocale);
   const [logsStatus, setLogsStatus] = useState("");
+  const [updateStatus, setUpdateStatus] = useState("");
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   return (
     <SectionShell title={t("settings.general.title")}>
       <SettingBlock
@@ -331,6 +336,48 @@ function GeneralSection() {
         </SettingBlock>
       ) : null}
       <SettingBlock
+        title={t("settings.general.updateTitle")}
+        description={t("settings.general.updateDesc")}
+      >
+        <Button
+          type="button"
+          variant="outline"
+          disabled={checkingUpdate}
+          onClick={async () => {
+            setUpdateStatus("");
+            if (!window.chengxiaobang?.checkForUpdates) {
+              console.warn("[settings] 手动检查更新失败：当前环境没有桌面 bridge");
+              setUpdateStatus(t("settings.general.updateDesktopOnly"));
+              return;
+            }
+            setCheckingUpdate(true);
+            console.info("[settings] 用户手动检查更新");
+            try {
+              const result = await window.chengxiaobang.checkForUpdates({ manual: true });
+              console.info("[settings] 手动检查更新完成", {
+                status: result.status,
+                availableVersion: result.availableVersion
+              });
+              setUpdateStatus(statusTextForUpdate(result.status, t));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              console.warn("[settings] 手动检查更新失败", { error: message });
+              setUpdateStatus(message);
+            } finally {
+              setCheckingUpdate(false);
+            }
+          }}
+        >
+          <RefreshCw className={cn("size-4", checkingUpdate && "animate-spin")} />
+          {checkingUpdate ? t("settings.general.updateChecking") : t("settings.general.checkUpdate")}
+        </Button>
+        {updateStatus ? (
+          <span className="ml-3 align-middle text-caption text-muted-foreground">
+            {updateStatus}
+          </span>
+        ) : null}
+      </SettingBlock>
+      <SettingBlock
         title={t("settings.general.permTitle")}
         description={t("settings.general.permDesc")}
       >
@@ -363,6 +410,25 @@ function GeneralSection() {
       </SettingBlock>
     </SectionShell>
   );
+}
+
+function statusTextForUpdate(status: UpdateStatus, t: TFunction): string {
+  switch (status) {
+    case "available":
+      return t("settings.general.updateAvailable");
+    case "downloaded":
+      return t("settings.general.updateDownloaded");
+    case "downloading":
+      return t("settings.general.updateDownloading");
+    case "not_available":
+      return t("settings.general.updateNotAvailable");
+    case "disabled":
+      return t("settings.general.updateDisabled");
+    case "error":
+      return t("settings.general.updateFailed");
+    default:
+      return t("settings.general.updateStarted");
+  }
 }
 
 function ProvidersSection() {

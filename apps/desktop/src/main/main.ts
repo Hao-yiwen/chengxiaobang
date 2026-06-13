@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron";
+import electronUpdater from "electron-updater";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -44,10 +45,12 @@ import {
 } from "./file-preview-path";
 import { registerOcrIpc } from "./ocr";
 import { registerTerminalIpc, type TerminalSessionManager } from "./terminal";
+import { DesktopUpdateService, registerUpdateIpc } from "./update-service";
 
 const MAX_CONTEXT_FILE_BYTES = 256 * 1024;
 const DEFAULT_BLANK_PROJECT_NAME = "未命名项目";
 const desktopLogging = initializeDesktopLogging({ logDir: defaultLogDir() });
+const { autoUpdater } = electronUpdater;
 
 if (desktopLogging) {
   console.info(`[main] 日志写入目录 logDir=${desktopLogging.logDir} level=${desktopLogging.level}`);
@@ -174,6 +177,7 @@ let mainWindow: BrowserWindow | undefined;
 let backend: BackendProcess | undefined;
 const projectOpenerIconCache = new Map<string, string | undefined>();
 let terminalManager: TerminalSessionManager | undefined;
+let updateService: DesktopUpdateService | undefined;
 
 function stopBackend(reason: string): void {
   if (!backend) {
@@ -597,6 +601,13 @@ async function createWindow(): Promise<void> {
     resourcesPath: process.resourcesPath,
     isPackaged: app.isPackaged
   });
+  updateService ??= new DesktopUpdateService({
+    currentVersion: app.getVersion(),
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    updater: autoUpdater
+  });
+  registerUpdateIpc(ipcMain, updateService);
 
   ipcMain.handle("open-skills-dir", async () => {
     const dir = join(homedir(), ".chengxiaobang", "skills");
@@ -871,6 +882,7 @@ async function createWindow(): Promise<void> {
   } else {
     await mainWindow.loadFile(rendererIndexPath(import.meta.url));
   }
+  updateService.startAutoChecks();
 }
 
 // 浏览器面板里的弹窗交给系统浏览器，不在应用内新开窗口。
@@ -912,18 +924,21 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  updateService?.stopAutoChecks();
   terminalManager?.disposeAll();
   stopBackend("before-quit");
   void flushDesktopLogs();
 });
 
 app.on("will-quit", () => {
+  updateService?.stopAutoChecks();
   terminalManager?.disposeAll();
   stopBackend("will-quit");
   void flushDesktopLogs();
 });
 
 function handleProcessSignal(signal: NodeJS.Signals): void {
+  updateService?.stopAutoChecks();
   terminalManager?.disposeAll();
   stopBackend(signal);
   void flushDesktopLogs().finally(() => {
@@ -935,6 +950,7 @@ function handleProcessSignal(signal: NodeJS.Signals): void {
 process.on("SIGTERM", handleProcessSignal);
 process.on("SIGINT", handleProcessSignal);
 process.on("exit", () => {
+  updateService?.stopAutoChecks();
   terminalManager?.disposeAll();
   stopBackend("process-exit");
 });

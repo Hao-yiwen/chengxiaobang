@@ -19,6 +19,7 @@ import { SetupDialog } from "./components/SetupDialog";
 import { Sidebar, SidebarToggle } from "./components/Sidebar";
 import { SkillsView } from "./components/SkillsView";
 import { TasksView } from "./components/TasksView";
+import { UpdateCenter } from "./components/UpdateCenter";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useThemeController } from "@/hooks/use-theme";
 import { useI18nController } from "@/hooks/use-i18n";
@@ -137,6 +138,7 @@ export function App(props: { client?: ApiClient }) {
           <CommandPalette />
           <SetupDialog />
           <NotificationToasts />
+          <UpdateCenter />
           {view === "settings" ? (
             <SettingsView />
           ) : (

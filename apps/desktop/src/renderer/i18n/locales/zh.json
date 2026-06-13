@@ -539,7 +539,19 @@
       "openLogs": "查看日志",
       "logsDesktopOnly": "查看日志需要在桌面应用中使用",
       "logsOpenFailed": "日志目录打开失败",
-      "logsOpened": "已打开日志目录：{{path}}"
+      "logsOpened": "已打开日志目录：{{path}}",
+      "updateTitle": "应用更新",
+      "updateDesc": "检查 GitHub Release 上是否有新的程小帮版本。",
+      "checkUpdate": "检查更新",
+      "updateChecking": "正在检查",
+      "updateDesktopOnly": "检查更新需要在桌面应用中使用",
+      "updateStarted": "已开始检查更新",
+      "updateAvailable": "发现新版本，请查看左下角更新弹窗",
+      "updateDownloaded": "更新已下载，请查看左下角更新弹窗",
+      "updateDownloading": "更新正在下载",
+      "updateNotAvailable": "当前已是最新版本",
+      "updateDisabled": "当前环境不启用自动更新",
+      "updateFailed": "检查更新失败"
     },
     "providers": {
       "title": "供应商",
@@ -708,6 +720,27 @@
     "approveAction": "是，实施此计划",
     "adjustPlaceholder": "否，请告知程小帮如何调整",
     "submitAdjustment": "提交"
+  },
+  "updates": {
+    "availableTitle": "发现新版本 {{version}}",
+    "availableDesc": "当前版本 {{current}}，可以下载更新。",
+    "download": "下载更新",
+    "downloadingTitle": "正在下载更新",
+    "downloadingDesc": "版本 {{version}} 下载中。",
+    "progress": "{{percent}}%",
+    "downloadedTitle": "更新已下载",
+    "downloadedDesc": "版本 {{version}} 已准备好，重启后完成安装。",
+    "install": "重启安装",
+    "notAvailableTitle": "当前已是最新版本",
+    "notAvailableDesc": "当前版本 {{current}} 没有可用更新。",
+    "disabledTitle": "自动更新不可用",
+    "disabledDesc": "当前环境暂不支持自动更新。",
+    "errorTitle": "更新失败",
+    "errorDesc": "更新流程遇到问题。",
+    "retry": "重试",
+    "checkingTitle": "正在检查更新",
+    "checkingDesc": "正在连接 GitHub Release。",
+    "dismiss": "关闭更新提示"
   },
   "skills": {
     "sourceShort": {

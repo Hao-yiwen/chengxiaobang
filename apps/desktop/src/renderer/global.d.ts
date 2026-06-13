@@ -2,6 +2,7 @@ export {};
 
 import type { MessageAttachment } from "@chengxiaobang/shared";
 import type { PreviewKind } from "../common/file-preview";
+import type { DesktopUpdateState } from "../common/update";
 
 declare module "react" {
   namespace JSX {
@@ -155,6 +156,10 @@ declare global {
       ): Promise<{ ok: boolean; path?: string; name?: string; error?: string }>;
       openSkillsDir?(): Promise<{ ok: boolean; path: string }>;
       openLogDir?(): Promise<{ ok: boolean; path?: string; error?: string }>;
+      getUpdateState?(): Promise<DesktopUpdateState>;
+      checkForUpdates?(input?: { manual?: boolean }): Promise<DesktopUpdateState>;
+      downloadUpdate?(): Promise<DesktopUpdateState>;
+      installUpdate?(): Promise<DesktopUpdateState>;
       setThemeSource?(source: "light" | "dark" | "system"): Promise<void>;
       terminalStart?(input: TerminalStartInput): Promise<TerminalIpcResult>;
       terminalWrite?(id: string, data: string): Promise<TerminalIpcResult>;
@@ -162,6 +167,7 @@ declare global {
       terminalClose?(id: string): Promise<TerminalIpcResult>;
       onTerminalData?(listener: (event: TerminalDataEvent) => void): () => void;
       onTerminalExit?(listener: (event: TerminalExitEvent) => void): () => void;
+      onUpdateState?(listener: (state: DesktopUpdateState) => void): () => void;
     };
   }
 }

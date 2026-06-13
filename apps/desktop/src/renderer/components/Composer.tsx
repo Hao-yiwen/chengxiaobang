@@ -26,7 +26,7 @@ import {
   XIcon as X,
   type Icon
 } from "@phosphor-icons/react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
@@ -175,6 +175,7 @@ export function Composer() {
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const suggestionAnchorRef = useRef<HTMLDivElement | null>(null);
+  const highlightInnerRef = useRef<HTMLDivElement | null>(null);
   const [selectionStart, setSelectionStart] = useState(0);
   const [suggestionMenuWidth, setSuggestionMenuWidth] = useState<number>();
   // 首页占位文案轮播：内置多行文案做上下滚动切换。
@@ -247,6 +248,11 @@ export function Composer() {
     atToken.start !== dismissedAtStart &&
     fileSuggestions.length > 0;
   const activeSuggestionMenu = showSlashMenu ? "slash" : showFileMenu ? "file" : undefined;
+  // 已插入的斜杠命令 / @ 文件引用打灰底标记，与普通输入区分。
+  const highlightRanges = useMemo(
+    () => getComposerHighlightRanges(value, slashCommands, Boolean(activeProject)),
+    [value, slashCommands, activeProject]
+  );
   // 未配置供应商时也允许触发提交，store 会打开首次配置弹窗。
   const canSend = value.trim().length > 0 || attachments.length > 0;
   // 仅首页、输入框为空且非运行/等待回答时，用轮播文案替代静态占位。
@@ -407,6 +413,10 @@ export function Composer() {
     }
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, TEXTAREA_MAX_HEIGHT_PX)}px`;
+    // 高度变化可能改变滚动位置，同步 highlight overlay。
+    if (highlightInnerRef.current) {
+      highlightInnerRef.current.style.transform = `translateY(-${textarea.scrollTop}px)`;
+    }
   }, [value]);
 
   useEffect(() => {
@@ -579,6 +589,28 @@ export function Composer() {
       setPlanMode(!planMode);
       return;
     }
+    // 退格删除：光标贴着某个灰底片段（斜杠命令 / @ 文件引用）末尾时，整块一次删掉。
+    if (event.key === "Backspace" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      const target = event.currentTarget;
+      if (target.selectionStart === target.selectionEnd) {
+        const caret = target.selectionStart;
+        const block = highlightRanges.find((range) => range.end === caret);
+        if (block) {
+          event.preventDefault();
+          const next = value.slice(0, block.start) + value.slice(block.end);
+          setInput(next);
+          window.requestAnimationFrame(() => {
+            const textarea = textareaRef.current;
+            if (!textarea) {
+              return;
+            }
+            textarea.setSelectionRange(block.start, block.start);
+            setSelectionStart(block.start);
+          });
+          return;
+        }
+      }
+    }
     // 斜杠菜单和文件菜单共用键盘交互；两者同时命中时优先斜杠菜单。
     const menu = showSlashMenu ? "slash" : showFileMenu ? "file" : undefined;
     if (menu) {
@@ -671,6 +703,16 @@ export function Composer() {
       <Popover open={Boolean(activeSuggestionMenu)}>
         <PopoverAnchor asChild>
           <div ref={suggestionAnchorRef} className="relative">
+            {highlightRanges.length > 0 ? (
+              <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+                <div
+                  ref={highlightInnerRef}
+                  className="whitespace-pre-wrap break-words px-4 pb-3 pt-3.5 text-body text-transparent"
+                >
+                  {renderHighlightNodes(value, highlightRanges)}
+                </div>
+              </div>
+            ) : null}
             <Textarea
               ref={textareaRef}
               rows={1}
@@ -693,13 +735,18 @@ export function Composer() {
               onKeyUp={updateSelectionStart}
               onSelect={updateSelectionStart}
               onKeyDown={handleTextareaKeyDown}
-              className="max-h-[220px] min-h-[68px] resize-none overflow-y-auto rounded-none border-0 bg-transparent px-4 pb-3 pt-3.5 text-body focus-visible:border-transparent focus-visible:ring-0"
+              onScroll={(event) => {
+                if (highlightInnerRef.current) {
+                  highlightInnerRef.current.style.transform = `translateY(-${event.currentTarget.scrollTop}px)`;
+                }
+              }}
+              className="relative z-[1] max-h-[220px] min-h-[68px] resize-none overflow-y-auto rounded-none border-0 bg-transparent px-4 pb-3 pt-3.5 text-body focus-visible:border-transparent focus-visible:ring-0"
             />
 
             {rotatingActive ? (
               <div
                 aria-hidden
-                className="pointer-events-none absolute left-4 right-4 top-3.5 overflow-hidden"
+                className="pointer-events-none absolute left-4 right-4 top-3.5 z-[2] overflow-hidden"
                 style={{ height: ROTATION_LINE_HEIGHT_PX }}
               >
                 <div
@@ -1504,6 +1551,68 @@ export function getAtToken(
   return { query: match[2], start: cursor - match[2].length - 1 };
 }
 
+// 计算输入框中需要打灰底标记的特殊片段：开头的斜杠命令、以及 @ 文件引用。
+// 返回按位置升序、互不重叠的区间，供 highlight overlay 渲染。
+function getComposerHighlightRanges(
+  value: string,
+  commands: SlashCommand[],
+  allowAtTokens: boolean
+): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  if (value.startsWith("/")) {
+    const firstLine = value.split("\n", 1)[0] ?? "";
+    // 取最长的、与输入开头完整匹配的已知命令名（兼容 "/git status" 这类带空格的命令）。
+    let matched = "";
+    for (const command of commands) {
+      const name = command.name;
+      const isFullMatch =
+        firstLine === name || (firstLine.startsWith(name) && firstLine[name.length] === " ");
+      if (isFullMatch && name.length > matched.length) {
+        matched = name;
+      }
+    }
+    if (matched) {
+      ranges.push({ start: 0, end: matched.length });
+    }
+  }
+  if (allowAtTokens) {
+    const atPattern = /(^|\s)(@[^\s@]+)/g;
+    let match: RegExpExecArray | null;
+    while ((match = atPattern.exec(value)) !== null) {
+      const start = match.index + match[1].length;
+      ranges.push({ start, end: start + match[2].length });
+    }
+  }
+  return ranges;
+}
+
+// 把输入文本按高亮区间切片渲染：高亮片段套灰底 span，其余为透明文本（仅占位对齐，真正文字由 textarea 显示）。
+function renderHighlightNodes(
+  value: string,
+  ranges: Array<{ start: number; end: number }>
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  ranges.forEach((range, index) => {
+    if (range.start > cursor) {
+      nodes.push(<span key={`plain-${index}`}>{value.slice(cursor, range.start)}</span>);
+    }
+    nodes.push(
+      <span
+        key={`mark-${index}`}
+        className="box-decoration-clone -mx-[4px] rounded-md bg-canvas-soft-2 px-[4px] py-[2px]"
+      >
+        {value.slice(range.start, range.end)}
+      </span>
+    );
+    cursor = range.end;
+  });
+  if (cursor < value.length) {
+    nodes.push(<span key="tail">{value.slice(cursor)}</span>);
+  }
+  return nodes;
+}
+
 function getSlashQuery(value: string, selectionStart: number): string | undefined {
   if (!value.startsWith("/")) {
     return undefined;
@@ -1517,7 +1626,12 @@ function getSlashQuery(value: string, selectionStart: number): string | undefine
   if (cursor > firstLine.length) {
     return undefined;
   }
-  return beforeCursor.slice(1).toLowerCase();
+  const afterSlash = beforeCursor.slice(1);
+  // 命令一旦带空格即视为已选定（菜单只列技能，技能名无空格），收起补全框，避免残留只剩一项的小框。
+  if (/\s/.test(afterSlash)) {
+    return undefined;
+  }
+  return afterSlash.toLowerCase();
 }
 
 function filterSlashCommands(commands: SlashCommand[], query: string): SlashCommand[] {

@@ -3,6 +3,7 @@ import { defineConfig } from "tsup";
 const external = [
   "@napi-rs/canvas",
   "electron",
+  "electron-updater",
   "node-pty",
   "onnxruntime-node",
   "pino",
