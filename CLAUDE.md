@@ -102,6 +102,10 @@
 
 后端也可独立运行:`pnpm --filter @chengxiaobang/backend dev` → `bun --watch src/main.ts --port <n> --data-dir <dir> --token <t>`(**必须 Bun 运行时**,`server.ts` 只接受 `Bun.serve`)。
 
+### 发布与流水线排查
+
+正式发包时先在本地完成必要验证并把版本号、lockfile、打包修复等改动提交到 `main`,再按 `git tag vX.Y.Z && git push origin main && git push origin vX.Y.Z` 推送版本 tag 来触发 `.github/workflows/release.yml`;若 tag 已存在且需要重发,先确认旧 release 与产物处理策略,不要盲目 force。流水线排查优先用 `gh run list --workflow Release --limit 5` 找 run id,用 `gh run watch <run-id> --interval 30 --exit-status` 盯状态,失败时用 `gh run view <run-id> --job <job-id> --log` 拉对应 job 日志;mac 发布重点确认 `Build mac distributables`、`Verify mac artifacts`、`Smoke packaged backend` 都通过,并在日志里看到 `source=Notarized Developer ID`、`app.asar 主进程运行时依赖检查通过`、`打包主进程运行时加载检查通过`、`打包后端 health check 成功`,成功后用 `gh release view vX.Y.Z --json url,assets` 核对 release 链接和上传产物。
+
 ## 架构
 
 三层架构,`@chengxiaobang/shared` 是层间契约。完整设计文档见 `docs/architecture.md`。

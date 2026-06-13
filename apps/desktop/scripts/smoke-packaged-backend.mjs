@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
 import { randomInt } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -157,6 +157,7 @@ async function verifyAppAsarRuntimeDependencies(resourcesPath) {
     shell: process.platform === "win32"
   });
   const entries = new Set(stdout.split(/\r?\n/).filter(Boolean).map(normalizeAsarEntry));
+  await verifyPackagedRendererEntry(resourcesPath, entries);
   const requiredEntries = [
     "/node_modules/@pinojs/redact/index.js",
     "/node_modules/electron-updater/out/main.js",
@@ -201,6 +202,52 @@ async function verifyAppAsarRuntimeDependencies(resourcesPath) {
   });
 }
 
+async function verifyPackagedRendererEntry(resourcesPath, entries) {
+  const appAsar = join(resourcesPath, "app.asar");
+  const asarBin = findAsarBin();
+  const indexEntry = "/dist/renderer/index.html";
+  if (!entries.has(indexEntry)) {
+    throw new Error(`app.asar 缺少 renderer 入口: ${indexEntry}`);
+  }
+  const indexHtml = await readAppAsarTextFile(asarBin, appAsar, indexEntry.slice(1));
+  const absoluteAssetRefs = [...indexHtml.matchAll(/\b(?:src|href)=["']\/assets\//g)].map(
+    (match) => match[0]
+  );
+  if (absoluteAssetRefs.length > 0) {
+    throw new Error(
+      `renderer 入口包含 file:// 下不可加载的绝对资源路径: ${absoluteAssetRefs.join(", ")}`
+    );
+  }
+  const relativeAssetRefs = [...indexHtml.matchAll(/\b(?:src|href)=["']\.\/assets\//g)].map(
+    (match) => match[0]
+  );
+  if (relativeAssetRefs.length === 0) {
+    throw new Error("renderer 入口未发现相对 assets 引用，可能无法在打包后的 file:// 页面加载");
+  }
+  console.info("[smoke] renderer 入口资源路径检查通过", {
+    appAsar,
+    indexEntry,
+    relativeAssetRefs
+  });
+}
+
+async function readAppAsarTextFile(asarBin, appAsar, entry) {
+  if (!asarBin) {
+    throw new Error(`未找到 asar 检查工具，无法读取 ${entry}`);
+  }
+  const extractDir = await mkdtemp(join(tmpdir(), "cxb-asar-renderer-"));
+  try {
+    await execFileAsync(asarBin, ["extract", appAsar, extractDir], {
+      cwd: repoRoot,
+      shell: process.platform === "win32",
+      maxBuffer: 1024 * 1024
+    });
+    return await readFile(join(extractDir, entry), "utf8");
+  } finally {
+    await rm(extractDir, { recursive: true, force: true });
+  }
+}
+
 async function verifyPackagedMainRuntimeLoads(resourcesPath) {
   const appAsar = join(resourcesPath, "app.asar");
   const electronExecutable = await resolvePackagedElectronExecutable(resourcesPath);
@@ -218,7 +265,7 @@ nativeAutoUpdater.checkForUpdates = () => {};
 nativeAutoUpdater.quitAndInstall = () => {};
 const app = new EventEmitter();
 app.whenReady = () => Promise.resolve();
-app.getVersion = () => "0.1.4";
+app.getVersion = () => "0.1.5";
 app.getName = () => "程小帮";
 app.getAppPath = () => appAsar;
 app.getPath = (name) => path.join(resourcesPath, "smoke-" + name);
