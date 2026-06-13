@@ -203,7 +203,37 @@ jobs:
             hdiutil verify "$dmg"
             xcrun stapler validate "$dmg"
             spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
+            mount_dir="$(mktemp -d)"
+            hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_dir"
+            app_path="$(find "$mount_dir" -maxdepth 1 -type d -name "*.app" | head -n 1)"
+            if [ -z "$app_path" ]; then
+              echo "::error::DMG 中没有找到 .app：$dmg"
+              hdiutil detach "$mount_dir" || true
+              rmdir "$mount_dir" || true
+              exit 1
+            fi
+            codesign --verify --deep --strict --verbose=2 "$app_path"
+            spctl -a -vvv -t exec "$app_path"
+            hdiutil detach "$mount_dir"
+            rmdir "$mount_dir"
           done < <(find apps/desktop/out -maxdepth 1 -type f -name "*.dmg" ! -name "*.blockmap")
+          while IFS= read -r zip; do
+            unzip_dir="$(mktemp -d)"
+            ditto -x -k "$zip" "$unzip_dir"
+            app_path="$(find "$unzip_dir" -maxdepth 1 -type d -name "*.app" | head -n 1)"
+            if [ -z "$app_path" ]; then
+              echo "::error::ZIP 中没有找到 .app：$zip"
+              rm -rf "$unzip_dir"
+              exit 1
+            fi
+            codesign --verify --deep --strict --verbose=2 "$app_path"
+            xcrun stapler validate "$app_path"
+            spctl -a -vvv -t exec "$app_path"
+            rm -rf "$unzip_dir"
+          done < <(find apps/desktop/out -maxdepth 1 -type f -name "*.zip" ! -name "*.blockmap")
+
+      - name: Smoke packaged backend
+        run: pnpm --filter @chengxiaobang/desktop run smoke:packaged-backend
 
       - name: Upload mac artifacts
         uses: actions/upload-artifact@v4
@@ -326,3 +356,17 @@ jobs:
             exit 1
           fi
           gh release upload "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          version="${TAG#v}"
+          notes_file="$(mktemp)"
+          cat > "$notes_file" <<EOF
+          程小帮 $TAG
+
+          推荐下载：
+          - macOS Apple Silicon：chengxiaobang-${version}-mac-arm64.zip
+          - Windows x64：chengxiaobang-${version}-win-x64.exe
+
+          说明：
+          - macOS 的 zip 包是推荐给普通用户的安装包，解压后把「程小帮.app」拖到「应用程序」即可。
+          - dmg 仍保留给偏好拖拽安装盘的用户和兼容场景。
+          EOF
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$notes_file"

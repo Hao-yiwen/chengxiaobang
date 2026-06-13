@@ -56,6 +56,19 @@ export const runRequestSchema = z.object({
 });
 export type RunRequest = z.input<typeof runRequestSchema> & { accessMode: AccessMode };
 
+export const runSteeringRequestSchema = z.object({
+  prompt: z.string().min(1),
+  /** 用户消息气泡显示的原始文本；为空时后端回退到 prompt。 */
+  displayContent: z.string().optional(),
+  /** 用户消息气泡显示的附件快照；不参与模型原生图片输入。 */
+  displayAttachments: z.array(messageAttachmentSchema).default([]),
+  /** 客户端生成的请求归属 ID，用于日志和后续排查。 */
+  clientRequestId: z.string().min(1).optional(),
+  /** 由桌面端按当前 run 模型能力准备好的原生图片附件。 */
+  attachments: z.array(runImageAttachmentSchema).default([])
+});
+export type RunSteeringRequest = z.input<typeof runSteeringRequestSchema>;
+
 export const runStartResponseSchema = z.object({
   runId: z.string().min(1),
   sessionId: z.string().min(1),

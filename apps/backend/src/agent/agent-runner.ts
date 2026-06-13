@@ -1,23 +1,25 @@
 import { mkdir } from "node:fs/promises";
-import { runAgentLoopContinue, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
+import {
+  runAgentLoopContinue,
+  type AgentMessage,
+  type AgentTool,
+  type StreamFn
+} from "@earendil-works/pi-agent-core";
 import { formatSkillInvocation } from "@earendil-works/pi-agent-core/node";
-import { streamSimple, type Message as PiMessage, type UserMessage } from "@earendil-works/pi-ai";
+import { streamSimple, type Message as PiMessage } from "@earendil-works/pi-ai";
 import {
   createId,
   derivePlanState,
   nowIso,
   resolveModelInputModalities,
   type ActiveRunSnapshot,
-  type AgentDebugTool,
   type AskUserAnswer,
-  type Message,
-  type MessageAttachment,
   type ProposePlanArgs,
   type Project,
   type ProviderConfig,
   type ReasoningMode,
-  type RunImageAttachment,
   type RunRequest,
+  type RunSteeringRequest,
   type Session,
   type SessionDebugContext,
   type SessionContextUsage,
@@ -31,21 +33,26 @@ import type { SecretStore } from "../secrets/secret-store";
 import { buildModel, buildModelStreamOptions } from "../model/pi-model";
 import {
   createAgentTools,
-  findTool,
-  requiresApproval,
   selectAgentTools,
   type PlanPhase
 } from "../tools/registry";
-import { assessToolApprovalRisk } from "../tools/approval-policy";
-import { parseToolRequest, type ToolRequest } from "../tools/direct-commands";
+import { parseToolRequest } from "../tools/direct-commands";
 import { renderMemoryListing } from "../tools/memory-tools";
 import { createPlanTools } from "../tools/plan-tools";
 import { createScheduleTools } from "../tools/schedule-tools";
 import { SlashCommandService } from "../tools/slash-command-service";
 import { createTodoTools } from "../tools/todo-tools";
 import { defaultSessionDir } from "../paths";
-import { ApprovalQueue, normalizeDecision } from "./approval-queue";
+import { ActiveRunRegistry } from "./active-runs";
+import { ApprovalQueue } from "./approval-queue";
+import {
+  buildUserPiMessage,
+  displayPromptForTitle,
+  toAgentDebugTool,
+  toClientMessage
+} from "./agent-runner-messages";
 import { AsyncEventQueue } from "./async-queue";
+import { runDirectTool } from "./direct-tool-runner";
 import { buildAgentMessages } from "./history";
 import { RunEventTranslator } from "./pi-events";
 import { buildSystemPrompt } from "./system-prompt";
@@ -59,7 +66,7 @@ import {
   shouldAutoCompactContext
 } from "./context-usage";
 import { generateSessionTitle, normalizeTitle } from "./session-title";
-import { protectAgentToolResult, protectToolResultForContext } from "./tool-result-spill";
+import { protectToolResultForContext } from "./tool-result-spill";
 import { createSmartApprovalJudge, type SmartApprovalJudge } from "./smart-approval";
 
 const MAX_SKILL_RESULT_CHARS = 32 * 1024;
@@ -70,13 +77,13 @@ const MAX_SKILL_RESULT_CHARS = 32 * 1024;
  */
 export const DEFAULT_SESSION_TITLE = "新对话";
 
-/** Upper bound on the title model call, so it can never hold the stream open. */
+/** 标题模型调用上限，避免标题任务无限拖住事件流收尾。 */
 const TITLE_TIMEOUT_MS = 15_000;
 
 export interface AgentRunnerOptions {
-  /** Builds the tool set for a workspace; defaults to the builtin registry. */
+  /** 为工作区构造工具集合，默认使用内置工具注册表。 */
   createTools?: (workspacePath: string) => AgentTool<any>[] | Promise<AgentTool<any>[]>;
-  /** Workspace dir for standalone (project-less) sessions. */
+  /** 独立会话（无项目绑定）的默认工作目录。 */
   sessionWorkspacePath?: (sessionId: string) => string;
   /**
    * 长期记忆落盘目录。设置后系统提示注入记忆协议与目录快照；
@@ -84,12 +91,11 @@ export interface AgentRunnerOptions {
    */
   memoryDir?: string;
   slashCommandService?: SlashCommandService;
-  /** Model stream override — the test seam replacing live provider calls. */
+  /** 模型流覆盖入口；测试用它替换真实供应商调用。 */
   streamFn?: StreamFn;
   /**
-   * Model stream for AI session-title generation. Defaults to the live
-   * provider call; when streamFn (the test seam) is set without this, AI
-   * titles are skipped so scripted runs stay deterministic.
+   * AI 会话标题生成使用的模型流。默认走真实供应商调用；
+   * 如果只设置 streamFn（测试缝），则跳过 AI 标题以保持脚本运行确定性。
    */
   titleStreamFn?: StreamFn;
   /** 智能审批裁决注入点；测试可替换为固定裁决，生产默认调用当前模型。 */
@@ -101,7 +107,7 @@ export class AgentRunner {
   /** 正在执行 run 的会话；调度器据此避让，免得与手动 run 在同一会话交错写入。 */
   readonly activeSessionIds = new Set<string>();
   /** 当前进程仍在推进的 run；用于刷新/重连后恢复审批等待态。 */
-  private readonly activeRuns = new Map<string, { sessionId: string }>();
+  private readonly activeRunRegistry = new ActiveRunRegistry();
   private readonly abortControllers = new Map<string, AbortController>();
   private readonly createTools: (workspacePath: string) => AgentTool<any>[] | Promise<AgentTool<any>[]>;
   private readonly sessionWorkspacePath: (sessionId: string) => string;
@@ -143,10 +149,12 @@ export class AgentRunner {
     return true;
   }
 
+  enqueueSteering(runId: string, input: RunSteeringRequest): boolean {
+    return this.activeRunRegistry.enqueueSteering(runId, input);
+  }
+
   async listActiveRunSnapshots(sessionId?: string): Promise<ActiveRunSnapshot[]> {
-    const entries = [...this.activeRuns.entries()].filter(
-      ([, active]) => !sessionId || active.sessionId === sessionId
-    );
+    const entries = this.activeRunRegistry.entries(sessionId);
     const snapshots: ActiveRunSnapshot[] = [];
 
     for (const [runId, active] of entries) {
@@ -179,26 +187,59 @@ export class AgentRunner {
     return snapshots.sort((left, right) => left.run.createdAt.localeCompare(right.run.createdAt));
   }
 
-  private registerActiveRun(runId: string, sessionId: string): void {
-    this.activeRuns.set(runId, { sessionId });
-    console.info("[agent-runner] 登记活跃 run", {
-      runId,
-      sessionId,
-      activeRunCount: this.activeRuns.size
-    });
-  }
-
-  private forgetActiveRun(runId: string): void {
-    const active = this.activeRuns.get(runId);
-    if (!active) {
-      return;
+  private async drainSteeringMessages(options: {
+    runId: string;
+    sessionId: string;
+    queue: AsyncEventQueue<StreamEvent>;
+  }): Promise<AgentMessage[]> {
+    const queued = this.activeRunRegistry.drainSteering(options.runId);
+    if (queued.length === 0) {
+      return [];
     }
-    this.activeRuns.delete(runId);
-    console.info("[agent-runner] 移除活跃 run", {
-      runId,
-      sessionId: active.sessionId,
-      activeRunCount: this.activeRuns.size
+    console.info("[agent-runner] 开始注入运行中引导", {
+      runId: options.runId,
+      sessionId: options.sessionId,
+      count: queued.length
     });
+
+    const messages: AgentMessage[] = [];
+    for (const item of queued) {
+      const displayContent = item.displayContent ?? item.prompt;
+      try {
+        const piMessage = buildUserPiMessage(item.prompt, item.attachments ?? []);
+        const persisted = await this.store.addMessage({
+          sessionId: options.sessionId,
+          role: "user",
+          content: displayContent,
+          attachments: item.displayAttachments ?? [],
+          payload: JSON.stringify(piMessage)
+        });
+        options.queue.push({
+          type: "message",
+          runId: options.runId,
+          message: toClientMessage(persisted)
+        });
+        messages.push(piMessage);
+        console.info("[agent-runner] 已注入运行中引导", {
+          runId: options.runId,
+          sessionId: options.sessionId,
+          clientRequestId: item.clientRequestId,
+          messageId: persisted.id,
+          promptChars: item.prompt.length,
+          displayChars: displayContent.length,
+          displayAttachmentCount: item.displayAttachments?.length ?? 0,
+          nativeAttachmentCount: item.attachments?.length ?? 0
+        });
+      } catch (error) {
+        console.error("[agent-runner] 运行中引导持久化失败，已跳过该条", {
+          runId: options.runId,
+          sessionId: options.sessionId,
+          clientRequestId: item.clientRequestId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+    return messages;
   }
 
   /** 构造调试面板使用的只读上下文快照，不启动模型、不写入会话。 */
@@ -453,14 +494,11 @@ export class AgentRunner {
     const workspacePath = project?.path ?? this.sessionWorkspacePath(activeSession.id);
 
     const runId = createId("run");
-    // Created here (not in runPiLoop) so the concurrent title task can push
-    // its session_updated event into the same stream mid-run.
+    // 在这里创建而不是放进 runPiLoop，便于并发标题任务把 session_updated 推入同一条事件流。
     const queue = new AsyncEventQueue<StreamEvent>();
 
-    // AI title for sessions still on the placeholder: runs concurrently with
-    // the agent loop, pushes session_updated as soon as the title is saved,
-    // and is also awaited before the stream closes so the renderer's post-run
-    // session refresh is guaranteed to see it.
+    // 占位标题会话的 AI 标题任务与 agent loop 并发运行；标题保存后立即推送
+    // session_updated，事件流结束前也会等待它，确保渲染层 run 后刷新能读到标题。
     let titleTask: Promise<void> | undefined;
     if (this.titleStreamFn && activeSession.title === DEFAULT_SESSION_TITLE) {
       const titlePrompt = input.sessionId
@@ -485,8 +523,7 @@ export class AgentRunner {
       model: provider.model
     };
     try {
-      // /compact is a meta command about the conversation itself: it never
-      // persists a user message and runs its own summarize-only model call.
+      // /compact 是针对会话自身的元命令：不持久化用户消息，只执行总结模型调用。
       if (expandedPrompt.trim() === "/compact") {
         await this.store.createRun({
           id: runId,
@@ -494,7 +531,12 @@ export class AgentRunner {
           status: "running",
           ...runModelSnapshot
         });
-        this.registerActiveRun(runId, activeSession.id);
+        this.activeRunRegistry.register(runId, {
+          sessionId: activeSession.id,
+          providerId: selectedProvider.id,
+          model: provider.model,
+          ...(effectiveReasoningMode ? { reasoningMode: effectiveReasoningMode } : {})
+        });
         yield* runCompaction({
           store: this.store,
           session: activeSession,
@@ -514,7 +556,12 @@ export class AgentRunner {
         status: "running",
         ...runModelSnapshot
       });
-      this.registerActiveRun(runId, activeSession.id);
+      this.activeRunRegistry.register(runId, {
+        sessionId: activeSession.id,
+        providerId: selectedProvider.id,
+        model: provider.model,
+        ...(effectiveReasoningMode ? { reasoningMode: effectiveReasoningMode } : {})
+      });
       const userMessage = await this.store.addMessage({
         sessionId: activeSession.id,
         role: "user",
@@ -578,22 +625,24 @@ export class AgentRunner {
         ...(await this.memoryPromptInput())
       });
 
-      // Direct slash-command fast path: run exactly one builtin tool before the
-      // model loop, preserving deterministic single-tool semantics.
+      // 直接斜杠命令快路径：模型循环前只执行一个内置工具，保持确定性的单工具语义。
       const directRequest = parseToolRequest(expandedPrompt);
       if (directRequest) {
-        const outcome = yield* this.runDirectTool(
+        const outcome = yield* runDirectTool({
+          store: this.store,
+          approvals: this.approvals,
           runId,
-          activeSession.id,
-          directRequest,
+          sessionId: activeSession.id,
+          request: directRequest,
           tools,
           workspacePath,
-          input.accessMode,
+          accessMode: input.accessMode,
           provider,
           apiKey,
-          controller,
-          headless || viaFeishu
-        );
+          signal: controller.signal,
+          strictApproval: headless || viaFeishu,
+          decideSmartApproval: (options) => this.decideSmartApproval(options)
+        });
         if (outcome !== "ok") {
           return;
         }
@@ -640,10 +689,9 @@ export class AgentRunner {
       });
     } finally {
       this.abortControllers.delete(runId);
-      this.forgetActiveRun(runId);
+      this.activeRunRegistry.forget(runId);
       this.activeSessionIds.delete(activeSession.id);
-      // On abort the stream must close promptly — the title task keeps
-      // running in the background and saves straight to the store.
+      // 中止时事件流必须尽快关闭；标题任务继续在后台写入 store。
       if (titleTask && !controller.signal.aborted) {
         await titleTask;
       }
@@ -669,8 +717,8 @@ export class AgentRunner {
         provider: options.provider,
         apiKey: options.apiKey,
         streamFn: options.streamFn,
-        // Deliberately independent of the run's abort signal: an aborted run
-        // should still end up titled. The timeout bounds the finally-await.
+        // 标题任务刻意不跟随 run 中止信号：被中止的 run 也应该尽量生成标题，
+        // 超时负责限制 finally 中等待的最长时间。
         signal: AbortSignal.timeout(TITLE_TIMEOUT_MS)
       });
       if (!title) {
@@ -705,8 +753,8 @@ export class AgentRunner {
       console.warn(`[agent-runner] 无法从用户首句生成兜底标题 sessionId=${options.sessionId}`);
       return;
     }
-    // Called from generateAndSaveTitle's catch path — must never reject, or
-    // the finally-await on the title task would fail the whole stream.
+    // 从 generateAndSaveTitle 的 catch 路径调用，不能再向外 reject，
+    // 否则 finally 里等待标题任务会把整条事件流标成失败。
     try {
       const session = await this.store.updateSession(options.sessionId, { title: fallbackTitle });
       options.emit({ type: "session_updated", runId: options.runId, session });
@@ -754,7 +802,7 @@ export class AgentRunner {
     }
   }
 
-  /** First user message of a session — the title source when retrying. */
+  /** 会话第一条用户消息，重试时作为标题来源。 */
   private async firstUserMessageContent(sessionId: string): Promise<string | undefined> {
     const rows = await this.store.listMessages(sessionId);
     return rows.find((row) => row.role === "user")?.content;
@@ -858,7 +906,7 @@ export class AgentRunner {
     };
   }
 
-  /** Drive the pi agent loop, yielding translated StreamEvents as they arrive. */
+  /** 驱动 pi agent loop，并持续产出翻译后的 StreamEvent。 */
   private async *runPiLoop(options: {
     runId: string;
     sessionId: string;
@@ -927,8 +975,7 @@ export class AgentRunner {
         model: buildModel(options.provider),
         ...buildModelStreamOptions(options.provider),
         apiKey: options.apiKey,
-        // History rows already round-trip as real pi messages (see history.ts),
-        // so the LLM conversion is the identity.
+        // 历史行已经能往返为真实 pi message（见 history.ts），因此 LLM 转换保持原样。
         convertToLlm: (messages) => messages as PiMessage[],
         toolExecution: "sequential",
         beforeToolCall: translator.beforeToolCall,
@@ -947,7 +994,13 @@ export class AgentRunner {
               headless: options.headless
             })
           }
-        })
+        }),
+        getSteeringMessages: () =>
+          this.drainSteeringMessages({
+            runId: options.runId,
+            sessionId: options.sessionId,
+            queue
+          })
       },
       translator.emit,
       options.controller.signal,
@@ -955,9 +1008,8 @@ export class AgentRunner {
     )
       .then(() => queue.end())
       .catch(async (error) => {
-        // pi reports model errors via stopReason, so a rejection here is an
-        // infrastructure failure (persistence, contract misuse) — close the
-        // run instead of leaving it hanging as "running".
+        // pi 会通过 stopReason 报告模型错误；这里的 rejection 属于基础设施失败
+        //（持久化或契约误用），要收尾 run，不能让它一直停在 running。
         if (!translator.finished) {
           try {
             await translator.finish(
@@ -978,189 +1030,6 @@ export class AgentRunner {
       });
 
     yield* queue;
-  }
-
-  /** Execute a single builtin tool parsed directly from a slash command. */
-  private async *runDirectTool(
-    runId: string,
-    sessionId: string,
-    request: ToolRequest,
-    tools: AgentTool<any>[],
-    workspacePath: string,
-    accessMode: RunRequest["accessMode"],
-    provider: ProviderConfig,
-    apiKey: string,
-    controller: AbortController,
-    strictApproval = false
-  ): AsyncGenerator<StreamEvent, "ok" | "aborted" | "failed"> {
-    yield { type: "delta", runId, channel: "thinking", delta: "正在准备本地工具调用...\n" };
-    const tool = findTool(tools, request.name);
-    const risk = assessToolApprovalRisk(request.name, request.args, { workspacePath });
-    const requiresGate = risk.requiresGate || (strictApproval && requiresApproval(request.name));
-    const needsManualApproval = requiresGate && accessMode === "approval";
-    const needsSmartApproval = requiresGate && accessMode === "smart_approval";
-    const initialStatus = needsManualApproval
-      ? "pending_approval"
-      : needsSmartApproval
-        ? "pending_smart_approval"
-        : "running";
-    const initial: ToolCall = {
-      id: createId("tool"),
-      runId,
-      name: request.name,
-      args: request.args,
-      status: initialStatus,
-      // startedAt marks actual execution start, so approval wait is excluded.
-      ...(initialStatus === "running" ? { startedAt: nowIso() } : {}),
-      createdAt: nowIso(),
-      updatedAt: nowIso()
-    };
-    await this.store.insertToolCall(initial);
-    console.info("[agent-runner] 直接工具审批策略", {
-      runId,
-      toolCallId: initial.id,
-      toolName: request.name,
-      status: initial.status,
-      accessMode,
-      risk: risk.risk,
-      requiresGate,
-      reason: risk.reason
-    });
-    yield { type: "tool_call", runId, toolCall: initial };
-
-    let runnable = initial;
-    if (initial.status === "pending_smart_approval") {
-      const decision = await this.decideSmartApproval({
-        runId,
-        toolCall: initial,
-        workspacePath,
-        provider,
-        apiKey,
-        signal: controller.signal
-      });
-      if (decision.verdict === "deny") {
-        const rejected = await this.store.updateToolCall({
-          ...initial,
-          status: "rejected",
-          approval: decision,
-          result: "智能审批不同意执行该操作",
-          updatedAt: nowIso()
-        });
-        yield { type: "tool_call", runId, toolCall: rejected };
-        await this.store.updateRunStatus(runId, "aborted");
-        yield { type: "run_end", runId, status: "aborted" };
-        return "aborted";
-      }
-      runnable = await this.store.updateToolCall({
-        ...initial,
-        status: decision.verdict === "allow" ? "running" : "pending_approval",
-        approval: decision,
-        ...(decision.verdict === "allow" ? { startedAt: nowIso() } : {}),
-        updatedAt: nowIso()
-      });
-      yield { type: "tool_call", runId, toolCall: runnable };
-    }
-
-    if (runnable.status === "pending_approval") {
-      const decision = normalizeDecision(
-        request.name,
-        await this.approvals.wait(runnable.id, controller.signal)
-      );
-      if (!decision.approved) {
-        const rejected = await this.store.updateToolCall({
-          ...runnable,
-          status: "rejected",
-          ...(runnable.approval
-            ? { approval: markSmartApprovalUserDecision(runnable.approval, false) }
-            : {}),
-          result: "用户拒绝或运行已中止",
-          updatedAt: nowIso()
-        });
-        yield { type: "tool_call", runId, toolCall: rejected };
-        await this.store.updateRunStatus(runId, "aborted");
-        yield { type: "run_end", runId, status: "aborted" };
-        return "aborted";
-      }
-      runnable = await this.store.updateToolCall({
-        ...runnable,
-        status: "running",
-        ...(runnable.approval
-          ? { approval: markSmartApprovalUserDecision(runnable.approval, true) }
-          : {}),
-        startedAt: nowIso(),
-        updatedAt: nowIso()
-      });
-      yield { type: "tool_call", runId, toolCall: runnable };
-    }
-
-    let completed: ToolCall;
-    try {
-      if (!tool) {
-        throw new Error(`未知工具: ${request.name}`);
-      }
-      const result = await protectAgentToolResult(
-        await tool.execute(runnable.id, request.args, controller.signal),
-        {
-          workspacePath,
-          runId,
-          toolCallId: runnable.id,
-          toolName: request.name,
-          isError: false
-        }
-      );
-      completed = {
-        ...runnable,
-        status: "completed",
-        result: toolResultText(result.result),
-        updatedAt: nowIso()
-      };
-    } catch (error) {
-      const errorText = error instanceof Error ? error.message : String(error);
-      const result = await protectAgentToolResult(
-        { content: [{ type: "text", text: errorText }], details: undefined },
-        {
-          workspacePath,
-          runId,
-          toolCallId: runnable.id,
-          toolName: request.name,
-          isError: true
-        }
-      );
-      completed = {
-        ...runnable,
-        status: "failed",
-        result: toolResultText(result.result),
-        updatedAt: nowIso()
-      };
-    }
-    await this.store.updateToolCall(completed);
-    yield { type: "tool_call", runId, toolCall: completed };
-    if (controller.signal.aborted) {
-      console.info("[agent-runner] 直接工具执行期间收到中止，run 以 aborted 结束", {
-        runId,
-        toolCallId: runnable.id,
-        toolName: request.name,
-        toolStatus: completed.status
-      });
-      await this.store.updateRunStatus(runId, "aborted");
-      yield { type: "run_end", runId, status: "aborted" };
-      return "aborted";
-    }
-    if (completed.status === "failed") {
-      const errorText = completed.result ?? "工具调用失败";
-      await this.store.updateRunStatus(runId, "failed", undefined, errorText);
-      yield { type: "run_end", runId, status: "failed", error: errorText };
-      return "failed";
-    }
-    // Persisted payload-less on purpose: an orphan toolResult with no paired
-    // assistant toolCall would be rejected by providers, so history replays
-    // direct results as plain user context.
-    await this.store.addMessage({
-      sessionId,
-      role: "tool",
-      content: completed.result ?? ""
-    });
-    return "ok";
   }
 
   private async decideSmartApproval(options: {
@@ -1216,71 +1085,4 @@ export class AgentRunner {
     }
     return content;
   }
-}
-
-function toAgentDebugTool(tool: AgentTool<any>): AgentDebugTool {
-  return {
-    name: tool.name,
-    ...(tool.label ? { label: tool.label } : {}),
-    ...(tool.description ? { description: tool.description } : {}),
-    requiresApproval: requiresApproval(tool.name)
-  };
-}
-
-function toolResultText(result: { content: Array<{ type: string; text?: string }> }): string {
-  return result.content
-    .filter((block): block is { type: "text"; text: string } => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
-}
-
-function markSmartApprovalUserDecision(
-  approval: ToolCallApproval,
-  approved: boolean
-): ToolCallApproval {
-  return {
-    ...approval,
-    userDecision: {
-      approved,
-      decidedAt: nowIso()
-    }
-  };
-}
-
-function displayPromptForTitle(content: string, attachments: MessageAttachment[]): string {
-  const trimmed = content.trim();
-  if (trimmed) {
-    return trimmed;
-  }
-  if (attachments.length === 0) {
-    return "新对话";
-  }
-  return `附件：${attachments.map((attachment) => attachment.name).join("、")}`;
-}
-
-function buildUserPiMessage(content: string, attachments: RunImageAttachment[]): UserMessage {
-  if (attachments.length === 0) {
-    return { role: "user", content, timestamp: Date.now() };
-  }
-  return {
-    role: "user",
-    content: [
-      { type: "text", text: content },
-      ...attachments.map((attachment) => ({
-        type: "image" as const,
-        data: attachment.dataBase64,
-        mimeType: attachment.mimeType
-      }))
-    ],
-    timestamp: Date.now()
-  };
-}
-
-function toClientMessage(
-  { payload: _payload, ...message }: { payload?: string } & Message
-): Message & { attachments: MessageAttachment[] } {
-  return {
-    ...message,
-    attachments: message.attachments ?? []
-  };
 }

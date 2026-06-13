@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const desktopDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = resolve(desktopDir, "../..");
 const smokeTimeoutMs = Number(process.env.CHENGXIAOBANG_SMOKE_TIMEOUT_MS ?? 20_000);
 
 async function main() {
@@ -86,11 +87,13 @@ async function resolveResourcesPath() {
     return resolve(desktopDir, "out", "win-unpacked", "resources");
   }
   if (process.platform === "darwin") {
-    const macOut = resolve(desktopDir, "out", "mac");
-    const entries = existsSync(macOut) ? await readdir(macOut, { withFileTypes: true }) : [];
-    const app = entries.find((entry) => entry.isDirectory() && entry.name.endsWith(".app"));
-    if (app) {
-      return join(macOut, app.name, "Contents", "Resources");
+    for (const outName of ["mac", "mac-arm64", "mac-x64"]) {
+      const macOut = resolve(desktopDir, "out", outName);
+      const entries = existsSync(macOut) ? await readdir(macOut, { withFileTypes: true }) : [];
+      const app = entries.find((entry) => entry.isDirectory() && entry.name.endsWith(".app"));
+      if (app) {
+        return join(macOut, app.name, "Contents", "Resources");
+      }
     }
   }
   throw new Error(
@@ -135,6 +138,35 @@ async function verifyPackagedResources(resourcesPath, bunPath, backendEntry) {
     arch: process.arch,
     path: canvasNative.path,
     type: canvasNative.type
+  });
+  await verifyAppAsarRuntimeDependencies(resourcesPath);
+}
+
+async function verifyAppAsarRuntimeDependencies(resourcesPath) {
+  const appAsar = join(resourcesPath, "app.asar");
+  if (!existsSync(appAsar)) {
+    throw new Error(`打包资源缺失: ${appAsar}`);
+  }
+  const asarBin = resolve(repoRoot, "node_modules", ".pnpm", "node_modules", ".bin", "asar");
+  if (!existsSync(asarBin)) {
+    throw new Error(`未找到 asar 检查工具: ${asarBin}`);
+  }
+  const { stdout } = await execFileAsync(asarBin, ["list", appAsar], { cwd: repoRoot });
+  const entries = new Set(stdout.split(/\r?\n/).filter(Boolean));
+  const requiredEntries = [
+    "/node_modules/electron-updater/out/main.js",
+    "/node_modules/fs-extra/lib/index.js",
+    "/node_modules/graceful-fs/graceful-fs.js",
+    "/node_modules/jsonfile/index.js",
+    "/node_modules/universalify/index.js"
+  ];
+  const missingEntries = requiredEntries.filter((entry) => !entries.has(entry));
+  if (missingEntries.length > 0) {
+    throw new Error(`app.asar 缺少主进程运行时依赖: ${missingEntries.join(", ")}`);
+  }
+  console.info("[smoke] app.asar 主进程运行时依赖检查通过", {
+    appAsar,
+    checkedEntries: requiredEntries
   });
 }
 

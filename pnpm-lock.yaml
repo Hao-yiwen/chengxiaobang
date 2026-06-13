@@ -240,6 +240,9 @@ importers:
       electron-updater:
         specifier: 6.8.9
         version: 6.8.9
+      fs-extra:
+        specifier: 10.1.0
+        version: 10.1.0
       i18next:
         specifier: ^26.3.1
         version: 26.3.1(typescript@5.9.3)

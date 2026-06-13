@@ -7,7 +7,8 @@ import {
   type RunRequest,
   type RunStartResponse,
   type StreamEvent,
-  runRequestSchema
+  runRequestSchema,
+  runSteeringRequestSchema
 } from "@chengxiaobang/shared";
 import type { AgentRunner } from "../../agent/agent-runner";
 import type { EventHub } from "../../events/event-hub";
@@ -43,6 +44,24 @@ export function runRoutes(context: AppContext): Hono {
 
   app.post("/runs/:runId/abort", (c) => {
     return c.json({ aborted: context.runner.abort(c.req.param("runId")) });
+  });
+
+  app.post("/runs/:runId/steering", async (c) => {
+    const runId = c.req.param("runId");
+    const input = runSteeringRequestSchema.parse(await c.req.json());
+    const accepted = context.runner.enqueueSteering(runId, input);
+    console.info("[run-routes] 收到运行中引导", {
+      runId,
+      accepted,
+      clientRequestId: input.clientRequestId,
+      promptChars: input.prompt.length,
+      displayAttachmentCount: input.displayAttachments.length,
+      nativeAttachmentCount: input.attachments.length
+    });
+    if (!accepted) {
+      return c.json({ error: "当前运行已结束，无法注入引导" }, 409);
+    }
+    return c.json({ accepted: true });
   });
 
   app.post("/approvals/:toolCallId", async (c) => {

@@ -1,0 +1,294 @@
+import {
+  messageAttachmentSchema,
+  tokenUsageSchema,
+  toolCallApprovalSchema,
+  type Message,
+  type MessageAttachment,
+  type Project,
+  type ProviderConfig,
+  type RunRecord,
+  type ScheduledTask,
+  type Session,
+  type SessionSearchResult,
+  type TokenUsage,
+  type ToolCall
+} from "@chengxiaobang/shared";
+import type { StoredMessage, UsageStatsSourceRun } from "./state-store";
+import type { Row } from "./sqlite-types";
+
+export function mapProject(row: Row): Project {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    path: String(row.path),
+    ...(row.pinned_at === null || row.pinned_at === undefined
+      ? {}
+      : { pinnedAt: String(row.pinned_at) }),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
+  };
+}
+
+export function mapSession(row: Row): Session {
+  return {
+    id: String(row.id),
+    projectId: row.project_id === null ? null : String(row.project_id),
+    title: String(row.title),
+    providerId: row.provider_id === null ? undefined : String(row.provider_id),
+    accessMode:
+      row.access_mode === "full_access"
+        ? "full_access"
+        : row.access_mode === "smart_approval"
+          ? "smart_approval"
+          : "approval",
+    ...(row.model === null || row.model === undefined ? {} : { model: String(row.model) }),
+    ...(row.reasoning_mode === null || row.reasoning_mode === undefined
+      ? {}
+      : { reasoningMode: row.reasoning_mode as Session["reasoningMode"] }),
+    ...(row.compacted_up_to_message_id === null || row.compacted_up_to_message_id === undefined
+      ? {}
+      : { compactedUpToMessageId: String(row.compacted_up_to_message_id) }),
+    ...(row.parent_session_id === null || row.parent_session_id === undefined
+      ? {}
+      : { parentSessionId: String(row.parent_session_id) }),
+    ...(row.fork_message_id === null || row.fork_message_id === undefined
+      ? {}
+      : { forkMessageId: String(row.fork_message_id) }),
+    ...(row.feishu_chat_id === null || row.feishu_chat_id === undefined
+      ? {}
+      : { feishuChatId: String(row.feishu_chat_id) }),
+    ...(row.pinned_at === null || row.pinned_at === undefined
+      ? {}
+      : { pinnedAt: String(row.pinned_at) }),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
+  };
+}
+
+export function mapSessionSearchResult(row: Row, query: string): SessionSearchResult {
+  const session = mapSession(row);
+  if (row.match_type !== "content") {
+    return { session, matchType: "title" };
+  }
+  const role = row.message_role === "assistant" ? "assistant" : "user";
+  return {
+    session,
+    matchType: "content",
+    messageId: String(row.message_id),
+    role,
+    snippet: buildSearchSnippet(String(row.message_content ?? ""), query)
+  };
+}
+
+export function mapScheduledTask(row: Row): ScheduledTask {
+  return {
+    id: String(row.id),
+    sessionId: String(row.session_id),
+    name: String(row.name),
+    prompt: String(row.prompt),
+    cron: String(row.cron),
+    fullAccess: Number(row.full_access) === 1,
+    enabled: Number(row.enabled) === 1,
+    ...(row.next_run_at === null || row.next_run_at === undefined
+      ? {}
+      : { nextRunAt: String(row.next_run_at) }),
+    ...(row.last_run_at === null || row.last_run_at === undefined
+      ? {}
+      : { lastRunAt: String(row.last_run_at) }),
+    ...(row.last_status === null || row.last_status === undefined
+      ? {}
+      : { lastStatus: row.last_status as ScheduledTask["lastStatus"] }),
+    ...(row.last_error === null || row.last_error === undefined
+      ? {}
+      : { lastError: String(row.last_error) }),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
+  };
+}
+
+export function mapMessage(row: Row): StoredMessage {
+  const kind = row.kind === "compaction_summary" ? ("compaction_summary" as const) : undefined;
+  const attachments = parseMessageAttachments(row.attachments);
+  const reasoning =
+    row.reasoning === null || row.reasoning === undefined ? undefined : String(row.reasoning);
+  const reasoningMs =
+    row.reasoning_ms === null || row.reasoning_ms === undefined
+      ? undefined
+      : Number(row.reasoning_ms);
+  const durationMs =
+    row.duration_ms === null || row.duration_ms === undefined
+      ? undefined
+      : Number(row.duration_ms);
+  const payload =
+    row.payload === null || row.payload === undefined ? undefined : String(row.payload);
+  return {
+    id: String(row.id),
+    sessionId: String(row.session_id),
+    role: row.role as Message["role"],
+    ...(kind ? { kind } : {}),
+    content: String(row.content),
+    attachments,
+    ...(reasoning !== undefined ? { reasoning } : {}),
+    ...(reasoningMs !== undefined ? { reasoningMs } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(payload !== undefined ? { payload } : {}),
+    createdAt: String(row.created_at)
+  };
+}
+
+export function mapRun(row: Row): RunRecord {
+  return {
+    id: String(row.id),
+    sessionId: String(row.session_id),
+    status: row.status as RunRecord["status"],
+    ...(row.provider_id === null || row.provider_id === undefined
+      ? {}
+      : { providerId: String(row.provider_id) }),
+    ...(row.provider_kind === null || row.provider_kind === undefined
+      ? {}
+      : { providerKind: row.provider_kind as RunRecord["providerKind"] }),
+    ...(row.model === null || row.model === undefined ? {} : { model: String(row.model) }),
+    ...(row.usage ? { usage: parseRunUsage(row.usage) } : {}),
+    ...(row.error ? { error: String(row.error) } : {}),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
+  };
+}
+
+export function mapUsageStatsSourceRun(row: Row): UsageStatsSourceRun {
+  return {
+    id: String(row.id),
+    sessionId: String(row.session_id),
+    status: row.status as UsageStatsSourceRun["status"],
+    ...(row.usage ? { usage: parseRunUsage(row.usage) } : {}),
+    createdAt: String(row.created_at),
+    ...(row.provider_id === null || row.provider_id === undefined
+      ? {}
+      : { providerId: String(row.provider_id) }),
+    ...(row.provider_kind === null || row.provider_kind === undefined
+      ? {}
+      : { providerKind: row.provider_kind as UsageStatsSourceRun["providerKind"] }),
+    ...(row.model === null || row.model === undefined ? {} : { model: String(row.model) }),
+    ...(row.fallback_provider_id === null || row.fallback_provider_id === undefined
+      ? {}
+      : { fallbackProviderId: String(row.fallback_provider_id) }),
+    ...(row.fallback_provider_kind === null || row.fallback_provider_kind === undefined
+      ? {}
+      : {
+          fallbackProviderKind:
+            row.fallback_provider_kind as UsageStatsSourceRun["fallbackProviderKind"]
+        }),
+    ...(row.session_model === null ||
+    row.session_model === undefined ||
+    String(row.session_model).length === 0
+      ? row.provider_model === null || row.provider_model === undefined
+        ? {}
+        : { fallbackModel: String(row.provider_model) }
+      : { fallbackModel: String(row.session_model) })
+  };
+}
+
+export function mapToolCall(row: Row): ToolCall {
+  return {
+    id: String(row.id),
+    runId: String(row.run_id),
+    name: row.name as ToolCall["name"],
+    args: JSON.parse(String(row.args_json)) as Record<string, unknown>,
+    status: row.status as ToolCall["status"],
+    result: row.result === null ? undefined : String(row.result),
+    ...(row.approval_json === null || row.approval_json === undefined
+      ? {}
+      : { approval: parseToolCallApproval(row.approval_json) }),
+    ...(row.started_at === null || row.started_at === undefined
+      ? {}
+      : { startedAt: String(row.started_at) }),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
+  };
+}
+
+export function mapProvider(row: Row): ProviderConfig {
+  return {
+    id: String(row.id),
+    kind: row.kind as ProviderConfig["kind"],
+    name: String(row.name),
+    baseURL: String(row.base_url),
+    model: String(row.model),
+    ...(row.models === null || row.models === undefined
+      ? {}
+      : { models: parseProviderModels(String(row.models), String(row.id)) }),
+    ...(row.reasoning_mode === null || row.reasoning_mode === undefined
+      ? {}
+      : { reasoningMode: row.reasoning_mode as ProviderConfig["reasoningMode"] }),
+    apiKeyRef: row.api_key_ref === null ? undefined : String(row.api_key_ref),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
+  };
+}
+
+function buildSearchSnippet(content: string, query: string): string {
+  const maxLength = 96;
+  const lowerContent = content.toLocaleLowerCase();
+  const lowerQuery = query.toLocaleLowerCase();
+  const index = lowerContent.indexOf(lowerQuery);
+  const start = Math.max(0, index === -1 ? 0 : index - 32);
+  const end = Math.min(content.length, start + maxLength);
+  const prefix = start > 0 ? "..." : "";
+  const suffix = end < content.length ? "..." : "";
+  return `${prefix}${content.slice(start, end).trim()}${suffix}`;
+}
+
+function parseMessageAttachments(value: unknown): MessageAttachment[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(String(value));
+    return zodMessageAttachments(parsed);
+  } catch (error) {
+    console.warn("[sqlite-state-store] 消息附件 JSON 解析失败，已按空附件处理", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return [];
+  }
+}
+
+function zodMessageAttachments(value: unknown): MessageAttachment[] {
+  return messageAttachmentSchema.array().parse(value);
+}
+
+function parseRunUsage(value: unknown): TokenUsage | undefined {
+  try {
+    return tokenUsageSchema.parse(JSON.parse(String(value)));
+  } catch (error) {
+    console.warn("[state-store] 解析 run usage 失败", { error });
+    return undefined;
+  }
+}
+
+function parseToolCallApproval(value: unknown): ToolCall["approval"] {
+  try {
+    return toolCallApprovalSchema.parse(JSON.parse(String(value)));
+  } catch (error) {
+    console.warn("[state-store] 解析 tool_call approval 失败", { error });
+    return undefined;
+  }
+}
+
+function parseProviderModels(raw: string, providerId: string): string[] | undefined {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+      return parsed;
+    }
+    console.warn(`[sqlite-state-store] providers.models 不是字符串数组 providerId=${providerId}`);
+    return undefined;
+  } catch (error) {
+    console.warn(
+      `[sqlite-state-store] 解析 providers.models 失败 providerId=${providerId} error=${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    return undefined;
+  }
+}

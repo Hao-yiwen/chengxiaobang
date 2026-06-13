@@ -1,0 +1,352 @@
+import type { StateCreator } from "zustand";
+import type {
+  AccessMode,
+  AppEvent,
+  ApprovalDecision,
+  FeishuConfig,
+  FeishuConfigInput,
+  FeishuInstallPollInput,
+  FeishuInstallPollResult,
+  FeishuInstallStartInput,
+  FeishuInstallStartResult,
+  FeishuStatus,
+  Message,
+  MessageAttachment,
+  Project,
+  ProjectFileEntry,
+  ProviderConfig,
+  ProviderInput,
+  ReasoningMode,
+  RunImageAttachment,
+  RunRecord,
+  ScheduledTask,
+  ScheduledTaskEvent,
+  ScheduledTaskUpdate,
+  Session,
+  SessionSearchResult,
+  SkillCreateInput,
+  SkillDetail,
+  SkillSummary,
+  SlashCommand,
+  StreamEvent,
+  TokenUsage,
+  ToolActivity,
+  ToolCall,
+  WebSearchConfig,
+  WebSearchConfigInput
+} from "@chengxiaobang/shared";
+import type { PreviewKind } from "../../common/file-preview";
+import type { AttachmentDescriptor } from "../lib/attachment-preparation";
+import type { ArtifactKind } from "../lib/artifact";
+import type { ApiClient } from "../lib/api";
+import type { Locale } from "../i18n";
+
+export type Theme = "light" | "dark" | "system";
+export type View = "home" | "chat" | "settings" | "tasks" | "skills";
+export type RightPanelMode = "changes" | "terminal" | "browser" | "files" | "chat";
+export type ScheduledTaskFinishedEvent = Extract<ScheduledTaskEvent, { type: "scheduled_task_finished" }>;
+export type SessionRunHistory = { runs: RunRecord[]; toolCalls: ToolCall[] };
+
+export interface Attachment extends AttachmentDescriptor {
+  path: string;
+  name: string;
+  size: number;
+  kind?: PreviewKind;
+  text?: string;
+}
+
+export type ComposerDraftScope = string;
+
+export interface ComposerDraft {
+  input: string;
+  attachments: Attachment[];
+}
+
+export interface RunPromptDisplay {
+  content?: string;
+  attachments?: MessageAttachment[];
+}
+
+export interface RunPromptOptions {
+  sessionId?: string;
+  projectId?: string | null;
+  providerId?: string;
+  model?: string;
+  reasoningMode?: ReasoningMode;
+  accessMode?: AccessMode;
+  planMode?: boolean;
+  source?: string;
+  preserveSelection?: boolean;
+}
+
+export interface QueuedRunItem {
+  id: string;
+  sessionId: string;
+  projectId?: string | null;
+  content: string;
+  sourceAttachments: AttachmentDescriptor[];
+  displayAttachments: MessageAttachment[];
+  providerId: string;
+  model?: string;
+  reasoningMode?: ReasoningMode;
+  accessMode: AccessMode;
+  planMode: boolean;
+  createdAt: number;
+}
+
+/** 右侧终端面板的一次命令运行；运行中暂不带 output。 */
+export interface TerminalEntry {
+  id: string;
+  command: string;
+  output?: string;
+  exitCode?: number;
+}
+
+export interface NotificationToast {
+  id: string;
+  kind: "success" | "warning" | "error";
+  title: string;
+  description?: string;
+  createdAt: number;
+}
+
+export interface PreviewFileState {
+  path: string;
+  projectPath?: string;
+  sessionId?: string;
+  allowCwdFallback?: boolean;
+}
+
+export interface RightPanelSessionState {
+  open: boolean;
+  mode: RightPanelMode | null;
+  width: number;
+  previewFile?: PreviewFileState;
+  browserUrl: string;
+}
+
+export type LegacyRightPanelMode = RightPanelMode | "progress" | "artifacts";
+export type LegacyRightPanelSessionState = Omit<RightPanelSessionState, "mode"> & {
+  mode: LegacyRightPanelMode | null;
+};
+
+export interface AppState {
+  // 数据
+  projects: Project[];
+  sessions: Session[];
+  messages: Message[];
+  toolHistory: ToolCall[];
+  runHistory: RunRecord[];
+  providers: ProviderConfig[];
+  slashCommands: SlashCommand[];
+  // 选择状态（持久化）
+  activeSessionId?: string;
+  activeProjectId?: string;
+  providerId?: string;
+  model?: string;
+  reasoningMode?: ReasoningMode;
+  planMode: boolean;
+  accessMode: AccessMode;
+  // 界面状态
+  view: View;
+  paletteOpen: boolean;
+  /** 首次配置供应商弹窗：优先轻量引导，而不是强制跳转设置页。 */
+  onboardingOpen: boolean;
+  notice?: string;
+  notificationToasts: NotificationToast[];
+  // 运行态（瞬态）
+  input: string;
+  attachments: Attachment[];
+  composerDraftsByScope: Record<ComposerDraftScope, ComposerDraft>;
+  activeComposerDraftScope: ComposerDraftScope;
+  /** 输入框 @ 菜单里的项目文件建议。 */
+  fileSuggestions: string[];
+  streamText: string;
+  thinking: string;
+  // 当前轮 reasoning 流开始时间（epoch ms），用于实时计时；完成后的 reasoning 会落在 message.reasoning。
+  thinkingStartedAt?: number;
+  events: StreamEvent[];
+  toolActivity?: ToolActivity;
+  runningTool?: ToolCall;
+  pendingTool?: ToolCall;
+  isRunning: boolean;
+  runningSessionsById: Record<string, true>;
+  runningRunSessionById: Record<string, string>;
+  runningTaskIds: Record<string, true>;
+  activeRunId?: string;
+  activeRunClientRequestId?: string;
+  progressPanelOpen: boolean;
+  progressPanelAutoOpenedRunId?: string;
+  activeRunModel?: { providerId?: string; model: string; reasoningMode?: ReasoningMode };
+  activeRunLastAssistant?: Message;
+  queuedRunsBySession: Record<string, QueuedRunItem[]>;
+  pausedRunQueuesBySession: Record<string, true>;
+  lastUsage?: TokenUsage;
+  lastRunModel?: { providerId?: string; model: string; reasoningMode?: ReasoningMode };
+  runMeta: Record<
+    string,
+    {
+      durationMs: number;
+      promptTokens: number;
+      completionTokens: number;
+      model: string;
+      reasoningMode?: ReasoningMode;
+    }
+  >;
+  // 左侧边栏（持久化）
+  sidebarOpen: boolean;
+  // 右侧工作区面板（当前会话状态 + 每会话记忆）
+  rightPanelOpen: boolean;
+  /** null 表示右侧面板的工具菜单页。 */
+  rightPanelMode: RightPanelMode | null;
+  rightPanelWidth: number;
+  previewFile?: PreviewFileState;
+  browserUrl: string;
+  rightPanelBySession: Record<string, RightPanelSessionState>;
+  terminalEntries: TerminalEntry[];
+  terminalRunning: boolean;
+  // 飞书集成（瞬态；打开对应设置区时加载）
+  feishuConfig?: FeishuConfig;
+  feishuStatus?: FeishuStatus;
+  // 网络搜索集成（瞬态；打开对应设置页时加载）
+  webSearchConfig?: WebSearchConfig;
+  // 定时任务（瞬态；打开任务页时加载）
+  tasks: ScheduledTask[];
+  // skills（瞬态；打开技能页时加载）
+  skills: SkillSummary[];
+  /** 一次性信号：从别处（如输入框加号）进入技能页时顺带打开「添加技能」弹窗。 */
+  skillsAddRequested: boolean;
+  // 主题（持久化）
+  theme: Theme;
+  // 语言（持久化）
+  locale: Locale;
+  // 初始化状态
+  clientReady: boolean;
+
+  // 状态设置器
+  setView(view: View): void;
+  /** 跳到技能页；openAdd 为真时同时请求打开「添加技能」弹窗。 */
+  openSkills(openAdd?: boolean): void;
+  /** 消费一次性的「添加技能」请求（SkillsView 打开弹窗后调用）。 */
+  clearSkillsAddRequest(): void;
+  setInput(input: string): void;
+  setPaletteOpen(open: boolean): void;
+  setOnboardingOpen(open: boolean): void;
+  setNotice(notice: string | undefined): void;
+  dismissNotificationToast(id: string): void;
+  setProviderId(id: string | undefined): void;
+  setModel(model: string | undefined): void;
+  setReasoningMode(reasoningMode: ReasoningMode | undefined): void;
+  setPlanMode(enabled: boolean): void;
+  setAccessMode(mode: AccessMode): void;
+  setActiveProjectId(id: string | undefined): void;
+  setTheme(theme: Theme): void;
+  setLocale(locale: Locale): void;
+  /** 折叠/展开左侧边栏。 */
+  toggleSidebar(): void;
+  /** 关闭时打开菜单页；打开时关闭面板。 */
+  toggleRightPanel(): void;
+  /** 打开指定工具页；传 null 时回到菜单页。 */
+  openRightPanel(mode: RightPanelMode | null): void;
+  closeRightPanel(): void;
+  setRightPanelWidth(width: number): void;
+  setBrowserUrl(url: string): void;
+  openFilePreview(path: string): void;
+  /** 打开生成物：统一进入右侧文件预览工作台，由预览器按类型处理。 */
+  openArtifact(path: string, kind: ArtifactKind): void;
+  runTerminalCommand(command: string): Promise<void>;
+
+  // 业务动作
+  initClient(injected?: ApiClient): Promise<void>;
+  loadData(): Promise<
+    { projects: Project[]; sessions: Session[]; providers: ProviderConfig[] } | undefined
+  >;
+  refresh(): Promise<void>;
+  refreshSlashCommands(projectId?: string): Promise<void>;
+  loadFileSuggestions(query: string): Promise<void>;
+  listProjectDirectory(path?: string): Promise<ProjectFileEntry[]>;
+  restoreInitialState(): Promise<void>;
+  loadSessionDetail(id: string, view?: View): Promise<void>;
+  selectSession(id: string): Promise<void>;
+  searchSessions(query: string): Promise<SessionSearchResult[]>;
+  renameSession(id: string, title: string): Promise<void>;
+  /** 置顶/取消置顶会话（侧边栏置顶区）。 */
+  setSessionPinned(id: string, pinned: boolean): Promise<void>;
+  deleteSession(id: string): Promise<void>;
+  /** 将任意会话（无论是否当前打开）导出为 Markdown。 */
+  exportSession(id: string): Promise<void>;
+  /** 从当前会话的某条消息处分叉，并切换到新分支。 */
+  forkSession(messageId: string): Promise<void>;
+  /** 重命名项目（不修改磁盘上的文件夹）。 */
+  renameProject(id: string, name: string): Promise<void>;
+  /** 置顶/取消置顶项目（侧边栏置顶区）。 */
+  setProjectPinned(id: string, pinned: boolean): Promise<void>;
+  /** 删除项目及其下的会话、消息和运行记录。 */
+  deleteProject(id: string): Promise<void>;
+  newChat(): void;
+  /** 新建一个已绑定指定项目的对话（首页视图，预选项目）。 */
+  newChatInProject(projectId: string): void;
+  openFolder(): Promise<void>;
+  createBlankProject(name: string): Promise<void>;
+  addContext(): Promise<void>;
+  addDroppedContext(files: File[]): Promise<void>;
+  removeAttachment(path: string): void;
+  submit(): Promise<void>;
+  /** 在当前会话运行已组装好的 prompt（submit / regenerate / edit 共用）。 */
+  runPrompt(
+    prompt: string,
+    attachments?: RunImageAttachment[],
+    display?: RunPromptDisplay,
+    options?: RunPromptOptions
+  ): Promise<void>;
+  removeQueuedRun(id: string): void;
+  updateQueuedRun(id: string, content: string): void;
+  clearQueuedRuns(sessionId?: string): void;
+  resumeQueuedRuns(sessionId?: string): Promise<void>;
+  sendQueuedRunAsSteering(id: string): Promise<void>;
+  startNextQueuedRun(sessionId?: string): Promise<void>;
+  /** 回退到最后一条用户消息并重新运行。 */
+  regenerateLast(): Promise<void>;
+  /** 回退到指定用户消息，并用编辑后的内容重新运行。 */
+  editAndResend(messageId: string, content: string): Promise<void>;
+  abortRun(): Promise<void>;
+  approve(toolCallId: string, decision: ApprovalDecision | boolean): void;
+  handleAppEvent(event: AppEvent): void;
+  handleRunEvent(event: StreamEvent, options?: { force?: boolean }): void;
+  recoverActiveRunSnapshot(): Promise<void>;
+  saveProvider(input: ProviderInput): Promise<void>;
+  deleteProvider(id: string): Promise<void>;
+  testProvider(id: string): Promise<void>;
+  loadFeishuConfig(): Promise<void>;
+  saveFeishuConfig(input: FeishuConfigInput): Promise<void>;
+  startFeishuInstall(input: FeishuInstallStartInput): Promise<FeishuInstallStartResult>;
+  pollFeishuInstall(input: FeishuInstallPollInput): Promise<FeishuInstallPollResult>;
+  refreshFeishuStatus(): Promise<void>;
+  loadWebSearchConfig(): Promise<void>;
+  saveWebSearchConfig(input: WebSearchConfigInput): Promise<void>;
+  testWebSearchConfig(): Promise<void>;
+  loadTasks(): Promise<void>;
+  updateTask(id: string, input: ScheduledTaskUpdate): Promise<void>;
+  deleteTask(id: string): Promise<void>;
+  /** 立即触发一次执行（后端异步跑），随后重拉任务列表带回状态。 */
+  runTaskNow(id: string): Promise<void>;
+  loadSkills(): Promise<void>;
+  /** 拉取单个技能的详情（含正文），用于详情弹窗；失败或不可用返回 undefined。 */
+  getSkillDetail(name: string): Promise<SkillDetail | undefined>;
+  /** 激活/停用市场技能；变更后刷新斜杠命令（技能也是 / 命令）。 */
+  setSkillEnabled(name: string, enabled: boolean): Promise<void>;
+  importSkillFromUrl(url: string): Promise<void>;
+  createCustomSkill(input: SkillCreateInput): Promise<void>;
+  deleteCustomSkill(name: string): Promise<void>;
+  clearRunState(): void;
+}
+
+export type RightPanelPatch = Partial<
+  Pick<
+    AppState,
+    "rightPanelOpen" | "rightPanelMode" | "rightPanelWidth" | "previewFile" | "browserUrl"
+  >
+>;
+
+export type AppStoreSet = Parameters<StateCreator<AppState>>[0];
+export type AppStoreGet = Parameters<StateCreator<AppState>>[1];

@@ -2,17 +2,8 @@ import {
   ArrowUpIcon as ArrowUp,
   CaretDownIcon as ChevronDown,
   CheckIcon as Check,
-  FileAudioIcon as FileAudio,
-  FileCodeIcon as FileCode,
-  FileDocIcon as FileDoc,
-  FileIcon as FileAttachment,
-  FileImageIcon as FileImage,
-  FilePdfIcon as FilePdf,
   FilePlusIcon as FilePlus,
-  FilePptIcon as FilePpt,
   FileTextIcon as FileText,
-  FileVideoIcon as FileVideo,
-  FileXlsIcon as FileSpreadsheet,
   FolderDashedIcon as FolderDashed,
   FolderIcon as Folder,
   FolderOpenIcon as FolderOpen,
@@ -22,24 +13,39 @@ import {
   PlusIcon as Plus,
   ShieldCheckIcon as ShieldCheck,
   SparkleIcon as Sparkles,
-  SquareIcon as Square,
-  XIcon as X,
-  type Icon
+  SquareIcon as Square
 } from "@phosphor-icons/react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import {
   mergeProviderModelOptions,
   resolveProviderModelOption,
-  type AccessMode,
   type ProviderConfig,
   type ProviderModelOption,
   type ReasoningMode,
   type SessionContextUsage,
-  type SlashCommand
+  type SlashCommand,
 } from "@chengxiaobang/shared";
+import { ComposerAttachmentCard } from "@/components/composer/attachment-card";
+import {
+  ACCESS_MODE_TONES,
+  EMPTY_QUEUED_RUNS,
+  ROTATION_INTERVAL_MS,
+  ROTATION_LINE_HEIGHT_PX,
+  TEXTAREA_MAX_HEIGHT_PX
+} from "@/components/composer/constants";
+import { ContextUsageIndicator } from "@/components/composer/context-usage-indicator";
+import { modelOptionLabel, withCurrentComposerModel } from "@/components/composer/model-options";
+import { QueuedRunStack } from "@/components/composer/queued-run-stack";
+import {
+  filterSlashCommands,
+  getAtToken,
+  getComposerHighlightRanges,
+  getSlashQuery,
+  renderHighlightNodes
+} from "@/components/composer/text-utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -73,35 +79,8 @@ import { StampBadge } from "@/components/StampBadge";
 import { cn } from "@/lib/utils";
 import { getApiClient, selectActiveProject, useAppStore } from "@/store";
 
-const TEXTAREA_MAX_HEIGHT_PX = 220;
-// 占位文案轮播：单行高度需与 text-body 行高（24px）一致，便于 translateY 对齐。
-const ROTATION_LINE_HEIGHT_PX = 24;
-const ROTATION_INTERVAL_MS = 2800;
-const ATTACHMENT_CARD_TEXT_PREVIEW_BYTES = 1600;
+export { getAtToken } from "@/components/composer/text-utils";
 
-const ACCESS_MODE_TONES: Record<
-  AccessMode,
-  { trigger: string; menuIcon: string; check: string; hover: string }
-> = {
-  approval: {
-    trigger: "text-muted-foreground",
-    menuIcon: "text-muted-foreground",
-    check: "text-muted-foreground",
-    hover: "hover:bg-canvas-soft-2"
-  },
-  smart_approval: {
-    trigger: "text-link",
-    menuIcon: "text-link",
-    check: "text-link",
-    hover: "hover:bg-link-bg-soft/45"
-  },
-  full_access: {
-    trigger: "text-[#d25f28]",
-    menuIcon: "text-[#d25f28]",
-    check: "text-[#d25f28]",
-    hover: "hover:bg-[#d25f28]/10"
-  }
-};
 
 export function Composer() {
   const { t } = useTranslation();
@@ -122,6 +101,8 @@ export function Composer() {
     isRunning,
     activeRunId,
     activeRunClientRequestId,
+    queuedRuns,
+    queuePaused,
     lastUsageKey,
     slashCommands,
     view
@@ -145,6 +126,12 @@ export function Composer() {
         isRunning: state.isRunning,
         activeRunId: state.activeRunId,
         activeRunClientRequestId: state.activeRunClientRequestId,
+        queuedRuns: state.activeSessionId
+          ? (state.queuedRunsBySession[state.activeSessionId] ?? EMPTY_QUEUED_RUNS)
+          : EMPTY_QUEUED_RUNS,
+        queuePaused: state.activeSessionId
+          ? Boolean(state.pausedRunQueuesBySession[state.activeSessionId])
+          : false,
         lastUsageKey: state.lastUsage
           ? [
               state.lastUsage.promptTokens,
@@ -172,6 +159,11 @@ export function Composer() {
   const createBlankProject = useAppStore((state) => state.createBlankProject);
   const submit = useAppStore((state) => state.submit);
   const abortRun = useAppStore((state) => state.abortRun);
+  const removeQueuedRun = useAppStore((state) => state.removeQueuedRun);
+  const updateQueuedRun = useAppStore((state) => state.updateQueuedRun);
+  const clearQueuedRuns = useAppStore((state) => state.clearQueuedRuns);
+  const resumeQueuedRuns = useAppStore((state) => state.resumeQueuedRuns);
+  const sendQueuedRunAsSteering = useAppStore((state) => state.sendQueuedRunAsSteering);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const suggestionAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -191,6 +183,8 @@ export function Composer() {
   const [blankDialogOpen, setBlankDialogOpen] = useState(false);
   const [blankName, setBlankName] = useState("");
   const [creatingBlank, setCreatingBlank] = useState(false);
+  const [editingQueueId, setEditingQueueId] = useState<string>();
+  const [editingQueueContent, setEditingQueueContent] = useState("");
   const filteredProjects = useMemo(() => {
     const query = projectQuery.trim().toLowerCase();
     if (!query) {
@@ -247,6 +241,7 @@ export function Composer() {
     atToken !== undefined &&
     atToken.start !== dismissedAtStart &&
     fileSuggestions.length > 0;
+  const editingQueuedRun = queuedRuns.find((item) => item.id === editingQueueId);
   const activeSuggestionMenu = showSlashMenu ? "slash" : showFileMenu ? "file" : undefined;
   // 已插入的斜杠命令 / @ 文件引用打灰底标记，与普通输入区分。
   const highlightRanges = useMemo(
@@ -646,25 +641,16 @@ export function Composer() {
       }
     }
     // Enter 提交，Shift+Enter 换行；中文输入法合成中不拦截。
-    if (
-	      event.key === "Enter" &&
-	      !event.shiftKey &&
-	      !event.nativeEvent.isComposing &&
-	      (!currentComposerRunning || awaitingAskUser)
-	    ) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       if (canSend) {
         void submit();
       }
       return;
     }
-	    if (
-	      (event.metaKey || event.ctrlKey) &&
-	      event.key === "Enter" &&
-	      (!currentComposerRunning || awaitingAskUser)
-	    ) {
-	      void submit();
-	    }
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      void submit();
+    }
   };
 
   const submitBlankProject = async () => {
@@ -687,6 +673,22 @@ export function Composer() {
       data-testid="composer-shell"
       className="relative w-full rounded-xl border border-border bg-card transition-colors focus-within:border-form-focus"
     >
+      {queuedRuns.length > 0 ? (
+        <QueuedRunStack
+          items={queuedRuns}
+          paused={queuePaused}
+          canSteer={currentComposerRunning && Boolean(activeRunId)}
+          onSteer={(id) => void sendQueuedRunAsSteering(id)}
+          onEdit={(item) => {
+            setEditingQueueId(item.id);
+            setEditingQueueContent(item.content);
+          }}
+          onRemove={removeQueuedRun}
+          onClear={() => clearQueuedRuns(activeSessionId)}
+          onResume={() => void resumeQueuedRuns(activeSessionId)}
+        />
+      ) : null}
+
       {attachments.length > 0 ? (
         <div className="flex flex-wrap gap-2.5 px-4 pt-3.5">
           {attachments.map((attachment) => (
@@ -718,10 +720,10 @@ export function Composer() {
               rows={1}
               aria-label={t("composer.messageLabel")}
               placeholder={
-	                awaitingAskUser
-	                  ? t("composer.askUserWaiting")
-	                  : currentComposerRunning
-	                    ? t("composer.runningPlaceholder")
+                awaitingAskUser
+                  ? t("composer.askUserWaiting")
+                  : currentComposerRunning
+                    ? t("composer.queuePlaceholder")
                     : rotatingActive
                       ? ""
                       : t("composer.placeholder")
@@ -1231,7 +1233,7 @@ export function Composer() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-	        {currentComposerRunning ? (
+        {currentComposerRunning && !canSend ? (
           <Button
             size="icon"
             className="size-8 flex-none rounded-sm bg-primary text-primary-foreground hover:bg-primary/85"
@@ -1239,6 +1241,15 @@ export function Composer() {
             onClick={() => void abortRun()}
           >
             <Square className="size-3.5 fill-current" />
+          </Button>
+        ) : currentComposerRunning ? (
+          <Button
+            size="icon"
+            className="size-8 flex-none rounded-sm bg-primary text-primary-foreground transition-opacity hover:bg-primary/85"
+            title={awaitingAskUser ? t("composer.send") : t("composer.queueSend")}
+            onClick={() => void submit()}
+          >
+            <ArrowUp className="size-[18px]" />
           </Button>
         ) : (
           <Button
@@ -1299,588 +1310,57 @@ export function Composer() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
 
-function ComposerAttachmentCard(props: {
-  attachment: { path: string; name: string; size: number; kind?: string; text?: string };
-  onOpen: () => void;
-  onRemove: () => void;
-}) {
-  const { t } = useTranslation();
-  const [fileUrl, setFileUrl] = useState<string | undefined>();
-  const [imageFailed, setImageFailed] = useState(false);
-  const [textPreview, setTextPreview] = useState<string | undefined>();
-  const isImage = props.attachment.kind === "image";
-  const canShowTextPreview = isAttachmentTextPreviewKind(props.attachment.kind);
-
-  useEffect(() => {
-    let disposed = false;
-    let objectUrl: string | undefined;
-    setFileUrl(undefined);
-    setImageFailed(false);
-    if (!isImage) {
-      return () => {
-        disposed = true;
-      };
-    }
-    const bridge = window.chengxiaobang;
-    if (!bridge?.readFilePreviewBuffer || typeof URL.createObjectURL !== "function") {
-      console.warn("[composer] 图片附件卡片二进制预览能力不可用", {
-        path: props.attachment.path
-      });
-      return () => {
-        disposed = true;
-      };
-    }
-    void bridge.readFilePreviewBuffer(props.attachment.path).then((result) => {
-      if (disposed) {
-        return;
-      }
-      if (result.ok) {
-        objectUrl = URL.createObjectURL(
-          new Blob([result.data], { type: imageMimeTypeForPath(props.attachment.path) })
-        );
-        setFileUrl(objectUrl);
-        return;
-      }
-      console.warn("[composer] 图片附件卡片二进制预览读取失败", {
-        path: props.attachment.path,
-        error: result.error
-      });
-    });
-    return () => {
-      disposed = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [isImage, props.attachment.path]);
-
-  useEffect(() => {
-    let disposed = false;
-    setTextPreview(undefined);
-    if (!canShowTextPreview) {
-      return () => {
-        disposed = true;
-      };
-    }
-
-    const cachedText = normalizeAttachmentPreviewText(props.attachment.text);
-    if (cachedText) {
-      setTextPreview(cachedText);
-      return () => {
-        disposed = true;
-      };
-    }
-
-    const bridge = window.chengxiaobang;
-    if (!bridge?.readFilePreviewText) {
-      console.warn("[composer] 附件卡片文本预览能力不可用", {
-        path: props.attachment.path,
-        kind: props.attachment.kind
-      });
-      return () => {
-        disposed = true;
-      };
-    }
-
-    // 卡片只读取很小一段内容，避免输入框预览影响正式附件准备链路。
-    void bridge
-      .readFilePreviewText(props.attachment.path, {
-        maxBytes: ATTACHMENT_CARD_TEXT_PREVIEW_BYTES
-      })
-      .then((result) => {
-        if (disposed) {
-          return;
-        }
-        if (result.ok) {
-          setTextPreview(normalizeAttachmentPreviewText(result.text));
-          return;
-        }
-        console.warn("[composer] 附件卡片文本预览读取失败", {
-          path: props.attachment.path,
-          kind: props.attachment.kind,
-          error: result.error
-        });
-      });
-
-    return () => {
-      disposed = true;
-    };
-  }, [canShowTextPreview, props.attachment.kind, props.attachment.path, props.attachment.text]);
-
-  const Icon = attachmentIconForKind(props.attachment.kind);
-  const imageReady = isImage && fileUrl && !imageFailed;
-  const showName = !isImage;
-
-  return (
-    <div
-      className="group relative h-[108px] w-[88px] flex-none"
-      title={`${props.attachment.path} · ${formatSize(props.attachment.size)}`}
-    >
-      <button
-        type="button"
-        onClick={props.onOpen}
-        className="block h-full w-full min-w-0 text-left"
-        title={t("chat.openAttachment", { name: props.attachment.name })}
-        aria-label={t("chat.openAttachment", { name: props.attachment.name })}
+      <Dialog
+        open={Boolean(editingQueuedRun)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingQueueId(undefined);
+            setEditingQueueContent("");
+          }
+        }}
       >
-        <span
-          className={cn(
-            "relative flex w-full items-center justify-center overflow-hidden rounded-md border border-border bg-canvas-soft-2 text-muted-foreground shadow-hairline transition-colors group-hover:border-hairline-strong group-hover:bg-canvas-soft",
-            showName ? "h-[88px]" : "h-full"
-          )}
-        >
-          {imageReady ? (
-            <img
-              src={fileUrl}
-              alt={t("chat.attachmentImageAlt", { name: props.attachment.name })}
-              className="h-full w-full object-cover"
-              draggable={false}
-              onError={() => {
-                console.warn("[composer] 图片附件卡片预览加载失败", {
-                  path: props.attachment.path
-                });
-                setImageFailed(true);
-              }}
-            />
-          ) : textPreview ? (
-            <span className="h-full w-full overflow-hidden whitespace-pre-wrap break-words px-1.5 py-1.5 font-mono text-caption leading-4 text-body">
-              {textPreview}
-            </span>
-          ) : (
-            <Icon className="size-6" />
-          )}
-        </span>
-        {showName ? (
-          <span className="mt-1 block h-4 truncate text-caption leading-4 text-body">
-            {props.attachment.name}
-          </span>
-        ) : null}
-      </button>
-      <button
-        type="button"
-        aria-label={t("composer.removeAttachment", { name: props.attachment.name })}
-        onClick={props.onRemove}
-        className="absolute right-1.5 top-1.5 z-10 flex size-[18px] items-center justify-center rounded-full bg-primary/95 text-primary-foreground shadow-subtle transition-colors hover:bg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
-      >
-        <X className="size-2.5" />
-      </button>
-    </div>
-  );
-}
-
-function isAttachmentTextPreviewKind(kind: string | undefined): boolean {
-  return kind === "text" || kind === "code" || kind === "markdown" || kind === "json";
-}
-
-function normalizeAttachmentPreviewText(text: string | undefined): string | undefined {
-  const normalized = text?.replace(/\r\n?/gu, "\n").trim();
-  if (!normalized) {
-    return undefined;
-  }
-  return normalized.length > 260 ? `${normalized.slice(0, 260)}...` : normalized;
-}
-
-function imageMimeTypeForPath(path: string): string {
-  const extension = path.split(".").pop()?.toLowerCase();
-  switch (extension) {
-    case "jpg":
-    case "jpeg":
-      return "image/jpeg";
-    case "gif":
-      return "image/gif";
-    case "webp":
-      return "image/webp";
-    case "avif":
-      return "image/avif";
-    case "bmp":
-      return "image/bmp";
-    case "svg":
-      return "image/svg+xml";
-    case "png":
-    default:
-      return "image/png";
-  }
-}
-
-function attachmentIconForKind(kind: string | undefined): Icon {
-  switch (kind) {
-    case "image":
-      return FileImage;
-    case "pdf":
-      return FilePdf;
-    case "code":
-    case "json":
-    case "html":
-    case "markdown":
-      return FileCode;
-    case "docx":
-      return FileDoc;
-    case "presentation":
-      return FilePpt;
-    case "spreadsheet":
-      return FileSpreadsheet;
-    case "audio":
-      return FileAudio;
-    case "video":
-      return FileVideo;
-    case "text":
-      return FileText;
-    default:
-      return FileAttachment;
-  }
-}
-
-/**
- * 光标前正在输入的 @ token：`@src/uti` -> { query, start of "@" }。
- * token 必须位于输入开头或空白字符之后，且内部不能包含空白或另一个 @。
- */
-export function getAtToken(
-  value: string,
-  selectionStart: number
-): { query: string; start: number } | undefined {
-  const cursor = Math.max(0, Math.min(selectionStart, value.length));
-  const before = value.slice(0, cursor);
-  const match = before.match(/(^|\s)@([^\s@]*)$/);
-  if (!match) {
-    return undefined;
-  }
-  return { query: match[2], start: cursor - match[2].length - 1 };
-}
-
-// 计算输入框中需要打灰底标记的特殊片段：开头的斜杠命令、以及 @ 文件引用。
-// 返回按位置升序、互不重叠的区间，供 highlight overlay 渲染。
-function getComposerHighlightRanges(
-  value: string,
-  commands: SlashCommand[],
-  allowAtTokens: boolean
-): Array<{ start: number; end: number }> {
-  const ranges: Array<{ start: number; end: number }> = [];
-  if (value.startsWith("/")) {
-    const firstLine = value.split("\n", 1)[0] ?? "";
-    // 取最长的、与输入开头完整匹配的已知命令名（兼容 "/git status" 这类带空格的命令）。
-    let matched = "";
-    for (const command of commands) {
-      const name = command.name;
-      const isFullMatch =
-        firstLine === name || (firstLine.startsWith(name) && firstLine[name.length] === " ");
-      if (isFullMatch && name.length > matched.length) {
-        matched = name;
-      }
-    }
-    if (matched) {
-      ranges.push({ start: 0, end: matched.length });
-    }
-  }
-  if (allowAtTokens) {
-    const atPattern = /(^|\s)(@[^\s@]+)/g;
-    let match: RegExpExecArray | null;
-    while ((match = atPattern.exec(value)) !== null) {
-      const start = match.index + match[1].length;
-      ranges.push({ start, end: start + match[2].length });
-    }
-  }
-  return ranges;
-}
-
-// 把输入文本按高亮区间切片渲染：高亮片段套灰底 span，其余为透明文本（仅占位对齐，真正文字由 textarea 显示）。
-function renderHighlightNodes(
-  value: string,
-  ranges: Array<{ start: number; end: number }>
-): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  let cursor = 0;
-  ranges.forEach((range, index) => {
-    if (range.start > cursor) {
-      nodes.push(<span key={`plain-${index}`}>{value.slice(cursor, range.start)}</span>);
-    }
-    nodes.push(
-      <span
-        key={`mark-${index}`}
-        className="box-decoration-clone -mx-[4px] rounded-md bg-canvas-soft-2 px-[4px] py-[2px]"
-      >
-        {value.slice(range.start, range.end)}
-      </span>
-    );
-    cursor = range.end;
-  });
-  if (cursor < value.length) {
-    nodes.push(<span key="tail">{value.slice(cursor)}</span>);
-  }
-  return nodes;
-}
-
-function getSlashQuery(value: string, selectionStart: number): string | undefined {
-  if (!value.startsWith("/")) {
-    return undefined;
-  }
-  const cursor = Math.max(0, Math.min(selectionStart, value.length));
-  const beforeCursor = value.slice(0, cursor);
-  if (beforeCursor.includes("\n")) {
-    return undefined;
-  }
-  const firstLine = value.split("\n", 1)[0] ?? "";
-  if (cursor > firstLine.length) {
-    return undefined;
-  }
-  const afterSlash = beforeCursor.slice(1);
-  // 命令一旦带空格即视为已选定（菜单只列技能，技能名无空格），收起补全框，避免残留只剩一项的小框。
-  if (/\s/.test(afterSlash)) {
-    return undefined;
-  }
-  return afterSlash.toLowerCase();
-}
-
-function filterSlashCommands(commands: SlashCommand[], query: string): SlashCommand[] {
-  const skillCommands = commands.filter((command) => command.kind === "skill");
-  const compactQuery = query.trim();
-  if (!compactQuery) {
-    return skillCommands;
-  }
-  return skillCommands.filter((command) =>
-    `${command.name} ${command.description}`.toLowerCase().includes(compactQuery)
-  );
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function withCurrentComposerModel(
-  provider: ProviderConfig,
-  remoteOptions: ProviderModelOption[] | undefined,
-  selectedModel: string | undefined
-): ProviderModelOption[] {
-  const fallback = mergeProviderModelOptions(provider.kind, provider.models ?? [], provider.model);
-  let options = remoteOptions && remoteOptions.length > 0 ? remoteOptions : fallback;
-  // 供应商配置了启用模型列表时，菜单只展示启用的模型。
-  if (provider.models && provider.models.length > 0) {
-    const enabled = new Set(provider.models);
-    options = options.filter((option) => enabled.has(option.id));
-  }
-  const currentModel = selectedModel ?? provider.model;
-  if (options.some((option) => option.id === currentModel)) {
-    return options;
-  }
-  return [...options, resolveProviderModelOption(provider.kind, currentModel)];
-}
-
-function modelOptionLabel(option: ProviderModelOption): string {
-  return option.label ?? option.id;
-}
-
-function ContextUsageIndicator(props: {
-  usage?: SessionContextUsage;
-  loading: boolean;
-  error?: string;
-  modelLabel: string;
-}) {
-  const { t } = useTranslation();
-  const percent = props.usage?.usedRatio;
-  const status = props.usage?.status ?? "unknown";
-  const ringColor = contextRingColor(status);
-  const degrees = Math.min(360, Math.max(0, (percent ?? 0) * 360));
-  const sessionCostValue = t("composer.context.estimatedCostValue", {
-    value: formatCny(props.usage?.sessionCostCny)
-  });
-  const [open, setOpen] = useState(false);
-  const lockedOpenRef = useRef(false);
-  const closeTimerRef = useRef<number | undefined>(undefined);
-
-  const clearCloseTimer = () => {
-    if (closeTimerRef.current !== undefined) {
-      window.clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = undefined;
-    }
-  };
-  const openTransient = () => {
-    clearCloseTimer();
-    setOpen(true);
-  };
-  const scheduleTransientClose = () => {
-    clearCloseTimer();
-    if (lockedOpenRef.current) {
-      return;
-    }
-    closeTimerRef.current = window.setTimeout(() => {
-      setOpen(false);
-      closeTimerRef.current = undefined;
-    }, 120);
-  };
-
-  useEffect(() => () => clearCloseTimer(), []);
-
-  return (
-    <Popover
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (!nextOpen) {
-          lockedOpenRef.current = false;
-        }
-      }}
-    >
-      <PopoverAnchor asChild>
-        <button
-          type="button"
-          aria-label={t("composer.context.ariaLabel")}
-          aria-busy={props.loading}
-          aria-expanded={open}
-          aria-haspopup="dialog"
-          onPointerEnter={openTransient}
-          onPointerLeave={scheduleTransientClose}
-          onFocus={openTransient}
-          onBlur={scheduleTransientClose}
-          onClick={() => {
-            clearCloseTimer();
-            lockedOpenRef.current = !lockedOpenRef.current;
-            setOpen(lockedOpenRef.current);
-          }}
-          className={cn(
-            "flex h-8 w-6 flex-none items-center justify-center rounded-sm text-muted-foreground outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            (status === "over_threshold" || status === "near_threshold") && "text-warning-deep"
-          )}
-        >
-          {props.loading && !props.usage ? (
-            <span className="size-5 rounded-full border border-muted-foreground/25 border-t-foreground animate-spin" />
-          ) : (
-            <span
-              aria-hidden
-              className="relative size-5 rounded-full"
-              style={{
-                background: `conic-gradient(${ringColor} ${degrees}deg, rgb(var(--border)) 0deg)`
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("composer.queueEditTitle")}</DialogTitle>
+            <DialogDescription>{t("composer.queueEditHint")}</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            autoFocus
+            value={editingQueueContent}
+            onChange={(event) => setEditingQueueContent(event.target.value)}
+            className="min-h-[120px]"
+            aria-label={t("composer.queueEditTitle")}
+          />
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setEditingQueueId(undefined);
+                setEditingQueueContent("");
               }}
             >
-              <span className="absolute inset-[4px] rounded-full bg-card" />
-            </span>
-          )}
-        </button>
-      </PopoverAnchor>
-      <PopoverContent
-        side="top"
-        align="end"
-        onOpenAutoFocus={(event) => event.preventDefault()}
-        onPointerEnter={openTransient}
-        onPointerLeave={scheduleTransientClose}
-        className="w-[300px] px-3 py-2.5 text-left text-micro"
-      >
-        <div className="space-y-2">
-          <div>
-            <div className="font-medium">{t("composer.context.title")}</div>
-            <div className="mt-0.5 truncate text-muted-foreground">{props.modelLabel}</div>
-          </div>
-          {props.error ? (
-            <div className="rounded-xs bg-warning-soft px-2 py-1 text-warning-deep">
-              {t("composer.context.error", { error: props.error })}
-            </div>
-          ) : null}
-          {props.usage ? (
-            <div className="space-y-1">
-              <ContextUsageRow
-                label={t("composer.context.usedRatio")}
-                value={formatPercent(props.usage.usedRatio)}
-              />
-              <ContextUsageRow
-                label={t("composer.context.used")}
-                value={`${formatTokenCount(props.usage.estimatedTokens)} / ${formatTokenCount(
-                  props.usage.contextWindowTokens
-                )}`}
-              />
-              <ContextUsageRow
-                label={t("composer.context.threshold")}
-                value={`${formatTokenCount(props.usage.autoCompactThresholdTokens)} (${formatPercent(
-                  props.usage.autoCompactThresholdRatio
-                )})`}
-              />
-              <ContextUsageRow
-                label={t("composer.context.sessionCost")}
-                value={sessionCostValue}
-              />
-              <ContextUsageRow
-                label={t("composer.context.remaining")}
-                value={formatTokenCount(props.usage.remainingTokens)}
-              />
-              <ContextUsageRow
-                label={t("composer.context.breakdown")}
-                value={t("composer.context.breakdownValue", {
-                  system: formatTokenCount(props.usage.systemPromptTokens),
-                  messages: formatTokenCount(props.usage.messageTokens),
-                  tools: formatTokenCount(props.usage.toolTokens)
-                })}
-              />
-              <ContextUsageRow
-                label={t("composer.context.statusLabel")}
-                value={t(`composer.context.status.${props.usage.status}`)}
-              />
-            </div>
-          ) : (
-            <div className="text-muted-foreground">
-              {props.loading
-                ? t("composer.context.loading")
-                : t("composer.context.unavailable")}
-            </div>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function ContextUsageRow(props: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <span className="text-muted-foreground">{props.label}</span>
-      <span className="text-right font-mono text-foreground">{props.value}</span>
+              {t("composer.cancel")}
+            </Button>
+            <Button
+              disabled={
+                editingQueueContent.trim().length === 0 &&
+                (editingQueuedRun?.displayAttachments.length ?? 0) === 0
+              }
+              onClick={() => {
+                if (!editingQueuedRun) {
+                  return;
+                }
+                updateQueuedRun(editingQueuedRun.id, editingQueueContent);
+                setEditingQueueId(undefined);
+                setEditingQueueContent("");
+              }}
+            >
+              {t("composer.queueEditSave")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-}
-
-function contextRingColor(status: SessionContextUsage["status"]): string {
-  if (status === "over_threshold" || status === "near_threshold") {
-    return "rgb(var(--warning))";
-  }
-  if (status === "unknown") {
-    return "rgb(var(--muted-foreground))";
-  }
-  return "rgb(var(--link))";
-}
-
-function formatPercent(value: number | undefined): string {
-  if (value === undefined || Number.isNaN(value)) {
-    return "—";
-  }
-  return `${Math.round(value * 100)}%`;
-}
-
-function formatTokenCount(tokens: number | undefined): string {
-  if (tokens === undefined) {
-    return "—";
-  }
-  if (tokens >= 1_000_000) {
-    return `${trimFixed(tokens / 1_000_000)}M`;
-  }
-  if (tokens >= 1000) {
-    return `${trimFixed(tokens / 1000)}K`;
-  }
-  return String(tokens);
-}
-
-function formatCny(value: number | undefined): string {
-  if (value === undefined) {
-    return "—";
-  }
-  return `¥${value.toFixed(2)}`;
-}
-
-function trimFixed(value: number): string {
-  return value >= 10 ? value.toFixed(0) : value.toFixed(1).replace(/\.0$/, "");
 }

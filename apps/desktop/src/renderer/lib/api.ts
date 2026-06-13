@@ -22,6 +22,7 @@ import type {
   RunRecord,
   RunRequest,
   RunStartResponse,
+  RunSteeringRequest,
   ScheduledTask,
   ScheduledTaskUpdate,
   SessionDebugContext,
@@ -130,6 +131,7 @@ export interface ApiClient {
   /** 审批/计划确认/ask-user 答复共用：决议对象整体透传（ARCH-SPEC §1.7）。 */
   approve(toolCallId: string, decision: ApprovalDecision): Promise<void>;
   abort(runId: string): Promise<void>;
+  steerRun?(runId: string, input: RunSteeringRequest): Promise<void>;
   terminalExec(input: TerminalExecRequest): Promise<TerminalExecResult>;
   startRun?(input: RunRequest): Promise<RunStartResponse>;
   subscribeRunEvents?(
@@ -558,6 +560,12 @@ export async function createApiClient(): Promise<ApiClient> {
     },
     async abort(runId) {
       await request(`/api/runs/${runId}/abort`, { method: "POST" });
+    },
+    async steerRun(runId, input) {
+      await request(`/api/runs/${encodeURIComponent(runId)}/steering`, {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
     },
     async terminalExec(input) {
       return (

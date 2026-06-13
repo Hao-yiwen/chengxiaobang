@@ -1,0 +1,231 @@
+import { createId } from "@chengxiaobang/shared";
+import { isAbsolutePathLike } from "../../../common/file-preview";
+import { apiClientRef } from "../client";
+import type { AppState, AppStoreGet, AppStoreSet, RightPanelPatch } from "../types";
+import {
+  HOME_COMPOSER_DRAFT_SCOPE,
+  composerDraftScopeForView,
+  resetHomePlanMode,
+  switchComposerDraftScope
+} from "../helpers/composer-drafts";
+import { configuredProviderById, normalizeModelForProvider } from "../helpers/providers";
+import {
+  RIGHT_PANEL_FILE_WIDTH,
+  RIGHT_PANEL_MAX_WIDTH,
+  RIGHT_PANEL_MIN_WIDTH,
+  rememberRightPanel
+} from "../helpers/right-panel";
+import { selectActiveProject, selectActiveSession } from "../selectors";
+
+export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {
+  return {
+      setView: (view) =>
+        set((state) => {
+          const targetScope = composerDraftScopeForView(view, state.activeSessionId);
+          return {
+            view,
+            ...(view === "home" ? resetHomePlanMode("setView", state.planMode) : {}),
+            ...(targetScope ? switchComposerDraftScope(state, targetScope, "setView") : {})
+          };
+        }),
+      openSkills: (openAdd) => {
+        console.debug("[store] 打开技能页", { openAdd: Boolean(openAdd) });
+        set({ view: "skills", skillsAddRequested: Boolean(openAdd) });
+      },
+      clearSkillsAddRequest: () => set({ skillsAddRequested: false }),
+      setInput: (input) => set({ input }),
+      setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+      setOnboardingOpen: (onboardingOpen) => set({ onboardingOpen }),
+      setNotice: (notice) => set({ notice }),
+      dismissNotificationToast: (id) =>
+        set((state) => ({
+          notificationToasts: state.notificationToasts.filter((toast) => toast.id !== id)
+        })),
+      setProviderId: (providerId) =>
+        set((state) => {
+          const provider = configuredProviderById(state.providers, providerId);
+          return {
+            providerId,
+            ...(provider
+              ? normalizeModelForProvider(
+                  provider,
+                  state.model,
+                  state.reasoningMode,
+                  "setProviderId"
+                )
+              : { model: undefined, reasoningMode: undefined })
+          };
+        }),
+      setModel: (model) => set({ model }),
+      setReasoningMode: (reasoningMode) => set({ reasoningMode }),
+      setPlanMode: (planMode) => {
+        console.info("[store] 切换计划模式", { planMode });
+        set({ planMode });
+      },
+      setAccessMode: (accessMode) => set({ accessMode }),
+      setActiveProjectId: (activeProjectId) => {
+        set((state) => ({
+          rightPanelBySession: rememberRightPanel(state),
+          ...switchComposerDraftScope(state, HOME_COMPOSER_DRAFT_SCOPE, "setActiveProjectId"),
+          ...resetHomePlanMode("setActiveProjectId", state.planMode),
+          activeProjectId,
+          activeSessionId: undefined,
+          messages: [],
+          toolHistory: [],
+          runHistory: [],
+          streamText: "",
+          thinking: "",
+          thinkingStartedAt: undefined,
+          events: [],
+          toolActivity: undefined,
+          runningTool: undefined,
+          pendingTool: undefined,
+          activeRunId: undefined,
+          activeRunClientRequestId: undefined,
+          progressPanelOpen: false,
+          progressPanelAutoOpenedRunId: undefined,
+          activeRunModel: undefined,
+          activeRunLastAssistant: undefined,
+          rightPanelOpen: false,
+          rightPanelMode: null,
+          previewFile: undefined,
+          browserUrl: "",
+          view: "home"
+        }));
+        void get().refreshSlashCommands(activeProjectId);
+      },
+      setTheme: (theme) => set({ theme }),
+      setLocale: (locale) => set({ locale }),
+      toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      toggleRightPanel: () =>
+        set((state) => {
+          const patch: RightPanelPatch = state.rightPanelOpen
+            ? { rightPanelOpen: false }
+            : { rightPanelOpen: true, rightPanelMode: null };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        }),
+      openRightPanel: (mode) =>
+        set((state) => {
+          const patch: RightPanelPatch = { rightPanelOpen: true, rightPanelMode: mode };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        }),
+      closeRightPanel: () =>
+        set((state) => {
+          const patch: RightPanelPatch = { rightPanelOpen: false };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        }),
+      setRightPanelWidth: (width) =>
+        set((state) => {
+          const nextWidth = Math.min(
+            RIGHT_PANEL_MAX_WIDTH,
+            Math.max(RIGHT_PANEL_MIN_WIDTH, Math.round(width))
+          );
+          const patch: RightPanelPatch = { rightPanelWidth: nextWidth };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        }),
+      setBrowserUrl: (browserUrl) =>
+        set((state) => {
+          const patch: RightPanelPatch = { browserUrl };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        }),
+
+      openFilePreview(path) {
+        const state = get();
+        const project = selectActiveProject(state);
+        const session = selectActiveSession(state);
+        const sessionId = session?.id ?? state.activeSessionId;
+        console.info("[store] 打开文件预览", {
+          path,
+          projectPath: project?.path,
+          sessionId,
+          pathKind: isAbsolutePathLike(path) ? "absolute" : "relative"
+        });
+        set((state) => {
+          const patch: RightPanelPatch = {
+            previewFile: {
+              path,
+              ...(project?.path ? { projectPath: project.path } : {}),
+              ...(sessionId ? { sessionId } : {})
+            },
+            rightPanelOpen: true,
+            rightPanelMode: "files",
+            rightPanelWidth: Math.max(state.rightPanelWidth, RIGHT_PANEL_FILE_WIDTH)
+          };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        });
+      },
+
+      openArtifact(path, kind) {
+        console.info("[store] 打开生成物预览", { path, kind });
+        const state = get();
+        const project = selectActiveProject(state);
+        const session = selectActiveSession(state);
+        const sessionId = session?.id ?? state.activeSessionId;
+        set((state) => {
+          const patch: RightPanelPatch = {
+            previewFile: {
+              path,
+              ...(project?.path ? { projectPath: project.path } : {}),
+              ...(sessionId ? { sessionId } : {}),
+              allowCwdFallback: false
+            },
+            rightPanelOpen: true,
+            rightPanelMode: "files",
+            rightPanelWidth: Math.max(state.rightPanelWidth, RIGHT_PANEL_FILE_WIDTH)
+          };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        });
+      },
+
+      async runTerminalCommand(command) {
+        const state = get();
+        const project = selectActiveProject(state);
+        const trimmed = command.trim();
+        if (!apiClientRef.current || !project || !trimmed || state.terminalRunning) {
+          return;
+        }
+        const id = createId("term");
+        set((current) => ({
+          terminalEntries: [...current.terminalEntries, { id, command: trimmed }],
+          terminalRunning: true
+        }));
+        const finish = (output: string, exitCode: number) =>
+          set((current) => ({
+            terminalEntries: current.terminalEntries.map((entry) =>
+              entry.id === id ? { ...entry, output, exitCode } : entry
+            ),
+            terminalRunning: false
+          }));
+        try {
+          const result = await apiClientRef.current.terminalExec({
+            projectId: project.id,
+            command: trimmed
+          });
+          finish(result.output, result.exitCode);
+        } catch (error) {
+          finish(error instanceof Error ? error.message : String(error), -1);
+        }
+      },
+  };
+}

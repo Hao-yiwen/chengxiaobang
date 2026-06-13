@@ -182,6 +182,109 @@ describe("AgentRunner", () => {
     );
   });
 
+  it("injects steering messages at the next safe turn boundary", async () => {
+    let releaseFirstTurn: () => void = () => {};
+    const firstTurnGate = new Promise<void>((resolve) => {
+      releaseFirstTurn = resolve;
+    });
+    let markFirstTurnStarted: () => void = () => {};
+    const firstTurnStarted = new Promise<void>((resolve) => {
+      markFirstTurnStarted = resolve;
+    });
+    const { runner, calls } = runnerWith(store, secrets, [
+      {
+        onStart: () => {
+          markFirstTurnStarted();
+          return firstTurnGate;
+        },
+        text: "先处理当前请求"
+      },
+      { text: "已收到补充" }
+    ]);
+    const stream = runner.stream({
+      prompt: "第一句话",
+      projectId: null,
+      accessMode: "approval"
+    });
+    const events: StreamEvent[] = [];
+    let resolveStarted: (event: Extract<StreamEvent, { type: "run_started" }>) => void = () => {};
+    const startedPromise = new Promise<Extract<StreamEvent, { type: "run_started" }>>(
+      (resolve) => {
+        resolveStarted = resolve;
+      }
+    );
+    const consume = (async () => {
+      for await (const event of stream) {
+        events.push(event);
+        if (event.type === "run_started") {
+          resolveStarted(event);
+        }
+      }
+    })();
+
+    const started = await startedPromise;
+    await firstTurnStarted;
+
+    expect(
+      runner.enqueueSteering(started.runId, {
+        prompt: "补充一",
+        displayContent: "补充一"
+      })
+    ).toBe(true);
+    expect(
+      runner.enqueueSteering(started.runId, {
+        prompt: "补充二",
+        displayContent: "补充二"
+      })
+    ).toBe(true);
+
+    releaseFirstTurn();
+    await consume;
+
+    expect(
+      events
+        .filter((event) => event.type === "message" && event.message.role === "user")
+        .map((event) => ("message" in event ? event.message.content : ""))
+    ).toEqual(["第一句话", "补充一", "补充二"]);
+    expect(calls).toHaveLength(2);
+    expect(
+      calls[1].context.messages
+        .filter((message) => message.role === "user")
+        .map((message) => String(message.content))
+    ).toEqual(["第一句话", "补充一", "补充二"]);
+    const messages = await store.listMessages(started.sessionId);
+    expect(messages.map((message) => message.content)).toContain("补充一");
+    expect(messages.map((message) => message.content)).toContain("补充二");
+  });
+
+  it("rejects steering for inactive runs without polluting history", async () => {
+    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    let runId: string | undefined;
+    let sessionId: string | undefined;
+
+    for await (const event of runner.stream({
+      prompt: "第一句话",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      if (event.type === "run_started") {
+        runId = event.runId;
+        sessionId = event.sessionId;
+      }
+    }
+
+    expect(runId).toBeDefined();
+    expect(sessionId).toBeDefined();
+    expect(
+      runner.enqueueSteering(runId!, {
+        prompt: "迟到的补充",
+        displayContent: "迟到的补充"
+      })
+    ).toBe(false);
+    const messages = await store.listMessages(sessionId!);
+    expect(messages.map((message) => message.content)).not.toContain("迟到的补充");
+  });
+
   it("aborts a running direct shell command promptly", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
     const { runner, calls } = runnerWith(store, secrets, [{ text: "不应该被调用" }]);

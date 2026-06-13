@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from "vitest";
-import type { ScheduledTaskEvent, Session, StreamEvent, ToolCall } from "@chengxiaobang/shared";
-import { resetAppStore, useAppStore } from "../src/renderer/store";
+import { waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  ProviderConfig,
+  ScheduledTaskEvent,
+  Session,
+  StreamEvent,
+  ToolCall
+} from "@chengxiaobang/shared";
+import type { ApiClient } from "../src/renderer/lib/api";
+import { resetAppStore, type QueuedRunItem, useAppStore } from "../src/renderer/store";
 
 const session: Session = {
   id: "session_1",
@@ -12,6 +20,78 @@ const session: Session = {
   createdAt: "2026-06-13T00:00:00.000Z",
   updatedAt: "2026-06-13T00:00:00.000Z"
 };
+
+const deepseek: ProviderConfig = {
+  id: "deepseek",
+  kind: "deepseek",
+  name: "DeepSeek",
+  baseURL: "https://api.deepseek.com",
+  model: "deepseek-v4-flash",
+  apiKeyRef: "test:deepseek",
+  createdAt: "2026-06-13T00:00:00.000Z",
+  updatedAt: "2026-06-13T00:00:00.000Z"
+};
+
+function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
+  return {
+    listProjects: vi.fn(async () => []),
+    createProject: vi.fn() as never,
+    renameProject: vi.fn() as never,
+    setProjectPinned: vi.fn() as never,
+    deleteProject: vi.fn(async () => true),
+    listSessions: vi.fn(async () => [session]),
+    listProjectFiles: vi.fn(async () => []),
+    listProjectDirectory: vi.fn(async () => []),
+    getGitChanges: vi.fn(async () => ({ isRepo: false, files: [] })),
+    updateSession: vi.fn() as never,
+    deleteSession: vi.fn() as never,
+    listMessages: vi.fn(async () => []),
+    rewindSession: vi.fn(async () => []),
+    forkSession: vi.fn() as never,
+    listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [] })),
+    listActiveRuns: vi.fn(async () => []),
+    listSlashCommands: vi.fn(async () => ({ commands: [], diagnostics: [] })),
+    listProviders: vi.fn(async () => [deepseek]),
+    saveProvider: vi.fn() as never,
+    deleteProvider: vi.fn(async () => true),
+    testProvider: vi.fn() as never,
+    listProviderModels: vi.fn(async () => []),
+    listProviderModelOptions: vi.fn(async () => []),
+    listTasks: vi.fn(async () => []),
+    updateTask: vi.fn() as never,
+    deleteTask: vi.fn(async () => true),
+    runTaskNow: vi.fn(async () => {}),
+    getFeishuConfig: vi.fn(async () => ({
+      enabled: false,
+      appId: "",
+      domain: "feishu" as const,
+      fullAccess: false
+    })),
+    saveFeishuConfig: vi.fn() as never,
+    getFeishuStatus: vi.fn(async () => ({ status: "disconnected" as const })),
+    approve: vi.fn() as never,
+    abort: vi.fn() as never,
+    terminalExec: vi.fn() as never,
+    streamRun: vi.fn(async () => {}),
+    ...overrides
+  };
+}
+
+function queuedRun(id: string, content: string): QueuedRunItem {
+  return {
+    id,
+    sessionId: session.id,
+    projectId: null,
+    content,
+    sourceAttachments: [],
+    displayAttachments: [],
+    providerId: deepseek.id,
+    model: deepseek.model,
+    accessMode: "approval",
+    planMode: false,
+    createdAt: Date.now()
+  };
+}
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -156,5 +236,84 @@ describe("app event handling", () => {
     });
 
     expect(useAppStore.getState().pendingTool?.id).toBe(pendingTool.id);
+  });
+
+  it("starts exactly one queued run after a completed run and leaves the next item waiting", async () => {
+    const streamRun = vi.fn(async () => {});
+    await useAppStore.getState().initClient(createClient({ streamRun: streamRun as never }));
+    useAppStore.setState({
+      view: "chat",
+      activeSessionId: session.id,
+      activeRunId: "run_active",
+      activeRunClientRequestId: undefined,
+      isRunning: true,
+      sessions: [session],
+      providers: [deepseek],
+      providerId: deepseek.id,
+      runHistory: [
+        {
+          id: "run_active",
+          sessionId: session.id,
+          status: "running",
+          createdAt: "2026-06-13T00:00:00.000Z",
+          updatedAt: "2026-06-13T00:00:00.000Z"
+        }
+      ],
+      runningSessionsById: { [session.id]: true },
+      runningRunSessionById: { run_active: session.id },
+      queuedRunsBySession: {
+        [session.id]: [queuedRun("queue_1", "第二句话"), queuedRun("queue_2", "第三句话")]
+      },
+      pausedRunQueuesBySession: {}
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "run_end",
+      runId: "run_active",
+      status: "completed"
+    });
+
+    await waitFor(() => expect(streamRun).toHaveBeenCalledTimes(1));
+    expect(streamRun.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: session.id,
+      prompt: "第二句话",
+      providerId: deepseek.id,
+      model: deepseek.model
+    });
+    expect(useAppStore.getState().queuedRunsBySession[session.id]?.map((item) => item.content))
+      .toEqual(["第三句话"]);
+    expect(useAppStore.getState().isRunning).toBe(true);
+  });
+
+  it("pauses the queue after a failed run without starting queued work", async () => {
+    const streamRun = vi.fn(async () => {});
+    await useAppStore.getState().initClient(createClient({ streamRun: streamRun as never }));
+    useAppStore.setState({
+      view: "chat",
+      activeSessionId: session.id,
+      activeRunId: "run_active",
+      isRunning: true,
+      sessions: [session],
+      providers: [deepseek],
+      providerId: deepseek.id,
+      runningSessionsById: { [session.id]: true },
+      runningRunSessionById: { run_active: session.id },
+      queuedRunsBySession: { [session.id]: [queuedRun("queue_1", "失败后保留")] },
+      pausedRunQueuesBySession: {}
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "run_end",
+      runId: "run_active",
+      status: "failed",
+      error: "模型失败"
+    });
+
+    await Promise.resolve();
+    expect(streamRun).not.toHaveBeenCalled();
+    expect(useAppStore.getState().pausedRunQueuesBySession[session.id]).toBe(true);
+    expect(useAppStore.getState().queuedRunsBySession[session.id]?.[0]?.content).toBe(
+      "失败后保留"
+    );
   });
 });

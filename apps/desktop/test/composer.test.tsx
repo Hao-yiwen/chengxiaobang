@@ -95,6 +95,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     getFeishuStatus: vi.fn(async () => ({ status: "disconnected" as const })),
     approve: vi.fn() as never,
     abort: vi.fn() as never,
+    steerRun: vi.fn(async () => {}),
     terminalExec: vi.fn() as never,
     streamRun: vi.fn(async () => {}),
     ...overrides
@@ -675,7 +676,7 @@ describe("Composer 计划模式（＋下拉 Switch + 标记）", () => {
 });
 
 describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
-  it("uses an active placeholder during a normal running stream", async () => {
+  it("keeps the composer open for queued follow-up messages during a normal running stream", async () => {
     let resolveStream: (() => void) | undefined;
     const streamRun = vi.fn(async (..._args: Parameters<ApiClient["streamRun"]>) => {
       const onEvent = _args[1];
@@ -691,9 +692,187 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
     fireEvent.change(input, { target: { value: "开始" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    expect(await screen.findByPlaceholderText("程小帮正在处理当前请求…")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("要求后续变更")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("随心输入")).not.toBeInTheDocument();
     resolveStream?.();
+  });
+
+  it("queues composer submissions while a run is active instead of starting another stream", async () => {
+    let resolveStream: (() => void) | undefined;
+    const streamRun = vi.fn(async (..._args: Parameters<ApiClient["streamRun"]>) => {
+      const onEvent = _args[1];
+      onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+      return new Promise<void>((resolve) => {
+        resolveStream = resolve;
+      });
+    });
+    const client = createClient({ streamRun: streamRun as never });
+
+    render(<App client={client} />);
+    const input = await screen.findByLabelText("输入消息");
+    fireEvent.change(input, { target: { value: "先跑第一句" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(streamRun).toHaveBeenCalledTimes(1));
+    const queueInput = await screen.findByPlaceholderText("要求后续变更");
+    fireEvent.change(queueInput, { target: { value: "排队第二句" } });
+    fireEvent.keyDown(queueInput, { key: "Enter" });
+
+    expect(streamRun).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(useAppStore.getState().queuedRunsBySession.session_1?.[0]?.content).toBe(
+        "排队第二句"
+      )
+    );
+    expect(await screen.findByText("排队第二句")).toBeInTheDocument();
+    resolveStream?.();
+  });
+
+  it("shows either the queue send button or the stop button while running", async () => {
+    let resolveStream: (() => void) | undefined;
+    const streamRun = vi.fn(async (..._args: Parameters<ApiClient["streamRun"]>) => {
+      const onEvent = _args[1];
+      onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+      return new Promise<void>((resolve) => {
+        resolveStream = resolve;
+      });
+    });
+    const client = createClient({ streamRun: streamRun as never });
+
+    render(<App client={client} />);
+    const input = await screen.findByLabelText("输入消息");
+    fireEvent.change(input, { target: { value: "先跑第一句" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(streamRun).toHaveBeenCalledTimes(1));
+    const shell = await screen.findByTestId("composer-shell");
+    expect(await within(shell).findByTitle("停止")).toBeInTheDocument();
+
+    const queueInput = await screen.findByPlaceholderText("要求后续变更");
+    fireEvent.change(queueInput, { target: { value: "排队第二句" } });
+
+    expect(within(shell).getByTitle("加入排队")).toBeInTheDocument();
+    expect(within(shell).queryByTitle("停止")).not.toBeInTheDocument();
+
+    fireEvent.change(queueInput, { target: { value: "" } });
+    expect(await within(shell).findByTitle("停止")).toBeInTheDocument();
+    expect(within(shell).queryByTitle("加入排队")).not.toBeInTheDocument();
+
+    resolveStream?.();
+  });
+
+  it("sends a queued item as steering and removes it after the API accepts it", async () => {
+    const steerRun = vi.fn(async () => {});
+    const client = createClient({ steerRun });
+
+    render(<App client={client} />);
+    await screen.findByTestId("composer-shell");
+    act(() => {
+      useAppStore.setState({
+        view: "chat",
+        activeSessionId: "session_1",
+        activeRunId: "run_1",
+        isRunning: true,
+        providers: [deepseek],
+        providerId: deepseek.id,
+        sessions: [
+          {
+            id: "session_1",
+            projectId: null,
+            title: "会话",
+            providerId: deepseek.id,
+            accessMode: "approval",
+            createdAt: "2026-06-13T00:00:00.000Z",
+            updatedAt: "2026-06-13T00:00:00.000Z"
+          }
+        ],
+        queuedRunsBySession: {
+          session_1: [
+            {
+              id: "queue_1",
+              sessionId: "session_1",
+              projectId: null,
+              content: "运行中补一句",
+              sourceAttachments: [],
+              displayAttachments: [],
+              providerId: deepseek.id,
+              model: deepseek.model,
+              accessMode: "approval",
+              planMode: false,
+              createdAt: Date.now()
+            }
+          ]
+        }
+      });
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "引导" }));
+
+    await waitFor(() => expect(steerRun).toHaveBeenCalled());
+    expect(steerRun.mock.calls[0]?.[0]).toBe("run_1");
+    expect(steerRun.mock.calls[0]?.[1]).toMatchObject({
+      prompt: "运行中补一句",
+      displayContent: "运行中补一句",
+      displayAttachments: []
+    });
+    expect(useAppStore.getState().queuedRunsBySession.session_1).toBeUndefined();
+  });
+
+  it("keeps a queued item and shows the error when steering is rejected", async () => {
+    const steerRun = vi.fn(async () => {
+      throw new Error("当前运行已结束，无法注入引导");
+    });
+    const client = createClient({ steerRun });
+
+    render(<App client={client} />);
+    await screen.findByTestId("composer-shell");
+    act(() => {
+      useAppStore.setState({
+        view: "chat",
+        activeSessionId: "session_1",
+        activeRunId: "run_1",
+        isRunning: true,
+        providers: [deepseek],
+        providerId: deepseek.id,
+        sessions: [
+          {
+            id: "session_1",
+            projectId: null,
+            title: "会话",
+            providerId: deepseek.id,
+            accessMode: "approval",
+            createdAt: "2026-06-13T00:00:00.000Z",
+            updatedAt: "2026-06-13T00:00:00.000Z"
+          }
+        ],
+        queuedRunsBySession: {
+          session_1: [
+            {
+              id: "queue_1",
+              sessionId: "session_1",
+              projectId: null,
+              content: "保留这句",
+              sourceAttachments: [],
+              displayAttachments: [],
+              providerId: deepseek.id,
+              model: deepseek.model,
+              accessMode: "approval",
+              planMode: false,
+              createdAt: Date.now()
+            }
+          ]
+        }
+      });
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "引导" }));
+
+    await waitFor(() =>
+      expect(useAppStore.getState().notice).toBe("当前运行已结束，无法注入引导")
+    );
+    expect(useAppStore.getState().queuedRunsBySession.session_1?.[0]?.content).toBe(
+      "保留这句"
+    );
   });
 
   it("hides the normal composer and answers from the ask_user dock", async () => {

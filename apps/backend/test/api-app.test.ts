@@ -712,6 +712,20 @@ describe("createApp", () => {
     await expect(response.json()).resolves.toMatchObject({ error: "请先配置至少一个模型" });
   });
 
+  it("rejects steering for inactive runs through HTTP API", async () => {
+    const response = await app(
+      jsonRequest("/api/runs/run_missing/steering", "POST", {
+        prompt: "补充说明",
+        displayContent: "补充说明"
+      })
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "当前运行已结束，无法注入引导"
+    });
+  });
+
   it("returns in-process active run snapshots and lets approval continue after reconnect", async () => {
     const scripted = scriptedStreamFn([
       {
