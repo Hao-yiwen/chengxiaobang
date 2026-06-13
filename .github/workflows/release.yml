@@ -164,7 +164,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build Windows distributables
-        run: pnpm run build && pnpm --filter @chengxiaobang/desktop exec electron-builder --win --x64 --publish never -c.npmRebuild=false
+        run: pnpm run build && pnpm --filter @chengxiaobang/desktop exec electron-builder --win --x64 --publish never "-c.npmRebuild=false"
 
       - name: Verify Windows artifacts and packaged resources
         shell: pwsh
