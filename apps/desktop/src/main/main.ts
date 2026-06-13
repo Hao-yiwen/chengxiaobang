@@ -8,7 +8,6 @@ import {
   shell,
   type BrowserWindowConstructorOptions
 } from "electron";
-import electronUpdater from "electron-updater";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -61,13 +60,12 @@ import {
 } from "./file-preview-path";
 import { registerOcrIpc } from "./ocr";
 import { registerTerminalIpc, type TerminalSessionManager } from "./terminal";
-import { DesktopUpdateService, registerUpdateIpc } from "./update-service";
+import { DesktopUpdateService, registerUpdateIpc, type DesktopUpdater } from "./update-service";
 import { createTrustedIpcRegistrar } from "./trusted-ipc";
 
 const MAX_CONTEXT_FILE_BYTES = 256 * 1024;
 const DEFAULT_BLANK_PROJECT_NAME = "未命名项目";
 const desktopLogging = initializeDesktopLogging({ logDir: defaultLogDir() });
-const { autoUpdater } = electronUpdater;
 
 if (desktopLogging) {
   console.info(`[main] 日志写入目录 logDir=${desktopLogging.logDir} level=${desktopLogging.level}`);
@@ -237,6 +235,40 @@ function requestNewChatFromMenu(): void {
 
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+interface AutoUpdaterLoadResult {
+  updater?: DesktopUpdater;
+  disabledReason?: string;
+}
+
+async function loadAutoUpdater(): Promise<AutoUpdaterLoadResult> {
+  if (!app.isPackaged || process.platform !== "darwin") {
+    return {};
+  }
+  try {
+    const updaterModule = await import("electron-updater");
+    const defaultExport = updaterModule.default as { autoUpdater?: DesktopUpdater } | undefined;
+    const namedExport = updaterModule as { autoUpdater?: DesktopUpdater };
+    const updater = defaultExport?.autoUpdater ?? namedExport.autoUpdater;
+    if (!updater) {
+      const disabledReason = "自动更新模块没有导出 autoUpdater，已暂时禁用自动更新";
+      console.warn("[main] 自动更新模块已加载，但没有导出 autoUpdater，已禁用自动更新", {
+        platform: process.platform,
+        isPackaged: app.isPackaged
+      });
+      return { disabledReason };
+    }
+    return { updater };
+  } catch (error) {
+    const disabledReason = `自动更新模块加载失败，已暂时禁用自动更新：${messageFromError(error)}`;
+    console.error("[main] 自动更新模块加载失败，已禁用自动更新", {
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      error: messageFromError(error)
+    });
+    return { disabledReason };
+  }
 }
 
 function rendererConsoleLevelFromElectron(level: string): number {
@@ -621,11 +653,15 @@ async function createQuickLookThumbnail(target: unknown): Promise<QuickLookThumb
 }
 
 async function createWindow(): Promise<void> {
+  const autoUpdaterLoad = await loadAutoUpdater();
   updateService ??= new DesktopUpdateService({
     currentVersion: app.getVersion(),
     isPackaged: app.isPackaged,
     platform: process.platform,
-    updater: autoUpdater
+    updater: autoUpdaterLoad.updater,
+    ...(autoUpdaterLoad.disabledReason
+      ? { updaterUnavailableReason: autoUpdaterLoad.disabledReason }
+      : {})
   });
   installApplicationMenu({
     appName: app.getName(),

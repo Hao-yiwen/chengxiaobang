@@ -22,6 +22,7 @@ export interface DesktopUpdateServiceOptions {
   isPackaged: boolean;
   platform?: NodeJS.Platform;
   updater?: DesktopUpdater;
+  updaterUnavailableReason?: string;
   now?: () => Date;
 }
 
@@ -42,7 +43,9 @@ export class DesktopUpdateService {
       : {
           status: "disabled",
           currentVersion: options.currentVersion,
-          error: options.isPackaged ? "当前平台暂不支持自动更新" : "开发模式不启用自动更新"
+          error: options.isPackaged
+            ? (options.updaterUnavailableReason ?? "当前平台暂不支持自动更新")
+            : "开发模式不启用自动更新"
         };
 
     if (this.isEnabled && this.updater) {
