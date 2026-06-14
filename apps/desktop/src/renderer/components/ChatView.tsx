@@ -576,8 +576,7 @@ function RunErrorNotice({
   );
 }
 
-// Memoized so per-delta re-renders during streaming skip settled messages —
-// the store preserves referential identity of existing message objects.
+// 记忆化消息气泡，流式合帧更新时可跳过已落库消息。
 const MessageBubble = memo(function MessageBubble({
   message,
   isLastAssistant = false,
@@ -596,15 +595,6 @@ const MessageBubble = memo(function MessageBubble({
     () => (message.role === "assistant" ? parseArtifactDeclarations(message.content) : undefined),
     [message.content, message.role]
   );
-  useEffect(() => {
-    if (message.role !== "assistant" || !hideActions || !message.content.trim()) {
-      return;
-    }
-    console.debug("[ChatView] 隐藏非最终助手消息动作", {
-      messageId: message.id,
-      createdAt: message.createdAt
-    });
-  }, [hideActions, message.content, message.createdAt, message.id, message.role]);
   if (message.kind === "compaction_summary") {
     return <CompactionCard message={message} />;
   }

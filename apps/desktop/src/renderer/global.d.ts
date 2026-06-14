@@ -104,6 +104,12 @@ export interface InstalledProjectOpener {
   iconDataUrl?: string;
 }
 
+export interface InstalledExternalBrowser {
+  id: string;
+  name: string;
+  appPath: string;
+}
+
 export interface TerminalStartInput {
   id: string;
   cwd: string;
@@ -152,6 +158,11 @@ declare global {
       prepareNativeImages?(filePath: string): Promise<PrepareNativeImagesResult>;
       saveAttachmentSnapshots?(filePaths: string[]): Promise<SaveAttachmentSnapshotsResult>;
       openPath?(filePath: string): Promise<{ ok: boolean; error?: string }>;
+      detectExternalBrowsers?(): Promise<InstalledExternalBrowser[]>;
+      openExternalUrlInBrowser?(
+        browserIdOrPath: string,
+        url: string
+      ): Promise<{ ok: boolean; error?: string }>;
       detectProjectOpeners?(): Promise<InstalledProjectOpener[]>;
       openProjectInApp?(
         appPath: string,

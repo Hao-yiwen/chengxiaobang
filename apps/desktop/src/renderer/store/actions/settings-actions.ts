@@ -3,9 +3,12 @@ import type { AppState, AppStoreGet, AppStoreSet } from "../types";
 import {
   configuredProviderById,
   firstConfiguredProvider,
-  isConfiguredProvider,
-  normalizeModelForProvider
+  isConfiguredProvider
 } from "../helpers/providers";
+import {
+  normalizeModelSelectionForProvider,
+  restoreHomeModelSelection
+} from "../helpers/model-selection";
 
 export function createSettingsActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {
   return {
@@ -16,13 +19,23 @@ export function createSettingsActions(set: AppStoreSet, get: AppStoreGet): Parti
         const saved = await apiClientRef.current.saveProvider(input);
         await get().refresh();
         if (isConfiguredProvider(saved)) {
-          set({
-            providerId: saved.id,
-            model: saved.model,
-            reasoningMode: undefined,
+          const modelState = normalizeModelSelectionForProvider(
+            saved,
+            saved.model,
+            undefined,
+            "saveProvider"
+          );
+          set((state) => ({
+            ...(state.view === "home" || !state.activeSessionId
+              ? {
+                  providerId: saved.id,
+                  ...modelState,
+                  homeModelSelection: { providerId: saved.id, ...modelState }
+                }
+              : {}),
             notice: undefined,
             onboardingOpen: false
-          });
+          }));
         }
       },
 
@@ -41,17 +54,25 @@ export function createSettingsActions(set: AppStoreSet, get: AppStoreGet): Parti
             state.providerId === id
               ? stillConfigured
               : configuredProviderById(state.providers, state.providerId);
+          const nextReasoningMode = state.providerId === id ? undefined : state.reasoningMode;
           const modelState = nextProvider
-            ? normalizeModelForProvider(
+            ? normalizeModelSelectionForProvider(
                 nextProvider,
                 state.model,
-                undefined,
+                nextReasoningMode,
                 "deleteProvider"
               )
             : { model: undefined, reasoningMode: undefined };
           return {
             providerId: nextProvider?.id,
-            ...modelState
+            ...modelState,
+            ...(state.view === "home" || !state.activeSessionId
+              ? restoreHomeModelSelection(
+                  { ...state, homeModelSelection: state.homeModelSelection.providerId === id ? {} : state.homeModelSelection },
+                  state.providers,
+                  "deleteProvider"
+                )
+              : {})
           };
         });
       },

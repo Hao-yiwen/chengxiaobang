@@ -31,9 +31,9 @@ import {
 } from "../helpers/queues";
 import {
   configuredProviderById,
-  firstConfiguredProvider,
-  normalizeModelForProvider
+  firstConfiguredProvider
 } from "../helpers/providers";
+import { normalizeModelSelectionForProvider } from "../helpers/model-selection";
 import {
   activeRunRecoveryPatch,
   autoOpenProgressPanelPatch,
@@ -67,7 +67,91 @@ function missingRunProviderPatch(state: AppState, source: string): Partial<AppSt
   return { onboardingOpen: true, onboardingStep: "model" };
 }
 
+const STREAM_DELTA_FLUSH_MS = 32;
+
 export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {
+  let bufferedTextDelta = "";
+  let bufferedThinkingDelta = "";
+  let bufferedThinkingStartedAt: number | undefined;
+  let bufferedDeltaRunId: string | undefined;
+  let bufferedDeltaTimer: number | undefined;
+
+  const clearBufferedDeltaTimer = () => {
+    if (bufferedDeltaTimer === undefined) {
+      return;
+    }
+    window.clearTimeout(bufferedDeltaTimer);
+    bufferedDeltaTimer = undefined;
+  };
+
+  const resetBufferedDeltas = () => {
+    bufferedTextDelta = "";
+    bufferedThinkingDelta = "";
+    bufferedThinkingStartedAt = undefined;
+    bufferedDeltaRunId = undefined;
+  };
+
+  const discardBufferedDeltas = () => {
+    clearBufferedDeltaTimer();
+    resetBufferedDeltas();
+  };
+
+  const flushBufferedDeltas = () => {
+    if (!bufferedTextDelta && !bufferedThinkingDelta) {
+      clearBufferedDeltaTimer();
+      resetBufferedDeltas();
+      return;
+    }
+    const textDelta = bufferedTextDelta;
+    const thinkingDelta = bufferedThinkingDelta;
+    const thinkingStartedAt = bufferedThinkingStartedAt;
+    const runId = bufferedDeltaRunId;
+    clearBufferedDeltaTimer();
+    resetBufferedDeltas();
+    set((current) => {
+      if (runId && current.activeRunId !== runId) {
+        console.debug("[store] 丢弃已切出会话的流式增量缓冲", {
+          runId,
+          activeRunId: current.activeRunId,
+          textChars: textDelta.length,
+          thinkingChars: thinkingDelta.length
+        });
+        return {};
+      }
+      return {
+        ...(textDelta ? { streamText: current.streamText + textDelta } : {}),
+        ...(thinkingDelta
+          ? {
+              thinking: current.thinking + thinkingDelta,
+              thinkingStartedAt: current.thinkingStartedAt ?? thinkingStartedAt ?? Date.now()
+            }
+          : {})
+      };
+    });
+  };
+
+  const enqueueDelta = (
+    event: Extract<Parameters<AppState["handleRunEvent"]>[0], { type: "delta" }>
+  ) => {
+    if (bufferedDeltaRunId && bufferedDeltaRunId !== event.runId) {
+      flushBufferedDeltas();
+    }
+    bufferedDeltaRunId = event.runId;
+    if (event.channel === "text") {
+      bufferedTextDelta += event.delta;
+    } else {
+      bufferedThinkingDelta += event.delta;
+      bufferedThinkingStartedAt ??= Date.now();
+    }
+    if (bufferedDeltaTimer !== undefined) {
+      return;
+    }
+    bufferedDeltaTimer = window.setTimeout(() => {
+      bufferedDeltaTimer = undefined;
+      flushBufferedDeltas();
+    }, STREAM_DELTA_FLUSH_MS);
+  };
+
   return {
       async submit() {
         const state = get();
@@ -119,10 +203,10 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             set(missingRunProviderPatch(state, "submit.queue"));
             return;
           }
-          const modelState = normalizeModelForProvider(
+          const modelState = normalizeModelSelectionForProvider(
             selectedProvider,
             state.model,
-            undefined,
+            state.reasoningMode,
             "submit.queue"
           );
           let displayAttachments: MessageAttachment[];
@@ -155,7 +239,8 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             })),
             displayAttachments,
             providerId: selectedProvider.id,
-            model: modelState.model ?? selectedProvider.model,
+            model: modelState.model,
+            reasoningMode: modelState.reasoningMode,
             accessMode: state.accessMode,
             planMode: state.planMode,
             createdAt: Date.now()
@@ -166,7 +251,8 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             activeRunId: state.activeRunId,
             activeRunClientRequestId: state.activeRunClientRequestId,
             providerId: item.providerId,
-            model: item.model ?? selectedProvider.model,
+            model: item.model,
+            reasoningMode: item.reasoningMode ?? "default",
             contentChars: item.content.length,
             displayAttachmentCount: item.displayAttachments.length
           });
@@ -185,10 +271,10 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           set(missingRunProviderPatch(state, "submit"));
           return;
         }
-        const modelState = normalizeModelForProvider(
+        const modelState = normalizeModelSelectionForProvider(
           selectedProvider,
           state.model,
-          undefined,
+          state.reasoningMode,
           "submit"
         );
         const { attachments, input } = state;
@@ -246,10 +332,10 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           set(missingRunProviderPatch(state, "regenerateLast"));
           return;
         }
-        const modelState = normalizeModelForProvider(
+        const modelState = normalizeModelSelectionForProvider(
           selectedProvider,
           state.model,
-          undefined,
+          state.reasoningMode,
           "regenerateLast"
         );
         const preparedRun = await prepareRunInputFromVisibleMessage({
@@ -298,10 +384,10 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           set(missingRunProviderPatch(state, "editAndResend"));
           return;
         }
-        const modelState = normalizeModelForProvider(
+        const modelState = normalizeModelSelectionForProvider(
           selectedProvider,
           state.model,
-          undefined,
+          state.reasoningMode,
           "editAndResend"
         );
         const displayAttachments = originalMessage?.attachments ?? [];
@@ -346,26 +432,35 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           );
           return;
         }
-        const modelState = normalizeModelForProvider(
+        const modelState = normalizeModelSelectionForProvider(
           selectedProvider,
           options.preserveSelection ? options.model : (options.model ?? state.model),
-          undefined,
+          options.preserveSelection
+            ? options.reasoningMode
+            : (options.reasoningMode ?? state.reasoningMode),
           options.source ?? "runPrompt"
         );
         if (
           !options.preserveSelection &&
           (selectedProvider.id !== state.providerId ||
             modelState.model !== state.model ||
-            state.reasoningMode !== undefined)
+            modelState.reasoningMode !== state.reasoningMode)
         ) {
-          set({ providerId: selectedProvider.id, ...modelState });
+          set({
+            providerId: selectedProvider.id,
+            ...modelState,
+            ...(state.view === "home" || !state.activeSessionId
+              ? { homeModelSelection: { providerId: selectedProvider.id, ...modelState } }
+              : {})
+          });
         }
+        discardBufferedDeltas();
         get().clearRunState();
         const clientRequestId = createId("client_run");
         const activeSessionId = options.sessionId ?? state.activeSessionId;
         const accessMode = options.accessMode ?? state.accessMode;
         const planMode = options.planMode ?? state.planMode;
-        const { model } = modelState;
+        const { model, reasoningMode } = modelState;
         const providerId = selectedProvider.id;
         const activeProject = selectActiveProject(get());
         const projectId =
@@ -376,7 +471,8 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
         console.info("[store] 发起模型运行", {
           source: options.source ?? "runPrompt",
           providerId,
-          model: model ?? selectedProvider.model,
+          model,
+          reasoningMode: reasoningMode ?? "default",
           sessionId: activeSessionId,
           projectId,
           nativeAttachmentCount: attachments.length,
@@ -394,7 +490,8 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           providerId,
           accessMode,
           planMode,
-          ...(model ? { model } : {}),
+          model,
+          ...(reasoningMode ? { reasoningMode } : {}),
           ...(attachments.length > 0 ? { attachments } : {})
         };
         set({
@@ -439,6 +536,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           });
         } catch (error) {
           console.error("[store] 运行流中断:", error);
+          discardBufferedDeltas();
           set((current) => ({
             isRunning: false,
             activeRunId: undefined,
@@ -491,6 +589,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           attachmentCount: attachments.length,
           providerId: item.providerId,
           model: item.model,
+          reasoningMode: item.reasoningMode ?? "default",
           accessMode: item.accessMode,
           planMode: item.planMode
         });
@@ -505,7 +604,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           attachments,
           providerId: item.providerId,
           model: item.model,
-          reasoningMode: undefined,
+          reasoningMode: item.reasoningMode,
           accessMode: item.accessMode,
           planMode: item.planMode
         }));
@@ -669,7 +768,8 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           queuedRunId: item.id,
           remainingQueuedCount: queuedRunsForSession(state, targetSessionId).length - 1,
           providerId: item.providerId,
-          model: item.model ?? provider.model,
+          model: item.model,
+          reasoningMode: item.reasoningMode ?? "default",
           contentChars: item.content.length,
           displayAttachmentCount: item.displayAttachments.length
         });
@@ -683,6 +783,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             projectId: item.projectId,
             providerId: item.providerId,
             model: item.model,
+            reasoningMode: item.reasoningMode,
             accessMode: item.accessMode,
             planMode: item.planMode,
             source: "queuedRun",
@@ -772,6 +873,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
         set((current) => ({ events: [...current.events, event] }));
         switch (event.type) {
           case "setup_error":
+            flushBufferedDeltas();
             console.warn("[store] run 启动阶段失败", { error: event.error });
             set((current) => ({
               isRunning: false,
@@ -815,19 +917,13 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             break;
           }
           case "delta":
-            if (event.channel === "text") {
-              set((current) => ({ streamText: current.streamText + event.delta }));
-            } else {
-              set((current) => ({
-                thinking: current.thinking + event.delta,
-                thinkingStartedAt: current.thinkingStartedAt ?? Date.now()
-              }));
-            }
+            enqueueDelta(event);
             break;
           case "tool_activity":
             set({ toolActivity: event.activity });
             break;
           case "message":
+            flushBufferedDeltas();
             // 一个 run 会推送 user 回显、工具间 assistant 轮次和最终回答。
             // assistant 消息已带持久化 reasoning，因此这里只清理实时缓冲。
             set((current) => ({
@@ -843,6 +939,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             }));
             break;
           case "tool_call":
+            flushBufferedDeltas();
             // tool_call.status 是状态机：pending_approval 独立进底部 dock，
             // 智能审批等待态不需要用户点击，进入历史/活动区展示即可。
             if (event.toolCall.status === "pending_approval") {
@@ -873,6 +970,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             }
             break;
           case "run_end": {
+            flushBufferedDeltas();
             const sessionId = runEndSessionId ?? get().activeSessionId;
             set((current) => ({
               isRunning: false,

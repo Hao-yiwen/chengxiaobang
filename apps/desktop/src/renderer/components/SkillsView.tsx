@@ -28,6 +28,9 @@ import { useAppStore } from "@/store";
 type CategoryFilter = "all" | SkillCategory;
 
 const CATEGORY_FILTERS: CategoryFilter[] = ["all", "coding", "office", "other"];
+const softBluePillClassName = "border-soft-blue-border bg-soft-blue-surface text-soft-blue-foreground";
+const softBlueButtonClassName =
+  "border border-soft-blue-border bg-soft-blue-surface text-soft-blue-foreground hover:border-soft-blue hover:bg-soft-blue-surface-hover hover:text-soft-blue-strong [&_svg]:text-soft-blue-foreground hover:[&_svg]:text-soft-blue-strong";
 
 /** 技能页 = 我的技能（已激活）+ 技能市场（按需添加）+ 自定义技能入口。 */
 export function SkillsView() {
@@ -89,7 +92,7 @@ export function SkillsView() {
           type="button"
           variant="secondary"
           size="sm"
-          className="flex-none [-webkit-app-region:no-drag] [&_svg]:text-link"
+          className={cn("flex-none [-webkit-app-region:no-drag]", softBlueButtonClassName)}
           onClick={() => setAddOpen(true)}
         >
           <Plus className="size-3.5" />
@@ -100,7 +103,7 @@ export function SkillsView() {
       <div className="min-h-0 flex-1 overflow-y-auto px-12 py-6">
         <SectionTitle>{t("skills.mine")}</SectionTitle>
         {mySkills.length === 0 ? (
-          <p className="mt-2 text-body-sm text-body">{t("skills.mineEmpty")}</p>
+          <p className="mt-2 text-body-sm [color:rgb(var(--body))]">{t("skills.mineEmpty")}</p>
         ) : (
           <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {mySkills.map((skill) => (
@@ -134,7 +137,7 @@ export function SkillsView() {
                 key={value}
                 value={value}
                 aria-label={t(`skills.category.${value}`)}
-                className="hover:border-link/20 hover:bg-canvas-soft-2 data-[state=on]:ring-1 data-[state=on]:ring-link/20"
+                className="border-soft-blue-border !text-caption [color:rgb(var(--body))] hover:bg-soft-blue-surface hover:text-soft-blue-foreground data-[state=on]:border-soft-blue data-[state=on]:bg-soft-blue-surface-hover data-[state=on]:text-soft-blue-strong"
               >
                 {t(`skills.category.${value}`)}
               </ToggleGroupItem>
@@ -143,7 +146,7 @@ export function SkillsView() {
         </div>
         <p className="mt-1 text-caption text-mute">{t("skills.marketHint")}</p>
         {marketSkills.length === 0 ? (
-          <p className="mt-3 text-body-sm text-body">{t("skills.marketEmpty")}</p>
+          <p className="mt-3 text-body-sm [color:rgb(var(--body))]">{t("skills.marketEmpty")}</p>
         ) : (
           <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {marketSkills.map((skill) => (
@@ -165,8 +168,8 @@ export function SkillsView() {
 
 function SectionTitle(props: { children: ReactNode }) {
   return (
-    <h2 className="flex items-center gap-2 font-mono text-caption tracking-[0.28px] text-mute">
-      <span className="h-3 w-px rounded-full bg-link/70" aria-hidden />
+    <h2 className="flex items-center gap-2 font-mono text-caption tracking-[0.28px] text-foreground">
+      <span className="h-3 w-px rounded-full bg-foreground" aria-hidden />
       {props.children}
     </h2>
   );
@@ -174,13 +177,16 @@ function SectionTitle(props: { children: ReactNode }) {
 
 function SkillSourceBadge(props: { skill: Pick<SkillSummary, "source"> }) {
   const { t } = useTranslation();
+  const badgeClassName =
+    props.skill.source === "builtin"
+      ? "border-emerald-500/20 bg-emerald-50 text-emerald-700"
+      : softBluePillClassName;
 
   return (
     <Badge
       variant="outline"
-      className="h-4 flex-none gap-1 border-hairline bg-canvas-soft-2 px-1.5 py-0 text-[11px] leading-4 text-body"
+      className={cn("h-4 flex-none px-1.5 py-0 text-[11px] leading-4", badgeClassName)}
     >
-      <span className="size-1 rounded-full bg-link/70" aria-hidden />
       {t(`skills.source.${props.skill.source}`)}
     </Badge>
   );
@@ -192,11 +198,11 @@ function SkillCategoryBadge(props: { category: SkillCategory; className?: string
   return (
     <span
       className={cn(
-        "inline-flex min-w-0 items-center gap-1 rounded-full border border-hairline bg-canvas-soft-2 px-1.5 py-0.5 text-micro text-mute",
+        "inline-flex min-w-0 items-center rounded-full border px-1.5 py-0.5 text-micro",
+        softBluePillClassName,
         props.className
       )}
     >
-      <span className="size-1 rounded-full bg-link/65" aria-hidden />
       {t(`skills.category.${props.category}`)}
     </span>
   );
@@ -213,7 +219,7 @@ function SkillCard(props: { skill: SkillSummary; mine?: boolean; onOpen(): void 
   return (
     <Card
       asChild
-      className="flex cursor-pointer flex-col px-4 py-3 transition-colors hover:border-link/20 hover:bg-canvas-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex cursor-pointer flex-col px-4 py-3 transition-colors hover:border-soft-blue-border hover:bg-soft-blue-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <article
         data-testid={`skill-card-${skill.source}-${skill.name}`}
@@ -234,7 +240,7 @@ function SkillCard(props: { skill: SkillSummary; mine?: boolean; onOpen(): void 
           </span>
           <SkillSourceBadge skill={skill} />
         </div>
-        <p className="mt-1.5 line-clamp-3 min-h-[2rem] flex-1 text-caption leading-relaxed text-body">
+        <p className="mt-1.5 line-clamp-3 min-h-[2rem] flex-1 text-caption leading-relaxed [color:rgb(var(--body))]">
           {skill.description}
         </p>
         <div className="mt-3 flex items-center justify-between">
@@ -293,10 +299,33 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
     await run(() => deleteCustomSkill(skill.name));
   }
 
+  async function confirmToggleMarketSkill(enabled: boolean): Promise<void> {
+    if (busy) {
+      return;
+    }
+    const source = enabled ? "skills.addMarketSkill" : "skills.removeMarketSkill";
+    console.debug("[skills-view] 请求切换市场技能", { name: skill.name, enabled });
+    const confirmed = await confirmDialog({
+      title: t(enabled ? "skills.addTitle" : "skills.removeTitle", { name: skill.name }),
+      description: t(enabled ? "skills.addConfirm" : "skills.removeConfirm", {
+        name: skill.name
+      }),
+      confirmLabel: t(enabled ? "skills.add" : "skills.remove"),
+      cancelLabel: t("confirmDialog.cancel"),
+      source
+    });
+    if (!confirmed) {
+      console.debug("[skills-view] 用户取消切换市场技能", { name: skill.name, enabled });
+      return;
+    }
+    console.debug("[skills-view] 用户确认切换市场技能", { name: skill.name, enabled });
+    await run(() => setSkillEnabled(skill.name, enabled));
+  }
+
   if (skill.source === "builtin") {
     return (
-      <span className="flex items-center gap-1 text-micro text-mute">
-        <Check className="size-3.5 text-link" />
+      <span className="flex items-center gap-1 text-micro text-soft-blue-foreground">
+        <Check className="size-3.5" />
         {t("skills.alwaysOn")}
       </span>
     );
@@ -328,10 +357,13 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
       variant="outline"
       size="sm"
       disabled={busy}
-      className={compact ? compactActionButtonClassName : "h-7 px-2.5 text-micro"}
+      className={cn(
+        compact ? compactActionButtonClassName : "h-7 px-2.5 text-micro",
+        softBlueButtonClassName
+      )}
       onClick={(event) => {
         event.stopPropagation();
-        void run(() => setSkillEnabled(skill.name, false));
+        void confirmToggleMarketSkill(false);
       }}
     >
       {mine ? t("skills.remove") : t("skills.added")}
@@ -341,10 +373,13 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
       type="button"
       size="sm"
       disabled={busy}
-      className={compact ? compactActionButtonClassName : "h-7 px-2.5 text-micro"}
+      className={cn(
+        compact ? compactActionButtonClassName : "h-7 px-2.5 text-micro",
+        softBlueButtonClassName
+      )}
       onClick={(event) => {
         event.stopPropagation();
-        void run(() => setSkillEnabled(skill.name, true));
+        void confirmToggleMarketSkill(true);
       }}
     >
       <Plus className="size-3.5" />
@@ -414,7 +449,7 @@ function SkillDetailDialog(props: { name: string | null; onClose(): void }) {
               </>
             ) : null}
           </div>
-          <DialogDescription className="text-caption text-body">
+          <DialogDescription className="text-caption [color:rgb(var(--body))]">
             {heading?.description}
           </DialogDescription>
         </DialogHeader>
@@ -518,18 +553,18 @@ function AddSkillDialog(props: { open: boolean; onOpenChange(open: boolean): voi
           <span className="h-px flex-1 bg-hairline" />
         </div>
 
-        <Card className="border-link/10 bg-canvas-soft px-4 py-3.5">
+        <Card className={cn("px-4 py-3.5", softBluePillClassName)}>
           <h3 className="text-body-sm font-medium text-foreground">
             {t("skills.chatCreateTitle")}
           </h3>
-          <p className="mt-1 text-caption leading-relaxed text-body">
+          <p className="mt-1 text-caption leading-relaxed [color:rgb(var(--body))]">
             {t("skills.chatCreateHint")}
           </p>
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            className="mt-3 [&_svg]:text-link"
+            className={cn("mt-3", softBlueButtonClassName)}
             onClick={startChatCreation}
           >
             <ChatText className="size-3.5" />

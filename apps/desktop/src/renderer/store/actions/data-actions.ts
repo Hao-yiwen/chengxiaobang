@@ -18,9 +18,12 @@ import {
 import { dropQueuedRunsForSessions, pruneRunQueuesByLiveSessions } from "../helpers/queues";
 import {
   configuredProviderById,
-  firstConfiguredProvider,
-  normalizeModelForProvider
+  firstConfiguredProvider
 } from "../helpers/providers";
+import {
+  resolveSessionModelSelection,
+  restoreHomeModelSelection
+} from "../helpers/model-selection";
 import {
   activeRunRecoveryPatch,
   logRecoveredFailedRuns,
@@ -80,27 +83,25 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           const configuredProvider = firstConfiguredProvider(nextProviders);
           const activeSessionId = state.view === "home" ? undefined : state.activeSessionId;
           const liveSessionIds = new Set(nextSessions.map((session) => session.id));
-          const explicitProvider = configuredProviderById(nextProviders, state.providerId);
-          const nextProvider =
-            explicitProvider ?? (state.view === "home" ? undefined : configuredProvider);
-          if (state.view === "home" && !explicitProvider && configuredProvider) {
-            console.debug("[store] 首页加载保持供应商未选择", {
-              fallbackProviderId: configuredProvider.id
-            });
-          }
-          const modelState = nextProvider
-            ? normalizeModelForProvider(
-                nextProvider,
-                state.model,
-                undefined,
-                "loadData"
-              )
-            : { model: undefined, reasoningMode: undefined };
+          const activeSession = activeSessionId
+            ? nextSessions.find((session) => session.id === activeSessionId)
+            : undefined;
+          const sessionProvider =
+            configuredProviderById(nextProviders, activeSession?.providerId) ??
+            (state.view === "home" ? undefined : configuredProviderById(nextProviders, state.providerId)) ??
+            (state.view === "home" ? undefined : configuredProvider);
+          const modelPatch =
+            state.view === "home"
+              ? restoreHomeModelSelection(state, nextProviders, "loadData.home")
+              : {
+                  providerId: sessionProvider?.id,
+                  ...resolveSessionModelSelection(activeSession, sessionProvider, "loadData.session")
+                };
           return {
             projects: nextProjects,
             sessions: nextSessions,
             providers: nextProviders,
-            ...modelState,
+            ...modelPatch,
             runningSessionsById: Object.fromEntries(
               Object.entries(state.runningSessionsById).filter(([sessionId]) =>
                 liveSessionIds.has(sessionId)
@@ -120,7 +121,6 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             ),
             composerDraftsByScope: pruneComposerDraftsByLiveSessions(state, liveSessionIds),
             activeSessionId,
-            providerId: nextProvider?.id,
             activeProjectId:
               state.activeProjectId && nextProjects.some((p) => p.id === state.activeProjectId)
                 ? state.activeProjectId
@@ -205,6 +205,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             providerId: undefined,
             model: undefined,
             reasoningMode: undefined,
+            homeModelSelection: {},
             messages: [],
             toolHistory: [],
             runHistory: [],
@@ -239,10 +240,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               HOME_COMPOSER_DRAFT_SCOPE,
               "restoreInitialState.home"
             ),
+            ...restoreHomeModelSelection(state, data.providers, "restoreInitialState.home"),
             activeSessionId: undefined,
-            providerId: undefined,
-            model: undefined,
-            reasoningMode: undefined,
             messages: [],
             toolHistory: [],
             runHistory: [],
@@ -270,10 +269,12 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               HOME_COMPOSER_DRAFT_SCOPE,
               "restoreInitialState.missingSession"
             ),
+            ...restoreHomeModelSelection(
+              state,
+              data.providers,
+              "restoreInitialState.missingSession"
+            ),
             activeSessionId: undefined,
-            providerId: undefined,
-            model: undefined,
-            reasoningMode: undefined,
             messages: [],
             toolHistory: [],
             runHistory: [],
@@ -299,12 +300,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             configuredProviderById(data.providers, state.providerId) ??
             configuredProvider;
           const modelState = sessionProvider
-            ? normalizeModelForProvider(
-                sessionProvider,
-                targetSession.model ?? state.model,
-                undefined,
-                "restoreInitialState"
-              )
+            ? resolveSessionModelSelection(targetSession, sessionProvider, "restoreInitialState")
             : { model: undefined, reasoningMode: undefined };
           return {
             ...switchComposerDraftScope(
@@ -360,6 +356,18 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         if (!apiClientRef.current) {
           return;
         }
+        const currentState = get();
+        if (
+          currentState.view === "chat" &&
+          currentState.activeSessionId === id &&
+          currentState.runningSessionsById[id]
+        ) {
+          console.debug("[store] 当前运行中会话已选中，跳过重复选择", {
+            sessionId: id,
+            activeRunId: currentState.activeRunId
+          });
+          return;
+        }
         const session = get().sessions.find((item) => item.id === id);
         set((state) => {
           const rightPanelBySession = rememberRightPanel(state);
@@ -368,12 +376,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             configuredProviderById(state.providers, state.providerId) ??
             firstConfiguredProvider(state.providers);
           const modelState = sessionProvider
-            ? normalizeModelForProvider(
-                sessionProvider,
-                session?.model ?? state.model,
-                undefined,
-                "selectSession"
-              )
+            ? resolveSessionModelSelection(session, sessionProvider, "selectSession")
             : { model: undefined, reasoningMode: undefined };
           return {
             rightPanelBySession,
@@ -475,10 +478,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               runningSessionsById,
               runningRunSessionById,
               ...resetHomePlanMode("deleteSession", state.planMode),
+              ...restoreHomeModelSelection(state, state.providers, "deleteSession"),
               activeSessionId: undefined,
-              providerId: undefined,
-              model: undefined,
-              reasoningMode: undefined,
               messages: [],
               toolHistory: [],
               runHistory: [],
@@ -557,11 +558,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
                 "deleteProject"
               ),
               ...resetHomePlanMode("deleteProject", state.planMode),
+              ...restoreHomeModelSelection(state, state.providers, "deleteProject"),
               activeProjectId: undefined,
               activeSessionId: undefined,
-              providerId: undefined,
-              model: undefined,
-              reasoningMode: undefined,
               messages: [],
               toolHistory: [],
               runHistory: [],
@@ -623,11 +622,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           rightPanelBySession: rememberRightPanel(state),
           ...switchComposerDraftScope(state, HOME_COMPOSER_DRAFT_SCOPE, "newChat"),
           ...resetHomePlanMode("newChat", state.planMode),
+          ...restoreHomeModelSelection(state, state.providers, "newChat"),
           activeProjectId: undefined,
           activeSessionId: undefined,
-          providerId: undefined,
-          model: undefined,
-          reasoningMode: undefined,
           messages: [],
           toolHistory: [],
           runHistory: [],
@@ -651,11 +648,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           rightPanelBySession: rememberRightPanel(state),
           ...switchComposerDraftScope(state, HOME_COMPOSER_DRAFT_SCOPE, "newChatInProject"),
           ...resetHomePlanMode("newChatInProject", state.planMode),
+          ...restoreHomeModelSelection(state, state.providers, "newChatInProject"),
           activeProjectId: projectId,
           activeSessionId: undefined,
-          providerId: undefined,
-          model: undefined,
-          reasoningMode: undefined,
           messages: [],
           toolHistory: [],
           runHistory: [],

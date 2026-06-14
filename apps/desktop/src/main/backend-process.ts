@@ -90,6 +90,7 @@ export function resolveBackendCommand(options: {
   token: string;
   resourcesPath: string;
   isPackaged: boolean;
+  ocrService?: { url: string; token: string };
   platform?: NodeJS.Platform;
 }): BackendCommand {
   const platform = options.platform ?? process.platform;
@@ -104,6 +105,9 @@ export function resolveBackendCommand(options: {
     options.dataDir,
     "--token",
     options.token,
+    ...(options.ocrService
+      ? ["--ocr-service-url", options.ocrService.url, "--ocr-service-token", options.ocrService.token]
+      : []),
     "--parent-pid",
     String(process.pid)
   ];
@@ -139,6 +143,7 @@ export async function startBackendProcess(options: {
   dataDir: string;
   resourcesPath: string;
   isPackaged: boolean;
+  ocrService?: { url: string; token: string };
   logger?: LogWriter;
 }): Promise<BackendProcess> {
   const port = 30_000 + Math.floor(Math.random() * 20_000);
@@ -148,7 +153,8 @@ export async function startBackendProcess(options: {
     dataDir: options.dataDir,
     token,
     resourcesPath: options.resourcesPath,
-    isPackaged: options.isPackaged
+    isPackaged: options.isPackaged,
+    ...(options.ocrService ? { ocrService: options.ocrService } : {})
   });
   command = prepareBackendRuntimeCommand(command, {
     dataDir: options.dataDir,

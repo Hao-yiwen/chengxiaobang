@@ -11,6 +11,7 @@ import type { AppState } from "./types";
 export type {
   AppState,
   Attachment,
+  ModelSelection,
   NotificationToast,
   OnboardingStep,
   PreviewFileState,

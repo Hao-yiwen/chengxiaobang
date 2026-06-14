@@ -18,6 +18,7 @@ import {
   ProviderCascadeSelect,
   ProviderModelTags
 } from "@/components/ProviderCascadeSelect";
+import { ExternalUrlAnchor } from "@/components/ExternalUrlMenu";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -478,15 +479,13 @@ function ModelStep(props: {
               <div className="flex items-center justify-between">
                 <Label className="text-micro text-muted-slate">API Key</Label>
                 {API_KEY_URLS[draft.kind] ? (
-                  <a
-                    href={API_KEY_URLS[draft.kind]}
-                    target="_blank"
-                    rel="noreferrer"
+                  <ExternalUrlAnchor
+                    href={API_KEY_URLS[draft.kind]!}
                     className="flex items-center gap-1 text-micro text-link underline-offset-2 hover:underline"
                   >
                     <ExternalLink className="size-3" />
                     {t("settings.providers.getApiKey")}
-                  </a>
+                  </ExternalUrlAnchor>
                 ) : null}
               </div>
               <Input

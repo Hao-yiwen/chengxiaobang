@@ -263,7 +263,8 @@ function collectToolCallArtifacts(
     }
     const normalized = normalizeArtifactPath(path);
     if (!normalized) {
-      diagnostics.push({ type: "invalid_path", path });
+      // 工具历史只是旧会话的产物兜底；绝对路径常见于普通文件工具，静默跳过即可，
+      // 避免渲染层在每次重算浮层时刷出大量无行动价值的诊断日志。
       continue;
     }
     const kind = toolArtifactKind(toolCall.name, normalized);

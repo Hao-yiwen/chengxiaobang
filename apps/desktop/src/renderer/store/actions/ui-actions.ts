@@ -11,9 +11,12 @@ import {
 } from "../helpers/composer-drafts";
 import {
   configuredProviderById,
-  firstConfiguredProvider,
-  normalizeModelForProvider
+  firstConfiguredProvider
 } from "../helpers/providers";
+import {
+  normalizeModelSelectionForProvider,
+  restoreHomeModelSelection
+} from "../helpers/model-selection";
 import {
   RIGHT_PANEL_FILE_WIDTH,
   RIGHT_PANEL_MAX_WIDTH,
@@ -21,6 +24,7 @@ import {
   rememberRightPanel
 } from "../helpers/right-panel";
 import { selectActiveProject, selectActiveSession } from "../selectors";
+import { upsertSession } from "../helpers/collections";
 
 export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {
   return {
@@ -29,7 +33,12 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           const targetScope = composerDraftScopeForView(view, state.activeSessionId);
           return {
             view,
-            ...(view === "home" ? resetHomePlanMode("setView", state.planMode) : {}),
+            ...(view === "home"
+              ? {
+                  ...resetHomePlanMode("setView", state.planMode),
+                  ...restoreHomeModelSelection(state, state.providers, "setView")
+                }
+              : {}),
             ...(targetScope ? switchComposerDraftScope(state, targetScope, "setView") : {})
           };
         }),
@@ -102,7 +111,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           return {
             providerId,
             ...(provider
-              ? normalizeModelForProvider(
+              ? normalizeModelSelectionForProvider(
                   provider,
                   state.model,
                   undefined,
@@ -113,21 +122,125 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         }),
       setModel: (model) => set({ model }),
       setReasoningMode: (reasoningMode) => set({ reasoningMode }),
+      async selectComposerModel(providerId, model, reasoningMode) {
+        const state = get();
+        const provider = configuredProviderById(state.providers, providerId);
+        if (!provider) {
+          console.warn("[store] 模型选择失败：供应商配置不可用", {
+            providerId,
+            model,
+            activeSessionId: state.activeSessionId,
+            view: state.view
+          });
+          set({ notice: "模型配置已不可用" });
+          return;
+        }
+        const modelState = normalizeModelSelectionForProvider(
+          provider,
+          model,
+          reasoningMode,
+          "selectComposerModel"
+        );
+        const selection = { providerId: provider.id, ...modelState };
+        if (state.view === "home" || !state.activeSessionId) {
+          console.info("[store] 保存首页模型选择", {
+            providerId: provider.id,
+            model: modelState.model,
+            reasoningMode: modelState.reasoningMode ?? "default"
+          });
+          set({
+            providerId: provider.id,
+            ...modelState,
+            homeModelSelection: selection
+          });
+          return;
+        }
+
+        const sessionId = state.activeSessionId;
+        console.info("[store] 保存会话模型选择", {
+          sessionId,
+          providerId: provider.id,
+          model: modelState.model,
+          reasoningMode: modelState.reasoningMode ?? "default"
+        });
+        set((current) => {
+          const session = current.sessions.find((item) => item.id === sessionId);
+          const optimisticSession = session
+            ? {
+                ...session,
+                providerId: provider.id,
+                model: modelState.model,
+                reasoningMode: modelState.reasoningMode
+              }
+            : undefined;
+          return {
+            providerId: provider.id,
+            ...modelState,
+            ...(optimisticSession
+              ? { sessions: upsertSession(current.sessions, optimisticSession) }
+              : {})
+          };
+        });
+
+        if (!apiClientRef.current?.updateSession) {
+          console.warn("[store] 会话模型选择未写回：ApiClient 不可用", {
+            sessionId,
+            providerId: provider.id,
+            model: modelState.model
+          });
+          return;
+        }
+        try {
+          const updated = await apiClientRef.current.updateSession(sessionId, {
+            providerId: provider.id,
+            model: modelState.model,
+            reasoningMode: modelState.reasoningMode ?? null
+          });
+          set((current) => {
+            const updatedProvider =
+              configuredProviderById(current.providers, updated.providerId) ?? provider;
+            const updatedModelState = normalizeModelSelectionForProvider(
+              updatedProvider,
+              updated.model,
+              updated.reasoningMode,
+              "selectComposerModel.persisted"
+            );
+            return {
+              sessions: upsertSession(current.sessions, updated),
+              ...(current.activeSessionId === sessionId
+                ? {
+                    providerId: updatedProvider.id,
+                    ...updatedModelState
+                  }
+                : {})
+            };
+          });
+        } catch (error) {
+          console.warn("[store] 会话模型选择写回失败", {
+            sessionId,
+            providerId: provider.id,
+            model: modelState.model,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          set({ notice: "模型选择保存失败" });
+        }
+      },
       setPlanMode: (planMode) => {
         console.info("[store] 切换计划模式", { planMode });
         set({ planMode });
       },
-      setAccessMode: (accessMode) => set({ accessMode }),
+      setAccessMode: (accessMode) => {
+        console.info("[store] 更新权限模式", { accessMode });
+        set({ accessMode });
+      },
       setActiveProjectId: (activeProjectId) => {
         set((state) => ({
           rightPanelBySession: rememberRightPanel(state),
           ...switchComposerDraftScope(state, HOME_COMPOSER_DRAFT_SCOPE, "setActiveProjectId"),
           ...resetHomePlanMode("setActiveProjectId", state.planMode),
+          ...restoreHomeModelSelection(state, state.providers, "setActiveProjectId"),
           activeProjectId,
           activeSessionId: undefined,
-          providerId: undefined,
-          model: undefined,
-          reasoningMode: undefined,
           messages: [],
           toolHistory: [],
           runHistory: [],

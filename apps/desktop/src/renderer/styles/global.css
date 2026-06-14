@@ -19,6 +19,12 @@
     --link: 0 112 243; /* #0070f3 */
     --link-deep: 7 97 209; /* #0761d1 */
     --link-bg-soft: 211 229 255; /* #d3e5ff */
+    --soft-blue: 64 118 190; /* #4076be：标签/筛选/轻量按钮的低强度品牌蓝 */
+    --soft-blue-strong: 38 88 152; /* #265898 */
+    --soft-blue-foreground: 45 83 135; /* #2d5387 */
+    --soft-blue-border: 196 215 242; /* #c4d7f2 */
+    --soft-blue-surface: 245 249 255; /* #f5f9ff */
+    --soft-blue-surface-hover: 237 245 255; /* #edf5ff */
     --error: 238 0 0; /* #ee0000 */
     --error-soft: 247 212 214; /* #f7d4d6 */
     --error-deep: 197 0 0; /* #c50000 */
@@ -101,6 +107,12 @@
     --link: 82 168 255;
     --link-deep: 0 112 243;
     --link-bg-soft: 0 49 102;
+    --soft-blue: 82 168 255;
+    --soft-blue-strong: 147 197 253;
+    --soft-blue-foreground: 147 197 253;
+    --soft-blue-border: 42 77 116;
+    --soft-blue-surface: 21 35 52;
+    --soft-blue-surface-hover: 25 48 74;
     --error: 255 77 79;
     --error-soft: 72 25 27;
     --error-deep: 255 120 120;

@@ -101,6 +101,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
 beforeAll(() => {
   // radix DropdownMenu 在 jsdom 下需要的最小桩（popper 测量 + 滚动 + pointer capture）。
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
+  window.HTMLElement.prototype.focus = vi.fn();
   window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false) as never;
   window.HTMLElement.prototype.releasePointerCapture = vi.fn();
   window.HTMLElement.prototype.setPointerCapture = vi.fn();
@@ -124,44 +125,56 @@ async function openModelMenu(): Promise<HTMLElement> {
   return screen.findByRole("menu");
 }
 
-function clickModel(menu: HTMLElement, modelLabel: string): void {
+/** hover 某个模型行，展开它右侧的配置 flyout。 */
+async function openModelFlyout(menu: HTMLElement, modelLabel: string): Promise<void> {
   const row = within(menu).getByText(modelLabel).closest("[role='menuitem']");
   if (!row) {
     throw new Error(`找不到模型行：${modelLabel}`);
   }
-  fireEvent.click(row);
+  await act(async () => {
+    fireEvent.pointerOver(row, { pointerType: "mouse" });
+    fireEvent.pointerMove(row, { pointerType: "mouse" });
+    fireEvent.mouseOver(row);
+    fireEvent.mouseMove(row);
+    fireEvent.mouseEnter(row);
+    fireEvent.keyDown(row, { key: "ArrowRight" });
+  });
 }
 
-describe("Composer 模型选择器", () => {
-  it("lists configured providers and their YAML-backed models without reasoning controls", async () => {
+describe("Composer 模型 + 推理联动选择器", () => {
+  it("lists models flat without provider headers and opens reasoning in a right flyout", async () => {
     render(<App client={createClient()} />);
     await screen.findByLabelText("输入消息");
 
     const menu = await openModelMenu();
 
-    expect(within(menu).getByText("DeepSeek")).toBeInTheDocument();
-    expect(within(menu).getByText("Kimi")).toBeInTheDocument();
     expect(within(menu).getByText("DeepSeek V4 Flash")).toBeInTheDocument();
     expect(within(menu).getByText("Kimi K2.7 Code")).toBeInTheDocument();
-    expect(within(menu).queryByText("默认")).not.toBeInTheDocument();
-    expect(within(menu).queryByText("关闭")).not.toBeInTheDocument();
+    expect(within(menu).queryByText("DeepSeek")).not.toBeInTheDocument();
     expect(within(menu).queryByText("High")).not.toBeInTheDocument();
+
+    await openModelFlyout(menu, "DeepSeek V4 Flash");
+
+    expect(await screen.findByText("关闭")).toBeInTheDocument();
+    expect(screen.queryByText("默认")).not.toBeInTheDocument();
+    expect(screen.getByText("High")).toBeInTheDocument();
+    expect(screen.getByText("XHigh")).toBeInTheDocument();
   });
 
-  it("selects a model and clears any stale manual reasoning mode", async () => {
+  it("picks a reasoning level from the model flyout and reflects it on the trigger", async () => {
     render(<App client={createClient()} />);
     await screen.findByLabelText("输入消息");
-    act(() => {
-      useAppStore.getState().setReasoningMode("high");
-    });
 
     const menu = await openModelMenu();
-    clickModel(menu, "DeepSeek V4 Pro");
+    await openModelFlyout(menu, "DeepSeek V4 Flash");
+    fireEvent.click(await screen.findByText("High"));
 
-    await waitFor(() => expect(useAppStore.getState().model).toBe("deepseek-v4-pro"));
+    await waitFor(() => expect(useAppStore.getState().reasoningMode).toBe("high"));
     expect(useAppStore.getState().providerId).toBe("deepseek");
-    expect(useAppStore.getState().reasoningMode).toBeUndefined();
-    expect(await screen.findByLabelText("选择模型")).toHaveTextContent("DeepSeek V4 Pro");
+    expect(useAppStore.getState().model).toBe("deepseek-v4-flash");
+    expect(await screen.findByLabelText("选择模型")).toHaveTextContent(
+      /DeepSeek V4 Flash\s*· High/
+    );
   });
 
   it("only lists the models enabled on the provider config", async () => {
@@ -181,7 +194,7 @@ describe("Composer 模型选择器", () => {
     expect(within(menu).queryByText("DeepSeek V4 Pro")).not.toBeInTheDocument();
   });
 
-  it("selects another provider's model directly", async () => {
+  it("selects another provider's model through its flyout and clears unsupported reasoning", async () => {
     render(<App client={createClient()} />);
     await screen.findByLabelText("输入消息");
     act(() => {
@@ -189,15 +202,18 @@ describe("Composer 模型选择器", () => {
     });
 
     const menu = await openModelMenu();
-    clickModel(menu, "Kimi K2.7 Code");
+    await openModelFlyout(menu, "Kimi K2.7 Code");
     expect(screen.queryByText("XHigh")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByText("始终开启"));
 
     await waitFor(() => expect(useAppStore.getState().providerId).toBe("kimi"));
-    // 选中的是 Kimi 的默认模型，model 归一为 undefined；旧手动推理模式被清掉。
-    expect(useAppStore.getState().model).toBeUndefined();
+    // 选中默认模型也要保留具体 id；旧手动推理模式被清掉。
+    expect(useAppStore.getState().model).toBe("kimi-k2.7-code");
     expect(useAppStore.getState().reasoningMode).toBeUndefined();
 
-    expect(await screen.findByLabelText("选择模型")).toHaveTextContent("Kimi K2.7 Code");
+    expect(await screen.findByLabelText("选择模型")).toHaveTextContent(
+      /Kimi K2\.7 Code\s*· 始终开启/
+    );
   });
 
   it("shows current context usage to the left of the model picker", async () => {

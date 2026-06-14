@@ -33,6 +33,8 @@ describe("buildSystemPrompt", () => {
     const empty = buildSystemPrompt({ workspacePath: "/w", accessMode: "approval", memory: {} });
     expect(empty).toContain("## 长期记忆");
     expect(empty).toContain("memory 工具");
+    expect(empty).toContain("/memories 是虚拟路径前缀");
+    expect(empty).toContain("它不是系统根目录下的 /memories");
     expect(empty).toContain("（记忆目录为空）");
 
     const listed = buildSystemPrompt({

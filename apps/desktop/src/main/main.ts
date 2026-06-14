@@ -36,6 +36,14 @@ import {
 import { installApplicationMenu } from "./app-menu";
 import { startBackendProcess, type BackendProcess } from "./backend-process";
 import {
+  DEFAULT_EXTERNAL_BROWSER_ID,
+  detectInstalledExternalBrowsers,
+  externalBrowserDefinitions,
+  externalBrowserSearchDirs,
+  isSupportedExternalUrl,
+  openExternalUrlInBrowser as openUrlInExternalBrowser
+} from "./browsers";
+import {
   detectInstalledProjectOpeners,
   projectOpenerDefinitions,
   projectOpenerBundleIconFileNames,
@@ -66,7 +74,7 @@ import {
   previewPathCandidates,
   type FilePreviewResolveContext
 } from "./file-preview-path";
-import { registerOcrIpc } from "./ocr";
+import { registerOcrIpc, startOcrHttpService, type OcrHttpService } from "./ocr";
 import { registerTerminalIpc, type TerminalSessionManager } from "./terminal";
 import { DesktopUpdateService, registerUpdateIpc, type DesktopUpdater } from "./update-service";
 import { createTrustedIpcRegistrar } from "./trusted-ipc";
@@ -204,6 +212,7 @@ async function resolveExistingPreviewPath(
 
 let mainWindow: BrowserWindow | undefined;
 let backend: BackendProcess | undefined;
+let ocrHttpService: OcrHttpService | undefined;
 const projectOpenerIconCache = new Map<string, string | undefined>();
 let terminalManager: TerminalSessionManager | undefined;
 let updateService: DesktopUpdateService | undefined;
@@ -215,6 +224,18 @@ function stopBackend(reason: string): void {
   console.info(`[main] 停止后端 reason=${reason}`);
   backend.stop();
   backend = undefined;
+}
+
+function stopOcrHttpService(reason: string): void {
+  if (!ocrHttpService) {
+    return;
+  }
+  console.info(`[main] 停止 OCR 本地服务 reason=${reason}`);
+  const service = ocrHttpService;
+  ocrHttpService = undefined;
+  void service.close().catch((error) => {
+    console.warn(`[main] OCR 本地服务关闭失败 reason=${reason}: ${messageFromError(error)}`);
+  });
 }
 
 function openExternalFromAppWindow(url: string, reason: string): boolean {
@@ -681,10 +702,17 @@ async function createWindow(): Promise<void> {
     requestNewChat: requestNewChatFromMenu
   });
 
+  const ocrOptions = {
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    isPackaged: app.isPackaged
+  };
+  ocrHttpService ??= await startOcrHttpService(ocrOptions);
   backend = await startBackendProcess({
     dataDir: defaultDataDir(),
     resourcesPath: process.resourcesPath,
     isPackaged: app.isPackaged,
+    ocrService: { url: ocrHttpService.url, token: ocrHttpService.token },
     logger: desktopLogging?.backend
   });
 
@@ -695,11 +723,7 @@ async function createWindow(): Promise<void> {
 
   trustedIpc.handle("backend-info", () => backend?.info);
   terminalManager ??= registerTerminalIpc(trustedIpc);
-  registerOcrIpc(trustedIpc, {
-    appPath: app.getAppPath(),
-    resourcesPath: process.resourcesPath,
-    isPackaged: app.isPackaged
-  });
+  registerOcrIpc(trustedIpc, ocrOptions);
   registerUpdateIpc(trustedIpc, updateService);
 
   trustedIpc.handle("open-skills-dir", async () => {
@@ -825,6 +849,67 @@ async function createWindow(): Promise<void> {
     console.info(`[main] 项目打开器检测完成 count=${openers.length}`);
     return openers;
   });
+
+  trustedIpc.handle("detect-external-browsers", async () => {
+    const browsers = await detectInstalledExternalBrowsers(
+      externalBrowserSearchDirs(homedir(), process.platform),
+      existsSync,
+      externalBrowserDefinitions(process.platform, process.env)
+    );
+    console.info(`[main] 外部浏览器检测完成 count=${browsers.length}`);
+    return browsers;
+  });
+
+  trustedIpc.handle(
+    "open-external-url-in-browser",
+    async (_event, browserIdOrPath: unknown, targetUrl: unknown) => {
+      if (typeof browserIdOrPath !== "string" || typeof targetUrl !== "string") {
+        console.warn("[main] 指定浏览器打开链接收到无效参数", {
+          browserIdOrPath: String(browserIdOrPath),
+          targetUrl: String(targetUrl)
+        });
+        return { ok: false, error: "无效参数" };
+      }
+      if (!isSupportedExternalUrl(targetUrl)) {
+        console.warn("[main] 拒绝用浏览器打开非 HTTP(S) 链接", {
+          browserIdOrPath,
+          targetUrl
+        });
+        return { ok: false, error: "只支持打开 HTTP(S) 链接" };
+      }
+
+      console.info("[main] 准备用指定浏览器打开外链", {
+        browserIdOrPath,
+        targetUrl
+      });
+      const result = await openUrlInExternalBrowser(browserIdOrPath, targetUrl, {
+        platform: process.platform,
+        env: process.env,
+        home: homedir(),
+        exists: existsSync,
+        execFile: (command, args, callback) => {
+          execFile(command, args, callback);
+        },
+        openDefault: (url) => shell.openExternal(url)
+      });
+
+      if (result.ok) {
+        console.info("[main] 指定浏览器打开外链成功", {
+          browserIdOrPath,
+          browserKind:
+            browserIdOrPath === DEFAULT_EXTERNAL_BROWSER_ID ? DEFAULT_EXTERNAL_BROWSER_ID : "detected",
+          targetUrl
+        });
+      } else {
+        console.warn("[main] 指定浏览器打开外链失败", {
+          browserIdOrPath,
+          targetUrl,
+          error: result.error
+        });
+      }
+      return result;
+    }
+  );
 
   // 使用已安装的本机应用打开项目目录。
   trustedIpc.handle("open-project-in-app", async (_event, appPath: unknown, target: unknown) => {
@@ -1071,6 +1156,7 @@ app.on("before-quit", () => {
   updateService?.stopAutoChecks();
   terminalManager?.disposeAll();
   stopBackend("before-quit");
+  stopOcrHttpService("before-quit");
   void flushDesktopLogs();
 });
 
@@ -1078,6 +1164,7 @@ app.on("will-quit", () => {
   updateService?.stopAutoChecks();
   terminalManager?.disposeAll();
   stopBackend("will-quit");
+  stopOcrHttpService("will-quit");
   void flushDesktopLogs();
 });
 
@@ -1085,6 +1172,7 @@ function handleProcessSignal(signal: NodeJS.Signals): void {
   updateService?.stopAutoChecks();
   terminalManager?.disposeAll();
   stopBackend(signal);
+  stopOcrHttpService(signal);
   void flushDesktopLogs().finally(() => {
     app.quit();
     setTimeout(() => process.exit(0), 250).unref();

@@ -65,6 +65,14 @@ export default {
         link: "rgb(var(--link) / <alpha-value>)",
         "link-deep": "rgb(var(--link-deep) / <alpha-value>)",
         "link-bg-soft": "rgb(var(--link-bg-soft) / <alpha-value>)",
+        "soft-blue": {
+          DEFAULT: "rgb(var(--soft-blue) / <alpha-value>)",
+          strong: "rgb(var(--soft-blue-strong) / <alpha-value>)",
+          foreground: "rgb(var(--soft-blue-foreground) / <alpha-value>)",
+          border: "rgb(var(--soft-blue-border) / <alpha-value>)",
+          surface: "rgb(var(--soft-blue-surface) / <alpha-value>)",
+          "surface-hover": "rgb(var(--soft-blue-surface-hover) / <alpha-value>)"
+        },
         success: "rgb(var(--success) / <alpha-value>)",
         warning: "rgb(var(--warning) / <alpha-value>)",
         "warning-soft": "rgb(var(--warning-soft) / <alpha-value>)",

@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { randomBytes } from "node:crypto";
 import { basename, join } from "node:path";
 import type { PaddleOcrService as PaddleOcrServiceInstance } from "ppu-paddle-ocr";
 import type { Sharp, SharpOptions } from "sharp";
@@ -55,6 +57,12 @@ export interface OcrRuntimeOptions {
   isPackaged: boolean;
 }
 
+export interface OcrHttpService {
+  url: string;
+  token: string;
+  close(): Promise<void>;
+}
+
 let servicePromise: Promise<PaddleOcrServiceInstance> | undefined;
 
 export function registerOcrIpc(ipcMain: TrustedIpcRegistrar, options: OcrRuntimeOptions): void {
@@ -62,6 +70,64 @@ export function registerOcrIpc(ipcMain: TrustedIpcRegistrar, options: OcrRuntime
   ipcMain.handle("attachment:prepare-native-images", (_event, target: unknown) =>
     prepareNativeImages(target, options)
   );
+}
+
+export async function startOcrHttpService(options: OcrRuntimeOptions): Promise<OcrHttpService> {
+  const token = randomBytes(24).toString("hex");
+  const server = createServer((request, response) => {
+    void handleOcrHttpRequest(request, response, options, token);
+  });
+  await new Promise<void>((resolveListen, rejectListen) => {
+    server.once("error", rejectListen);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", rejectListen);
+      resolveListen();
+    });
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await closeServer(server);
+    throw new Error("OCR 服务监听地址不可用");
+  }
+  const url = `http://127.0.0.1:${address.port}`;
+  console.info("[ocr-http] OCR 本地服务已启动", { url });
+  return {
+    url,
+    token,
+    close: async () => {
+      console.info("[ocr-http] OCR 本地服务准备关闭", { url });
+      await closeServer(server);
+      console.info("[ocr-http] OCR 本地服务已关闭", { url });
+    }
+  };
+}
+
+async function handleOcrHttpRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  options: OcrRuntimeOptions,
+  token: string
+): Promise<void> {
+  if (request.method !== "POST" || request.url !== "/ocr/recognize") {
+    writeJson(response, 404, { ok: false, path: "", name: "", error: "OCR 路由不存在", size: 0 });
+    return;
+  }
+  if (request.headers["x-chengxiaobang-ocr-token"] !== token) {
+    console.warn("[ocr-http] OCR 请求 token 无效");
+    writeJson(response, 401, { ok: false, path: "", name: "", error: "未授权", size: 0 });
+    return;
+  }
+  try {
+    const body = await readJsonBody(request);
+    const path = typeof body.path === "string" ? body.path : "";
+    console.info("[ocr-http] 收到 OCR 请求", { path });
+    const result = await recognizePath(path, options);
+    writeJson(response, result.ok ? 200 : 400, result);
+  } catch (error) {
+    const message = messageFromError(error);
+    console.warn("[ocr-http] OCR 请求处理失败", { error: message });
+    writeJson(response, 500, { ok: false, path: "", name: "", error: message, size: 0 });
+  }
 }
 
 export async function recognizePath(
@@ -194,6 +260,47 @@ export async function prepareNativeImages(
     console.warn("[attachment] 原生图片附件准备失败", { path, error: message });
     return { ok: false, path, name, error: message, size: 0 };
   }
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.byteLength;
+    if (totalBytes > 1024 * 1024) {
+      throw new Error("OCR 请求体过大");
+    }
+    chunks.push(buffer);
+  }
+  if (chunks.length === 0) {
+    return {};
+  }
+  const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : {};
+}
+
+function writeJson(response: ServerResponse, statusCode: number, payload: unknown): void {
+  const body = JSON.stringify(payload);
+  response.writeHead(statusCode, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(body)
+  });
+  response.end(body);
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolveClose, rejectClose) => {
+    server.close((error) => {
+      if (error) {
+        rejectClose(error);
+        return;
+      }
+      resolveClose();
+    });
+  });
 }
 
 async function getOcrService(options: OcrRuntimeOptions): Promise<PaddleOcrServiceInstance> {

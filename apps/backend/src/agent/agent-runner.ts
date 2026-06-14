@@ -22,10 +22,13 @@ import {
   resolveProviderConfigModelMaxToolIterations,
   type ActiveRunSnapshot,
   type AskUserAnswer,
+  type MessageAttachment,
+  type ModelInputModality,
   type ProposePlanArgs,
   type Project,
   type ProviderConfig,
   type ReasoningMode,
+  type RunImageAttachment,
   type RunRequest,
   type RunSteeringRequest,
   type Session,
@@ -213,10 +216,11 @@ export class AgentRunner {
     runId: string;
     sessionId: string;
     queue: AsyncEventQueue<StreamEvent>;
-  }): Promise<AgentMessage[]> {
+    modelInputModalities: ModelInputModality[];
+  }): Promise<{ messages: AgentMessage[]; enableOcrTool: boolean }> {
     const queued = this.activeRunRegistry.drainSteering(options.runId);
     if (queued.length === 0) {
-      return [];
+      return { messages: [], enableOcrTool: false };
     }
     console.info("[agent-runner] 开始注入运行中引导", {
       runId: options.runId,
@@ -225,10 +229,20 @@ export class AgentRunner {
     });
 
     const messages: AgentMessage[] = [];
+    let enableOcrTool = false;
     for (const item of queued) {
       const displayContent = item.displayContent ?? item.prompt;
       try {
         const piMessage = buildUserPiMessage(item.prompt, item.attachments ?? []);
+        if (
+          shouldEnableOcrTool(
+            item.displayAttachments ?? [],
+            options.modelInputModalities,
+            item.attachments ?? []
+          )
+        ) {
+          enableOcrTool = true;
+        }
         const persisted = await this.store.addMessage({
           sessionId: options.sessionId,
           role: "user",
@@ -261,7 +275,7 @@ export class AgentRunner {
         });
       }
     }
-    return messages;
+    return { messages, enableOcrTool };
   }
 
   /** 构造调试面板使用的只读上下文快照，不启动模型、不写入会话。 */
@@ -475,6 +489,11 @@ export class AgentRunner {
     const modelInputModalities = resolveProviderConfigModelInputModalities(provider, provider.model);
     const nativeImageAttachments = input.attachments ?? [];
     const displayAttachments = input.displayAttachments ?? [];
+    const enableOcrTool = shouldEnableOcrTool(
+      displayAttachments,
+      modelInputModalities,
+      nativeImageAttachments
+    );
     const displayContentForLog = input.displayContent ?? input.prompt;
     if (nativeImageAttachments.length > 0 && !modelInputModalities.includes("image")) {
       console.warn("[agent-runner] 文本模型收到原生图片附件，已拒绝本次运行", {
@@ -492,7 +511,7 @@ export class AgentRunner {
         input.reasoningMode ? "run" : session.reasoningMode ? "session" : selectedProvider.reasoningMode ? "provider" : "default"
       } maxToolIterations=${maxToolIterations} inputModalities=${modelInputModalities.join(",")} nativeImageAttachments=${
         nativeImageAttachments.length
-      } displayAttachments=${displayAttachments.length} promptChars=${input.prompt.length} displayChars=${
+      } displayAttachments=${displayAttachments.length} enableOcrTool=${enableOcrTool} promptChars=${input.prompt.length} displayChars=${
         displayContentForLog.length
       }`
     );
@@ -682,6 +701,7 @@ export class AgentRunner {
         planPhase: initialPlanPhase,
         viaFeishu,
         headless,
+        enableOcrTool,
         signal: controller.signal
       });
       if (autoCompact.aborted) {
@@ -706,6 +726,8 @@ export class AgentRunner {
         initialPlanConfirmed,
         viaFeishu,
         headless,
+        enableOcrTool,
+        modelInputModalities,
         systemPrompt,
         initialUsage: autoCompact.usage,
         compactedUpToMessageId:
@@ -843,6 +865,7 @@ export class AgentRunner {
     planPhase: PlanPhase;
     viaFeishu: boolean;
     headless: boolean;
+    enableOcrTool: boolean;
     signal: AbortSignal;
   }): AsyncGenerator<
     StreamEvent,
@@ -852,7 +875,8 @@ export class AgentRunner {
     const selectedTools = selectAgentTools(options.tools, {
       planPhase: options.planPhase,
       viaFeishu: options.viaFeishu,
-      headless: options.headless
+      headless: options.headless,
+      enableOcr: options.enableOcrTool
     });
     const usage = buildContextUsageReport({
       sessionId: options.session.id,
@@ -949,6 +973,8 @@ export class AgentRunner {
     initialPlanConfirmed: boolean;
     viaFeishu: boolean;
     headless: boolean;
+    enableOcrTool: boolean;
+    modelInputModalities: ModelInputModality[];
     systemPrompt: string;
     initialUsage?: TokenUsage;
     compactedUpToMessageId?: string;
@@ -1059,6 +1085,7 @@ export class AgentRunner {
     });
 
     const rows = await this.store.listMessages(options.sessionId);
+    let enableOcrTool = options.enableOcrTool;
     const planPhase = (): PlanPhase => {
       if (!options.planMode) return "none";
       return translator.isPlanConfirmed() ? "execute" : "draft";
@@ -1069,7 +1096,8 @@ export class AgentRunner {
       tools: selectAgentTools(options.tools, {
         planPhase: planPhase(),
         viaFeishu: options.viaFeishu,
-        headless: options.headless
+        headless: options.headless,
+        enableOcr: enableOcrTool
       })
     };
     const modelStreamOptions = buildModelStreamOptions(options.provider);
@@ -1136,17 +1164,28 @@ export class AgentRunner {
             tools: selectAgentTools(options.tools, {
               planPhase: planPhase(),
               viaFeishu: options.viaFeishu,
-              headless: options.headless
+              headless: options.headless,
+              enableOcr: enableOcrTool
             })
           };
           return { context: currentAgentContext };
         },
-        getSteeringMessages: () =>
-          this.drainSteeringMessages({
+        getSteeringMessages: async () => {
+          const drained = await this.drainSteeringMessages({
             runId: options.runId,
             sessionId: options.sessionId,
-            queue
-          })
+            queue,
+            modelInputModalities: options.modelInputModalities
+          });
+          if (drained.enableOcrTool && !enableOcrTool) {
+            enableOcrTool = true;
+            console.info("[agent-runner] 运行中引导附件触发 OCR 工具可见", {
+              runId: options.runId,
+              sessionId: options.sessionId
+            });
+          }
+          return drained.messages;
+        }
       },
       translator.emit,
       options.controller.signal,
@@ -1260,4 +1299,23 @@ export class AgentRunner {
     }
     return content;
   }
+}
+
+function shouldEnableOcrTool(
+  displayAttachments: MessageAttachment[],
+  modelInputModalities: ModelInputModality[],
+  nativeImageAttachments: RunImageAttachment[]
+): boolean {
+  const supportsImage = modelInputModalities.includes("image");
+  const hasNativeImageInput = nativeImageAttachments.length > 0;
+  return displayAttachments.some((attachment) => {
+    const kind = attachment.kind.toLowerCase();
+    if (kind === "pdf") {
+      return true;
+    }
+    if (kind === "image") {
+      return !supportsImage || !hasNativeImageInput;
+    }
+    return false;
+  });
 }

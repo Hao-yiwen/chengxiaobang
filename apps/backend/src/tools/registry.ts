@@ -7,6 +7,7 @@ import { createWebTools } from "./web-tools";
 import { createFeishuTools } from "./feishu-tools";
 import { createMemoryTools } from "./memory-tools";
 import { createSkillTools } from "./skill-tools";
+import { createOcrTools, type OcrToolRuntime } from "./ocr-tools";
 import type { SkillMarketService } from "./skill-market-service";
 
 export type PlanPhase = "none" | "draft" | "execute";
@@ -36,7 +37,8 @@ const READ_ONLY_TOOLS = new Set<string>([
   "git_diff",
   "fetch_url",
   "web_search",
-  "schedule_list"
+  "schedule_list",
+  "ocr_extract_text"
 ]);
 
 // memory 在起草阶段也可见：制定计划前先查记忆。
@@ -53,9 +55,12 @@ export function isMutatingTool(name: string): boolean {
 /** 计划模式下按阶段裁剪模型可见工具；飞书/headless 通道隐藏会阻塞的计划/提问工具。 */
 export function selectAgentTools(
   tools: AgentTool<any>[],
-  options: { planPhase: PlanPhase; viaFeishu: boolean; headless?: boolean }
+  options: { planPhase: PlanPhase; viaFeishu: boolean; headless?: boolean; enableOcr?: boolean }
 ): AgentTool<any>[] {
   return tools.filter((tool) => {
+    if (tool.name === "ocr_extract_text") {
+      return Boolean(options.enableOcr);
+    }
     if (options.viaFeishu && (tool.name === "propose_plan" || tool.name === "ask_user")) {
       return false;
     }
@@ -90,6 +95,8 @@ export function createAgentTools(
         memoryDir?: string;
         /** 技能市场服务；提供时注册 create_skill 工具（对话内创建/安装技能）。 */
         skillMarketService?: SkillMarketService;
+        /** OCR 工具运行时；提供后注册按需 OCR 只读工具。 */
+        ocr?: OcrToolRuntime;
       }
 ): AgentTool<any>[] {
   const options =
@@ -101,6 +108,7 @@ export function createAgentTools(
     ...createShellTools(workspacePath),
     ...createWebTools(options.webSearch),
     ...createFeishuTools(options.getFeishuSender),
+    ...(options.ocr ? createOcrTools(workspacePath, options.ocr) : []),
     ...(options.memoryDir ? createMemoryTools(options.memoryDir) : []),
     ...(options.skillMarketService
       ? createSkillTools({ skillMarketService: options.skillMarketService })

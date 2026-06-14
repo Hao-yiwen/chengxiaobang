@@ -86,6 +86,119 @@ describe("store home selection restore", () => {
     expect(useAppStore.getState().notice).toBe("请先选择供应商");
   });
 
+  it("remembers an explicit home model selection without restoring the last session", async () => {
+    useAppStore.setState({
+      view: "home",
+      activeSessionId: session.id,
+      providerId: provider.id,
+      model: "deepseek-v4-pro",
+      reasoningMode: "high",
+      homeModelSelection: {
+        providerId: provider.id,
+        model: "deepseek-v4-pro",
+        reasoningMode: "high"
+      }
+    });
+
+    const persisted = JSON.parse(window.localStorage.getItem("chengxiaobang.app") ?? "{}");
+    expect(persisted.state.activeSessionId).toBeUndefined();
+    expect(persisted.state.providerId).toBe(provider.id);
+    expect(persisted.state.model).toBe("deepseek-v4-pro");
+    expect(persisted.state.reasoningMode).toBe("high");
+    expect(persisted.state.homeModelSelection).toEqual({
+      providerId: provider.id,
+      model: "deepseek-v4-pro",
+      reasoningMode: "high"
+    });
+
+    await useAppStore.getState().initClient(createClient());
+
+    expect(useAppStore.getState().view).toBe("home");
+    expect(useAppStore.getState().activeSessionId).toBeUndefined();
+    expect(useAppStore.getState().providerId).toBe(provider.id);
+    expect(useAppStore.getState().model).toBe("deepseek-v4-pro");
+    expect(useAppStore.getState().reasoningMode).toBe("high");
+  });
+
+  it("restores the explicit home model after switching into a session and back home", async () => {
+    await useAppStore.getState().initClient(createClient());
+
+    await useAppStore.getState().selectComposerModel(provider.id, "deepseek-v4-pro", "high");
+    expect(useAppStore.getState().homeModelSelection).toEqual({
+      providerId: provider.id,
+      model: "deepseek-v4-pro",
+      reasoningMode: "high"
+    });
+
+    await useAppStore.getState().selectSession(session.id);
+    expect(useAppStore.getState().view).toBe("chat");
+    expect(useAppStore.getState().model).toBe(provider.model);
+    expect(useAppStore.getState().reasoningMode).toBeUndefined();
+
+    useAppStore.getState().newChat();
+
+    expect(useAppStore.getState().view).toBe("home");
+    expect(useAppStore.getState().activeSessionId).toBeUndefined();
+    expect(useAppStore.getState().providerId).toBe(provider.id);
+    expect(useAppStore.getState().model).toBe("deepseek-v4-pro");
+    expect(useAppStore.getState().reasoningMode).toBe("high");
+  });
+
+  it("restores each session model without leaking another session selection", async () => {
+    const deepseekSession: Session = {
+      ...session,
+      id: "session_deepseek",
+      model: "deepseek-v4-pro",
+      reasoningMode: "high"
+    };
+    const kimiSession: Session = {
+      ...session,
+      id: "session_kimi",
+      providerId: kimiProvider.id,
+      model: "kimi-k2.5",
+      reasoningMode: undefined
+    };
+    const client = {
+      ...createClient(),
+      listSessions: vi.fn(async () => [deepseekSession, kimiSession]),
+      listProviders: vi.fn(async () => [provider, kimiProvider])
+    } as unknown as ApiClient;
+
+    await useAppStore.getState().initClient(client);
+    await useAppStore.getState().selectSession(deepseekSession.id);
+
+    expect(useAppStore.getState().providerId).toBe(provider.id);
+    expect(useAppStore.getState().model).toBe("deepseek-v4-pro");
+    expect(useAppStore.getState().reasoningMode).toBe("high");
+
+    await useAppStore.getState().selectSession(kimiSession.id);
+
+    expect(useAppStore.getState().providerId).toBe(kimiProvider.id);
+    expect(useAppStore.getState().model).toBe("kimi-k2.5");
+    expect(useAppStore.getState().reasoningMode).toBeUndefined();
+
+    await useAppStore.getState().selectSession(deepseekSession.id);
+
+    expect(useAppStore.getState().providerId).toBe(provider.id);
+    expect(useAppStore.getState().model).toBe("deepseek-v4-pro");
+    expect(useAppStore.getState().reasoningMode).toBe("high");
+  });
+
+  it("falls back legacy sessions without model to their provider default and clears stale reasoning", async () => {
+    await useAppStore.getState().initClient(createClient());
+    useAppStore.setState({
+      providerId: provider.id,
+      model: "deepseek-v4-pro",
+      reasoningMode: "high"
+    });
+
+    await useAppStore.getState().selectSession(session.id);
+
+    expect(useAppStore.getState().providerId).toBe(provider.id);
+    expect(useAppStore.getState().model).toBe(provider.model);
+    expect(useAppStore.getState().reasoningMode).toBeUndefined();
+  });
+
   it("clears stale activeSessionId before publishing loaded home sessions", async () => {
     const snapshots: Array<string | undefined> = [];
     const unsubscribe = useAppStore.subscribe((state) => {
@@ -231,9 +344,11 @@ describe("store home selection restore", () => {
     await useAppStore.getState().runPrompt("帮我查询今天的 AI 新闻");
 
     expect(streamRun).toHaveBeenCalledTimes(1);
-    expect(streamRun.mock.calls[0]?.[0]).toMatchObject({ providerId: provider.id });
-    expect(streamRun.mock.calls[0]?.[0]).not.toHaveProperty("model");
-    expect(useAppStore.getState().model).toBeUndefined();
+    expect(streamRun.mock.calls[0]?.[0]).toMatchObject({
+      providerId: provider.id,
+      model: provider.model
+    });
+    expect(useAppStore.getState().model).toBe(provider.model);
     expect(useAppStore.getState().reasoningMode).toBeUndefined();
     expect(warn).toHaveBeenCalledWith(
       "[store] 模型不属于当前供应商，已回退到供应商默认模型",
@@ -244,5 +359,23 @@ describe("store home selection restore", () => {
       })
     );
     warn.mockRestore();
+  });
+
+  it("sends the concrete default model for a new home session", async () => {
+    const streamRun = vi.fn(async () => {});
+    const client = { ...createClient(), streamRun } as unknown as ApiClient;
+
+    await useAppStore.getState().initClient(client);
+    await useAppStore.getState().selectComposerModel(provider.id, provider.model, undefined);
+    useAppStore.getState().setInput("用默认模型创建新会话");
+
+    await useAppStore.getState().submit();
+
+    expect(streamRun).toHaveBeenCalledTimes(1);
+    expect(streamRun.mock.calls[0]?.[0]).toMatchObject({
+      providerId: provider.id,
+      model: provider.model,
+      sessionId: undefined
+    });
   });
 });

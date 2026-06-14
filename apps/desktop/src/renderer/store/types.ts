@@ -50,6 +50,12 @@ export type OnboardingStep = "welcome" | "profile" | "model";
 export type ScheduledTaskFinishedEvent = Extract<ScheduledTaskEvent, { type: "scheduled_task_finished" }>;
 export type SessionRunHistory = { runs: RunRecord[]; toolCalls: ToolCall[] };
 
+export interface ModelSelection {
+  providerId?: string;
+  model?: string;
+  reasoningMode?: ReasoningMode;
+}
+
 export interface Attachment extends AttachmentDescriptor {
   path: string;
   name: string;
@@ -148,6 +154,7 @@ export interface AppState {
   providerId?: string;
   model?: string;
   reasoningMode?: ReasoningMode;
+  homeModelSelection: ModelSelection;
   planMode: boolean;
   accessMode: AccessMode;
   // 界面状态
@@ -248,6 +255,7 @@ export interface AppState {
   setProviderId(id: string | undefined): void;
   setModel(model: string | undefined): void;
   setReasoningMode(reasoningMode: ReasoningMode | undefined): void;
+  selectComposerModel(providerId: string, model: string, reasoningMode?: ReasoningMode): Promise<void>;
   setPlanMode(enabled: boolean): void;
   setAccessMode(mode: AccessMode): void;
   setActiveProjectId(id: string | undefined): void;

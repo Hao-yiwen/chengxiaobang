@@ -22,7 +22,8 @@ import { useShallow } from "zustand/react/shallow";
 import {
   resolveProviderConfigModelOption,
   type ProviderConfig,
-  type ProviderRegion,
+  type ProviderModelOption,
+  type ReasoningMode,
   type SessionContextUsage,
   type SlashCommand,
 } from "@chengxiaobang/shared";
@@ -35,7 +36,10 @@ import {
   TEXTAREA_MAX_HEIGHT_PX
 } from "@/components/composer/constants";
 import { ContextUsageIndicator } from "@/components/composer/context-usage-indicator";
-import { modelOptionLabel } from "@/components/composer/model-options";
+import {
+  modelOptionLabel,
+  withCurrentComposerModel
+} from "@/components/composer/model-options";
 import { QueuedRunStack } from "@/components/composer/queued-run-stack";
 import {
   filterSlashCommands,
@@ -57,6 +61,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -67,42 +72,52 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useAccessModeSelection } from "@/hooks/use-access-mode-selection";
 import { StampBadge } from "@/components/StampBadge";
 import { cn } from "@/lib/utils";
 import { getApiClient, selectActiveProject, useAppStore } from "@/store";
 
 export { getAtToken } from "@/components/composer/text-utils";
 
-const PROVIDER_REGION_ORDER: ProviderRegion[] = ["cn", "global", "gateway"];
+type ComposerT = (key: string) => unknown;
+const REASONING_MODE_LABEL_KEYS: Record<ReasoningMode, string> = {
+  off: "settings.providers.reasoningModes.off",
+  auto: "settings.providers.reasoningModes.auto",
+  minimal: "settings.providers.reasoningModes.minimal",
+  low: "settings.providers.reasoningModes.low",
+  medium: "settings.providers.reasoningModes.medium",
+  high: "settings.providers.reasoningModes.high",
+  xhigh: "settings.providers.reasoningModes.xhigh"
+};
 
-/** 把已配置供应商按地区分组（国内/国外/网关），地区缺省或为 custom 的归入「自定义」组，供首页级联子菜单使用。 */
-function groupProvidersByRegion(
-  providers: ProviderConfig[]
-): Array<{ region: ProviderRegion; providers: ProviderConfig[] }> {
-  const known = new Set<ProviderRegion>(PROVIDER_REGION_ORDER);
-  const groups = PROVIDER_REGION_ORDER.map((region) => ({
-    region,
-    providers: providers.filter((provider) => provider.region === region)
-  }));
-  const other = providers.filter((provider) => !provider.region || !known.has(provider.region));
-  if (other.length > 0) {
-    groups.push({ region: "custom", providers: other });
-  }
-  return groups.filter((group) => group.providers.length > 0);
+function reasoningModeLabel(t: ComposerT, mode: ReasoningMode): string {
+  return String(t(REASONING_MODE_LABEL_KEYS[mode]));
 }
 
-function providerRegionLabelKey(
-  region: ProviderRegion
-):
-  | "settings.providers.regions.cn"
-  | "settings.providers.regions.global"
-  | "settings.providers.regions.gateway"
-  | "settings.providers.regions.custom" {
-  return `settings.providers.regions.${region}` as const;
+function reasoningModeSummary(
+  t: ComposerT,
+  option: ProviderModelOption,
+  mode: ReasoningMode | undefined
+): string {
+  if (mode) {
+    return reasoningModeLabel(t, mode);
+  }
+  if (option.reasoningAlwaysOn) {
+    return String(t("settings.providers.reasoningAlwaysOn"));
+  }
+  return "";
+}
+
+function optionDefaultReasoningMode(option: ProviderModelOption): ReasoningMode | undefined {
+  return option.defaultReasoningMode &&
+    option.reasoningModes.includes(option.defaultReasoningMode)
+    ? option.defaultReasoningMode
+    : undefined;
 }
 
 export function Composer() {
   const { t } = useTranslation();
+  const composerT = t as unknown as ComposerT;
   const {
     value,
     activeSessionId,
@@ -112,6 +127,7 @@ export function Composer() {
     providers,
     providerId,
     model,
+    reasoningMode,
     accessMode,
     planMode,
     pendingTool,
@@ -136,6 +152,7 @@ export function Composer() {
         providers: state.providers,
         providerId: state.providerId,
         model: state.model,
+        reasoningMode: state.reasoningMode,
         accessMode: state.accessMode,
         planMode: state.planMode,
         pendingTool: state.pendingTool,
@@ -162,9 +179,7 @@ export function Composer() {
     );
   const activeProject = useAppStore(selectActiveProject);
   const setInput = useAppStore((state) => state.setInput);
-  const setProviderId = useAppStore((state) => state.setProviderId);
-  const setModel = useAppStore((state) => state.setModel);
-  const setReasoningMode = useAppStore((state) => state.setReasoningMode);
+  const selectComposerModel = useAppStore((state) => state.selectComposerModel);
   const setAccessMode = useAppStore((state) => state.setAccessMode);
   const setPlanMode = useAppStore((state) => state.setPlanMode);
   const setActiveProjectId = useAppStore((state) => state.setActiveProjectId);
@@ -212,15 +227,57 @@ export function Composer() {
   const [contextUsage, setContextUsage] = useState<SessionContextUsage>();
   const [contextUsageLoading, setContextUsageLoading] = useState(false);
   const [contextUsageError, setContextUsageError] = useState<string>();
+  const [providerModelOptions, setProviderModelOptions] = useState<
+    Record<string, ProviderModelOption[]>
+  >({});
   const configuredProviders = providers.filter((provider) => provider.apiKeyRef);
+  const configuredProviderOptionsKey = configuredProviders
+    .map((provider) =>
+      [
+        provider.id,
+        provider.apiKeyRef ?? "",
+        provider.updatedAt,
+        provider.model,
+        provider.models?.join(",") ?? ""
+      ].join(":")
+    )
+    .join("|");
   const selectedProvider = configuredProviders.find((provider) => provider.id === providerId);
   const selectedModel = selectedProvider ? model ?? selectedProvider.model : undefined;
-  const selectedModelOption =
-    selectedProvider && selectedModel
-      ? resolveProviderConfigModelOption(selectedProvider, selectedModel)
+  const selectedProviderModelOptions = selectedProvider
+    ? withCurrentComposerModel(
+        selectedProvider,
+        providerModelOptions[selectedProvider.id],
+        selectedModel
+      )
+    : [];
+  const selectedModelOption = selectedModel
+    ? selectedProviderModelOptions.find((option) => option.id === selectedModel) ??
+      (selectedProvider
+        ? resolveProviderConfigModelOption(selectedProvider, selectedModel)
+        : undefined)
+    : undefined;
+  const selectedModelLabel =
+    selectedModelOption
+      ? modelOptionLabel(selectedModelOption)
+      : selectedModel ?? t("composer.selectModel");
+  const configuredReasoningMode =
+    reasoningMode ?? selectedProvider?.reasoningMode ?? selectedModelOption?.defaultReasoningMode;
+  const selectedReasoningMode =
+    selectedModelOption && configuredReasoningMode
+      ? selectedModelOption.reasoningModes.includes(configuredReasoningMode)
+        ? configuredReasoningMode
+        : undefined
       : undefined;
+  const hasReasoningSummary =
+    selectedModelOption !== undefined &&
+    (selectedReasoningMode !== undefined || selectedModelOption.reasoningAlwaysOn === true);
   const accessTone = ACCESS_MODE_TONES[accessMode];
-  const providerRegionGroups = groupProvidersByRegion(configuredProviders);
+  const selectAccessMode = useAccessModeSelection({
+    accessMode,
+    setAccessMode,
+    source: "composer"
+  });
   const currentComposerRunning =
     view !== "home" && isRunning && (Boolean(activeRunId) || Boolean(activeRunClientRequestId));
   const awaitingAskUser = currentComposerRunning && pendingTool?.name === "ask_user";
@@ -292,6 +349,60 @@ export function Composer() {
 
   useEffect(() => {
     const client = getApiClient();
+    const listProviderModelOptions = client?.listProviderModelOptions;
+    if (!listProviderModelOptions || configuredProviders.length === 0) {
+      setProviderModelOptions({});
+      return;
+    }
+
+    let cancelled = false;
+    const providerIds = configuredProviders.map((provider) => provider.id);
+    const liveProviderIds = new Set(providerIds);
+    setProviderModelOptions((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([providerId]) => liveProviderIds.has(providerId))
+      )
+    );
+
+    void Promise.all(
+      providerIds.map(async (providerId) => {
+        try {
+          const options = await listProviderModelOptions(providerId);
+          return { providerId, options };
+        } catch (error) {
+          console.warn("[composer] 拉取供应商模型选项失败，使用本地模型目录回退", {
+            providerId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          return { providerId, options: undefined };
+        }
+      })
+    ).then((results) => {
+      if (cancelled) {
+        return;
+      }
+      setProviderModelOptions((current) => {
+        const next = Object.fromEntries(
+          Object.entries(current).filter(([providerId]) => liveProviderIds.has(providerId))
+        ) as Record<string, ProviderModelOption[]>;
+        for (const result of results) {
+          if (result.options) {
+            next[result.providerId] = result.options;
+            continue;
+          }
+          delete next[result.providerId];
+        }
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [configuredProviderOptionsKey]);
+
+  useEffect(() => {
+    const client = getApiClient();
     if (!client?.getSessionContextUsage || !activeSessionId || !selectedProvider || !selectedModel) {
       setContextUsage(undefined);
       setContextUsageLoading(false);
@@ -307,6 +418,7 @@ export function Composer() {
       void getSessionContextUsage(activeSessionId, {
           providerId: selectedProvider.id,
           model: selectedModel,
+          ...(selectedReasoningMode ? { reasoningMode: selectedReasoningMode } : {}),
           planMode
         })
         .then((usage) => {
@@ -344,6 +456,7 @@ export function Composer() {
     lastUsageKey,
     messageCount,
     planMode,
+    selectedReasoningMode,
     selectedModel,
     selectedProvider?.id,
   ]);
@@ -485,11 +598,18 @@ export function Composer() {
     setSelectionStart(textareaRef.current?.selectionStart ?? value.length);
   };
 
-  const pickComposerProvider = (nextProviderId: string) => {
-    console.info("[composer] 选定供应商", { providerId: nextProviderId });
-    setProviderId(nextProviderId);
-    setModel(undefined);
-    setReasoningMode(undefined);
+  const pickComposerModel = (
+    nextProvider: ProviderConfig,
+    nextModel: string,
+    mode: ReasoningMode | undefined
+  ) => {
+    console.info("[composer] 选定模型与推理等级", {
+      providerId: nextProvider.id,
+      model: nextModel,
+      defaultModel: nextProvider.model,
+      reasoningMode: mode
+    });
+    void selectComposerModel(nextProvider.id, nextModel, mode);
   };
 
   const openProviderSetupFromComposer = () => {
@@ -993,7 +1113,7 @@ export function Composer() {
           <DropdownMenuContent align="start" className="w-[280px]">
             <DropdownMenuItem
               className="items-start gap-2.5 py-2.5"
-              onSelect={() => setAccessMode("approval")}
+              onSelect={() => void selectAccessMode("approval")}
             >
               <LockKeyhole
                 className={cn(
@@ -1004,7 +1124,7 @@ export function Composer() {
               <span className="min-w-0 flex-1">
                 <span className="block font-medium">{t("permission.approval")}</span>
                 <span className="mt-0.5 block text-caption leading-snug text-muted-foreground">
-                  {t("settings.general.approvalDesc")}
+                  {t("permission.approvalDesc")}
                 </span>
               </span>
               <Check
@@ -1017,7 +1137,7 @@ export function Composer() {
             </DropdownMenuItem>
             <DropdownMenuItem
               className="items-start gap-2.5 py-2.5"
-              onSelect={() => setAccessMode("smart_approval")}
+              onSelect={() => void selectAccessMode("smart_approval")}
             >
               <Sparkles
                 className={cn(
@@ -1028,7 +1148,7 @@ export function Composer() {
               <span className="min-w-0 flex-1">
                 <span className="block font-medium">{t("permission.smartApproval")}</span>
                 <span className="mt-0.5 block text-caption leading-snug text-muted-foreground">
-                  {t("settings.general.smartDesc")}
+                  {t("permission.smartApprovalDesc")}
                 </span>
               </span>
               <Check
@@ -1041,7 +1161,7 @@ export function Composer() {
             </DropdownMenuItem>
             <DropdownMenuItem
               className="items-start gap-2.5 py-2.5"
-              onSelect={() => setAccessMode("full_access")}
+              onSelect={() => void selectAccessMode("full_access")}
             >
               <ShieldCheck
                 className={cn(
@@ -1052,7 +1172,7 @@ export function Composer() {
               <span className="min-w-0 flex-1">
                 <span className="block font-medium">{t("permission.fullAccess")}</span>
                 <span className="mt-0.5 block text-caption leading-snug text-muted-foreground">
-                  {t("settings.general.fullDesc")}
+                  {t("permission.fullAccessDesc")}
                 </span>
               </span>
               <Check
@@ -1085,11 +1205,11 @@ export function Composer() {
           <Button
             variant="ghost"
             size="sm"
-            aria-label={t("composer.selectProvider")}
+            aria-label={t("composer.selectModel")}
             onClick={openProviderSetupFromComposer}
             className="h-8 min-w-0 max-w-[220px] shrink gap-1.5 rounded-sm px-2.5 text-micro font-normal text-foreground hover:bg-canvas-soft-2"
           >
-            <span className="min-w-0 truncate">{t("composer.selectProvider")}</span>
+            <span className="min-w-0 truncate">{t("composer.selectModel")}</span>
             <ChevronDown className="size-3.5 flex-none" />
           </Button>
         ) : (
@@ -1098,41 +1218,82 @@ export function Composer() {
               <Button
                 variant="ghost"
                 size="sm"
-                aria-label={t("composer.selectProvider")}
+                aria-label={t("composer.selectModel")}
                 className="h-8 min-w-0 max-w-[220px] shrink gap-1.5 rounded-sm px-2.5 text-micro font-normal text-foreground hover:bg-canvas-soft-2"
               >
-                <span className="min-w-0 truncate">
-                  {selectedProvider?.name ?? t("composer.selectProvider")}
-                </span>
+                <span className="min-w-0 truncate">{selectedModelLabel}</span>
+                {hasReasoningSummary && selectedModelOption ? (
+                  <span className="flex-none text-muted-foreground">
+                    · {reasoningModeSummary(composerT, selectedModelOption, selectedReasoningMode)}
+                  </span>
+                ) : null}
                 <ChevronDown className="size-3.5 flex-none" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[160px]">
-              {providerRegionGroups.map((group) => (
-                <DropdownMenuSub key={group.region}>
-                  <DropdownMenuSubTrigger>
-                    <span className="flex-1 truncate">
-                      {t(providerRegionLabelKey(group.region))}
-                    </span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="min-w-[180px]">
-                    {group.providers.map((provider) => (
-                      <DropdownMenuItem
-                        key={provider.id}
-                        onSelect={() => pickComposerProvider(provider.id)}
-                      >
-                        <span className="flex-1 truncate">{provider.name}</span>
+            <DropdownMenuContent align="end" className="min-w-[200px]">
+              {/* 左侧弹层平铺可用模型；右侧子菜单再选择该模型支持的推理等级。 */}
+              {configuredProviders.flatMap((provider) => {
+                const options = withCurrentComposerModel(
+                  provider,
+                  providerModelOptions[provider.id],
+                  provider.id === selectedProvider?.id ? selectedModel : undefined
+                );
+                return options.map((option) => {
+                  const isSelected =
+                    provider.id === selectedProvider?.id && option.id === selectedModel;
+                  const activeReasoning = isSelected
+                    ? selectedReasoningMode
+                    : optionDefaultReasoningMode(option);
+                  return (
+                    <DropdownMenuSub key={`${provider.id}:${option.id}`}>
+                      <DropdownMenuSubTrigger hideChevron>
+                        <span className="flex-1 truncate">{modelOptionLabel(option)}</span>
                         <Check
                           className={cn(
                             "size-4 flex-none",
-                            provider.id === selectedProvider?.id ? "opacity-100" : "opacity-0"
+                            isSelected ? "opacity-100" : "opacity-0"
                           )}
                         />
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              ))}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="min-w-[132px]">
+                        <DropdownMenuLabel>{t("settings.providers.reasoning")}</DropdownMenuLabel>
+                        {option.reasoningModes.length > 0 ? (
+                          option.reasoningModes.map((mode) => (
+                            <DropdownMenuItem
+                              key={mode}
+                              onSelect={() => pickComposerModel(provider, option.id, mode)}
+                            >
+                              <span className="flex-1">{reasoningModeLabel(composerT, mode)}</span>
+                              <Check
+                                className={cn(
+                                  "size-4 flex-none",
+                                  activeReasoning === mode ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                            </DropdownMenuItem>
+                          ))
+                        ) : (
+                          <DropdownMenuItem
+                            onSelect={() => pickComposerModel(provider, option.id, undefined)}
+                          >
+                            <span className="flex-1">
+                              {option.reasoningAlwaysOn
+                                ? t("settings.providers.reasoningAlwaysOn")
+                                : t("composer.selectModel")}
+                            </span>
+                            <Check
+                              className={cn(
+                                "size-4 flex-none",
+                                isSelected ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  );
+                });
+              })}
             </DropdownMenuContent>
           </DropdownMenu>
         )}

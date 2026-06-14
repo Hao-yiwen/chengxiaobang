@@ -86,6 +86,24 @@ describe("resolveBackendCommand", () => {
     expect(command.args).toContain(String(process.pid));
   });
 
+  it("passes OCR service connection details to the backend", () => {
+    process.env.BUN_BINARY = "/tmp/bun";
+
+    const command = resolveBackendCommand({
+      port: 3210,
+      dataDir: "/tmp/data",
+      token: "token",
+      resourcesPath: "/tmp/resources",
+      isPackaged: false,
+      ocrService: { url: "http://127.0.0.1:4567", token: "ocr-token" }
+    });
+
+    expect(command.args).toContain("--ocr-service-url");
+    expect(command.args).toContain("http://127.0.0.1:4567");
+    expect(command.args).toContain("--ocr-service-token");
+    expect(command.args).toContain("ocr-token");
+  });
+
   it("uses workspace Bun in development", () => {
     delete process.env.BUN_BINARY;
 

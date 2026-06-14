@@ -13,6 +13,7 @@ import { TOOL_RESULT_SPILL_DIR } from "../src/agent/tool-result-spill";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 import { MemorySecretStore } from "../src/secrets/secret-store";
 import { SlashCommandService } from "../src/tools/slash-command-service";
+import { UsageCostLedgerService } from "../src/usage/usage-cost-ledger";
 import { scriptedStreamFn, type ScriptedTurn } from "./helpers/scripted-stream";
 
 function runnerWith(
@@ -601,13 +602,18 @@ describe("AgentRunner", () => {
     });
   });
 
-  it("keeps OCR text in the model prompt while persisting the visible attachment message", async () => {
+  it("keeps attachment paths in the model prompt while persisting the visible attachment message", async () => {
     const { runner, calls } = runnerWith(store, secrets, [{ text: "这是一张截图" }]);
     let userEvent: Extract<StreamEvent, { type: "message" }> | undefined;
     let sessionId: string | undefined;
+    const prompt =
+      "用户上传了以下附件。需要处理文件时，请使用这里给出的本地快照路径。\n" +
+      "附件清单：\n" +
+      "- screenshot.png（类型：image，大小：128 B，路径：/tmp/cxb/screenshot.png，如需提取图片或 PDF 中的文字，可按需调用 OCR 工具）\n" +
+      "这个图片展示了什么？";
 
     for await (const event of runner.stream({
-      prompt: "以下是文件 screenshot.png 的内容：\n```\nOCR 识别文字\n```\n\n这个图片展示了什么？",
+      prompt,
       displayContent: "这个图片展示了什么？",
       displayAttachments: [
         {
@@ -631,7 +637,8 @@ describe("AgentRunner", () => {
     }
 
     const userContext = calls[0].context.messages.find((message) => message.role === "user");
-    expect(userContext?.content).toContain("OCR 识别文字");
+    expect(userContext?.content).toContain("/tmp/cxb/screenshot.png");
+    expect(userContext?.content).not.toContain("OCR 识别文字");
     expect(userEvent?.message.content).toBe("这个图片展示了什么？");
     expect(userEvent?.message.attachments?.[0]).toMatchObject({
       name: "screenshot.png",
@@ -644,8 +651,42 @@ describe("AgentRunner", () => {
     expect(persisted?.attachments?.[0]?.path).toBe("/tmp/cxb/screenshot.png");
     expect(JSON.parse(persisted!.payload!)).toMatchObject({
       role: "user",
-      content: "以下是文件 screenshot.png 的内容：\n```\nOCR 识别文字\n```\n\n这个图片展示了什么？"
+      content: prompt
     });
+  });
+
+  it("exposes OCR tool only when the current run has OCR-capable attachment paths", async () => {
+    const fakeOcrTool = {
+      name: "ocr_extract_text",
+      label: "OCR 提取文字",
+      description: "test OCR",
+      parameters: {} as never,
+      execute: async () => ({ content: [{ type: "text" as const, text: "ocr" }], details: undefined })
+    };
+    const { runner, calls } = runnerWith(store, secrets, [{ text: "收到" }], {
+      createTools: () => [fakeOcrTool]
+    });
+
+    for await (const _event of runner.stream({
+      prompt: "附件清单：/tmp/cxb/report.pdf\n请压缩这个 PDF",
+      displayContent: "请压缩这个 PDF",
+      displayAttachments: [
+        {
+          id: "visible_pdf",
+          name: "report.pdf",
+          kind: "pdf",
+          mimeType: "application/pdf",
+          size: 1024,
+          path: "/tmp/cxb/report.pdf"
+        }
+      ],
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      // consume stream
+    }
+
+    expect(calls[0].context.tools?.map((tool) => tool.name)).toContain("ocr_extract_text");
   });
 
   it("titles new sessions with the AI summary and streams session_updated mid-run", async () => {
@@ -918,7 +959,7 @@ describe("AgentRunner", () => {
       model: "deepseek-v4-pro",
       reasoningMode: "off"
     });
-    expect(calls[2].model).toMatchObject({ id: "deepseek-v4-pro", reasoning: true });
+    expect(calls[2].model).toMatchObject({ id: "deepseek-v4-pro", reasoning: false });
     expect(capturedReasoning(calls[2].options)).toBeUndefined();
     await expect(store.getSession(session.id)).resolves.toMatchObject({
       model: "deepseek-v4-pro",
@@ -1029,6 +1070,25 @@ describe("AgentRunner", () => {
       totalTokens: 150,
       costUsd: 0.0015
     });
+    await store.upsertUsageCostEntry({
+      runId: "run_cost_1",
+      sessionId: session.id,
+      attemptIndex: 0,
+      providerId: "deepseek",
+      providerKind: "deepseek",
+      model: "deepseek-v4-flash",
+      promptTokens: 100,
+      completionTokens: 50,
+      cachedPromptTokens: 0,
+      totalTokens: 150,
+      inputEstimatedTokens: 100,
+      costUsd: 0.0015,
+      costCny: 0.01,
+      costSource: "reported_usage",
+      tokenCountSource: "provider_usage",
+      billable: true,
+      entryCreatedAt: nowIso()
+    });
     await store.createRun({ id: "run_cost_2", sessionId: session.id, status: "running" });
     await store.updateRunStatus("run_cost_2", "completed", {
       promptTokens: 200,
@@ -1036,13 +1096,32 @@ describe("AgentRunner", () => {
       totalTokens: 280,
       costUsd: 0.0028
     });
+    await store.upsertUsageCostEntry({
+      runId: "run_cost_2",
+      sessionId: session.id,
+      attemptIndex: 0,
+      providerId: "deepseek",
+      providerKind: "deepseek",
+      model: "deepseek-v4-flash",
+      promptTokens: 200,
+      completionTokens: 80,
+      cachedPromptTokens: 0,
+      totalTokens: 280,
+      inputEstimatedTokens: 200,
+      costUsd: 0.0028,
+      costCny: 0.02,
+      costSource: "reported_usage",
+      tokenCountSource: "provider_usage",
+      billable: true,
+      entryCreatedAt: nowIso()
+    });
 
     const usage = await runner.buildSessionContextUsage(session.id);
 
     expect(usage?.sessionCostCny).toBe(0.03);
   });
 
-  it("estimates missing usage for failed runs in context usage", async () => {
+  it("reports finalized failed-attempt estimates in context usage", async () => {
     const { runner } = runnerWith(store, secrets, []);
     const session = await store.createSession({
       projectId: null,
@@ -1058,6 +1137,27 @@ describe("AgentRunner", () => {
     });
     await store.createRun({ id: "run_failed_cost", sessionId: session.id, status: "running" });
     await store.updateRunStatus("run_failed_cost", "failed", undefined, "429 rate limit");
+    await store.upsertUsageCostEntry({
+      runId: "run_failed_cost",
+      sessionId: session.id,
+      attemptIndex: 0,
+      providerId: "deepseek",
+      providerKind: "deepseek",
+      model: "deepseek-v4-pro",
+      errorCode: "rate_limited_before_response",
+      errorMessage: "429 rate limit",
+      promptTokens: 1200,
+      completionTokens: 0,
+      cachedPromptTokens: 0,
+      totalTokens: 1200,
+      inputEstimatedTokens: 1200,
+      costUsd: 0.0012,
+      costCny: 0.01,
+      costSource: "input_estimate_error",
+      tokenCountSource: "fallback_estimate",
+      billable: true,
+      entryCreatedAt: nowIso()
+    });
 
     const usage = await runner.buildSessionContextUsage(session.id);
 
@@ -1352,49 +1452,70 @@ describe("AgentRunner", () => {
   });
 
   it("auto-compacts long session context before the model loop", async () => {
+    const timestamp = nowIso();
+    await store.upsertProvider({
+      id: "hunyuan",
+      kind: "hunyuan",
+      name: "腾讯混元",
+      baseURL: "https://api.hunyuan.cloud.tencent.com/v1",
+      model: "hunyuan-turbos-latest",
+      apiKeyRef: await secrets.setSecret("hunyuan", "test-key"),
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
     const session = await store.createSession({
       projectId: null,
       title: "长上下文",
-      providerId: "deepseek",
+      providerId: "hunyuan",
       accessMode: "approval"
     });
     for (let index = 0; index < 6; index += 1) {
       await store.addMessage({
         sessionId: session.id,
         role: index % 2 === 0 ? "user" : "assistant",
-        content: `第 ${index} 段\n${"你".repeat(150_000)}`
+        content: `第 ${index} 段\n${"你".repeat(6_000)}`
       });
     }
-    const { runner, calls } = runnerWith(store, secrets, [
-      {
-        text: "这是压缩摘要",
-        usage: {
-          input: 10,
-          output: 5,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 15,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 }
+    const usageCostLedgerService = new UsageCostLedgerService(store, {
+      countInputTokens: () => ({ tokens: 123, source: "fallback_estimate" })
+    });
+    const { runner, calls } = runnerWith(
+      store,
+      secrets,
+      [
+        {
+          text: "这是压缩摘要",
+          usage: {
+            input: 10,
+            output: 5,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 15,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 }
+          }
+        },
+        {
+          text: "继续回答",
+          usage: {
+            input: 20,
+            output: 10,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 30,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.02 }
+          }
         }
-      },
-      {
-        text: "继续回答",
-        usage: {
-          input: 20,
-          output: 10,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 30,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.02 }
-        }
-      }
-    ]);
+      ],
+      { usageCostLedgerService }
+    );
     const events: StreamEvent[] = [];
 
     for await (const event of runner.stream({
       prompt: "继续",
       sessionId: session.id,
       projectId: null,
+      providerId: "hunyuan",
+      model: "hunyuan-turbos-latest",
       accessMode: "approval"
     })) {
       events.push(event);

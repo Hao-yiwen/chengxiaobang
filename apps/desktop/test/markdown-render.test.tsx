@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetExternalUrlBrowserCacheForTest } from "../src/renderer/components/ExternalUrlMenu";
 import { Markdown } from "../src/renderer/components/Markdown";
 import { setupI18n } from "../src/renderer/i18n";
 
@@ -22,6 +23,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetExternalUrlBrowserCacheForTest();
+  delete (window as { chengxiaobang?: unknown }).chengxiaobang;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -35,16 +38,53 @@ describe("Markdown", () => {
     expect(root).not.toHaveClass("text-body");
   });
 
-  it("renders safe http links through Streamdown link safety", () => {
+  it("opens safe http links directly without showing the old modal", async () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
 
     render(<Markdown text="see [docs](https://example.com) here" />);
-    fireEvent.click(screen.getByRole("button", { name: "docs" }));
+    fireEvent.click(screen.getByRole("link", { name: "docs" }));
 
-    expect(screen.getByText("打开外部链接？")).toBeInTheDocument();
-    expect(screen.getByText(/^https:\/\/example\.com\/?$/)).toBeInTheDocument();
+    expect(screen.queryByText("打开外部链接？")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(open).toHaveBeenCalledWith("https://example.com/", "_blank", "noreferrer")
+    );
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "打开链接" }));
+  it("opens a markdown link with a selected browser from the right click menu", async () => {
+    const detectExternalBrowsers = vi.fn(async () => [
+      {
+        id: "chrome",
+        name: "Google Chrome",
+        appPath: "/Applications/Google Chrome.app"
+      }
+    ]);
+    const openExternalUrlInBrowser = vi.fn(async () => ({ ok: true }));
+    window.chengxiaobang = {
+      detectExternalBrowsers,
+      openExternalUrlInBrowser
+    } as NonNullable<Window["chengxiaobang"]>;
+
+    render(<Markdown text="see [docs](https://example.com) here" />);
+    fireEvent.contextMenu(screen.getByRole("link", { name: "docs" }));
+
+    expect(await screen.findByText("默认浏览器")).toBeInTheDocument();
+    expect(await screen.findByText("Google Chrome")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Google Chrome"));
+
+    await waitFor(() =>
+      expect(openExternalUrlInBrowser).toHaveBeenCalledWith("chrome", "https://example.com/")
+    );
+  });
+
+  it("keeps the default browser menu item when the desktop bridge is unavailable", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    render(<Markdown text="see [docs](https://example.com) here" />);
+    fireEvent.contextMenu(screen.getByRole("link", { name: "docs" }));
+
+    fireEvent.click(await screen.findByText("默认浏览器"));
+
     expect(open).toHaveBeenCalledWith("https://example.com/", "_blank", "noreferrer");
   });
 

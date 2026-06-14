@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ExternalUrlMenu, openExternalUrlWithDefaultBrowser } from "@/components/ExternalUrlMenu";
 import { localPathFromFileUrl, normalizeBrowserUrl } from "@/lib/url";
 import { useAppStore } from "@/store";
 
@@ -36,6 +37,7 @@ export function BrowserPanel() {
   // Electron's <webview> tag needs the desktop shell (webviewTag is enabled in
   // the main process); plain browsers and jsdom fall back to a sandboxed iframe.
   const hasWebview = Boolean(window.chengxiaobang);
+  const currentLocalPath = url ? localPathFromFileUrl(url) : undefined;
 
   useEffect(() => setAddress(url), [url]);
 
@@ -89,8 +91,20 @@ export function BrowserPanel() {
       }
       return;
     }
-    window.open(url, "_blank");
+    openExternalUrlWithDefaultBrowser(url);
   }
+
+  const externalButton = (
+    <button
+      type="button"
+      title={t("rightPanel.openExternal")}
+      disabled={!url}
+      onClick={() => void openExternal()}
+      className={NAV_BUTTON_CLASS}
+    >
+      <ExternalLink className="size-3.5" />
+    </button>
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -132,15 +146,11 @@ export function BrowserPanel() {
             className="h-7 w-full rounded-xs border bg-muted/40 px-2.5 font-mono text-micro outline-none transition-colors focus:border-form-focus"
           />
         </form>
-        <button
-          type="button"
-          title={t("rightPanel.openExternal")}
-          disabled={!url}
-          onClick={() => void openExternal()}
-          className={NAV_BUTTON_CLASS}
-        >
-          <ExternalLink className="size-3.5" />
-        </button>
+        {url && !currentLocalPath ? (
+          <ExternalUrlMenu url={url}>{externalButton}</ExternalUrlMenu>
+        ) : (
+          externalButton
+        )}
       </div>
       <div className="min-h-0 flex-1">
         {url ? (

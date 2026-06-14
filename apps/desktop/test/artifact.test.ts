@@ -258,6 +258,37 @@ describe("collectArtifactsFromSession", () => {
     expect(collection.diagnostics).toEqual([{ type: "duplicate_path", path: "page.html" }]);
   });
 
+  it("skips invalid tool fallback paths without diagnostics", () => {
+    const collection = collectArtifactsFromSession([], [
+      tool({
+        id: "tool_abs_path",
+        args: { path: "/Users/me/out.html" },
+        updatedAt: "2026-06-08T00:00:01.000Z"
+      }),
+      tool({
+        id: "tool_escape_path",
+        args: { path: "../out.html" },
+        updatedAt: "2026-06-08T00:00:02.000Z"
+      }),
+      tool({
+        id: "tool_safe_path",
+        args: { path: "page.html" },
+        updatedAt: "2026-06-08T00:00:03.000Z"
+      })
+    ]);
+
+    expect(collection.artifacts).toEqual([
+      {
+        path: "page.html",
+        name: "page.html",
+        kind: "html",
+        toolCallId: "tool_safe_path",
+        declaredAt: "2026-06-08T00:00:03.000Z"
+      }
+    ]);
+    expect(collection.diagnostics).toEqual([]);
+  });
+
   it("keeps XML declarations ahead of tool history fallback", () => {
     const collection = collectArtifactsFromSession(
       [

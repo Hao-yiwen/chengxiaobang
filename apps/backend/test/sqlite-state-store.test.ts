@@ -405,6 +405,33 @@ describe("SqliteStateStore", () => {
     await store.close();
   });
 
+  it("inherits model memory when forking a session", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const source = await store.createSession({
+      projectId: null,
+      title: "原会话",
+      providerId: "deepseek",
+      accessMode: "approval",
+      model: "deepseek-v4-pro",
+      reasoningMode: "high"
+    });
+    const first = await store.addMessage({
+      sessionId: source.id,
+      role: "user",
+      content: "从这里分支"
+    });
+
+    const fork = await store.forkSession(source.id, first.id);
+
+    expect(fork).toMatchObject({
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      reasoningMode: "high"
+    });
+    await store.close();
+  });
+
   it("persists runs and tool calls across store restarts", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);

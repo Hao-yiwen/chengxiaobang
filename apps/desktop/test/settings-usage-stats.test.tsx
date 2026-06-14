@@ -2,11 +2,11 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderConfig, UsageStats, UsageStatsRangeSummary } from "@chengxiaobang/shared";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
-import { resetAppStore } from "../src/renderer/store";
+import { resetAppStore, useAppStore } from "../src/renderer/store";
 
 const provider: ProviderConfig = {
   id: "deepseek",
@@ -67,6 +67,11 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
+  useAppStore.setState({ onboardingCompleted: true });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 async function openUsageSettings(client: ApiClient): Promise<void> {
@@ -78,6 +83,8 @@ async function openUsageSettings(client: ApiClient): Promise<void> {
 
 describe("设置页用量统计", () => {
   it("shows usage metrics, model ranking, and switches heatmap modes", async () => {
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(1_000);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(500);
     const getUsageStats = vi.fn(async () => usageStatsFixture());
     await openUsageSettings(createClient({ getUsageStats }));
 
@@ -86,8 +93,14 @@ describe("设置页用量统计", () => {
     });
     expect((await screen.findAllByText("¥2.84")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("2.00M").length).toBeGreaterThan(0);
-    expect(screen.getByText("deepseek · deepseek-v4-flash")).toBeInTheDocument();
+    expect(screen.getByText("deepseek-v4-flash")).toBeInTheDocument();
+    expect(screen.getByText("3 次运行")).toBeInTheDocument();
+    expect(screen.queryByText("deepseek · deepseek-v4-flash")).not.toBeInTheDocument();
+    expect(screen.queryByText("provider_89aa · deepseek-v4-flash")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("settings-usage-heatmap-cell")).toHaveLength(371);
+    await waitFor(() =>
+      expect(screen.getByTestId("settings-usage-chart-scroll").scrollLeft).toBe(500)
+    );
 
     fireEvent.mouseEnter(screen.getAllByTestId("settings-usage-heatmap-cell").at(-1)!);
     expect(await screen.findByText("2026年6月13日")).toBeInTheDocument();
@@ -95,9 +108,15 @@ describe("设置页用量统计", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "每周" }));
     await waitFor(() => expect(screen.getAllByTestId("settings-usage-chart-bar")).toHaveLength(52));
+    await waitFor(() =>
+      expect(screen.getByTestId("settings-usage-chart-scroll").scrollLeft).toBe(500)
+    );
 
     fireEvent.click(screen.getByRole("radio", { name: "累计" }));
     await waitFor(() => expect(screen.getAllByTestId("settings-usage-chart-bar")).toHaveLength(12));
+    await waitFor(() =>
+      expect(screen.getByTestId("settings-usage-chart-scroll").scrollLeft).toBe(500)
+    );
   });
 
   it("shows an empty model ranking when there is no usage yet", async () => {
@@ -135,6 +154,20 @@ function usageStatsFixture(): UsageStats {
         model: "deepseek-v4-flash",
         label: "deepseek · deepseek-v4-flash",
         ...today
+      },
+      {
+        ...emptySummary(),
+        providerId: "provider_89aa",
+        providerKind: "deepseek",
+        model: "deepseek-v4-flash",
+        label: "provider_89aa · deepseek-v4-flash",
+        costCny: 0.42,
+        promptTokens: 200_000,
+        completionTokens: 100_000,
+        totalTokens: 300_000,
+        runCount: 2,
+        usageRunCount: 2,
+        pricedRunCount: 2
       }
     ],
     dataQuality: {

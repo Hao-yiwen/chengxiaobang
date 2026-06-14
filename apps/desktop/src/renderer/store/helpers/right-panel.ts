@@ -12,6 +12,7 @@ import {
   resetHomePlanMode,
   switchComposerDraftScope
 } from "./composer-drafts";
+import { restoreHomeModelSelection } from "./model-selection";
 
 export const RIGHT_PANEL_MIN_WIDTH = 300;
 export const RIGHT_PANEL_MAX_WIDTH = 720;
@@ -196,6 +197,7 @@ export function selectNewProjectState(state: AppState, project: Project, source:
     rightPanelBySession: rememberRightPanel(state),
     ...switchComposerDraftScope(state, HOME_COMPOSER_DRAFT_SCOPE, source),
     ...resetHomePlanMode(source, state.planMode),
+    ...restoreHomeModelSelection(state, state.providers, source),
     activeProjectId: project.id,
     activeSessionId: undefined,
     messages: [] as AppState["messages"],

@@ -5,6 +5,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/App";
 import { Composer } from "../src/renderer/components/Composer";
+import { ConfirmDialogProvider } from "../src/renderer/components/ConfirmDialog";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
 import type {
@@ -105,6 +106,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
 beforeAll(() => {
   // radix Select 在 jsdom 下需要的最小桩（popper 测量 + 滚动 + pointer capture）。
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
+  window.HTMLElement.prototype.focus = vi.fn();
   window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false) as never;
   window.HTMLElement.prototype.releasePointerCapture = vi.fn();
   window.HTMLElement.prototype.setPointerCapture = vi.fn();
@@ -142,6 +144,47 @@ async function openModelSelect(): Promise<HTMLElement> {
   return trigger;
 }
 
+async function chooseFullAccessFromAccessMenu(triggerName: RegExp): Promise<void> {
+  const trigger = screen.getByRole("button", { name: triggerName });
+  fireEvent.keyDown(trigger, { key: "Enter" });
+  const menu = await screen.findByRole("menu");
+  const item = within(menu).getByText("完全访问").closest("[role='menuitem']");
+  if (!item) {
+    throw new Error("找不到完全访问权限项");
+  }
+  fireEvent.click(item);
+}
+
+async function openModelFlyout(menu: HTMLElement, modelLabel: string): Promise<void> {
+  const row = within(menu).getByText(modelLabel).closest("[role='menuitem']");
+  if (!row) {
+    throw new Error(`找不到模型行：${modelLabel}`);
+  }
+  await act(async () => {
+    fireEvent.pointerOver(row, { pointerType: "mouse" });
+    fireEvent.pointerMove(row, { pointerType: "mouse" });
+    fireEvent.mouseOver(row);
+    fireEvent.mouseMove(row);
+    fireEvent.mouseEnter(row);
+    fireEvent.keyDown(row, { key: "ArrowRight" });
+  });
+}
+
+async function selectDeepSeekProvider(): Promise<void> {
+  await waitFor(() =>
+    expect(useAppStore.getState().providers.some((provider) => provider.id === "deepseek")).toBe(
+      true
+    )
+  );
+  act(() => {
+    useAppStore.setState({
+      onboardingOpen: false,
+      onboardingCompleted: true
+    });
+    useAppStore.getState().setProviderId("deepseek");
+  });
+}
+
 function setDocumentVisibility(visibilityState: DocumentVisibilityState): void {
   Object.defineProperty(document, "visibilityState", {
     configurable: true,
@@ -165,6 +208,14 @@ function installBridge(
     value: bridge
   });
   return bridge;
+}
+
+function renderComposer(): ReturnType<typeof render> {
+  return render(
+    <ConfirmDialogProvider>
+      <Composer />
+    </ConfirmDialogProvider>
+  );
 }
 
 function dragDataTransfer(files: File[]): DataTransfer {
@@ -194,7 +245,7 @@ describe("Composer 首页占位文案轮播", () => {
       slashCommands: []
     });
 
-    render(<Composer />);
+    renderComposer();
 
     expect(screen.getByRole("button", { name: /审批执行/ })).toHaveClass(
       "text-muted-foreground"
@@ -224,7 +275,7 @@ describe("Composer 首页占位文案轮播", () => {
       slashCommands: []
     });
 
-    render(<Composer />);
+    renderComposer();
 
     const rail = screen.getAllByText("随心输入，交给程小帮")[0]?.parentElement as HTMLElement;
     expect(rail.style.transform).toBe("translateY(-0px)");
@@ -267,7 +318,7 @@ describe("Composer 首页占位文案轮播", () => {
       slashCommands: []
     });
 
-    render(<Composer />);
+    renderComposer();
 
     const rail = screen.getAllByText("随心输入，交给程小帮")[0]?.parentElement as HTMLElement;
     act(() => {
@@ -291,6 +342,60 @@ describe("Composer 首页占位文案轮播", () => {
       vi.advanceTimersByTime(1);
     });
     expect(rail.style.transform).toBe("translateY(-48px)");
+  });
+
+  it("requires confirmation before switching to full access from the home composer", async () => {
+    useAppStore.setState({
+      view: "home",
+      input: "",
+      providers: [deepseek],
+      providerId: deepseek.id,
+      accessMode: "approval",
+      isRunning: false,
+      pendingTool: undefined,
+      slashCommands: []
+    });
+
+    renderComposer();
+
+    await chooseFullAccessFromAccessMenu(/审批执行/);
+
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("开启完全访问？");
+    expect(useAppStore.getState().accessMode).toBe("approval");
+
+    fireEvent.click(screen.getByRole("button", { name: "保持审批" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(useAppStore.getState().accessMode).toBe("approval");
+
+    await chooseFullAccessFromAccessMenu(/审批执行/);
+    fireEvent.click(await screen.findByRole("button", { name: "仍然开启" }));
+
+    await waitFor(() => expect(useAppStore.getState().accessMode).toBe("full_access"));
+  });
+
+  it("requires confirmation before switching to full access from the chat composer", async () => {
+    useAppStore.setState({
+      view: "chat",
+      activeSessionId: "session_1",
+      input: "",
+      providers: [deepseek],
+      providerId: deepseek.id,
+      accessMode: "smart_approval",
+      isRunning: false,
+      pendingTool: undefined,
+      slashCommands: []
+    });
+
+    renderComposer();
+
+    await chooseFullAccessFromAccessMenu(/智能审批/);
+
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("开启完全访问？");
+    expect(useAppStore.getState().accessMode).toBe("smart_approval");
+
+    fireEvent.click(screen.getByRole("button", { name: "仍然开启" }));
+
+    await waitFor(() => expect(useAppStore.getState().accessMode).toBe("full_access"));
   });
 });
 
@@ -465,7 +570,7 @@ describe("主区域文件拖拽上下文", () => {
   });
 });
 
-describe("Composer 模型两级下拉（ARCH-SPEC §6.4）", () => {
+describe("Composer 运行与选择回归（ARCH-SPEC §6.4）", () => {
   it("uses startRun plus the global event listener when available", async () => {
     let emit: ((event: StreamEvent) => void) | undefined;
     const subscribeRunEvents = vi.fn((listener: (event: StreamEvent) => void) => {
@@ -488,6 +593,7 @@ describe("Composer 模型两级下拉（ARCH-SPEC §6.4）", () => {
 
     render(<App client={client} />);
     const input = await screen.findByLabelText("输入消息");
+    await selectDeepSeekProvider();
     fireEvent.change(input, { target: { value: "走全局流" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
@@ -558,6 +664,7 @@ describe("Composer 模型两级下拉（ARCH-SPEC §6.4）", () => {
 
     render(<App client={client} />);
     const input = await screen.findByLabelText("输入消息");
+    await selectDeepSeekProvider();
     fireEvent.change(input, { target: { value: "会丢终态的请求" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
@@ -584,17 +691,19 @@ describe("Composer 模型两级下拉（ARCH-SPEC §6.4）", () => {
     // 模型选项只拉取已配置 API Key 的 provider。
     await waitFor(() => expect(listProviderModelOptions).toHaveBeenCalledWith("deepseek"));
     expect(listProviderModelOptions).not.toHaveBeenCalledWith("kimi");
-    // 按已配置供应商分组展示模型，菜单里直接出现模型项。
+    // 平铺模型列表，不再有供应商分组小标题。
     const menu = await screen.findByRole("menu");
-    expect(within(menu).getByText("DeepSeek")).toBeInTheDocument();
+    expect(within(menu).queryByText("DeepSeek")).not.toBeInTheDocument();
     expect(within(menu).getByText("DeepSeek V4 Flash")).toBeInTheDocument();
 
-    // 直接选择模型；推理档位由 YAML 维护，不再在 Composer 里手动选择。
-    const row = within(menu).getByText("deepseek-chat").closest("[role='menuitem']");
-    if (!row) {
-      throw new Error("找不到 deepseek-chat 模型项");
+    // hover 模型展开右侧 flyout，再在里面选定推理档位。
+    await openModelFlyout(menu, "deepseek-chat");
+    const flyoutMenus = await screen.findAllByRole("menu");
+    const flyout = flyoutMenus[flyoutMenus.length - 1];
+    if (!flyout) {
+      throw new Error("找不到模型右侧 flyout");
     }
-    fireEvent.click(row);
+    fireEvent.click(within(flyout).getByText("选择模型"));
 
     await waitFor(() => {
       expect(useAppStore.getState().providerId).toBe("deepseek");
@@ -610,6 +719,36 @@ describe("Composer 模型两级下拉（ARCH-SPEC §6.4）", () => {
     expect(streamRun.mock.calls[0]?.[0]).toMatchObject({
       providerId: "deepseek",
       model: "deepseek-chat"
+    });
+  });
+
+  it("sends the selected model reasoning level with the run request", async () => {
+    const listProviderModelOptions = vi.fn(async () => deepseekModelOptions);
+    const streamRun = vi.fn(async (..._args: Parameters<ApiClient["streamRun"]>) => {});
+    const client = createClient({
+      listProviders: vi.fn(async () => [deepseek, kimiUnconfigured]),
+      listProviderModelOptions,
+      streamRun: streamRun as never
+    });
+
+    render(<App client={client} />);
+    await screen.findByTestId("composer-shell");
+    await openModelSelect();
+
+    const menu = await screen.findByRole("menu");
+    await openModelFlyout(menu, "DeepSeek V4 Flash");
+    fireEvent.click(await screen.findByText("High"));
+
+    await waitFor(() => expect(useAppStore.getState().reasoningMode).toBe("high"));
+
+    const input = screen.getByLabelText("输入消息");
+    fireEvent.change(input, { target: { value: "用 high 跑" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(streamRun).toHaveBeenCalled());
+    expect(streamRun.mock.calls[0]?.[0]).toMatchObject({
+      providerId: "deepseek",
+      reasoningMode: "high"
     });
   });
 
@@ -650,6 +789,7 @@ describe("Composer 计划模式（＋下拉 Switch + 标记）", () => {
     expect(await screen.findByTitle("关闭计划模式")).toBeInTheDocument();
 
     const input = screen.getByLabelText("输入消息");
+    await selectDeepSeekProvider();
     fireEvent.change(input, { target: { value: "先做个计划" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
@@ -683,6 +823,7 @@ describe("Composer 计划模式（＋下拉 Switch + 标记）", () => {
 
     render(<App client={client} />);
     const input = await screen.findByLabelText("输入消息");
+    await selectDeepSeekProvider();
     fireEvent.change(input, { target: { value: "先做个计划" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
@@ -748,6 +889,7 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
 
     render(<App client={client} />);
     const input = await screen.findByLabelText("输入消息");
+    await selectDeepSeekProvider();
     fireEvent.change(input, { target: { value: "开始" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
@@ -769,6 +911,7 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
 
     render(<App client={client} />);
     const input = await screen.findByLabelText("输入消息");
+    await selectDeepSeekProvider();
     fireEvent.change(input, { target: { value: "先跑第一句" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
@@ -800,6 +943,7 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
 
     render(<App client={client} />);
     const input = await screen.findByLabelText("输入消息");
+    await selectDeepSeekProvider();
     fireEvent.change(input, { target: { value: "先跑第一句" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
@@ -912,6 +1056,8 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
         activeSessionId: "session_1",
         activeRunId: "run_1",
         isRunning: true,
+        onboardingOpen: false,
+        onboardingCompleted: true,
         providers: [deepseek],
         providerId: deepseek.id,
         sessions: [
@@ -971,6 +1117,8 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
         activeSessionId: "session_1",
         activeRunId: "run_1",
         isRunning: true,
+        onboardingOpen: false,
+        onboardingCompleted: true,
         providers: [deepseek],
         providerId: deepseek.id,
         sessions: [
@@ -1038,6 +1186,7 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
 
     render(<App client={client} />);
     const input = await screen.findByLabelText("输入消息");
+    await selectDeepSeekProvider();
     fireEvent.change(input, { target: { value: "开始" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
@@ -1102,6 +1251,7 @@ describe("HomeStarters 目录式启动区（UI-SPEC §3.1 / ARCH-SPEC §5.5）",
 
     render(<App client={client} />);
     await screen.findByTestId("composer-shell");
+    await selectDeepSeekProvider();
 
     fireEvent.click(screen.getByText("做一份 PPT"));
 

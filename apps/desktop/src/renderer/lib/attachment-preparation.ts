@@ -1,6 +1,6 @@
 import {
   createId,
-  resolveModelInputModalities,
+  resolveProviderConfigModelInputModalities,
   type MessageAttachment,
   type ModelInputModality,
   type ProviderConfig,
@@ -47,12 +47,13 @@ export async function prepareAttachmentsForRun(
   options: PrepareAttachmentsOptions
 ): Promise<PreparedAttachmentContext> {
   const effectiveModel = options.model ?? options.provider.model;
-  const inputModalities = resolveModelInputModalities(options.provider.kind, effectiveModel);
+  const inputModalities = resolveProviderConfigModelInputModalities(options.provider, effectiveModel);
   const supportsImage = inputModalities.includes("image");
   const bridge = options.bridge;
   const textBlocks: string[] = [];
   const nativeAttachments: RunImageAttachment[] = [];
   const warnings: string[] = [];
+  const attachmentManifest = buildAttachmentManifest(options.attachments);
 
   console.info("[attachment-prep] 开始准备附件", {
     providerId: options.provider.id,
@@ -79,7 +80,7 @@ export async function prepareAttachmentsForRun(
         continue;
       }
 
-      if (kind === "image" || kind === "pdf") {
+      if (kind === "image") {
         if (supportsImage) {
           console.info("[attachment-prep] 附件按原生图片直传", {
             path: attachment.path,
@@ -88,20 +89,35 @@ export async function prepareAttachmentsForRun(
           });
           nativeAttachments.push(...(await prepareNativeImageAttachments(attachment, bridge)));
         } else {
-          console.info("[attachment-prep] 附件按 OCR 文本化", {
+          console.info("[attachment-prep] 文本模型图片附件仅提供路径，等待模型按需调用 OCR", {
             path: attachment.path,
             kind,
             model: effectiveModel
           });
-          const result = await recognizeAttachmentText(attachment, bridge);
-          addTextBlock(textBlocks, options, attachment, result.text);
-          warnings.push(...result.warnings);
         }
         continue;
       }
 
-      warnings.push(`跳过 ${attachment.name}：当前暂不支持把 ${kind} 文件作为上下文`);
-      console.warn("[attachment-prep] 跳过不支持的附件", { path: attachment.path, kind });
+      if (kind === "pdf") {
+        console.info("[attachment-prep] PDF 附件仅提供路径，等待模型按需调用 OCR 或文件工具", {
+          path: attachment.path,
+          kind,
+          model: effectiveModel
+        });
+        continue;
+      }
+
+      if (kind === "video") {
+        console.info("[attachment-prep] 视频附件当前仅提供路径，原生视频输入尚未启用", {
+          path: attachment.path,
+          kind,
+          model: effectiveModel,
+          inputModalities
+        });
+        continue;
+      }
+
+      console.info("[attachment-prep] 二进制附件仅提供路径", { path: attachment.path, kind });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       warnings.push(`跳过 ${attachment.name}：${message}`);
@@ -114,13 +130,15 @@ export async function prepareAttachmentsForRun(
   }
 
   console.info("[attachment-prep] 附件准备完成", {
+    hasAttachmentManifest: attachmentManifest.length > 0,
     textBlocks: textBlocks.length,
     nativeAttachmentCount: nativeAttachments.length,
     warningCount: warnings.length
   });
 
+  const contextBlocks = [attachmentManifest, ...textBlocks].filter((block) => block.trim().length > 0);
   return {
-    textContext: textBlocks.length > 0 ? textBlocks.join("\n") + "\n" : "",
+    textContext: contextBlocks.length > 0 ? contextBlocks.join("\n") + "\n" : "",
     nativeAttachments,
     warnings,
     inputModalities,
@@ -175,6 +193,42 @@ function addTextBlock(
 
 function defaultAttachmentBlock(attachment: AttachmentDescriptor, text: string): string {
   return `以下是文件 ${attachment.name} 的内容：\n\`\`\`\n${text}\n\`\`\`\n`;
+}
+
+function buildAttachmentManifest(attachments: AttachmentDescriptor[]): string {
+  if (attachments.length === 0) {
+    return "";
+  }
+  const lines = attachments.map((attachment) => {
+    const kind = attachment.kind ?? previewKindForPath(attachment.path);
+    const hints = attachmentHints(kind);
+    return `- ${attachment.name}（类型：${kind}，大小：${formatBytes(attachment.size)}，路径：${attachment.path}${hints ? `，${hints}` : ""}）`;
+  });
+  return [
+    "用户上传了以下附件。需要处理、转换、压缩或读取文件时，请使用这里给出的本地快照路径；不要假设附件位于当前工作目录。",
+    "附件清单：",
+    ...lines
+  ].join("\n");
+}
+
+function attachmentHints(kind: PreviewKind): string {
+  if (kind === "image" || kind === "pdf") {
+    return "如需提取图片或 PDF 中的文字，可按需调用 OCR 工具";
+  }
+  if (kind === "video") {
+    return "当前不会作为原生视频输入发送给模型，请按文件路径处理";
+  }
+  return "";
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 async function readTextAttachment(
@@ -273,17 +327,6 @@ async function extractPptxText(data: ArrayBuffer): Promise<string> {
     }
   }
   return chunks.join("\n\n");
-}
-
-async function recognizeAttachmentText(
-  attachment: AttachmentDescriptor,
-  bridge?: Window["chengxiaobang"]
-): Promise<{ text: string; warnings: string[] }> {
-  const result = await bridge?.ocrRecognize?.(attachment.path);
-  if (!result?.ok) {
-    throw new Error(result?.error ?? "OCR 服务不可用");
-  }
-  return { text: result.text, warnings: result.warnings };
 }
 
 async function prepareNativeImageAttachments(

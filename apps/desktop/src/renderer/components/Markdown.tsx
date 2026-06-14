@@ -1,5 +1,4 @@
-import { memo, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { memo } from "react";
 import { code } from "@streamdown/code";
 import { cjk } from "@streamdown/cjk";
 import { createMathPlugin } from "@streamdown/math";
@@ -11,14 +10,13 @@ import {
   defaultUrlTransform,
   Streamdown,
   type ControlsConfig,
-  type LinkSafetyConfig,
-  type LinkSafetyModalProps,
   type MermaidOptions,
   type PluginConfig,
   type StreamdownProps,
   type StreamdownTranslations,
   type UrlTransform
 } from "streamdown";
+import { ExternalUrlAnchor } from "@/components/ExternalUrlMenu";
 import { rehypeNumericTables } from "@/lib/markdown-utils";
 import { cn } from "@/lib/utils";
 
@@ -57,22 +55,14 @@ const STREAMDOWN_TRANSLATIONS: Partial<StreamdownTranslations> = {
   downloadTableAsCsv: "下载为 CSV",
   downloadTableAsMarkdown: "下载为 Markdown",
   exitFullscreen: "退出全屏",
-  externalLinkWarning: "即将打开外部网站，请确认链接来源可信。",
   imageNotAvailable: "图片不可用",
   mermaidFormatMmd: "MMD",
   mermaidFormatPng: "PNG",
   mermaidFormatSvg: "SVG",
-  openExternalLink: "打开外部链接？",
-  openLink: "打开链接",
   tableFormatCsv: "CSV",
   tableFormatMarkdown: "Markdown",
   tableFormatTsv: "TSV",
   viewFullscreen: "全屏查看"
-};
-
-const STREAMDOWN_LINK_SAFETY: LinkSafetyConfig = {
-  enabled: true,
-  renderModal: (props) => <LinkSafetyModal {...props} />
 };
 
 const STREAMDOWN_MERMAID: MermaidOptions = {
@@ -111,6 +101,21 @@ const STREAMDOWN_ANIMATION: StreamdownProps["animated"] = {
   stagger: 12
 };
 
+const STREAMDOWN_COMPONENTS: StreamdownProps["components"] = {
+  a: ({ href, children, className, node: _node, ...props }) => {
+    const url = typeof href === "string" ? href : "";
+    return (
+      <ExternalUrlAnchor
+        href={url}
+        className={cn("wrap-anywhere font-medium text-primary underline", className)}
+        {...props}
+      >
+        {children}
+      </ExternalUrlAnchor>
+    );
+  }
+};
+
 const HTTP_URL_TRANSFORM: UrlTransform = (url, key, node) => {
   if (key === "href" && url === "streamdown:incomplete-link") {
     return url;
@@ -124,96 +129,6 @@ const HTTP_URL_TRANSFORM: UrlTransform = (url, key, node) => {
   }
   return defaultUrlTransform(url, key, node);
 };
-
-function LinkSafetyModal({ isOpen, onClose, onConfirm, url }: LinkSafetyModalProps) {
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return undefined;
-    }
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [isOpen, onClose]);
-
-  if (!isOpen || typeof document === "undefined") {
-    return null;
-  }
-
-  const copyLink = async () => {
-    try {
-      await navigator.clipboard?.writeText(url);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.warn("[Markdown] 复制外部链接失败", {
-        url,
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
-  };
-
-  const openLink = () => {
-    onConfirm();
-    onClose();
-  };
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/50 px-4 backdrop-blur-sm"
-      data-streamdown="link-safety-modal"
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        className="flex w-full max-w-md flex-col gap-4 rounded-md border border-border bg-canvas p-5 shadow-modal"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={STREAMDOWN_TRANSLATIONS.openExternalLink}
-      >
-        <div className="flex flex-col gap-1.5">
-          <h2 className="text-body-sm-strong text-foreground">
-            {STREAMDOWN_TRANSLATIONS.openExternalLink}
-          </h2>
-          <p className="text-body-xs text-muted-foreground">
-            {STREAMDOWN_TRANSLATIONS.externalLinkWarning}
-          </p>
-        </div>
-        <div className="max-h-28 overflow-auto rounded-sm border border-border bg-canvas-soft px-3 py-2 font-mono text-caption text-body">
-          {url}
-        </div>
-        <div className="flex justify-end gap-2">
-          <button
-            className="rounded-sm border border-border bg-canvas px-3 py-1.5 text-button text-foreground transition-colors hover:bg-canvas-soft"
-            onClick={copyLink}
-            type="button"
-          >
-            {copied ? STREAMDOWN_TRANSLATIONS.copied : STREAMDOWN_TRANSLATIONS.copyLink}
-          </button>
-          <button
-            className="rounded-sm bg-primary px-3 py-1.5 text-button text-primary-foreground transition-colors hover:bg-primary/90"
-            onClick={openLink}
-            type="button"
-          >
-            {STREAMDOWN_TRANSLATIONS.openLink}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
 
 function MarkdownStream({
   text,
@@ -233,7 +148,7 @@ function MarkdownStream({
       className={cn("markdown-streamdown text-foreground", className)}
       controls={STREAMDOWN_CONTROLS}
       translations={STREAMDOWN_TRANSLATIONS}
-      linkSafety={STREAMDOWN_LINK_SAFETY}
+      components={STREAMDOWN_COMPONENTS}
       urlTransform={HTTP_URL_TRANSFORM}
       remarkPlugins={REMARK_PLUGINS}
       rehypePlugins={REHYPE_PLUGINS}

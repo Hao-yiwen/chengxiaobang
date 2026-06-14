@@ -21,6 +21,12 @@ colors:
   link: "#0070f3"
   link-deep: "#0761d1"
   link-bg-soft: "#d3e5ff"
+  soft-blue: "#4076be"
+  soft-blue-strong: "#265898"
+  soft-blue-foreground: "#2d5387"
+  soft-blue-border: "#c4d7f2"
+  soft-blue-surface: "#f5f9ff"
+  soft-blue-surface-hover: "#edf5ff"
   error: "#ee0000"
   error-soft: "#f7d4d6"
   error-deep: "#c50000"
@@ -220,6 +226,12 @@ components:
 - **Link / Success** `#0070f3`：链接、成功/连接状态、信息态。Vercel 的 legacy success 语义与 link blue 合并。
 - **Link Deep** `#0761d1`：链接按下或更深状态。
 - **Link Bg Soft** `#d3e5ff`：信息提示和轻量高亮底色。
+- **Soft Blue** `#4076be`：低强度品牌蓝，用于标签、筛选项、轻量操作按钮和卡片 hover 的统一点缀，不用于主 CTA。
+- **Soft Blue Strong** `#265898`：Soft Blue 的 hover / pressed 文字和边框强调。
+- **Soft Blue Foreground** `#2d5387`：Soft Blue 淡底上的文字与小图标。
+- **Soft Blue Border** `#c4d7f2`：Soft Blue 淡底控件的边框。
+- **Soft Blue Surface** `#f5f9ff`：Soft Blue 胶囊、标签、轻量高亮底色。
+- **Soft Blue Surface Hover** `#edf5ff`：Soft Blue 控件 hover 底色。
 - **Error** `#ee0000`：错误与危险动作。
 - **Error Soft** `#f7d4d6`：错误淡底。
 - **Warning** `#f5a623`：警示、待处理状态。

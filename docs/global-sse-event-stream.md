@@ -197,14 +197,16 @@
 
 事件处理规则：
 
-- `delta(text)`：追加到 `streamText`。
-- `delta(thinking)`：追加到 `thinking`，并记录 `thinkingStartedAt`。
+- `delta(text)`：进入 renderer 本地合帧缓冲，约 32ms 批量追加到 `streamText`。
+- `delta(thinking)`：进入 renderer 本地合帧缓冲，约 32ms 批量追加到 `thinking`，并记录 `thinkingStartedAt`。
 - `tool_activity`：更新当前工具参数活动预览。
 - `message`：追加持久化消息；assistant 消息会清空实时 text/thinking 缓冲，并记录 `activeRunLastAssistant`。
 - `tool_call(pending_approval)`：进入 `pendingTool`，等待底部审批/ask-user/plan 卡片。
 - `tool_call(running)`：进入 `runningTool` 并写入工具历史。
 - `tool_call(completed|failed|rejected)`：清理 pending/running，并 upsert 到工具历史。
 - `run_end`：清理运行态，写 usage/runMeta，然后触发 `refresh()` 和当前会话详情重拉。
+
+`message`、`tool_call`、`run_end`、`setup_error` 这类非 delta 事件处理前会先强制 flush 本地 delta 缓冲，避免最终 assistant 消息清空实时文本后，旧的流式片段又被定时器回写。重复点击当前已选中的运行中会话会被视为 no-op，不会清空 `activeRunId`、`streamText` 或运行归属映射。
 
 ### DB 快照恢复
 

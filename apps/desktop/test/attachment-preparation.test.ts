@@ -30,31 +30,22 @@ const kimi: ProviderConfig = {
 };
 
 describe("prepareAttachmentsForRun", () => {
-  it("uses OCR for image attachments when the selected model is text-only", async () => {
-    const ocrRecognize = vi.fn(async () => ({
-      ok: true,
-      path: "/tmp/photo.png",
-      name: "photo.png",
-      text: "图片里的文字",
-      size: 100,
-      pageCount: 1,
-      processedPages: 1,
-      warnings: [],
-      elapsedMs: 12
-    }));
+  it("passes image attachments as paths for text-only models without eager OCR", async () => {
+    const ocrRecognize = vi.fn();
     const prepareNativeImages = vi.fn();
 
     const prepared = await prepareAttachmentsForRun({
       attachments: [{ path: "/tmp/photo.png", name: "photo.png", size: 100, kind: "image" }],
       provider: deepseek,
-      bridge: bridge({ ocrRecognize, prepareNativeImages }),
-      formatTextBlock: (attachment, text) => `[${attachment.name}]\n${text}`
+      bridge: bridge({ ocrRecognize, prepareNativeImages })
     });
 
-    expect(ocrRecognize).toHaveBeenCalledWith("/tmp/photo.png");
+    expect(ocrRecognize).not.toHaveBeenCalled();
     expect(prepareNativeImages).not.toHaveBeenCalled();
     expect(prepared.nativeAttachments).toEqual([]);
-    expect(prepared.textContext).toContain("图片里的文字");
+    expect(prepared.textContext).toContain("附件清单");
+    expect(prepared.textContext).toContain("/tmp/photo.png");
+    expect(prepared.textContext).toContain("OCR 工具");
   });
 
   it("passes image attachments through for multimodal models without OCR", async () => {
@@ -86,7 +77,7 @@ describe("prepareAttachmentsForRun", () => {
 
     expect(prepareNativeImages).toHaveBeenCalledWith("/tmp/photo.png");
     expect(ocrRecognize).not.toHaveBeenCalled();
-    expect(prepared.textContext).toBe("");
+    expect(prepared.textContext).toContain("/tmp/photo.png");
     expect(prepared.nativeAttachments[0]).toMatchObject({
       name: "photo.png",
       mimeType: "image/jpeg",
@@ -95,42 +86,20 @@ describe("prepareAttachmentsForRun", () => {
     });
   });
 
-  it("routes PDF attachments to OCR for text models and page images for multimodal models", async () => {
+  it("keeps PDF attachments as paths for all models without eager OCR or page rendering", async () => {
     const textBridge = bridge({
-      ocrRecognize: vi.fn(async () => ({
-        ok: true,
-        path: "/tmp/doc.pdf",
-        name: "doc.pdf",
-        text: "第一页文字",
-        size: 512,
-        pageCount: 2,
-        processedPages: 2,
-        warnings: ["PDF 共 12 页，本次只处理前 10 页"],
-        elapsedMs: 20
-      }))
+      ocrRecognize: vi.fn(),
+      prepareNativeImages: vi.fn()
     });
     const multimodalBridge = bridge({
-      prepareNativeImages: vi.fn(async () => ({
-        ok: true,
-        path: "/tmp/doc.pdf",
-        name: "doc.pdf",
-        size: 512,
-        images: [
-          { name: "doc.pdf 第 1 页", mimeType: "image/jpeg", dataBase64: "page1", size: 10 },
-          { name: "doc.pdf 第 2 页", mimeType: "image/jpeg", dataBase64: "page2", size: 10 }
-        ],
-        pageCount: 2,
-        processedPages: 2,
-        warnings: [],
-        elapsedMs: 18
-      }))
+      ocrRecognize: vi.fn(),
+      prepareNativeImages: vi.fn()
     });
 
     const textPrepared = await prepareAttachmentsForRun({
       attachments: [{ path: "/tmp/doc.pdf", name: "doc.pdf", size: 512, kind: "pdf" }],
       provider: deepseek,
-      bridge: textBridge,
-      formatTextBlock: (attachment, text) => `[${attachment.name}]\n${text}`
+      bridge: textBridge
     });
     const multimodalPrepared = await prepareAttachmentsForRun({
       attachments: [{ path: "/tmp/doc.pdf", name: "doc.pdf", size: 512, kind: "pdf" }],
@@ -138,11 +107,31 @@ describe("prepareAttachmentsForRun", () => {
       bridge: multimodalBridge
     });
 
-    expect(textBridge.ocrRecognize).toHaveBeenCalledWith("/tmp/doc.pdf");
-    expect(textPrepared.textContext).toContain("第一页文字");
-    expect(textPrepared.warnings).toEqual(["PDF 共 12 页，本次只处理前 10 页"]);
-    expect(multimodalBridge.prepareNativeImages).toHaveBeenCalledWith("/tmp/doc.pdf");
-    expect(multimodalPrepared.nativeAttachments).toHaveLength(2);
+    expect(textBridge.ocrRecognize).not.toHaveBeenCalled();
+    expect(textBridge.prepareNativeImages).not.toHaveBeenCalled();
+    expect(textPrepared.textContext).toContain("/tmp/doc.pdf");
+    expect(textPrepared.textContext).toContain("OCR 工具");
+    expect(textPrepared.nativeAttachments).toEqual([]);
+    expect(textPrepared.warnings).toEqual([]);
+    expect(multimodalBridge.ocrRecognize).not.toHaveBeenCalled();
+    expect(multimodalBridge.prepareNativeImages).not.toHaveBeenCalled();
+    expect(multimodalPrepared.textContext).toContain("/tmp/doc.pdf");
+    expect(multimodalPrepared.nativeAttachments).toEqual([]);
+  });
+
+  it("keeps video attachments as paths even when the catalog advertises video input", async () => {
+    const prepareNativeImages = vi.fn();
+
+    const prepared = await prepareAttachmentsForRun({
+      attachments: [{ path: "/tmp/clip.mp4", name: "clip.mp4", size: 1024, kind: "video" }],
+      provider: kimi,
+      bridge: bridge({ prepareNativeImages })
+    });
+
+    expect(prepareNativeImages).not.toHaveBeenCalled();
+    expect(prepared.nativeAttachments).toEqual([]);
+    expect(prepared.textContext).toContain("/tmp/clip.mp4");
+    expect(prepared.textContext).toContain("当前不会作为原生视频输入发送给模型");
   });
 
   it("saves visible attachment snapshots separately from OCR/native preparation", async () => {

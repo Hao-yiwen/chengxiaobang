@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderConfig } from "@chengxiaobang/shared";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
-import { resetAppStore } from "../src/renderer/store";
+import { resetAppStore, useAppStore } from "../src/renderer/store";
 
 const provider: ProviderConfig = {
   id: "deepseek",
@@ -65,6 +65,7 @@ function createClient(): ApiClient {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
+  useAppStore.setState({ onboardingCompleted: true });
 });
 
 afterEach(() => {
@@ -90,5 +91,15 @@ describe("settings developer logs", () => {
 
     await waitFor(() => expect(openLogDir).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("已打开日志目录：/tmp/cxb-logs")).toBeInTheDocument();
+  });
+
+  it("does not expose default permission selection in general settings", async () => {
+    render(<App client={createClient()} />);
+
+    fireEvent.click(await screen.findByText("设置"));
+    fireEvent.click(await screen.findByText("常规"));
+
+    expect(screen.queryByText("默认权限")).not.toBeInTheDocument();
+    expect(screen.queryByText("完全访问")).not.toBeInTheDocument();
   });
 });

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  Message,
   ProviderConfig,
   ScheduledTaskEvent,
   Session,
@@ -97,6 +98,10 @@ beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
   useAppStore.setState({ sessions: [session] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("app event handling", () => {
@@ -236,6 +241,119 @@ describe("app event handling", () => {
     });
 
     expect(useAppStore.getState().pendingTool?.id).toBe(pendingTool.id);
+  });
+
+  it("batches text deltas and flushes them before tool events", async () => {
+    vi.useFakeTimers();
+    const toolCall: ToolCall = {
+      id: "tool_running",
+      runId: "run_active",
+      name: "shell",
+      args: { command: "echo ok" },
+      status: "running",
+      createdAt: "2026-06-13T00:00:01.000Z",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    };
+    useAppStore.setState({
+      activeSessionId: session.id,
+      activeRunId: "run_active",
+      isRunning: true
+    });
+    let lastStreamText = useAppStore.getState().streamText;
+    const streamTextChanges: string[] = [];
+    const unsubscribe = useAppStore.subscribe((state) => {
+      if (state.streamText === lastStreamText) {
+        return;
+      }
+      lastStreamText = state.streamText;
+      streamTextChanges.push(state.streamText);
+    });
+
+    try {
+      useAppStore.getState().handleRunEvent({
+        type: "delta",
+        runId: "run_active",
+        channel: "text",
+        delta: "你"
+      });
+      useAppStore.getState().handleRunEvent({
+        type: "delta",
+        runId: "run_active",
+        channel: "text",
+        delta: "好"
+      });
+
+      expect(useAppStore.getState().streamText).toBe("");
+      expect(streamTextChanges).toEqual([]);
+      await vi.advanceTimersByTimeAsync(31);
+      expect(useAppStore.getState().streamText).toBe("");
+      expect(streamTextChanges).toEqual([]);
+
+      useAppStore.getState().handleRunEvent({
+        type: "tool_call",
+        runId: "run_active",
+        toolCall
+      });
+
+      expect(useAppStore.getState().streamText).toBe("你好");
+      expect(streamTextChanges).toEqual(["你好"]);
+      expect(useAppStore.getState().runningTool?.id).toBe(toolCall.id);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("does not replay a buffered delta after the assistant message clears streaming text", async () => {
+    vi.useFakeTimers();
+    const assistantMessage: Message = {
+      id: "msg_assistant",
+      sessionId: session.id,
+      role: "assistant",
+      content: "最终回答",
+      createdAt: "2026-06-13T00:00:02.000Z"
+    };
+    useAppStore.setState({
+      activeSessionId: session.id,
+      activeRunId: "run_active",
+      isRunning: true
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "delta",
+      runId: "run_active",
+      channel: "text",
+      delta: "过程"
+    });
+    useAppStore.getState().handleRunEvent({
+      type: "message",
+      runId: "run_active",
+      message: assistantMessage
+    });
+
+    expect(useAppStore.getState().streamText).toBe("");
+    await vi.advanceTimersByTimeAsync(40);
+    expect(useAppStore.getState().streamText).toBe("");
+    expect(useAppStore.getState().messages.at(-1)?.id).toBe(assistantMessage.id);
+  });
+
+  it("does not clear the active stream when selecting the current running session again", async () => {
+    const listMessages = vi.fn(async () => []);
+    await useAppStore.getState().initClient(createClient({ listMessages }));
+    useAppStore.setState({
+      view: "chat",
+      activeSessionId: session.id,
+      activeRunId: "run_active",
+      isRunning: true,
+      streamText: "输出中",
+      runningSessionsById: { [session.id]: true },
+      runningRunSessionById: { run_active: session.id }
+    });
+
+    await useAppStore.getState().selectSession(session.id);
+
+    expect(useAppStore.getState().activeRunId).toBe("run_active");
+    expect(useAppStore.getState().streamText).toBe("输出中");
+    expect(listMessages).not.toHaveBeenCalled();
   });
 
   it("starts exactly one queued run after a completed run and leaves the next item waiting", async () => {

@@ -321,6 +321,8 @@ export class SqliteStateStore implements StateStore {
       title: `${source.title}（分支）`,
       providerId: source.providerId,
       accessMode: source.accessMode,
+      model: source.model,
+      reasoningMode: source.reasoningMode,
       parentSessionId: source.id,
       forkMessageId: messageId
     });

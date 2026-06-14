@@ -18,7 +18,8 @@ import {
   hasArtifactDeclarationMarkup,
   logArtifactCollectionResult,
   type ArtifactSourceMessage,
-  type CollectedArtifact
+  type CollectedArtifact,
+  type CollectedArtifactDeclarations
 } from "@/lib/artifact";
 import { useAppStore } from "@/store";
 
@@ -38,6 +39,11 @@ const KIND_ICON: Partial<Record<CollectedArtifact["kind"], Icon>> = {
   unsupported: FileText
 };
 
+const EMPTY_ARTIFACT_COLLECTION: CollectedArtifactDeclarations = {
+  artifacts: [],
+  diagnostics: []
+};
+
 function collectionLogKey(collection: ReturnType<typeof collectArtifactsFromSession>) {
   return [
     collection.artifacts.map((artifact) => artifact.path).join("\u0000"),
@@ -51,6 +57,24 @@ function collectionLogKey(collection: ReturnType<typeof collectArtifactsFromSess
   ].join("\u0001");
 }
 
+function mergeArtifactCollections(
+  settled: CollectedArtifactDeclarations,
+  live: CollectedArtifactDeclarations
+): CollectedArtifactDeclarations {
+  const seen = new Set<string>();
+  const artifacts: CollectedArtifact[] = [];
+  const diagnostics = [...settled.diagnostics];
+  for (const artifact of [...settled.artifacts, ...live.artifacts]) {
+    if (seen.has(artifact.path)) {
+      diagnostics.push({ type: "duplicate_path", path: artifact.path });
+      continue;
+    }
+    seen.add(artifact.path);
+    artifacts.push(artifact);
+  }
+  return { artifacts, diagnostics };
+}
+
 /** 对话右侧浮层产物面板：有最终 XML 产物声明时出现在进度浮层上方。 */
 export function ArtifactFloatingPanel() {
   const { t } = useTranslation();
@@ -60,51 +84,80 @@ export function ArtifactFloatingPanel() {
   const activeRunId = useAppStore((state) => state.activeRunId);
   const openArtifact = useAppStore((state) => state.openArtifact);
 
-  const sources = useMemo<ArtifactSourceMessage[]>(() => {
-    const assistantMessages = messages.map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      createdAt: message.createdAt
-    }));
-    if (!streamText.trim()) {
-      return assistantMessages;
-    }
-    return [
-      ...assistantMessages,
-      {
-        id: "streaming",
-        role: "assistant",
-        content: streamText
-      }
-    ];
-  }, [messages, streamText]);
+  const settledSources = useMemo<ArtifactSourceMessage[]>(
+    () =>
+      messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        createdAt: message.createdAt
+      })),
+    [messages]
+  );
+  const liveSources = useMemo<ArtifactSourceMessage[]>(
+    () =>
+      streamText.trim()
+        ? [
+            {
+              id: "streaming",
+              role: "assistant",
+              content: streamText
+            }
+          ]
+        : [],
+    [streamText]
+  );
 
   const settledToolHistory = useMemo(
     () => toolHistory.filter((toolCall) => !activeRunId || toolCall.runId !== activeRunId),
     [activeRunId, toolHistory]
   );
-  const collection = useMemo(
-    () => collectArtifactsFromSession(sources, settledToolHistory),
-    [settledToolHistory, sources]
+  const settledCollection = useMemo(
+    () => collectArtifactsFromSession(settledSources, settledToolHistory),
+    [settledSources, settledToolHistory]
   );
-  const hasDeclarationMarkup = useMemo(() => hasArtifactDeclarationMarkup(sources), [sources]);
+  const liveCollection = useMemo(
+    () =>
+      liveSources.length > 0
+        ? collectArtifactsFromSession(liveSources, [])
+        : EMPTY_ARTIFACT_COLLECTION,
+    [liveSources]
+  );
+  const collection = useMemo(
+    () => mergeArtifactCollections(settledCollection, liveCollection),
+    [liveCollection, settledCollection]
+  );
+  const settledHasDeclarationMarkup = useMemo(
+    () => hasArtifactDeclarationMarkup(settledSources),
+    [settledSources]
+  );
+  const liveHasDeclarationMarkup = useMemo(
+    () => liveSources.length > 0 && hasArtifactDeclarationMarkup(liveSources),
+    [liveSources]
+  );
   const logKey = collectionLogKey(collection);
 
   useEffect(() => {
     if (
       collection.artifacts.length === 0 &&
       collection.diagnostics.length === 0 &&
-      !hasDeclarationMarkup
+      !settledHasDeclarationMarkup
     ) {
       return;
     }
     logArtifactCollectionResult("floating-panel", collection, {
-      messageCount: sources.length,
+      messageCount: settledSources.length + liveSources.length,
       toolCallCount: settledToolHistory.length,
-      hasDeclarationMarkup
+      hasDeclarationMarkup: settledHasDeclarationMarkup || liveHasDeclarationMarkup
     });
-  }, [hasDeclarationMarkup, logKey, settledToolHistory.length, sources.length]);
+  }, [
+    liveHasDeclarationMarkup,
+    liveSources.length,
+    logKey,
+    settledHasDeclarationMarkup,
+    settledSources.length,
+    settledToolHistory.length
+  ]);
 
   if (collection.artifacts.length === 0) {
     return null;

@@ -6,10 +6,8 @@ import {
   FolderOpenIcon as FolderOpen,
   GlobeIcon as Globe,
   LaptopIcon as Laptop,
-  LockKeyIcon as LockKeyhole,
   MagnifyingGlassIcon as Search,
   MoonIcon as Moon,
-  ShieldCheckIcon as ShieldCheck,
   SlidersHorizontalIcon as SlidersHorizontal,
   SparkleIcon as Sparkles,
   StackIcon as Boxes,
@@ -27,6 +25,7 @@ import {
 } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { useConfirmDialog } from "@/components/ConfirmDialog";
+import { ExternalUrlAnchor } from "@/components/ExternalUrlMenu";
 import {
   defaultModelIds,
   normalizeModelIds,
@@ -249,8 +248,6 @@ function AppearanceSection() {
 
 function GeneralSection() {
   const { t } = useTranslation();
-  const accessMode = useAppStore((state) => state.accessMode);
-  const setAccessMode = useAppStore((state) => state.setAccessMode);
   const locale = useAppStore((state) => state.locale);
   const setLocale = useAppStore((state) => state.setLocale);
   const [logsStatus, setLogsStatus] = useState("");
@@ -312,37 +309,6 @@ function GeneralSection() {
           ) : null}
         </SettingBlock>
       ) : null}
-      <SettingBlock
-        title={t("settings.general.permTitle")}
-        description={t("settings.general.permDesc")}
-      >
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <OptionCard
-            selected={accessMode === "approval"}
-            icon={<LockKeyhole />}
-            tone="neutral"
-            title={t("settings.general.approval")}
-            description={t("settings.general.approvalDesc")}
-            onSelect={() => setAccessMode("approval")}
-          />
-          <OptionCard
-            selected={accessMode === "smart_approval"}
-            icon={<Sparkles />}
-            tone="info"
-            title={t("settings.general.smart")}
-            description={t("settings.general.smartDesc")}
-            onSelect={() => setAccessMode("smart_approval")}
-          />
-          <OptionCard
-            selected={accessMode === "full_access"}
-            icon={<ShieldCheck />}
-            tone="warning"
-            title={t("settings.general.full")}
-            description={t("settings.general.fullDesc")}
-            onSelect={() => setAccessMode("full_access")}
-          />
-        </div>
-      </SettingBlock>
     </SectionShell>
   );
 }
@@ -657,15 +623,13 @@ function ProvidersSection() {
                   />
                   {API_KEY_URLS[draft.kind] ? (
                     <Button variant="outline" asChild>
-                      <a
-                        href={API_KEY_URLS[draft.kind]}
-                        target="_blank"
-                        rel="noreferrer"
+                      <ExternalUrlAnchor
+                        href={API_KEY_URLS[draft.kind]!}
                         title={t("settings.providers.getApiKey")}
                       >
                         <ExternalLink className="size-4" />
                         {t("settings.providers.getApiKey")}
-                      </a>
+                      </ExternalUrlAnchor>
                     </Button>
                   ) : null}
                 </div>

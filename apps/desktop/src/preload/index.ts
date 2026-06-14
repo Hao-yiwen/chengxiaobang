@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld("chengxiaobang", {
   saveAttachmentSnapshots: (filePaths: string[]) =>
     ipcRenderer.invoke("attachment:save-snapshots", filePaths),
   openPath: (filePath: string) => ipcRenderer.invoke("open-path", filePath),
+  detectExternalBrowsers: () => ipcRenderer.invoke("detect-external-browsers"),
+  openExternalUrlInBrowser: (browserIdOrPath: string, url: string) =>
+    ipcRenderer.invoke("open-external-url-in-browser", browserIdOrPath, url),
   detectProjectOpeners: () => ipcRenderer.invoke("detect-project-openers"),
   openProjectInApp: (appPath: string, targetPath: string) =>
     ipcRenderer.invoke("open-project-in-app", appPath, targetPath),

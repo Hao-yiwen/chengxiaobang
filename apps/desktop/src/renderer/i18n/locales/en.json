@@ -196,7 +196,14 @@
   "permission": {
     "fullAccess": "Full access",
     "smartApproval": "Smart approval",
-    "approval": "Approve actions"
+    "approval": "Approve actions",
+    "approvalDesc": "Run ordinary project edits and routine development commands automatically; ask for sensitive files, external side effects, or risky commands.",
+    "smartApprovalDesc": "Run ordinary project edits and development commands automatically; block only dangerous, sensitive, or external side-effect actions.",
+    "fullAccessDesc": "Run every tool automatically without confirmation (higher risk)",
+    "fullAccessWarningTitle": "Enable full access?",
+    "fullAccessWarningDescription": "Full access runs every tool automatically. It may read or write local files, run commands, or create external side effects, so use it only when you trust the current task and context.",
+    "fullAccessWarningConfirm": "Enable anyway",
+    "fullAccessWarningCancel": "Keep approval"
   },
   "onboarding": {
     "title": "Add a model to get started",
@@ -626,14 +633,6 @@
     },
     "general": {
       "title": "General",
-      "permTitle": "Default permission",
-      "permDesc": "The tool-execution permission new chats start with. You can switch it anytime from the composer.",
-      "approval": "Approve actions",
-      "approvalDesc": "Run ordinary project edits and routine development commands automatically; ask for sensitive files, external side effects, or risky commands.",
-      "smart": "Smart approval",
-      "smartDesc": "Run ordinary project edits and development commands automatically; block only dangerous, sensitive, or external side-effect actions.",
-      "full": "Full access",
-      "fullDesc": "Run every tool automatically without confirmation (higher risk)",
       "langTitle": "Language",
       "langDesc": "Interface display language.",
       "langZh": "简体中文",
@@ -682,6 +681,17 @@
         "custom": "Custom"
       },
       "modelsSummary": "{{count}} models enabled",
+      "reasoning": "Reasoning",
+      "reasoningAlwaysOn": "Always on",
+      "reasoningModes": {
+        "off": "Off",
+        "auto": "Auto",
+        "minimal": "Minimal",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "xhigh": "XHigh"
+      },
       "getApiKey": "Get API Key",
       "keepKey": "API key saved — leave blank to keep it",
       "save": "Save",
@@ -890,6 +900,10 @@
     "add": "Add",
     "added": "Added",
     "remove": "Remove",
+    "addTitle": "Add skill \"{{name}}\"?",
+    "addConfirm": "Add skill \"{{name}}\" to My skills? It can then be invoked with /{{name}} in chat.",
+    "removeTitle": "Remove skill \"{{name}}\"?",
+    "removeConfirm": "Remove skill \"{{name}}\" from My skills? You can add it again from the marketplace later.",
     "alwaysOn": "Always on",
     "delete": "Delete",
     "deleteTitle": "Delete custom skill \"{{name}}\"?",

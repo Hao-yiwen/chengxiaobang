@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ExternalUrlAnchor } from "@/components/ExternalUrlMenu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -116,14 +117,12 @@ export function WebSearchSection() {
             />
             <p className="text-micro text-muted-foreground">
               {t("settings.webSearch.pricingHint")}{" "}
-              <a
+              <ExternalUrlAnchor
                 className="text-link hover:underline"
                 href="https://app.tavily.com/home"
-                rel="noreferrer"
-                target="_blank"
               >
                 {t("settings.webSearch.getApiKey")}
-              </a>
+              </ExternalUrlAnchor>
             </p>
           </div>
 

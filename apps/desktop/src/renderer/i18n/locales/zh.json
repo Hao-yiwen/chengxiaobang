@@ -196,7 +196,14 @@
   "permission": {
     "fullAccess": "完全访问",
     "smartApproval": "智能审批",
-    "approval": "审批执行"
+    "approval": "审批执行",
+    "approvalDesc": "普通项目改动和常规开发命令自动执行，敏感文件、外部副作用或危险命令再请你确认",
+    "smartApprovalDesc": "普通项目改动和开发命令自动执行，只拦截危险、敏感或外部副作用操作",
+    "fullAccessDesc": "自动执行所有工具，无需逐个确认（风险更高）",
+    "fullAccessWarningTitle": "开启完全访问？",
+    "fullAccessWarningDescription": "完全访问会自动执行所有工具，可能直接读写本地文件、运行命令或产生外部副作用，存在误操作风险。请只在你确认当前任务和上下文可信时使用。",
+    "fullAccessWarningConfirm": "仍然开启",
+    "fullAccessWarningCancel": "保持审批"
   },
   "onboarding": {
     "title": "配置一个模型即可开始",
@@ -615,14 +622,6 @@
     },
     "general": {
       "title": "常规",
-      "permTitle": "默认权限",
-      "permDesc": "新对话默认采用的工具执行权限，可在输入框随时切换。",
-      "approval": "审批执行",
-      "approvalDesc": "普通项目改动和常规开发命令自动执行，敏感文件、外部副作用或危险命令再请你确认",
-      "smart": "智能审批",
-      "smartDesc": "普通项目改动和开发命令自动执行，只拦截危险、敏感或外部副作用操作",
-      "full": "完全访问",
-      "fullDesc": "自动执行所有工具，无需逐个确认（风险更高）",
       "langTitle": "语言",
       "langDesc": "界面显示语言。",
       "langZh": "简体中文",
@@ -671,6 +670,17 @@
         "custom": "自定义"
       },
       "modelsSummary": "已启用 {{count}} 个模型",
+      "reasoning": "推理模式",
+      "reasoningAlwaysOn": "始终开启",
+      "reasoningModes": {
+        "off": "关闭",
+        "auto": "自动",
+        "minimal": "Minimal",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "xhigh": "XHigh"
+      },
       "getApiKey": "获取 API Key",
       "keepKey": "已保存 API Key，留空保持不变",
       "save": "保存",
@@ -880,6 +890,10 @@
     "add": "添加",
     "added": "已添加",
     "remove": "移除",
+    "addTitle": "添加技能「{{name}}」？",
+    "addConfirm": "确定把技能「{{name}}」添加到「我的技能」？添加后即可在对话中通过 /{{name}} 调用。",
+    "removeTitle": "移除技能「{{name}}」？",
+    "removeConfirm": "确定从「我的技能」移除技能「{{name}}」？移除后仍可在技能市场重新添加。",
     "alwaysOn": "始终启用",
     "delete": "删除",
     "deleteTitle": "删除自定义技能「{{name}}」？",

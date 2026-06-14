@@ -150,18 +150,22 @@ describe("SkillsView", () => {
     expect(within(dialog).getByText("/skills/code-review/SKILL.md")).toBeInTheDocument();
   });
 
-  it("does not open the detail dialog when clicking the card action button", async () => {
+  it("asks for confirmation and does not open details when adding from the card action", async () => {
     const client = createClient();
     await openSkillsView(client);
 
     const market = await screen.findByTestId("skill-card-market-code-review");
     fireEvent.click(within(market).getByText("添加"));
 
-    await waitFor(() =>
-      expect(client.setMarketSkillEnabled).toHaveBeenCalledWith("code-review", true)
-    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText(/确定把技能「code-review」添加到/)).toBeInTheDocument();
+    expect(client.setMarketSkillEnabled).not.toHaveBeenCalled();
     expect(client.getSkillDetail).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(client.setMarketSkillEnabled).not.toHaveBeenCalled();
   });
 
   it("enables a market skill and refreshes slash commands", async () => {
@@ -170,6 +174,8 @@ describe("SkillsView", () => {
 
     const market = await screen.findByTestId("skill-card-market-code-review");
     fireEvent.click(within(market).getByText("添加"));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "添加" }));
 
     await waitFor(() =>
       expect(client.setMarketSkillEnabled).toHaveBeenCalledWith("code-review", true)
@@ -179,6 +185,31 @@ describe("SkillsView", () => {
       expect(screen.getAllByTestId("skill-card-market-code-review").length).toBeGreaterThan(1)
     );
     expect(client.listSlashCommands).toHaveBeenCalled();
+  });
+
+  it("removes a market skill after confirmation", async () => {
+    const client = createClient({
+      listSkills: vi.fn(async () => [builtinSkill, { ...marketSkill, enabled: true }, customSkill]),
+      setMarketSkillEnabled: vi.fn(async (_name: string, enabled: boolean) => [
+        builtinSkill,
+        { ...marketSkill, enabled },
+        customSkill
+      ])
+    });
+    await openSkillsView(client);
+
+    const marketCards = await screen.findAllByTestId("skill-card-market-code-review");
+    const enabledCard = marketCards.find((card) => within(card).queryByText("移除"));
+    expect(enabledCard).toBeDefined();
+    fireEvent.click(within(enabledCard!).getByText("移除"));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText(/确定从「我的技能」移除技能「code-review」/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "移除" }));
+
+    await waitFor(() =>
+      expect(client.setMarketSkillEnabled).toHaveBeenCalledWith("code-review", false)
+    );
   });
 
   it("filters marketplace skills by category", async () => {

@@ -278,7 +278,7 @@ export function createMemoryTools(memoryDir: string): AgentTool<any>[] {
     name: "memory",
     label: "长期记忆",
     description:
-      "读写你的跨会话长期记忆（/memories 目录）。command：view 查看目录或文件（可带 view_range）、create 新建文件（path + file_text）、str_replace 精确替换（path + old_str + new_str）、insert 按行插入（path + insert_line + insert_text）、delete 删除文件或目录（path）、rename 重命名或移动（old_path + new_path）。",
+      "读写你的跨会话长期记忆（/memories 是工具虚拟路径前缀，不是系统根目录）。command：view 查看目录或文件（可带 view_range）、create 新建文件（path + file_text）、str_replace 精确替换（path + old_str + new_str）、insert 按行插入（path + insert_line + insert_text）、delete 删除文件或目录（path）、rename 重命名或移动（old_path + new_path）。",
     parameters: memoryParams,
     execute: async (_id, params) => {
       const input = params as MemoryParams;

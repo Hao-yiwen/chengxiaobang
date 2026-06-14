@@ -14,6 +14,7 @@ const toolNames = [
   "fetch_url",
   "web_search",
   "schedule_list",
+  "ocr_extract_text",
   "write_file",
   "edit_file",
   "make_directory",
@@ -90,6 +91,16 @@ describe("selectAgentTools", () => {
     expect(visible).not.toContain("update_plan");
     expect(visible).not.toContain("todo_create");
     expect(visible).not.toContain("todo_update");
+  });
+
+  it("only exposes OCR when the current run has OCR-capable attachments", () => {
+    const hidden = names({ planPhase: "none", viaFeishu: false });
+    const visible = names({ planPhase: "none", viaFeishu: false, enableOcr: true });
+    const draftVisible = names({ planPhase: "draft", viaFeishu: false, enableOcr: true });
+
+    expect(hidden).not.toContain("ocr_extract_text");
+    expect(visible).toContain("ocr_extract_text");
+    expect(draftVisible).toContain("ocr_extract_text");
   });
 
   it("execute 阶段恢复普通工具，但不再暴露计划工具和 todo 工具", () => {

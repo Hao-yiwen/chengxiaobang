@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   UsageStats,
@@ -235,12 +235,13 @@ function UsageActivityChart(props: {
 
 function DailyHeatmap(props: { buckets: UsageStatsBucket[]; locale: string }) {
   const [hovered, setHovered] = useState<UsageStatsBucket>();
+  const scrollRef = useLatestBucketViewport("daily", props.buckets);
   const maxTokens = Math.max(0, ...props.buckets.map((bucket) => bucket.totalTokens));
   const labels = heatmapLabels(props.buckets, props.locale);
   return (
     <div className="relative">
       {hovered ? <BucketTooltip bucket={hovered} mode="daily" locale={props.locale} /> : null}
-      <div className="overflow-x-auto pb-1">
+      <div ref={scrollRef} data-testid="settings-usage-chart-scroll" className="overflow-x-auto pb-1">
         <div
           className="grid w-max grid-flow-col gap-1"
           style={{
@@ -283,12 +284,17 @@ function UsageBarChart(props: {
   locale: string;
 }) {
   const [hovered, setHovered] = useState<UsageStatsBucket>();
+  const scrollRef = useLatestBucketViewport(props.mode, props.buckets);
   const maxTokens = Math.max(0, ...props.buckets.map((bucket) => bucket.totalTokens));
   const labels = barChartLabels(props.buckets, props.mode, props.locale);
   return (
     <div className="relative">
       {hovered ? <BucketTooltip bucket={hovered} mode={props.mode} locale={props.locale} /> : null}
-      <div className="min-w-0 overflow-x-auto overflow-y-hidden pb-1">
+      <div
+        ref={scrollRef}
+        data-testid="settings-usage-chart-scroll"
+        className="min-w-0 overflow-x-auto overflow-y-hidden pb-1"
+      >
         <div className="w-max min-w-full">
           <div className="flex h-48 items-end gap-2 border-b border-border px-1 pt-8">
             {props.buckets.map((bucket) => {
@@ -334,6 +340,35 @@ function UsageBarChart(props: {
   );
 }
 
+function useLatestBucketViewport(
+  mode: HeatmapMode,
+  buckets: UsageStatsBucket[]
+): RefObject<HTMLDivElement | null> {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    if (!container || buckets.length === 0) {
+      return;
+    }
+
+    const maxScrollLeft = Math.max(0, container.scrollWidth - container.clientWidth);
+    if (maxScrollLeft <= 0) {
+      return;
+    }
+
+    container.scrollLeft = maxScrollLeft;
+    console.debug("[settings] 用量统计图表默认展示最新周期", {
+      mode,
+      bucketCount: buckets.length,
+      latestBucketKey: buckets.at(-1)?.key,
+      scrollLeft: maxScrollLeft
+    });
+  }, [mode, buckets]);
+
+  return scrollRef;
+}
+
 function BucketTooltip(props: {
   bucket: UsageStatsBucket;
   mode: HeatmapMode;
@@ -359,26 +394,27 @@ function BucketTooltip(props: {
 
 function ModelRanking({ models }: { models: UsageStatsModelBreakdown[] }) {
   const { t } = useTranslation();
-  const maxTokens = Math.max(0, ...models.map((model) => model.totalTokens));
+  const rankingModels = aggregateRankingModels(models);
+  const maxTokens = Math.max(0, ...rankingModels.map((model) => model.totalTokens));
   return (
     <div className="mt-4 rounded-sm border bg-background">
       <div className="border-b px-4 py-3">
         <h3 className="text-caption font-medium">{t("settings.usage.modelRanking")}</h3>
       </div>
-      {models.length === 0 ? (
+      {rankingModels.length === 0 ? (
         <p className="px-4 py-5 text-caption text-muted-foreground">
           {t("settings.usage.emptyModels")}
         </p>
       ) : (
         <div className="divide-y">
-          {models.map((model) => {
+          {rankingModels.map((model) => {
             const ratio = maxTokens > 0 ? Math.max(3, (model.totalTokens / maxTokens) * 100) : 0;
             return (
-              <div key={`${model.providerKind ?? "unknown"}:${model.providerId ?? "unknown"}:${model.model}`} className="px-4 py-3">
+              <div key={model.model} className="px-4 py-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="truncate text-caption font-medium">
-                      {model.model === "unknown" ? t("settings.usage.unknownModel") : model.label}
+                      {model.model === "unknown" ? t("settings.usage.unknownModel") : model.model}
                     </div>
                     <div className="text-micro text-muted-foreground">
                       {t("settings.usage.modelRuns", {
@@ -400,6 +436,38 @@ function ModelRanking({ models }: { models: UsageStatsModelBreakdown[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+type ModelRankingItem = {
+  model: string;
+  totalTokens: number;
+  costCny: number;
+  runCount: number;
+};
+
+function aggregateRankingModels(models: UsageStatsModelBreakdown[]): ModelRankingItem[] {
+  const merged = new Map<string, ModelRankingItem>();
+
+  for (const model of models) {
+    const existing = merged.get(model.model);
+    if (existing) {
+      existing.totalTokens += model.totalTokens;
+      existing.costCny += model.costCny;
+      existing.runCount += model.runCount;
+      continue;
+    }
+
+    merged.set(model.model, {
+      model: model.model,
+      totalTokens: model.totalTokens,
+      costCny: model.costCny,
+      runCount: model.runCount
+    });
+  }
+
+  return [...merged.values()].sort(
+    (left, right) => right.totalTokens - left.totalTokens || right.costCny - left.costCny
   );
 }
 

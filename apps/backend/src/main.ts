@@ -27,6 +27,8 @@ export interface BackendConfig {
   port: number;
   dataDir: string;
   providerConfigPath?: string;
+  ocrServiceUrl?: string;
+  ocrServiceToken?: string;
   token?: string;
   parentPid?: number;
 }
@@ -77,7 +79,10 @@ export async function startBackend(config: BackendConfig) {
         getFeishuSender: () => feishuServiceRef?.getSender(),
         webSearch: await webSearchConfigService.createSearcher(),
         memoryDir,
-        skillMarketService
+        skillMarketService,
+        ...(config.ocrServiceUrl && config.ocrServiceToken
+          ? { ocr: { serviceUrl: config.ocrServiceUrl, token: config.ocrServiceToken } }
+          : {})
       }),
     slashCommandService,
     usageCostLedgerService
@@ -144,6 +149,8 @@ export function readCliConfig(
     dataDir: args.get("data-dir") ?? env.CHENGXIAOBANG_DATA_DIR ?? defaultDataDir(),
     providerConfigPath:
       args.get("provider-config") ?? env.CHENGXIAOBANG_PROVIDER_CONFIG ?? defaultProviderConfigPath(),
+    ocrServiceUrl: args.get("ocr-service-url") ?? env.CHENGXIAOBANG_OCR_SERVICE_URL,
+    ocrServiceToken: args.get("ocr-service-token") ?? env.CHENGXIAOBANG_OCR_SERVICE_TOKEN,
     token: args.get("token") ?? env.CHENGXIAOBANG_TOKEN,
     parentPid: parseOptionalPositiveInteger(
       args.get("parent-pid") ?? env.CHENGXIAOBANG_PARENT_PID
