@@ -518,6 +518,10 @@ export function ChatView() {
           <div ref={bottomRef} />
         </div>
       </div>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] h-5 bg-gradient-to-b from-background/0 to-background/75"
+      />
 
       <div data-testid="chat-floating-stack" className="chat-floating-stack">
         <ArtifactFloatingPanel />

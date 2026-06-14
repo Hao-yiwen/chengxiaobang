@@ -6,9 +6,9 @@ import { isPathOutsideWorkspace, listProjectFiles, safeResolve } from "../src/to
 
 describe("safeResolve", () => {
   it("resolves inside the workspace and rejects escapes", () => {
-    expect(safeResolve("/tmp/ws", "a/b.txt")).toBe("/tmp/ws/a/b.txt");
-    expect(safeResolve("/tmp/ws", ".")).toBe("/tmp/ws");
-    expect(() => safeResolve("/tmp/ws", "../outside")).toThrow("超出当前项目范围");
+    expect(safeResolve("/tmp/ws", "a/b.txt", "linux")).toBe("/tmp/ws/a/b.txt");
+    expect(safeResolve("/tmp/ws", ".", "linux")).toBe("/tmp/ws");
+    expect(() => safeResolve("/tmp/ws", "../outside", "linux")).toThrow("超出当前项目范围");
   });
 
   it("treats Windows workspace paths as case-insensitive", () => {

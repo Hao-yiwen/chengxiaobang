@@ -12,10 +12,15 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --out-dir dist",
+    "catalog:generate": "node scripts/generate-provider-catalog.mjs --write",
+    "catalog:check": "node scripts/generate-provider-catalog.mjs --check",
+    "build": "pnpm run catalog:check && tsup src/index.ts --format esm --dts --out-dir dist",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "zod": "4.2.0"
+  },
+  "devDependencies": {
+    "js-yaml": "4.1.0"
   }
 }

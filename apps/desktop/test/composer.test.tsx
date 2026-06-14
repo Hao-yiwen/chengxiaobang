@@ -584,19 +584,22 @@ describe("Composer 模型两级下拉（ARCH-SPEC §6.4）", () => {
     // 模型选项只拉取已配置 API Key 的 provider。
     await waitFor(() => expect(listProviderModelOptions).toHaveBeenCalledWith("deepseek"));
     expect(listProviderModelOptions).not.toHaveBeenCalledWith("kimi");
-    // 平铺模型列表（不再有厂商分组小标题），菜单里直接出现模型项。
+    // 按已配置供应商分组展示模型，菜单里直接出现模型项。
     const menu = await screen.findByRole("menu");
+    expect(within(menu).getByText("DeepSeek")).toBeInTheDocument();
     expect(within(menu).getByText("DeepSeek V4 Flash")).toBeInTheDocument();
 
-    // hover 模型展开右侧 flyout，再在里面选定（deepseek-chat 无推理强度，只有「默认」）。
-    const row = within(menu).getByText("deepseek-chat");
-    fireEvent.pointerDown(row, { button: 0 });
+    // 直接选择模型；推理档位由 YAML 维护，不再在 Composer 里手动选择。
+    const row = within(menu).getByText("deepseek-chat").closest("[role='menuitem']");
+    if (!row) {
+      throw new Error("找不到 deepseek-chat 模型项");
+    }
     fireEvent.click(row);
-    fireEvent.click(await screen.findByText("默认"));
 
     await waitFor(() => {
       expect(useAppStore.getState().providerId).toBe("deepseek");
       expect(useAppStore.getState().model).toBe("deepseek-chat");
+      expect(useAppStore.getState().reasoningMode).toBeUndefined();
     });
 
     const input = screen.getByLabelText("输入消息");

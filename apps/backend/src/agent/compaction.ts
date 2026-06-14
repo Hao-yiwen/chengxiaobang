@@ -4,6 +4,7 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { ProviderConfig, Session, StreamEvent, TokenUsage } from "@chengxiaobang/shared";
 import type { StateStore, StoredMessage } from "../repository/state-store";
 import { buildModel, buildModelStreamOptions, toTokenUsage } from "../model/pi-model";
+import type { UsageCostAttempt, UsageCostLedgerService } from "../usage/usage-cost-ledger";
 
 /** /compact keeps this many most-recent messages out of the summary. */
 const COMPACT_KEEP_RECENT = 4;
@@ -73,6 +74,7 @@ export async function* compactSessionHistory(options: {
   clientRequestId?: string;
   signal: AbortSignal;
   streamFn?: StreamFn;
+  usageCostLedgerService?: UsageCostLedgerService;
   emitNoopMessage?: boolean;
   introDelta?: string;
 }): AsyncGenerator<StreamEvent, CompactionResult> {
@@ -101,11 +103,61 @@ export async function* compactSessionHistory(options: {
   const context = buildCompactionContext([...summaryRows, ...toSummarize]);
 
   const streamFunction = options.streamFn ?? streamSimple;
-  const stream = await streamFunction(buildModel(options.provider), context, {
-    apiKey: options.apiKey,
-    ...buildModelStreamOptions(options.provider),
-    signal
-  });
+  const modelStreamOptions = buildModelStreamOptions(options.provider);
+  let attempt: UsageCostAttempt | undefined;
+  try {
+    attempt = await options.usageCostLedgerService?.startAttempt({
+      runId,
+      sessionId: session.id,
+      attemptIndex: 0,
+      provider: options.provider,
+      inputSnapshot: {
+        systemPrompt: context.systemPrompt ?? "",
+        messages: context.messages,
+        tools: []
+      }
+    });
+  } catch (error) {
+    console.error("[compaction] 创建压缩费用 attempt 失败，继续执行压缩", {
+      runId,
+      sessionId: session.id,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+  let stream: Awaited<ReturnType<StreamFn>>;
+  try {
+    stream = await streamFunction(buildModel(options.provider), context, {
+      apiKey: options.apiKey,
+      ...modelStreamOptions,
+      onResponse: async (response, model) => {
+        if (attempt) {
+          options.usageCostLedgerService?.recordResponse(attempt, {
+            statusCode: response.status,
+            receivedResponse: true
+          });
+          console.debug("[compaction] 已记录压缩模型 HTTP 响应状态", {
+            runId,
+            sessionId: session.id,
+            attemptIndex: attempt.attemptIndex,
+            statusCode: response.status,
+            model: model.id
+          });
+        }
+        await modelStreamOptions.onResponse?.(response, model);
+      },
+      signal
+    });
+  } catch (error) {
+    if (attempt) {
+      await options.usageCostLedgerService?.finishAttemptWithError({
+        attempt,
+        stopReason: signal.aborted ? "aborted" : "error",
+        errorMessage: error instanceof Error ? error.message : String(error),
+        signalAborted: signal.aborted
+      });
+    }
+    throw error;
+  }
 
   let summaryText = "";
   for await (const event of stream) {
@@ -120,11 +172,33 @@ export async function* compactSessionHistory(options: {
     }
   }
   const result = await stream.result();
+  if (result.usage && attempt) {
+    await options.usageCostLedgerService?.finishAttemptWithUsage({
+      attempt,
+      usage: toTokenUsage(result.usage)
+    });
+  }
   if (result.stopReason === "error") {
+    if (!result.usage && attempt) {
+      await options.usageCostLedgerService?.finishAttemptWithError({
+        attempt,
+        stopReason: "error",
+        errorMessage: result.errorMessage,
+        signalAborted: signal.aborted
+      });
+    }
     throw new Error(result.errorMessage ?? "模型请求失败");
   }
 
   if (signal.aborted || summaryText.trim().length === 0) {
+    if (!result.usage && attempt) {
+      await options.usageCostLedgerService?.finishAttemptWithError({
+        attempt,
+        stopReason: "aborted",
+        errorMessage: result.errorMessage,
+        signalAborted: signal.aborted
+      });
+    }
     return { status: "aborted", compacted: false };
   }
 
@@ -159,6 +233,7 @@ export async function* runCompaction(options: {
   clientRequestId?: string;
   signal: AbortSignal;
   streamFn?: StreamFn;
+  usageCostLedgerService?: UsageCostLedgerService;
 }): AsyncGenerator<StreamEvent> {
   const { store, session, runId, signal } = options;
   yield {
@@ -179,6 +254,7 @@ export async function* runCompaction(options: {
       runId,
       signal,
       streamFn: options.streamFn,
+      usageCostLedgerService: options.usageCostLedgerService,
       emitNoopMessage: true
     });
     if (result.status === "aborted") {

@@ -6,6 +6,9 @@ import {
   loadPromptTemplates,
   loadSkills,
   NodeExecutionEnv,
+  type FileError,
+  type FileInfo,
+  type Result,
   parseCommandArgs,
   type PromptTemplate,
   type Skill
@@ -182,41 +185,51 @@ export class SlashCommandService {
   ): Promise<LoadedResource[]> {
     const resources: LoadedResource[] = [];
     for (const source of resourceSources(this.globalRoot, this.builtinRoot, project)) {
-      const env = new NodeExecutionEnv({ cwd: source.root });
-      const promptResult = await loadPromptTemplates(env, [join(source.root, "prompts")]);
-      resources.push(
-        ...promptResult.promptTemplates.map((template) => ({
-          kind: "prompt_template" as const,
-          source: source.name,
-          template
-        }))
-      );
-      diagnostics.push(
-        ...promptResult.diagnostics.map((diagnostic) => ({
-          type: "warning" as const,
-          message: diagnostic.message,
-          path: diagnostic.path,
-          source: source.name
-        }))
-      );
+      const env = new SlashCommandExecutionEnv({ cwd: source.root });
+      try {
+        const promptResult = await loadPromptTemplates(env, ["prompts"]);
+        resources.push(
+          ...promptResult.promptTemplates.map((template) => ({
+            kind: "prompt_template" as const,
+            source: source.name,
+            template
+          }))
+        );
+        diagnostics.push(
+          ...promptResult.diagnostics.map((diagnostic) => ({
+            type: "warning" as const,
+            message: diagnostic.message,
+            path: diagnostic.path,
+            source: source.name
+          }))
+        );
 
-      const skillResult = await loadSkills(env, [join(source.root, "skills")]);
-      resources.push(
-        ...skillResult.skills.map((skill) => ({
-          kind: "skill" as const,
+        const skillResult = await loadSkills(env, ["skills"]);
+        resources.push(
+          ...skillResult.skills.map((skill) => ({
+            kind: "skill" as const,
+            source: source.name,
+            skill
+          }))
+        );
+        diagnostics.push(
+          ...skillResult.diagnostics.map((diagnostic) => ({
+            type: "warning" as const,
+            message: diagnostic.message,
+            path: diagnostic.path,
+            source: source.name
+          }))
+        );
+      } catch (error) {
+        console.warn("[slash-command-service] 加载斜杠资源失败", {
           source: source.name,
-          skill
-        }))
-      );
-      diagnostics.push(
-        ...skillResult.diagnostics.map((diagnostic) => ({
-          type: "warning" as const,
-          message: diagnostic.message,
-          path: diagnostic.path,
-          source: source.name
-        }))
-      );
-      await env.cleanup();
+          root: source.root,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        throw error;
+      } finally {
+        await env.cleanup();
+      }
     }
     resources.push(...(await this.loadMarketSkills(diagnostics)));
     return resources;
@@ -233,9 +246,9 @@ export class SlashCommandService {
     if (enabled.size === 0) {
       return [];
     }
-    const env = new NodeExecutionEnv({ cwd: this.marketRoot });
+    const env = new SlashCommandExecutionEnv({ cwd: this.marketRoot });
     try {
-      const skillResult = await loadSkills(env, [this.marketRoot]);
+      const skillResult = await loadSkills(env, ["."]);
       diagnostics.push(
         ...skillResult.diagnostics.map((diagnostic) => ({
           type: "warning" as const,
@@ -251,10 +264,82 @@ export class SlashCommandService {
           source: "market" as const,
           skill
         }));
+    } catch (error) {
+      console.warn("[slash-command-service] 加载市场技能失败", {
+        root: this.marketRoot,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
     } finally {
       await env.cleanup();
     }
   }
+}
+
+class SlashCommandExecutionEnv extends NodeExecutionEnv {
+  override async absolutePath(path: string): Promise<Result<string, FileError>> {
+    return normalizePathResult(await super.absolutePath(path));
+  }
+
+  override async joinPath(parts: string[]): Promise<Result<string, FileError>> {
+    return normalizePathResult(await super.joinPath(parts));
+  }
+
+  override async fileInfo(path: string): Promise<Result<FileInfo, FileError>> {
+    return normalizeFileInfoResult(await super.fileInfo(path));
+  }
+
+  override async listDir(
+    path: string,
+    abortSignal?: AbortSignal
+  ): Promise<Result<FileInfo[], FileError>> {
+    const result = await super.listDir(path, abortSignal);
+    if (!result.ok) {
+      return result;
+    }
+    return {
+      ok: true,
+      value: result.value.map(normalizeFileInfo)
+    };
+  }
+
+  override async canonicalPath(path: string): Promise<Result<string, FileError>> {
+    return normalizePathResult(await super.canonicalPath(path));
+  }
+}
+
+function normalizePathResult<TError>(result: Result<string, TError>): Result<string, TError> {
+  if (!result.ok) {
+    return result;
+  }
+  return { ok: true, value: normalizeEnvPath(result.value) };
+}
+
+function normalizeFileInfoResult<TError>(
+  result: Result<FileInfo, TError>
+): Result<FileInfo, TError> {
+  if (!result.ok) {
+    return result;
+  }
+  return { ok: true, value: normalizeFileInfo(result.value) };
+}
+
+function normalizeFileInfo(info: FileInfo): FileInfo {
+  const path = normalizeEnvPath(info.path);
+  return {
+    ...info,
+    name: basenameEnvPath(path),
+    path
+  };
+}
+
+function normalizeEnvPath(path: string): string {
+  return path.replaceAll("\\", "/");
+}
+
+function basenameEnvPath(path: string): string {
+  const normalized = path.replace(/\/+$/u, "");
+  return normalized.split("/").pop() ?? normalized;
 }
 
 function resourceSources(

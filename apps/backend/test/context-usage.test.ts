@@ -3,7 +3,6 @@ import type { ProviderConfig } from "@chengxiaobang/shared";
 import {
   buildSessionContextUsage,
   estimateTextTokens,
-  estimateSessionCostCny,
   shouldAutoCompactContext
 } from "../src/agent/context-usage";
 
@@ -13,6 +12,7 @@ const provider: ProviderConfig = {
   name: "DeepSeek",
   baseURL: "https://api.deepseek.com",
   model: "deepseek-v4-flash",
+  api: "openai-completions",
   createdAt: "2026-06-13T00:00:00.000Z",
   updatedAt: "2026-06-13T00:00:00.000Z"
 };
@@ -65,65 +65,36 @@ describe("context usage", () => {
     expect(shouldAutoCompactContext(usage)).toBe(true);
   });
 
-  it("uses provider-reported cost in the estimate", () => {
-    const cost = estimateSessionCostCny({
-      provider,
-      estimatedContextTokens: 10_000,
-      runs: [
-        {
-          id: "run_1",
-          sessionId: "session_1",
-          status: "completed",
-          usage: {
-            promptTokens: 100,
-            completionTokens: 50,
-            totalTokens: 150,
-            costUsd: 0.0015
-          },
-          createdAt: "2026-06-13T00:00:00.000Z",
-          updatedAt: "2026-06-13T00:00:01.000Z"
+  it("can trigger compaction from an explicit threshold token setting", () => {
+    const usage = buildSessionContextUsage({
+      sessionId: "session_1",
+      provider: {
+        ...provider,
+        kind: "custom",
+        model: "short-context-model",
+        catalog: {
+          models: [
+            {
+              id: "short-context-model",
+              reasoningModes: [],
+              inputModalities: ["text"],
+              autoCompactThresholdTokens: 12,
+              maxToolIterations: 500
+            }
+          ],
+          modelFallbacks: []
         }
-      ]
+      },
+      systemPrompt: "",
+      messages: [{ role: "user", content: "你".repeat(20), timestamp: 0 }],
+      tools: [],
+      sessionCostCny: 0
     });
 
-    expect(cost).toBe(0.01);
+    expect(usage.contextWindowTokens).toBeUndefined();
+    expect(usage.autoCompactThresholdTokens).toBe(12);
+    expect(usage.status).toBe("over_threshold");
+    expect(shouldAutoCompactContext(usage)).toBe(true);
   });
 
-  it("estimates failed runs that did not return usage", () => {
-    const cost = estimateSessionCostCny({
-      provider,
-      estimatedContextTokens: 100_000,
-      runs: [
-        {
-          id: "run_1",
-          sessionId: "session_1",
-          status: "failed",
-          error: "429 rate limit",
-          createdAt: "2026-06-13T00:00:00.000Z",
-          updatedAt: "2026-06-13T00:00:01.000Z"
-        }
-      ]
-    });
-
-    expect(cost).toBeGreaterThan(0);
-  });
-
-  it("does not invent estimated cost when model pricing is missing", () => {
-    const cost = estimateSessionCostCny({
-      provider: { ...provider, kind: "custom", model: "expensive-image-model" },
-      estimatedContextTokens: 100_000,
-      runs: [
-        {
-          id: "run_1",
-          sessionId: "session_1",
-          status: "failed",
-          error: "provider error",
-          createdAt: "2026-06-13T00:00:00.000Z",
-          updatedAt: "2026-06-13T00:00:01.000Z"
-        }
-      ]
-    });
-
-    expect(cost).toBe(0);
-  });
 });

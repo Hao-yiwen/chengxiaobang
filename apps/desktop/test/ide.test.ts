@@ -10,7 +10,7 @@ import {
 
 describe("projectOpenerSearchDirs", () => {
   it("searches the system and user Applications folders", () => {
-    expect(projectOpenerSearchDirs("/Users/me")).toEqual([
+    expect(projectOpenerSearchDirs("/Users/me", "darwin")).toEqual([
       "/Applications",
       join("/Users/me", "Applications")
     ]);

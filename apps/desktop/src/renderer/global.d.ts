@@ -157,6 +157,7 @@ declare global {
       ): Promise<{ ok: boolean; path?: string; name?: string; error?: string }>;
       openSkillsDir?(): Promise<{ ok: boolean; path: string }>;
       openLogDir?(): Promise<{ ok: boolean; path?: string; error?: string }>;
+      openProviderConfig?(): Promise<{ ok: boolean; path?: string; error?: string }>;
       getUpdateState?(): Promise<DesktopUpdateState>;
       checkForUpdates?(input?: { manual?: boolean }): Promise<DesktopUpdateState>;
       downloadUpdate?(): Promise<DesktopUpdateState>;

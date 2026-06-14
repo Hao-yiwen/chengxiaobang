@@ -16,49 +16,37 @@ import {
   SunIcon as Sun,
   TranslateIcon as Languages,
   TrashIcon as Trash2,
-  XIcon as X,
   type Icon
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  mergeProviderModelOptions,
-  resolveProviderModelOption,
   type ProviderConfig,
   type ProviderInput,
-  type ProviderKind,
-  type ProviderModelOption
+  type ProviderKind
 } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { useConfirmDialog } from "@/components/ConfirmDialog";
-import { Badge } from "@/components/ui/badge";
+import {
+  defaultModelIds,
+  normalizeModelIds,
+  ProviderCascadeSelect,
+  ProviderModelTags
+} from "@/components/ProviderCascadeSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from "@/components/ui/select";
 import { OptionCard } from "@/components/settings/OptionCard";
 import { SectionShell, SettingBlock } from "@/components/settings/SectionShell";
 import { UsageStatsSection } from "@/components/settings/UsageStatsSection";
 import { WebSearchSection } from "@/components/settings/WebSearchSection";
-import {
-  ReasoningModeSelect,
-  reasoningModeSummary,
-  supportedReasoningMode
-} from "@/components/ProviderModelControls";
 import { API_KEY_URLS, PROVIDER_KIND_OPTIONS, PROVIDER_PRESETS } from "@/lib/provider-presets";
 import {
-  isCatalogProvider,
   validateProviderDraft,
   type ProviderDraftErrors
 } from "@/lib/provider-validation";
 import { cn } from "@/lib/utils";
-import { getApiClient, useAppStore } from "@/store";
+import { useAppStore } from "@/store";
 
 type SectionId =
   | "appearance"
@@ -359,11 +347,42 @@ function GeneralSection() {
   );
 }
 
+function providerDraftFromPreset(
+  kind: ProviderKind,
+  options: { id?: string; apiKey?: string; modelIds?: string[] } = {}
+): ProviderInput {
+  const preset = PROVIDER_PRESETS[kind];
+  const models = normalizeDraftModels(kind, options.modelIds ?? preset.models ?? defaultModelIds(kind));
+  return {
+    ...preset,
+    id: options.id,
+    apiKey: options.apiKey,
+    models,
+    model: models.includes(preset.model) ? preset.model : models[0] ?? preset.model
+  };
+}
+
+function applyDraftModels(draft: ProviderInput, modelIds: string[]): ProviderInput {
+  const models = normalizeDraftModels(draft.kind, modelIds, { allowEmpty: true });
+  return {
+    ...draft,
+    models,
+    model: models.includes(draft.model) ? draft.model : models[0] ?? draft.model
+  };
+}
+
+function normalizeDraftModels(
+  kind: ProviderKind,
+  modelIds: string[],
+  options: { allowEmpty?: boolean } = {}
+): string[] {
+  return normalizeModelIds(kind, modelIds, options);
+}
+
 function ProvidersSection() {
   const { t } = useTranslation();
   const confirmDialog = useConfirmDialog();
   const providers = useAppStore(useShallow((state) => state.providers));
-  const activeProviderId = useAppStore((state) => state.providerId);
   const saveProvider = useAppStore((state) => state.saveProvider);
   const deleteProvider = useAppStore((state) => state.deleteProvider);
   const testProvider = useAppStore((state) => state.testProvider);
@@ -372,61 +391,12 @@ function ProvidersSection() {
   const [draft, setDraft] = useState<ProviderInput>();
   const [errors, setErrors] = useState<ProviderDraftErrors>({});
   const [status, setStatus] = useState("");
-  const [remoteOptions, setRemoteOptions] = useState<ProviderModelOption[]>([]);
 
   const editingProvider = draft?.id
     ? providers.find((provider) => provider.id === draft.id)
     : undefined;
   const hasStoredKey = Boolean(editingProvider?.apiKeyRef);
-  // 「使用中」与输入框实际使用的供应商一致：选中的优先，否则第一个已配 Key 的。
   const configuredProviders = providers.filter((provider) => provider.apiKeyRef);
-  const activeProvider =
-    configuredProviders.find((provider) => provider.id === activeProviderId) ??
-    configuredProviders[0];
-
-  const draftId = draft?.id;
-  useEffect(() => {
-    let cancelled = false;
-    setRemoteOptions([]);
-    if (!draftId) {
-      return () => {
-        cancelled = true;
-      };
-    }
-    const client = getApiClient();
-    if (!client) {
-      return () => {
-        cancelled = true;
-      };
-    }
-    void client
-      .listProviderModelOptions(draftId)
-      .then((options) => {
-        if (!cancelled) {
-          setRemoteOptions(options);
-        }
-      })
-      .catch((error) => {
-        console.warn("[settings] 拉取模型选项失败，使用静态目录", {
-          providerId: draftId,
-          error
-        });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [draftId]);
-
-  const modelOptions = useMemo(() => {
-    if (!draft) {
-      return [];
-    }
-    const base =
-      remoteOptions.length > 0
-        ? remoteOptions
-        : mergeProviderModelOptions(draft.kind, [], draft.model);
-    return withDraftModels(draft.kind, base, draft);
-  }, [draft, remoteOptions]);
 
   const resetForm = () => {
     setDraft(undefined);
@@ -454,18 +424,10 @@ function ProvidersSection() {
     return confirmed;
   }
 
-  const startCreate = (kind: ProviderKind) => {
-    const preset = PROVIDER_PRESETS[kind];
-    setDraft({
-      ...preset,
-      apiKey: "",
-      // 目录型默认勾选全部内置模型；自定义型不内置假模型，由用户自行添加。
-      models: isCatalogProvider(kind)
-        ? mergeProviderModelOptions(kind, [], preset.model).map((option) => option.id)
-        : preset.model
-          ? [preset.model]
-          : []
-    });
+  const startCreate = (kind: ProviderKind, modelIds: string[]) => {
+    const preset = providerDraftFromPreset(kind, { apiKey: "", modelIds });
+    console.debug("[settings] 选择新增供应商模板", { kind, region: preset.region });
+    setDraft(preset);
     setErrors({});
     setStatus("");
   };
@@ -477,53 +439,14 @@ function ProvidersSection() {
       name: provider.name,
       baseURL: provider.baseURL,
       model: provider.model,
-      models:
-        provider.models ??
-        (isCatalogProvider(provider.kind)
-          ? mergeProviderModelOptions(provider.kind, [], provider.model).map(
-              (option) => option.id
-            )
-          : [provider.model]),
-      reasoningMode: provider.reasoningMode,
+      region: provider.region,
+      api: provider.api,
+      auth: provider.auth,
+      models: normalizeDraftModels(provider.kind, provider.models ?? defaultModelIds(provider.kind)),
       apiKey: ""
     });
     setErrors({});
     setStatus("");
-  };
-
-  // 自定义供应商手填模型列表；默认模型跟随列表第一个（若原默认被移除）。
-  const setCustomModels = (models: string[]) => {
-    setDraft((current) => {
-      if (!current) {
-        return current;
-      }
-      const model = models.includes(current.model) ? current.model : models[0] ?? "";
-      return {
-        ...current,
-        models,
-        model,
-        reasoningMode: supportedReasoningMode(current.kind, model, current.reasoningMode)
-      };
-    });
-  };
-
-  // 勾选/取消模型；默认模型被取消时回退到剩余的第一个。
-  const toggleModel = (modelId: string) => {
-    setDraft((current) => {
-      if (!current?.models) {
-        return current;
-      }
-      const models = current.models.includes(modelId)
-        ? current.models.filter((id) => id !== modelId)
-        : [...current.models, modelId];
-      const model = models.includes(current.model) ? current.model : models[0] ?? current.model;
-      return {
-        ...current,
-        models,
-        model,
-        reasoningMode: supportedReasoningMode(current.kind, model, current.reasoningMode)
-      };
-    });
   };
 
   return (
@@ -534,24 +457,45 @@ function ProvidersSection() {
         </div>
       ) : null}
       <SettingBlock
+        title={t("settings.providers.configYamlTitle")}
+        description={t("settings.providers.configYamlDesc")}
+      >
+        <Button
+          type="button"
+          variant="outline"
+          onClick={async () => {
+            if (!window.chengxiaobang?.openProviderConfig) {
+              setStatus(t("settings.providers.configYamlDesktopOnly"));
+              return;
+            }
+            const result = await window.chengxiaobang.openProviderConfig();
+            setStatus(
+              result.ok
+                ? t("settings.providers.configYamlOpened")
+                : result.error ?? t("settings.providers.configYamlOpenFailed")
+            );
+          }}
+        >
+          <FolderOpen className="size-4" />
+          {t("settings.providers.openConfigYaml")}
+        </Button>
+      </SettingBlock>
+      <SettingBlock
         title={t("settings.providers.configuredTitle")}
         description={t("settings.providers.configuredDesc")}
       >
         <div data-testid="settings-provider-list" className="divide-y rounded-sm border bg-background">
-          {providers.length === 0 ? (
+          {configuredProviders.length === 0 ? (
             <div className="px-4 py-4 text-caption text-muted-foreground">
               {t("settings.providers.empty")}
             </div>
           ) : (
-            providers.map((provider) => {
+            configuredProviders.map((provider) => {
               const selected = draft?.id === provider.id;
-              const inUse = provider.id === activeProvider?.id;
-              const configured = Boolean(provider.apiKeyRef);
-              const option = resolveProviderModelOption(provider.kind, provider.model);
               const subtitle =
                 provider.models && provider.models.length > 1
                   ? t("settings.providers.modelsSummary", { count: provider.models.length })
-                  : `${provider.model} · ${reasoningModeSummary(t, option, provider.reasoningMode)}`;
+                  : provider.model;
               return (
                 <div
                   key={provider.id}
@@ -569,27 +513,10 @@ function ProvidersSection() {
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
                         <span className="truncate text-caption font-medium">{provider.name}</span>
-                        {inUse ? (
-                          <span className="flex-none rounded-xs bg-primary px-1.5 py-0.5 text-micro text-primary-foreground">
-                            {t("settings.providers.inUse")}
-                          </span>
-                        ) : null}
                       </span>
                       <span className="block truncate text-micro text-muted-foreground">
                         {subtitle}
                       </span>
-                    </span>
-                    <span
-                      className={cn(
-                        "flex-none rounded-xs border px-1.5 py-0.5 text-micro",
-                        configured
-                          ? "text-muted-foreground"
-                          : "border-warning text-warning-deep"
-                      )}
-                    >
-                      {configured
-                        ? t("settings.providers.statusConfigured")
-                        : t("settings.providers.statusMissing")}
                     </span>
                   </button>
                   <Button
@@ -628,21 +555,18 @@ function ProvidersSection() {
               <p className="text-caption text-muted-foreground">
                 {t("settings.providers.chooseTypeDesc")}
               </p>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {PROVIDER_KIND_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => startCreate(option.value)}
-                    className="rounded-sm border bg-canvas px-4 py-3 text-left text-caption font-medium transition-colors hover:bg-canvas-soft-2"
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+              <Field label={t("settings.providers.provider")}>
+                <ProviderCascadeSelect
+                  ariaLabel={t("settings.providers.provider")}
+                  options={PROVIDER_KIND_OPTIONS}
+                  placeholder={t("settings.providers.cascadePlaceholder")}
+                  onValueChange={startCreate}
+                />
+              </Field>
             </div>
           ) : (
             <form
+              noValidate
               className="grid gap-4"
               onSubmit={async (event) => {
                 event.preventDefault();
@@ -653,14 +577,17 @@ function ProvidersSection() {
                   return;
                 }
                 try {
+                  const providerDraft: ProviderInput = { ...draft };
+                  delete providerDraft.modelOverrides;
+                  // 最大工具调用轮数由 shared catalog/YAML 维护，设置页不向后端提交用户级覆盖。
                   await saveProvider({
-                    ...draft,
+                    ...providerDraft,
                     name: draft.name.trim(),
                     baseURL: draft.baseURL.trim()
                   });
                   setStatus(t("settings.providers.saved"));
                   if (draft.id) {
-                    setDraft({ ...draft, apiKey: "" });
+                    setDraft({ ...providerDraft, apiKey: "" });
                   } else {
                     // 新建成功后回到「先选类型」阶段。
                     setDraft(undefined);
@@ -672,47 +599,44 @@ function ProvidersSection() {
               }}
             >
               <Field label={t("settings.providers.type")}>
-                <Select
+                <ProviderCascadeSelect
                   value={draft.kind}
-                  onValueChange={(value) => {
-                    const kind = value as ProviderKind;
-                    const preset = PROVIDER_PRESETS[kind];
-                    setDraft({
-                      ...preset,
-                      id: draft.id,
-                      apiKey: draft.apiKey,
-                      models: isCatalogProvider(kind)
-                        ? mergeProviderModelOptions(kind, [], preset.model).map(
-                            (option) => option.id
-                          )
-                        : preset.model
-                          ? [preset.model]
-                          : [],
-                      reasoningMode: undefined
-                    });
+                  ariaLabel={t("settings.providers.type")}
+                  options={PROVIDER_KIND_OPTIONS}
+                  placeholder={t("settings.providers.cascadePlaceholder")}
+                  selectedModelIds={draft.models}
+                  onSelectedModelIdsChange={(modelIds) => {
+                    setDraft(applyDraftModels(draft, modelIds));
                     setErrors({});
                   }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PROVIDER_KIND_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onValueChange={(kind, modelIds) => {
+                    const preset = providerDraftFromPreset(kind, {
+                      id: draft.id,
+                      apiKey: draft.apiKey,
+                      modelIds
+                    });
+                    setDraft(preset);
+                    setErrors({});
+                  }}
+                />
               </Field>
               <Field
-                label={t("settings.providers.name")}
-                error={errors.name ? t(errors.name) : undefined}
+                label={t("settings.providers.selectedModels")}
+                error={errors.model ? t(errors.model) : undefined}
               >
-                <Input
-                  aria-label={t("settings.providers.name")}
-                  value={draft.name}
-                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                <ProviderModelTags
+                  providerKind={draft.kind}
+                  modelIds={draft.models}
+                  emptyLabel={t("settings.providers.noModelsSelected")}
+                  onRemove={(modelId) => {
+                    setDraft(
+                      applyDraftModels(
+                        draft,
+                        (draft.models ?? []).filter((id) => id !== modelId)
+                      )
+                    );
+                    setErrors({});
+                  }}
                 />
               </Field>
               <Field label="Base URL" error={errors.baseURL ? t(errors.baseURL) : undefined}>
@@ -720,28 +644,6 @@ function ProvidersSection() {
                   aria-label="Base URL"
                   value={draft.baseURL}
                   onChange={(event) => setDraft({ ...draft, baseURL: event.target.value })}
-                />
-              </Field>
-              <Field
-                label={t("settings.providers.includedModels")}
-                error={errors.model ? t(errors.model) : undefined}
-              >
-                {isCatalogProvider(draft.kind) ? (
-                  <ModelChecklist
-                    options={modelOptions}
-                    selected={draft.models ?? []}
-                    onToggle={toggleModel}
-                  />
-                ) : (
-                  <ModelTagEditor models={draft.models ?? []} onChange={setCustomModels} />
-                )}
-              </Field>
-              <Field label={t("settings.providers.reasoning")}>
-                <ReasoningModeSelect
-                  kind={draft.kind}
-                  model={draft.model}
-                  value={supportedReasoningMode(draft.kind, draft.model, draft.reasoningMode)}
-                  onValueChange={(reasoningMode) => setDraft({ ...draft, reasoningMode })}
                 />
               </Field>
               <Field label="API Key" error={errors.apiKey ? t(errors.apiKey) : undefined}>
@@ -888,98 +790,6 @@ export function SkillsSection() {
   );
 }
 
-/** 多选模型清单：一个 API Key 下勾选要启用的模型。 */
-function ModelChecklist(props: {
-  options: ProviderModelOption[];
-  selected: string[];
-  onToggle(id: string): void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="rounded-sm border bg-canvas">
-      <div className="max-h-[240px] divide-y overflow-y-auto">
-        {props.options.map((option) => (
-          <label
-            key={option.id}
-            className="flex cursor-pointer items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-canvas-soft-2/70"
-          >
-            <input
-              type="checkbox"
-              checked={props.selected.includes(option.id)}
-              onChange={() => props.onToggle(option.id)}
-              className="size-4 flex-none accent-primary"
-            />
-            <span className="min-w-0 flex-1 truncate text-caption font-medium">
-              {modelOptionLabel(option)}
-            </span>
-          </label>
-        ))}
-      </div>
-      <div className="border-t px-3 py-2 text-micro text-muted-foreground">
-        {t("settings.providers.selectedCount", { count: props.selected.length })}
-      </div>
-    </div>
-  );
-}
-
-/** 自定义供应商的模型清单：手动输入模型 ID，可增删，同一个 API Key 下生效。 */
-function ModelTagEditor(props: { models: string[]; onChange(models: string[]): void }) {
-  const { t } = useTranslation();
-  const [value, setValue] = useState("");
-  const addModel = () => {
-    const id = value.trim();
-    if (!id) {
-      return;
-    }
-    if (!props.models.includes(id)) {
-      props.onChange([...props.models, id]);
-    }
-    setValue("");
-  };
-  return (
-    <div className="grid gap-2">
-      {props.models.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {props.models.map((model) => (
-            <Badge
-              key={model}
-              variant="secondary"
-              className="gap-1.5 py-1 pl-2.5 pr-1 font-normal"
-            >
-              <span className="font-mono text-micro">{model}</span>
-              <button
-                type="button"
-                aria-label={t("settings.providers.removeModel", { model })}
-                onClick={() => props.onChange(props.models.filter((id) => id !== model))}
-                className="flex size-4 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-              >
-                <X className="size-3" />
-              </button>
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-      <div className="flex gap-2">
-        <Input
-          value={value}
-          placeholder={t("settings.providers.modelPlaceholder")}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            // Enter 直接添加，避免触发表单提交。
-            if (event.key === "Enter") {
-              event.preventDefault();
-              addModel();
-            }
-          }}
-        />
-        <Button type="button" variant="outline" onClick={addModel}>
-          {t("settings.providers.addModel")}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function Field(props: { label: string; error?: string; children: React.ReactNode }) {
   return (
     <div className="grid gap-2">
@@ -988,24 +798,4 @@ function Field(props: { label: string; error?: string; children: React.ReactNode
       {props.error ? <p className="text-micro text-destructive">{props.error}</p> : null}
     </div>
   );
-}
-
-/** 把草稿中已勾选/默认的模型补进选项列表，避免目录之外的模型丢失。 */
-function withDraftModels(
-  kind: ProviderKind,
-  options: ProviderModelOption[],
-  draft: ProviderInput
-): ProviderModelOption[] {
-  const known = new Set(options.map((option) => option.id));
-  const extras = [...new Set([...(draft.models ?? []), draft.model])].filter(
-    (model) => model && !known.has(model)
-  );
-  if (extras.length === 0) {
-    return options;
-  }
-  return [...options, ...extras.map((model) => resolveProviderModelOption(kind, model))];
-}
-
-function modelOptionLabel(option: ProviderModelOption): string {
-  return option.label ?? option.id;
 }

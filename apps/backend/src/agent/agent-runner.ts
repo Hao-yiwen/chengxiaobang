@@ -1,17 +1,25 @@
 import { mkdir } from "node:fs/promises";
 import {
   runAgentLoopContinue,
+  type AgentContext,
   type AgentMessage,
   type AgentTool,
   type StreamFn
 } from "@earendil-works/pi-agent-core";
 import { formatSkillInvocation } from "@earendil-works/pi-agent-core/node";
-import { streamSimple, type Message as PiMessage } from "@earendil-works/pi-ai";
+import {
+  streamSimple,
+  type Api,
+  type Message as PiMessage,
+  type Model,
+  type ProviderResponse
+} from "@earendil-works/pi-ai";
 import {
   createId,
   derivePlanState,
   nowIso,
-  resolveModelInputModalities,
+  resolveProviderConfigModelInputModalities,
+  resolveProviderConfigModelMaxToolIterations,
   type ActiveRunSnapshot,
   type AskUserAnswer,
   type ProposePlanArgs,
@@ -30,7 +38,8 @@ import {
 } from "@chengxiaobang/shared";
 import type { StateStore } from "../repository/state-store";
 import type { SecretStore } from "../secrets/secret-store";
-import { buildModel, buildModelStreamOptions } from "../model/pi-model";
+import type { ProviderRepository } from "../model/provider-service";
+import { buildModel, buildModelStreamOptions, toTokenUsage } from "../model/pi-model";
 import {
   createAgentTools,
   selectAgentTools,
@@ -68,6 +77,10 @@ import {
 import { generateSessionTitle, normalizeTitle } from "./session-title";
 import { protectToolResultForContext } from "./tool-result-spill";
 import { createSmartApprovalJudge, type SmartApprovalJudge } from "./smart-approval";
+import {
+  UsageCostLedgerService,
+  type UsageCostAttempt
+} from "../usage/usage-cost-ledger";
 
 const MAX_SKILL_RESULT_CHARS = 32 * 1024;
 
@@ -100,6 +113,10 @@ export interface AgentRunnerOptions {
   titleStreamFn?: StreamFn;
   /** 智能审批裁决注入点；测试可替换为固定裁决，生产默认调用当前模型。 */
   smartApprovalJudge?: SmartApprovalJudge;
+  /** 模型请求费用账本；默认按当前 StateStore 创建。 */
+  usageCostLedgerService?: UsageCostLedgerService;
+  /** 供应商配置仓库；生产环境使用 ~/.chengxiaobang/config.yaml。 */
+  providerRepository?: ProviderRepository;
 }
 
 export class AgentRunner {
@@ -115,6 +132,8 @@ export class AgentRunner {
   private readonly streamFn?: StreamFn;
   private readonly titleStreamFn?: StreamFn;
   private readonly smartApprovalJudge: SmartApprovalJudge;
+  private readonly usageCostLedgerService: UsageCostLedgerService;
+  private readonly providerRepository: ProviderRepository;
   private readonly memoryDir?: string;
 
   constructor(
@@ -135,6 +154,9 @@ export class AgentRunner {
     this.streamFn = options.streamFn;
     this.titleStreamFn = options.titleStreamFn ?? (options.streamFn ? undefined : streamSimple);
     this.smartApprovalJudge = options.smartApprovalJudge ?? createSmartApprovalJudge();
+    this.usageCostLedgerService =
+      options.usageCostLedgerService ?? new UsageCostLedgerService(store);
+    this.providerRepository = options.providerRepository ?? store;
   }
 
   abort(runId: string): boolean {
@@ -348,10 +370,10 @@ export class AgentRunner {
     };
     const project = session.projectId ? await this.store.getProject(session.projectId) : undefined;
     const workspacePath = project?.path ?? this.sessionWorkspacePath(session.id);
-    const [rows, toolCalls, runs, skills] = await Promise.all([
+    const [rows, toolCalls, sessionCostCny, skills] = await Promise.all([
       this.store.listMessages(session.id),
       this.store.listToolCallsForSession(session.id),
-      this.store.listRuns(session.id),
+      this.usageCostLedgerService.getSessionCostCny(session.id),
       this.slashCommandService.listSkills(project)
     ]);
     const planMode = options.planMode ?? false;
@@ -392,7 +414,7 @@ export class AgentRunner {
       }),
       messages: buildAgentMessages(rows, session.compactedUpToMessageId),
       tools: selectAgentTools(tools, { planPhase, viaFeishu, headless: false }),
-      runs,
+      sessionCostCny,
       compactedUpToMessageId: session.compactedUpToMessageId
     });
     console.info("[agent-runner] 已估算会话上下文用量", {
@@ -417,8 +439,8 @@ export class AgentRunner {
     const planMode = input.planMode ?? false;
     const headless = internal.headless ?? false;
     const selectedProvider = input.providerId
-      ? await this.store.getProvider(input.providerId)
-      : (await this.store.listProviders()).find((candidate) => candidate.apiKeyRef);
+      ? await this.providerRepository.getProvider(input.providerId)
+      : (await this.providerRepository.listProviders()).find((candidate) => candidate.apiKeyRef);
     if (!selectedProvider) {
       throw new Error("请先配置至少一个模型");
     }
@@ -449,7 +471,8 @@ export class AgentRunner {
       model: effectiveModel,
       ...(effectiveReasoningMode ? { reasoningMode: effectiveReasoningMode } : {})
     };
-    const modelInputModalities = resolveModelInputModalities(provider.kind, provider.model);
+    const maxToolIterations = resolveProviderConfigModelMaxToolIterations(provider, effectiveModel);
+    const modelInputModalities = resolveProviderConfigModelInputModalities(provider, provider.model);
     const nativeImageAttachments = input.attachments ?? [];
     const displayAttachments = input.displayAttachments ?? [];
     const displayContentForLog = input.displayContent ?? input.prompt;
@@ -467,7 +490,7 @@ export class AgentRunner {
         input.model ? "run" : session.model ? "session" : "provider"
       } reasoningMode=${effectiveReasoningMode ?? "default"} reasoningSource=${
         input.reasoningMode ? "run" : session.reasoningMode ? "session" : selectedProvider.reasoningMode ? "provider" : "default"
-      } inputModalities=${modelInputModalities.join(",")} nativeImageAttachments=${
+      } maxToolIterations=${maxToolIterations} inputModalities=${modelInputModalities.join(",")} nativeImageAttachments=${
         nativeImageAttachments.length
       } displayAttachments=${displayAttachments.length} promptChars=${input.prompt.length} displayChars=${
         displayContentForLog.length
@@ -545,7 +568,8 @@ export class AgentRunner {
           runId,
           clientRequestId: input.clientRequestId,
           signal: controller.signal,
-          streamFn: this.streamFn
+          streamFn: this.streamFn,
+          usageCostLedgerService: this.usageCostLedgerService
         });
         return;
       }
@@ -675,6 +699,7 @@ export class AgentRunner {
         approvedPlans,
         askUserAnswers,
         provider,
+        maxToolIterations,
         apiKey,
         accessMode: input.accessMode,
         planMode,
@@ -774,15 +799,15 @@ export class AgentRunner {
     providerId?: string
   ): Promise<ProviderConfig | undefined> {
     if (providerId) {
-      return this.store.getProvider(providerId);
+      return this.providerRepository.getProvider(providerId);
     }
     if (session.providerId) {
-      const provider = await this.store.getProvider(session.providerId);
+      const provider = await this.providerRepository.getProvider(session.providerId);
       if (provider) {
         return provider;
       }
     }
-    return (await this.store.listProviders()).find((candidate) => candidate.apiKeyRef);
+    return (await this.providerRepository.listProviders()).find((candidate) => candidate.apiKeyRef);
   }
 
   /**
@@ -883,6 +908,7 @@ export class AgentRunner {
       runId: options.runId,
       signal: options.signal,
       streamFn: this.streamFn,
+      usageCostLedgerService: this.usageCostLedgerService,
       introDelta: "当前上下文已接近模型上限，正在自动压缩较早对话...\n"
     });
     if (result.status === "aborted") {
@@ -916,6 +942,7 @@ export class AgentRunner {
     approvedPlans: Map<string, ProposePlanArgs>;
     askUserAnswers: Map<string, AskUserAnswer>;
     provider: Parameters<typeof buildModel>[0];
+    maxToolIterations: number;
     apiKey: string;
     accessMode: RunRequest["accessMode"];
     planMode: boolean;
@@ -928,6 +955,33 @@ export class AgentRunner {
     controller: AbortController;
   }): AsyncGenerator<StreamEvent> {
     const queue = options.queue;
+    let nextAttemptIndex = options.initialUsage ? 1 : 0;
+    let latestAttempt: UsageCostAttempt | undefined;
+    const finalizedAttemptIndexes = new Set<number>();
+    const finishCurrentAttemptWithError = async (input: {
+      stopReason: "error" | "aborted";
+      errorMessage?: string;
+    }): Promise<void> => {
+      if (!latestAttempt || finalizedAttemptIndexes.has(latestAttempt.attemptIndex)) {
+        return;
+      }
+      try {
+        await this.usageCostLedgerService.finishAttemptWithError({
+          attempt: latestAttempt,
+          stopReason: input.stopReason,
+          errorMessage: input.errorMessage,
+          signalAborted: options.controller.signal.aborted
+        });
+        finalizedAttemptIndexes.add(latestAttempt.attemptIndex);
+      } catch (error) {
+        console.error("[agent-runner] 费用账本错误收口失败", {
+          runId: options.runId,
+          sessionId: options.sessionId,
+          attemptIndex: latestAttempt.attemptIndex,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    };
     const translator = new RunEventTranslator({
       store: this.store,
       queue,
@@ -938,6 +992,8 @@ export class AgentRunner {
       accessMode: options.accessMode,
       strictApproval: options.headless || options.viaFeishu,
       signal: options.controller.signal,
+      model: options.provider.model,
+      maxToolIterations: options.maxToolIterations,
       planMode: options.planMode,
       planConfirmed: options.initialPlanConfirmed,
       initialUsage: options.initialUsage,
@@ -950,6 +1006,54 @@ export class AgentRunner {
           apiKey: options.apiKey,
           signal: options.controller.signal
         }),
+      onAssistantMessageEnd: async (message) => {
+        const attempt = latestAttempt;
+        if (!attempt) {
+          console.warn("[agent-runner] assistant 结束时没有可用费用 attempt，已跳过账本收口", {
+            runId: options.runId,
+            sessionId: options.sessionId,
+            stopReason: message.stopReason
+          });
+          return;
+        }
+        if (finalizedAttemptIndexes.has(attempt.attemptIndex)) {
+          return;
+        }
+        try {
+          if (message.usage) {
+            await this.usageCostLedgerService.finishAttemptWithUsage({
+              attempt,
+              usage: toTokenUsage(message.usage)
+            });
+            finalizedAttemptIndexes.add(attempt.attemptIndex);
+            return;
+          }
+          if (message.stopReason === "error" || message.stopReason === "aborted") {
+            await this.usageCostLedgerService.finishAttemptWithError({
+              attempt,
+              stopReason: message.stopReason,
+              errorMessage: message.errorMessage,
+              signalAborted: options.controller.signal.aborted
+            });
+            finalizedAttemptIndexes.add(attempt.attemptIndex);
+            return;
+          }
+          console.warn("[agent-runner] 模型响应缺少 usage，暂保留 pending 费用账本", {
+            runId: options.runId,
+            sessionId: options.sessionId,
+            attemptIndex: attempt.attemptIndex,
+            stopReason: message.stopReason
+          });
+        } catch (error) {
+          console.error("[agent-runner] 费用账本 usage 收口失败", {
+            runId: options.runId,
+            sessionId: options.sessionId,
+            attemptIndex: attempt.attemptIndex,
+            stopReason: message.stopReason,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      },
       onPlanApproved: (toolCallId, args) => options.approvedPlans.set(toolCallId, args),
       onAskUserAnswered: (toolCallId, answer) => options.askUserAnswers.set(toolCallId, answer)
     });
@@ -959,7 +1063,7 @@ export class AgentRunner {
       if (!options.planMode) return "none";
       return translator.isPlanConfirmed() ? "execute" : "draft";
     };
-    const context = {
+    let currentAgentContext: AgentContext = {
       systemPrompt: options.systemPrompt,
       messages: buildAgentMessages(rows, options.compactedUpToMessageId),
       tools: selectAgentTools(options.tools, {
@@ -968,15 +1072,56 @@ export class AgentRunner {
         headless: options.headless
       })
     };
+    const modelStreamOptions = buildModelStreamOptions(options.provider);
 
     void runAgentLoopContinue(
-      context,
+      currentAgentContext,
       {
         model: buildModel(options.provider),
-        ...buildModelStreamOptions(options.provider),
+        ...modelStreamOptions,
         apiKey: options.apiKey,
+        onResponse: async (response: ProviderResponse, model: Model<Api>) => {
+          if (latestAttempt) {
+            this.usageCostLedgerService.recordResponse(latestAttempt, {
+              statusCode: response.status,
+              receivedResponse: true
+            });
+            console.debug("[agent-runner] 已记录模型 HTTP 响应状态", {
+              runId: options.runId,
+              sessionId: options.sessionId,
+              attemptIndex: latestAttempt.attemptIndex,
+              statusCode: response.status,
+              model: model.id
+            });
+          }
+          await modelStreamOptions.onResponse?.(response, model);
+        },
         // 历史行已经能往返为真实 pi message（见 history.ts），因此 LLM 转换保持原样。
-        convertToLlm: (messages) => messages as PiMessage[],
+        convertToLlm: async (messages) => {
+          const llmMessages = messages as PiMessage[];
+          const attemptIndex = nextAttemptIndex++;
+          try {
+            latestAttempt = await this.usageCostLedgerService.startAttempt({
+              runId: options.runId,
+              sessionId: options.sessionId,
+              attemptIndex,
+              provider: options.provider,
+              inputSnapshot: {
+                systemPrompt: currentAgentContext.systemPrompt,
+                messages: llmMessages,
+                tools: currentAgentContext.tools ?? []
+              }
+            });
+          } catch (error) {
+            console.error("[agent-runner] 创建模型请求费用 attempt 失败，继续模型调用", {
+              runId: options.runId,
+              sessionId: options.sessionId,
+              attemptIndex,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
+          return llmMessages;
+        },
         toolExecution: "sequential",
         beforeToolCall: translator.beforeToolCall,
         afterToolCall: (context) =>
@@ -985,16 +1130,17 @@ export class AgentRunner {
             runId: options.runId
           }),
         shouldStopAfterTurn: translator.shouldStopAfterTurn,
-        prepareNextTurn: ({ context: currentContext }) => ({
-          context: {
+        prepareNextTurn: ({ context: currentContext }) => {
+          currentAgentContext = {
             ...currentContext,
             tools: selectAgentTools(options.tools, {
               planPhase: planPhase(),
               viaFeishu: options.viaFeishu,
               headless: options.headless
             })
-          }
-        }),
+          };
+          return { context: currentAgentContext };
+        },
         getSteeringMessages: () =>
           this.drainSteeringMessages({
             runId: options.runId,
@@ -1016,6 +1162,10 @@ export class AgentRunner {
             error
           });
           try {
+            await finishCurrentAttemptWithError({
+              stopReason: options.controller.signal.aborted ? "aborted" : "error",
+              errorMessage: error
+            });
             await translator.finish(
               options.controller.signal.aborted
                 ? { status: "aborted" }
@@ -1033,6 +1183,10 @@ export class AgentRunner {
         //（持久化或契约误用），要收尾 run，不能让它一直停在 running。
         if (!translator.finished) {
           try {
+            await finishCurrentAttemptWithError({
+              stopReason: options.controller.signal.aborted ? "aborted" : "error",
+              errorMessage: error instanceof Error ? error.message : String(error)
+            });
             await translator.finish(
               options.controller.signal.aborted
                 ? { status: "aborted" }

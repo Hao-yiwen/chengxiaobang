@@ -13,7 +13,6 @@ export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
         activeProjectId: state.activeProjectId,
         providerId: state.providerId,
         model: state.model,
-        reasoningMode: state.reasoningMode,
         planMode: state.view === "home" ? false : state.planMode,
         accessMode: state.accessMode,
         sidebarOpen: state.sidebarOpen,
@@ -23,6 +22,7 @@ export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
         rightPanelBySession: state.rightPanelBySession,
         queuedRunsBySession: state.queuedRunsBySession,
         pausedRunQueuesBySession: state.pausedRunQueuesBySession,
+        projectSortMode: state.projectSortMode,
         theme: state.theme,
         locale: state.locale
       }),
@@ -59,8 +59,14 @@ export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
         }
         return migrateRightPanelMemory(sanitizePersistedAppState(persisted as Partial<AppState>));
       },
-      merge: (persisted, current) => ({
-        ...current,
-        ...migrateRightPanelMemory(sanitizePersistedAppState((persisted ?? {}) as Partial<AppState>))
-      })
+      merge: (persisted, current) => {
+        const sanitized = migrateRightPanelMemory(
+          sanitizePersistedAppState((persisted ?? {}) as Partial<AppState>)
+        );
+        delete sanitized.reasoningMode;
+        return {
+          ...current,
+          ...sanitized
+        };
+      }
 };

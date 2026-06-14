@@ -76,17 +76,23 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           apiClientRef.current.listSessions(),
           apiClientRef.current.listProviders()
         ]);
-        const configuredProvider = firstConfiguredProvider(nextProviders);
         set((state) => {
+          const configuredProvider = firstConfiguredProvider(nextProviders);
           const activeSessionId = state.view === "home" ? undefined : state.activeSessionId;
           const liveSessionIds = new Set(nextSessions.map((session) => session.id));
+          const explicitProvider = configuredProviderById(nextProviders, state.providerId);
           const nextProvider =
-            configuredProviderById(nextProviders, state.providerId) ?? configuredProvider;
+            explicitProvider ?? (state.view === "home" ? undefined : configuredProvider);
+          if (state.view === "home" && !explicitProvider && configuredProvider) {
+            console.debug("[store] 首页加载保持供应商未选择", {
+              fallbackProviderId: configuredProvider.id
+            });
+          }
           const modelState = nextProvider
             ? normalizeModelForProvider(
                 nextProvider,
                 state.model,
-                state.reasoningMode,
+                undefined,
                 "loadData"
               )
             : { model: undefined, reasoningMode: undefined };
@@ -188,6 +194,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             ),
             activeSessionId: undefined,
             providerId: undefined,
+            model: undefined,
+            reasoningMode: undefined,
             messages: [],
             toolHistory: [],
             runHistory: [],
@@ -222,6 +230,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               "restoreInitialState.home"
             ),
             activeSessionId: undefined,
+            providerId: undefined,
+            model: undefined,
+            reasoningMode: undefined,
             messages: [],
             toolHistory: [],
             runHistory: [],
@@ -249,6 +260,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               "restoreInitialState.missingSession"
             ),
             activeSessionId: undefined,
+            providerId: undefined,
+            model: undefined,
+            reasoningMode: undefined,
             messages: [],
             toolHistory: [],
             runHistory: [],
@@ -276,7 +290,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             ? normalizeModelForProvider(
                 sessionProvider,
                 targetSession.model ?? state.model,
-                targetSession.reasoningMode ?? state.reasoningMode,
+                undefined,
                 "restoreInitialState"
               )
             : { model: undefined, reasoningMode: undefined };
@@ -344,7 +358,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             ? normalizeModelForProvider(
                 sessionProvider,
                 session?.model ?? state.model,
-                session?.reasoningMode ?? state.reasoningMode,
+                undefined,
                 "selectSession"
               )
             : { model: undefined, reasoningMode: undefined };
@@ -449,6 +463,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               runningRunSessionById,
               ...resetHomePlanMode("deleteSession", state.planMode),
               activeSessionId: undefined,
+              providerId: undefined,
+              model: undefined,
+              reasoningMode: undefined,
               messages: [],
               toolHistory: [],
               runHistory: [],
@@ -529,6 +546,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               ...resetHomePlanMode("deleteProject", state.planMode),
               activeProjectId: undefined,
               activeSessionId: undefined,
+              providerId: undefined,
+              model: undefined,
+              reasoningMode: undefined,
               messages: [],
               toolHistory: [],
               runHistory: [],
@@ -592,6 +612,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           ...resetHomePlanMode("newChat", state.planMode),
           activeProjectId: undefined,
           activeSessionId: undefined,
+          providerId: undefined,
+          model: undefined,
+          reasoningMode: undefined,
           messages: [],
           toolHistory: [],
           runHistory: [],
@@ -617,6 +640,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           ...resetHomePlanMode("newChatInProject", state.planMode),
           activeProjectId: projectId,
           activeSessionId: undefined,
+          providerId: undefined,
+          model: undefined,
+          reasoningMode: undefined,
           messages: [],
           toolHistory: [],
           runHistory: [],

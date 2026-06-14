@@ -124,58 +124,44 @@ async function openModelMenu(): Promise<HTMLElement> {
   return screen.findByRole("menu");
 }
 
-/** hover 某个模型行，展开它右侧的配置 flyout。 */
-async function openModelFlyout(menu: HTMLElement, modelLabel: string): Promise<void> {
+function clickModel(menu: HTMLElement, modelLabel: string): void {
   const row = within(menu).getByText(modelLabel).closest("[role='menuitem']");
   if (!row) {
     throw new Error(`找不到模型行：${modelLabel}`);
   }
-  await act(async () => {
-    row.focus();
-    fireEvent.focus(row);
-    fireEvent.pointerOver(row, { pointerType: "mouse" });
-    fireEvent.pointerMove(row, { pointerType: "mouse" });
-    fireEvent.mouseOver(row);
-    fireEvent.mouseMove(row);
-    fireEvent.mouseEnter(row);
-    fireEvent.keyDown(row, { key: "ArrowRight" });
-  });
+  fireEvent.click(row);
 }
 
-describe("Composer 模型 + 推理联动选择器", () => {
-  it("lists models flat (no provider headers); each model's reasoning lives in a right flyout", async () => {
+describe("Composer 模型选择器", () => {
+  it("lists configured providers and their YAML-backed models without reasoning controls", async () => {
     render(<App client={createClient()} />);
     await screen.findByLabelText("输入消息");
 
     const menu = await openModelMenu();
 
-    // 平铺模型，不再有厂商分组小标题。
+    expect(within(menu).getByText("DeepSeek")).toBeInTheDocument();
+    expect(within(menu).getByText("Kimi")).toBeInTheDocument();
     expect(within(menu).getByText("DeepSeek V4 Flash")).toBeInTheDocument();
     expect(within(menu).getByText("Kimi K2.7 Code")).toBeInTheDocument();
-    // 推理等级初始不直接可见，需 hover 模型后才在右侧 flyout 出现。
+    expect(within(menu).queryByText("默认")).not.toBeInTheDocument();
+    expect(within(menu).queryByText("关闭")).not.toBeInTheDocument();
     expect(within(menu).queryByText("High")).not.toBeInTheDocument();
-
-    await openModelFlyout(menu, "DeepSeek V4 Flash");
-
-    // flash 支持 off/high/xhigh，外加「默认」。
-    expect(await screen.findByText("默认")).toBeInTheDocument();
-    expect(screen.getByText("关闭")).toBeInTheDocument();
-    expect(screen.getByText("High")).toBeInTheDocument();
-    expect(screen.getByText("XHigh")).toBeInTheDocument();
   });
 
-  it("picks a reasoning level from the model's flyout and reflects it on the trigger", async () => {
+  it("selects a model and clears any stale manual reasoning mode", async () => {
     render(<App client={createClient()} />);
     await screen.findByLabelText("输入消息");
+    act(() => {
+      useAppStore.getState().setReasoningMode("high");
+    });
 
     const menu = await openModelMenu();
-    await openModelFlyout(menu, "DeepSeek V4 Flash");
-    fireEvent.click(await screen.findByText("High"));
+    clickModel(menu, "DeepSeek V4 Pro");
 
-    await waitFor(() => expect(useAppStore.getState().reasoningMode).toBe("high"));
-    expect(await screen.findByLabelText("选择模型")).toHaveTextContent(
-      /DeepSeek V4 Flash\s*· High/
-    );
+    await waitFor(() => expect(useAppStore.getState().model).toBe("deepseek-v4-pro"));
+    expect(useAppStore.getState().providerId).toBe("deepseek");
+    expect(useAppStore.getState().reasoningMode).toBeUndefined();
+    expect(await screen.findByLabelText("选择模型")).toHaveTextContent("DeepSeek V4 Pro");
   });
 
   it("only lists the models enabled on the provider config", async () => {
@@ -195,7 +181,7 @@ describe("Composer 模型 + 推理联动选择器", () => {
     expect(within(menu).queryByText("DeepSeek V4 Pro")).not.toBeInTheDocument();
   });
 
-  it("selects a model via its flyout: sets provider/model and clears unsupported reasoning", async () => {
+  it("selects another provider's model directly", async () => {
     render(<App client={createClient()} />);
     await screen.findByLabelText("输入消息");
     act(() => {
@@ -203,19 +189,15 @@ describe("Composer 模型 + 推理联动选择器", () => {
     });
 
     const menu = await openModelMenu();
-    await openModelFlyout(menu, "Kimi K2.7 Code");
-    // K2.7 Code 无可选推理强度，flyout 只有「始终开启」一项。
+    clickModel(menu, "Kimi K2.7 Code");
     expect(screen.queryByText("XHigh")).not.toBeInTheDocument();
-    fireEvent.click(await screen.findByText("始终开启"));
 
     await waitFor(() => expect(useAppStore.getState().providerId).toBe("kimi"));
-    // 选中的是 kimi 的默认模型，model 归一为 undefined；推理模式不被 K2.7 Code 支持，被清掉。
+    // 选中的是 Kimi 的默认模型，model 归一为 undefined；旧手动推理模式被清掉。
     expect(useAppStore.getState().model).toBeUndefined();
     expect(useAppStore.getState().reasoningMode).toBeUndefined();
 
-    expect(await screen.findByLabelText("选择模型")).toHaveTextContent(
-      /Kimi K2\.7 Code\s*· 始终开启/
-    );
+    expect(await screen.findByLabelText("选择模型")).toHaveTextContent("Kimi K2.7 Code");
   });
 
   it("shows current context usage to the left of the model picker", async () => {

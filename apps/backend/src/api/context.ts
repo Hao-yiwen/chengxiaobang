@@ -9,6 +9,7 @@ import type { StateStore } from "../repository/state-store";
 import type { SkillMarketService } from "../tools/skill-market-service";
 import type { TaskScheduler } from "../tasks/task-scheduler";
 import type { SlashCommandService } from "../tools/slash-command-service";
+import type { UsageCostLedgerService } from "../usage/usage-cost-ledger";
 import type { WebSearchConfigService } from "../web-search/web-search-config-service";
 
 export interface AppOptions {
@@ -23,11 +24,13 @@ export interface AppOptions {
   feishuInstallService?: FeishuInstallService;
   feishuService?: FeishuService;
   webSearchConfigService?: WebSearchConfigService;
+  usageCostLedgerService?: UsageCostLedgerService;
   taskScheduler?: TaskScheduler;
   eventHub?: EventHub<AppEvent>;
 }
 
-export type AppContext = AppOptions & {
+export type AppContext = Omit<AppOptions, "usageCostLedgerService" | "slashCommandService" | "eventHub"> & {
+  usageCostLedgerService: UsageCostLedgerService;
   slashCommandService: SlashCommandService;
   eventHub: EventHub<AppEvent>;
 };

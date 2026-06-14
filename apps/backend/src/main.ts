@@ -10,6 +10,7 @@ import { createLarkBridge } from "./feishu/feishu-bridge";
 import { FeishuConfigService } from "./feishu/feishu-config-service";
 import { FeishuInstallService } from "./feishu/feishu-install-service";
 import { FeishuService } from "./feishu/feishu-service";
+import { ProviderConfigFileService } from "./model/provider-config-file";
 import { ProviderService } from "./model/provider-service";
 import { SqliteStateStore } from "./repository/sqlite-state-store";
 import { createSecretStore } from "./secrets/secret-store";
@@ -18,12 +19,14 @@ import { SkillMarketService } from "./tools/skill-market-service";
 import { TaskScheduler } from "./tasks/task-scheduler";
 import { createAgentTools } from "./tools/registry";
 import { SlashCommandService } from "./tools/slash-command-service";
+import { UsageCostLedgerService } from "./usage/usage-cost-ledger";
 import { WebSearchConfigService } from "./web-search/web-search-config-service";
-import { defaultDataDir } from "./paths";
+import { defaultDataDir, defaultProviderConfigPath } from "./paths";
 
 export interface BackendConfig {
   port: number;
   dataDir: string;
+  providerConfigPath?: string;
   token?: string;
   parentPid?: number;
 }
@@ -49,7 +52,12 @@ export async function startBackend(config: BackendConfig) {
   const store = new SqliteStateStore(join(config.dataDir, "chengxiaobang.sqlite"));
   await store.initialize();
   const secrets = createSecretStore();
-  const providerService = new ProviderService(store, secrets);
+  const providerConfigFile = new ProviderConfigFileService(
+    config.providerConfigPath ?? defaultProviderConfigPath()
+  );
+  await providerConfigFile.initialize();
+  const providerService = new ProviderService(providerConfigFile, secrets);
+  const usageCostLedgerService = new UsageCostLedgerService(store);
   const skillMarketService = new SkillMarketService(store);
   const slashCommandService = new SlashCommandService(undefined, undefined, {
     enabledMarketSkills: () => skillMarketService.enabledMarketSkillNames()
@@ -62,6 +70,7 @@ export async function startBackend(config: BackendConfig) {
   const memoryDir = join(config.dataDir, "memories");
   console.info(`[backend] 长期记忆目录 ${memoryDir}`);
   const runner = new AgentRunner(store, secrets, {
+    providerRepository: providerConfigFile,
     memoryDir,
     createTools: async (workspacePath) =>
       createAgentTools(workspacePath, {
@@ -70,7 +79,8 @@ export async function startBackend(config: BackendConfig) {
         memoryDir,
         skillMarketService
       }),
-    slashCommandService
+    slashCommandService,
+    usageCostLedgerService
   });
   const feishuConfigService = new FeishuConfigService(store, secrets);
   const feishuInstallService = new FeishuInstallService();
@@ -99,6 +109,7 @@ export async function startBackend(config: BackendConfig) {
       feishuInstallService,
       feishuService,
       webSearchConfigService,
+      usageCostLedgerService,
       taskScheduler,
       eventHub
     })
@@ -131,6 +142,8 @@ export function readCliConfig(
   return {
     port: Number(args.get("port") ?? env.PORT ?? 0),
     dataDir: args.get("data-dir") ?? env.CHENGXIAOBANG_DATA_DIR ?? defaultDataDir(),
+    providerConfigPath:
+      args.get("provider-config") ?? env.CHENGXIAOBANG_PROVIDER_CONFIG ?? defaultProviderConfigPath(),
     token: args.get("token") ?? env.CHENGXIAOBANG_TOKEN,
     parentPid: parseOptionalPositiveInteger(
       args.get("parent-pid") ?? env.CHENGXIAOBANG_PARENT_PID

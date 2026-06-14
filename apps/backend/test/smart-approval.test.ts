@@ -35,14 +35,14 @@ describe("smart approval fast provider", () => {
         kind: "qwen",
         name: "千问",
         baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        model: "qwen-plus",
-        models: ["qwen-plus"],
+        model: "qwen3.7-max",
+        models: ["qwen3.7-max"],
         reasoningMode: "auto"
       })
     );
 
     expect(approvalProvider).toMatchObject({
-      model: "qwen-plus",
+      model: "qwen3.7-max",
       reasoningMode: "off"
     });
   });

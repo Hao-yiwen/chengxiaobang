@@ -1,30 +1,39 @@
 import { z } from "zod";
 
 import {
-  DEFAULT_CONTEXT_COMPACT_THRESHOLD_RATIO,
   estimateModelCostUsd,
+  MAX_CONFIGURABLE_TOOL_ITERATIONS,
   modelInputModalitySchema,
   reasoningModeSchema,
   type ModelContextInfo,
   type ModelInputModality,
-  type ModelPricingInfo,
-  type ReasoningMode
+  type ModelPricingInfo
 } from "./model";
-import { providerKindSchema, type ProviderKind } from "./provider";
+import { PROVIDER_CATALOG, PROVIDER_CATALOG_SETTINGS } from "./provider-catalog.generated";
+import { providerKindSchema, type ProviderConfig, type ProviderKind } from "./provider";
 
 export const providerModelOptionSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1).optional(),
   providerKind: providerKindSchema,
   reasoningModes: z.array(reasoningModeSchema),
+  defaultReasoningMode: reasoningModeSchema.optional(),
   reasoningAlwaysOn: z.boolean().optional(),
   contextWindowTokens: z.number().int().positive().optional(),
+  autoCompactThresholdTokens: z.number().int().positive().optional(),
+  enabled: z.boolean().default(true),
   inputModalities: z.array(modelInputModalitySchema).nonempty().default(["text"]),
   autoCompactThresholdRatio: z
     .number()
     .positive()
     .max(1)
-    .default(DEFAULT_CONTEXT_COMPACT_THRESHOLD_RATIO),
+    .default(getCatalogDefaultAutoCompactThresholdRatio()),
+  maxToolIterations: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_CONFIGURABLE_TOOL_ITERATIONS)
+    .default(getCatalogDefaultMaxToolIterations()),
   pricing: z
     .object({
       currency: z.literal("USD").default("USD"),
@@ -39,167 +48,62 @@ export const providerModelOptionSchema = z.object({
 });
 export type ProviderModelOption = z.infer<typeof providerModelOptionSchema>;
 
-type CatalogEntry = Omit<ProviderModelOption, "providerKind" | "source">;
-
-const CONTEXT_1M = {
-  contextWindowTokens: 1_000_000,
-  autoCompactThresholdRatio: DEFAULT_CONTEXT_COMPACT_THRESHOLD_RATIO
+type CatalogRecord = Record<string, unknown>;
+type CatalogEntryLike = {
+  kind: string;
+  models: readonly CatalogRecord[];
+  modelFallbacks: readonly CatalogRecord[];
 };
 
-const CONTEXT_256K = {
-  contextWindowTokens: 262_144,
-  autoCompactThresholdRatio: DEFAULT_CONTEXT_COMPACT_THRESHOLD_RATIO
-};
-
-const TEXT_INPUT = {
-  inputModalities: ["text"] as ModelInputModality[]
-};
-
-const VISION_INPUT = {
-  inputModalities: ["text", "image", "video"] as ModelInputModality[]
-};
-
-const PRICING_SOURCES = {
-  deepseek: "DeepSeek API pricing, 2026-06",
-  kimi: "Kimi API pricing, 2026-06",
-  minimax: "MiniMax API pricing, 2026-06",
-  doubao: "Volcengine ModelArk pricing, 2026-06",
-  qwen: "Alibaba Cloud Model Studio pricing, 2026-06"
-} as const;
-
-function usdPricing(
-  input: number,
-  output: number,
-  source: string,
-  cacheRead?: number
-): ModelPricingInfo {
-  return {
-    currency: "USD",
-    inputCostPerMillion: input,
-    outputCostPerMillion: output,
-    ...(cacheRead !== undefined ? { cacheReadCostPerMillion: cacheRead } : {}),
-    pricingSource: source
-  };
+export function getCatalogDefaultMaxToolIterations(): number {
+  return PROVIDER_CATALOG_SETTINGS.runtimeDefaults.maxToolIterations;
 }
 
-const CATALOG: Record<ProviderKind, CatalogEntry[]> = {
-  deepseek: [
-    {
-      id: "deepseek-v4-flash",
-      label: "DeepSeek V4 Flash",
-      reasoningModes: ["off", "high", "xhigh"],
-      ...TEXT_INPUT,
-      ...CONTEXT_1M,
-      pricing: usdPricing(0.14, 0.28, PRICING_SOURCES.deepseek, 0.0028)
-    },
-    {
-      id: "deepseek-v4-pro",
-      label: "DeepSeek V4 Pro",
-      reasoningModes: ["off", "high", "xhigh"],
-      ...TEXT_INPUT,
-      ...CONTEXT_1M,
-      pricing: usdPricing(0.435, 0.87, PRICING_SOURCES.deepseek, 0.003625)
-    }
-  ],
-  kimi: [
-    {
-      id: "kimi-k2.7-code",
-      label: "Kimi K2.7 Code",
-      reasoningModes: [],
-      reasoningAlwaysOn: true,
-      ...VISION_INPUT,
-      ...CONTEXT_256K,
-      pricing: usdPricing(0.95, 4, PRICING_SOURCES.kimi, 0.19)
-    },
-    {
-      id: "kimi-k2.6",
-      label: "Kimi K2.6",
-      reasoningModes: ["off", "auto"],
-      ...VISION_INPUT,
-      ...CONTEXT_256K,
-      pricing: usdPricing(0.95, 4, PRICING_SOURCES.kimi, 0.16)
-    },
-    {
-      id: "kimi-k2.5",
-      label: "Kimi K2.5",
-      reasoningModes: ["off", "auto"],
-      ...VISION_INPUT,
-      ...CONTEXT_256K,
-      pricing: usdPricing(0.6, 3, PRICING_SOURCES.kimi, 0.1)
-    }
-  ],
-  minimax: [
-    {
-      id: "MiniMax-M3",
-      label: "MiniMax M3",
-      reasoningModes: ["off", "auto"],
-      ...VISION_INPUT,
-      ...CONTEXT_1M,
-      pricing: usdPricing(0.3, 1.2, PRICING_SOURCES.minimax, 0.06)
-    }
-  ],
-  doubao: [
-    {
-      id: "doubao-seed-1-6-250615",
-      label: "Doubao Seed 1.6",
-      reasoningModes: ["off", "minimal", "low", "medium", "high"],
-      ...VISION_INPUT,
-      ...CONTEXT_256K,
-      pricing: usdPricing(0.8, 8, PRICING_SOURCES.doubao)
-    }
-  ],
-  qwen: [
-    {
-      id: "qwen-plus",
-      label: "Qwen Plus",
-      reasoningModes: ["off", "auto"],
-      ...TEXT_INPUT,
-      ...CONTEXT_1M,
-      pricing: usdPricing(0.4, 1.2, PRICING_SOURCES.qwen)
-    },
-    {
-      id: "qwen-flash",
-      label: "Qwen Flash",
-      reasoningModes: ["off", "auto"],
-      ...TEXT_INPUT,
-      ...CONTEXT_1M,
-      pricing: usdPricing(0.05, 0.4, PRICING_SOURCES.qwen)
-    },
-    {
-      id: "qwen3.5-plus",
-      label: "Qwen3.5 Plus",
-      reasoningModes: ["off", "auto"],
-      ...VISION_INPUT,
-      ...CONTEXT_1M,
-      pricing: usdPricing(0.115, 0.688, PRICING_SOURCES.qwen)
-    },
-    {
-      id: "qwen3.5-flash",
-      label: "Qwen3.5 Flash",
-      reasoningModes: ["off", "auto"],
-      ...VISION_INPUT,
-      ...CONTEXT_1M,
-      pricing: usdPricing(0.029, 0.287, PRICING_SOURCES.qwen)
-    },
-    {
-      id: "qwen3-max",
-      label: "Qwen3 Max",
-      reasoningModes: ["off", "auto"],
-      ...TEXT_INPUT,
-      ...CONTEXT_256K,
-      pricing: usdPricing(0.359, 1.434, PRICING_SOURCES.qwen)
-    }
-  ],
-  "openai-compatible": [],
-  custom: []
-};
+export function getCatalogDefaultAutoCompactThresholdRatio(): number {
+  return PROVIDER_CATALOG_SETTINGS.runtimeDefaults.autoCompactThresholdRatio;
+}
+
+export function getCatalogUsdToCnyExchangeRate(): number {
+  return PROVIDER_CATALOG_SETTINGS.currency.usdToCnyExchangeRate;
+}
 
 export function getCatalogModelOptions(kind: ProviderKind): ProviderModelOption[] {
-  return CATALOG[kind].map((entry) => ({
-    ...entry,
-    providerKind: kind,
-    source: "catalog" as const
-  }));
+  const entry = getGeneratedCatalogEntry(kind);
+  if (!entry) {
+    return [];
+  }
+  return entry.models.map((model) =>
+    providerModelOptionSchema.parse({
+      ...copyCapability(model),
+      id: model.id,
+      providerKind: kind,
+      source: "catalog" as const
+    })
+  );
+}
+
+export function getCatalogDefaultEnabledModelIds(kind: ProviderKind): string[] {
+  return getCatalogModelOptions(kind)
+    .filter((model) => model.enabled)
+    .map((model) => model.id);
+}
+
+export function getProviderConfigModelOptions(provider: ProviderConfig): ProviderModelOption[] {
+  const entry = getProviderCatalogEntryLike(provider);
+  return entry.models.map((model) =>
+    providerModelOptionSchema.parse({
+      ...copyCapability(model),
+      id: String(model.id),
+      providerKind: provider.kind,
+      source: "catalog" as const
+    })
+  );
+}
+
+export function getProviderConfigDefaultEnabledModelIds(provider: ProviderConfig): string[] {
+  return getProviderConfigModelOptions(provider)
+    .filter((model) => model.enabled)
+    .map((model) => model.id);
 }
 
 export function resolveProviderModelOption(
@@ -210,27 +114,52 @@ export function resolveProviderModelOption(
   if (exact) {
     return exact;
   }
-  return {
-    id: modelId,
-    providerKind: kind,
-    reasoningModes: inferReasoningModes(kind, modelId),
-    reasoningAlwaysOn: inferReasoningAlwaysOn(kind, modelId),
-    inputModalities: resolveModelInputModalities(kind, modelId),
-    ...inferModelContextInfo(kind, modelId),
-    ...inferModelPricingInfo(kind, modelId),
-    source: "live"
-  };
+  return resolveLiveModelOption(kind, modelId);
+}
+
+export function resolveProviderConfigModelOption(
+  provider: ProviderConfig,
+  modelId = provider.model
+): ProviderModelOption {
+  const exact = getProviderConfigModelOptions(provider).find((option) => option.id === modelId);
+  if (exact) {
+    return exact;
+  }
+  return resolveLiveModelOption(provider.kind, modelId, getProviderCatalogEntryLike(provider));
+}
+
+export function resolveProviderModelMaxToolIterations(
+  provider: Pick<ProviderConfig, "kind" | "model" | "modelOverrides">,
+  modelId = provider.model
+): number {
+  return (
+    provider.modelOverrides?.[modelId]?.maxToolIterations ??
+    resolveProviderModelOption(provider.kind, modelId).maxToolIterations
+  );
+}
+
+export function resolveProviderConfigModelMaxToolIterations(
+  provider: ProviderConfig,
+  modelId = provider.model
+): number {
+  return (
+    provider.modelOverrides?.[modelId]?.maxToolIterations ??
+    resolveProviderConfigModelOption(provider, modelId).maxToolIterations
+  );
 }
 
 export function resolveModelInputModalities(
   kind: ProviderKind,
   modelId: string
 ): ModelInputModality[] {
-  const exact = getCatalogModelOptions(kind).find((option) => option.id === modelId);
-  if (exact) {
-    return exact.inputModalities;
-  }
-  return inferModelInputModalities(kind, modelId);
+  return resolveProviderModelOption(kind, modelId).inputModalities;
+}
+
+export function resolveProviderConfigModelInputModalities(
+  provider: ProviderConfig,
+  modelId = provider.model
+): ModelInputModality[] {
+  return resolveProviderConfigModelOption(provider, modelId).inputModalities;
 }
 
 export function mergeProviderModelOptions(
@@ -253,55 +182,24 @@ export function mergeProviderModelOptions(
   return [...byId.values()];
 }
 
-function inferReasoningModes(kind: ProviderKind, modelId: string): ReasoningMode[] {
-  const normalized = modelId.toLowerCase();
-  if (kind === "deepseek" && normalized.startsWith("deepseek-v4-")) {
-    return ["off", "high", "xhigh"];
+export function mergeProviderConfigModelOptions(
+  provider: ProviderConfig,
+  liveModelIds: string[],
+  currentModelId = provider.model
+): ProviderModelOption[] {
+  const byId = new Map<string, ProviderModelOption>();
+  for (const option of getProviderConfigModelOptions(provider)) {
+    byId.set(option.id, option);
   }
-  if (kind === "kimi" && /^kimi-k2\.(5|6)\b/.test(normalized)) {
-    return ["off", "auto"];
+  for (const id of liveModelIds) {
+    if (!byId.has(id)) {
+      byId.set(id, resolveProviderConfigModelOption(provider, id));
+    }
   }
-  if (kind === "minimax" && normalized === "minimax-m3") {
-    return ["off", "auto"];
+  if (currentModelId && !byId.has(currentModelId)) {
+    byId.set(currentModelId, resolveProviderConfigModelOption(provider, currentModelId));
   }
-  if (kind === "doubao" && normalized.includes("seed")) {
-    return ["off", "minimal", "low", "medium", "high"];
-  }
-  if (kind === "qwen" && /(qwen|qwq)/.test(normalized)) {
-    return ["off", "auto"];
-  }
-  return [];
-}
-
-function inferReasoningAlwaysOn(kind: ProviderKind, modelId: string): boolean | undefined {
-  const normalized = modelId.toLowerCase();
-  if (kind === "kimi" && normalized === "kimi-k2.7-code") {
-    return true;
-  }
-  if (kind === "minimax" && /^minimax-m2\./.test(normalized)) {
-    return true;
-  }
-  return undefined;
-}
-
-function inferModelInputModalities(kind: ProviderKind, modelId: string): ModelInputModality[] {
-  const normalized = modelId.toLowerCase();
-  if (kind === "kimi" && /^kimi-k2\.(5|6)\b/.test(normalized)) {
-    return ["text", "image", "video"];
-  }
-  if (kind === "kimi" && normalized === "kimi-k2.7-code") {
-    return ["text", "image", "video"];
-  }
-  if (kind === "minimax" && normalized === "minimax-m3") {
-    return ["text", "image", "video"];
-  }
-  if (kind === "doubao" && normalized.includes("seed-1-6")) {
-    return ["text", "image", "video"];
-  }
-  if (kind === "qwen" && /^qwen3\.5-(plus|flash)\b/.test(normalized)) {
-    return ["text", "image", "video"];
-  }
-  return ["text"];
+  return [...byId.values()];
 }
 
 export function resolveModelContextInfo(
@@ -311,6 +209,19 @@ export function resolveModelContextInfo(
   const option = resolveProviderModelOption(kind, modelId);
   return {
     contextWindowTokens: option.contextWindowTokens,
+    autoCompactThresholdTokens: option.autoCompactThresholdTokens,
+    autoCompactThresholdRatio: option.autoCompactThresholdRatio
+  };
+}
+
+export function resolveProviderConfigModelContextInfo(
+  provider: ProviderConfig,
+  modelId = provider.model
+): ModelContextInfo {
+  const option = resolveProviderConfigModelOption(provider, modelId);
+  return {
+    contextWindowTokens: option.contextWindowTokens,
+    autoCompactThresholdTokens: option.autoCompactThresholdTokens,
     autoCompactThresholdRatio: option.autoCompactThresholdRatio
   };
 }
@@ -326,6 +237,17 @@ export function resolveModelPricingInfo(
   );
 }
 
+export function resolveProviderConfigModelPricingInfo(
+  provider: ProviderConfig,
+  modelId = provider.model
+): ModelPricingInfo {
+  return (
+    resolveProviderConfigModelOption(provider, modelId).pricing ?? {
+      currency: "USD"
+    }
+  );
+}
+
 export function estimateProviderModelCostUsd(
   kind: ProviderKind,
   modelId: string,
@@ -334,77 +256,122 @@ export function estimateProviderModelCostUsd(
   return estimateModelCostUsd(resolveModelPricingInfo(kind, modelId), usage);
 }
 
-function inferModelContextInfo(kind: ProviderKind, modelId: string): ModelContextInfo {
+export function estimateProviderConfigModelCostUsd(
+  provider: ProviderConfig,
+  usage: Parameters<typeof estimateModelCostUsd>[1],
+  modelId = provider.model
+): number | undefined {
+  return estimateModelCostUsd(resolveProviderConfigModelPricingInfo(provider, modelId), usage);
+}
+
+function resolveLiveModelOption(
+  kind: ProviderKind,
+  modelId: string,
+  catalogEntry = getGeneratedCatalogEntry(kind)
+): ProviderModelOption {
   const normalized = modelId.toLowerCase();
-  if (kind === "deepseek" && normalized.startsWith("deepseek-v4-")) {
-    return CONTEXT_1M;
+  let draft: CatalogRecord = {
+    id: modelId,
+    providerKind: kind,
+    reasoningModes: [],
+    inputModalities: ["text"],
+    autoCompactThresholdRatio: getCatalogDefaultAutoCompactThresholdRatio(),
+    maxToolIterations: getCatalogDefaultMaxToolIterations(),
+    source: "live" as const
+  };
+
+  for (const fallback of catalogEntry?.modelFallbacks ?? []) {
+    if (typeof fallback.pattern !== "string") {
+      continue;
+    }
+    if (new RegExp(fallback.pattern, "i").test(normalized)) {
+      draft = {
+        ...draft,
+        ...copyCapability(fallback)
+      };
+    }
   }
-  if (kind === "kimi" && /^kimi-k2\.(5|6)\b/.test(normalized)) {
-    return CONTEXT_256K;
-  }
-  if (kind === "kimi" && normalized === "kimi-k2.7-code") {
-    return CONTEXT_256K;
-  }
-  if (kind === "minimax" && normalized === "minimax-m3") {
-    return CONTEXT_1M;
-  }
-  if (kind === "doubao" && normalized.includes("seed-1-6")) {
-    return CONTEXT_256K;
-  }
-  if (
-    kind === "qwen" &&
-    /^(qwen-plus|qwen-flash|qwen3\.5-plus|qwen3\.5-flash)\b/.test(normalized)
-  ) {
-    return CONTEXT_1M;
-  }
-  if (kind === "qwen" && normalized.startsWith("qwen3-max")) {
-    return CONTEXT_256K;
+
+  return providerModelOptionSchema.parse(draft);
+}
+
+function getGeneratedCatalogEntry(kind: ProviderKind): CatalogEntryLike | undefined {
+  const entry = (PROVIDER_CATALOG as unknown as Record<string, CatalogEntryLike | undefined>)[kind];
+  if (!entry) {
+    return undefined;
   }
   return {
-    autoCompactThresholdRatio: DEFAULT_CONTEXT_COMPACT_THRESHOLD_RATIO
+    kind,
+    models: [...entry.models],
+    modelFallbacks: [...entry.modelFallbacks]
   };
 }
 
-function inferModelPricingInfo(
-  kind: ProviderKind,
-  modelId: string
-): { pricing?: ModelPricingInfo } {
-  const normalized = modelId.toLowerCase();
-  if (kind === "deepseek" && normalized === "deepseek-v4-flash") {
-    return { pricing: usdPricing(0.14, 0.28, PRICING_SOURCES.deepseek, 0.0028) };
+function getProviderCatalogEntryLike(provider: ProviderConfig): CatalogEntryLike {
+  const catalog = provider.catalog;
+  if (isRecord(catalog)) {
+    const models = Array.isArray(catalog.models)
+      ? catalog.models.filter(isRecord)
+      : [];
+    const modelFallbacks = Array.isArray(catalog.modelFallbacks)
+      ? catalog.modelFallbacks.filter(isRecord)
+      : [];
+    return {
+      kind: provider.kind,
+      models,
+      modelFallbacks
+    };
   }
-  if (kind === "deepseek" && normalized === "deepseek-v4-pro") {
-    return { pricing: usdPricing(0.435, 0.87, PRICING_SOURCES.deepseek, 0.003625) };
+  return getGeneratedCatalogEntry(provider.kind) ?? {
+    kind: provider.kind,
+    models: [],
+    modelFallbacks: []
+  };
+}
+
+function copyCapability(input: CatalogRecord): CatalogRecord {
+  const output: CatalogRecord = {};
+  copyString(input, output, "label");
+  copyString(input, output, "currency");
+  copyBoolean(input, output, "reasoningAlwaysOn");
+  copyBoolean(input, output, "enabled");
+  copyString(input, output, "defaultReasoningMode");
+  copyNumber(input, output, "contextWindowTokens");
+  copyNumber(input, output, "autoCompactThresholdTokens");
+  copyNumber(input, output, "autoCompactThresholdRatio");
+  copyNumber(input, output, "maxToolIterations");
+  copyStringArray(input, output, "reasoningModes");
+  copyStringArray(input, output, "inputModalities");
+  if (isRecord(input.pricing)) {
+    output.pricing = { ...input.pricing };
   }
-  if (kind === "kimi" && normalized === "kimi-k2.7-code") {
-    return { pricing: usdPricing(0.95, 4, PRICING_SOURCES.kimi, 0.19) };
+  return output;
+}
+
+function copyString(input: CatalogRecord, output: CatalogRecord, key: string): void {
+  if (typeof input[key] === "string") {
+    output[key] = input[key];
   }
-  if (kind === "kimi" && normalized === "kimi-k2.6") {
-    return { pricing: usdPricing(0.95, 4, PRICING_SOURCES.kimi, 0.16) };
+}
+
+function copyBoolean(input: CatalogRecord, output: CatalogRecord, key: string): void {
+  if (typeof input[key] === "boolean") {
+    output[key] = input[key];
   }
-  if (kind === "kimi" && normalized === "kimi-k2.5") {
-    return { pricing: usdPricing(0.6, 3, PRICING_SOURCES.kimi, 0.1) };
+}
+
+function copyNumber(input: CatalogRecord, output: CatalogRecord, key: string): void {
+  if (typeof input[key] === "number") {
+    output[key] = input[key];
   }
-  if (kind === "minimax" && normalized === "minimax-m3") {
-    return { pricing: usdPricing(0.3, 1.2, PRICING_SOURCES.minimax, 0.06) };
+}
+
+function copyStringArray(input: CatalogRecord, output: CatalogRecord, key: string): void {
+  if (Array.isArray(input[key])) {
+    output[key] = [...input[key]];
   }
-  if (kind === "doubao" && normalized.includes("seed-1-6")) {
-    return { pricing: usdPricing(0.8, 8, PRICING_SOURCES.doubao) };
-  }
-  if (kind === "qwen" && normalized === "qwen-plus") {
-    return { pricing: usdPricing(0.4, 1.2, PRICING_SOURCES.qwen) };
-  }
-  if (kind === "qwen" && normalized === "qwen-flash") {
-    return { pricing: usdPricing(0.05, 0.4, PRICING_SOURCES.qwen) };
-  }
-  if (kind === "qwen" && normalized.startsWith("qwen3.5-plus")) {
-    return { pricing: usdPricing(0.115, 0.688, PRICING_SOURCES.qwen) };
-  }
-  if (kind === "qwen" && normalized.startsWith("qwen3.5-flash")) {
-    return { pricing: usdPricing(0.029, 0.287, PRICING_SOURCES.qwen) };
-  }
-  if (kind === "qwen" && normalized.startsWith("qwen3-max")) {
-    return { pricing: usdPricing(0.359, 1.434, PRICING_SOURCES.qwen) };
-  }
-  return {};
+}
+
+function isRecord(value: unknown): value is CatalogRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

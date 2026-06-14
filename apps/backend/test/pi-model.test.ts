@@ -4,6 +4,7 @@ import { nowIso, type ProviderConfig } from "@chengxiaobang/shared";
 import {
   buildModel,
   buildModelStreamOptions,
+  listProviderModels,
   testProvider,
   toTokenUsage
 } from "../src/model/pi-model";
@@ -48,8 +49,31 @@ describe("buildModel", () => {
       provider: "moonshotai",
       baseUrl: "https://api.moonshot.ai/v1"
     });
-    // Unknown kinds pass through so baseUrl-based compat detection still applies.
+    // 未知 kind 原样透传，仍可依赖 baseUrl 做兼容探测。
     expect(buildModel(provider({ kind: "custom" }))).toMatchObject({ provider: "custom" });
+  });
+
+  it("maps Gemini to the native Google Gen AI protocol", () => {
+    expect(
+      buildModel(
+        provider({
+          id: "gemini",
+          kind: "gemini",
+          name: "Gemini",
+          baseURL: "https://generativelanguage.googleapis.com/v1beta/",
+          model: "gemini-3.5-flash",
+          api: "google-generative-ai",
+          auth: { type: "x-api-key", header: "x-goog-api-key" }
+        })
+      )
+    ).toMatchObject({
+      id: "gemini-3.5-flash",
+      api: "google-generative-ai",
+      provider: "google",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      input: ["text", "image"],
+      contextWindow: 1_048_576
+    });
   });
 
   it("enables DeepSeek reasoning only when a mode is selected", () => {
@@ -156,8 +180,47 @@ describe("testProvider", () => {
   });
 });
 
+describe("listProviderModels", () => {
+  it("parses Google Gen AI model names and sends the configured API key header", async () => {
+    const requests: Array<{ url: string; apiKey: string | undefined }> = [];
+    globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({
+        url: String(url),
+        apiKey: (init?.headers as Record<string, string>)?.["x-goog-api-key"]
+      });
+      return Response.json({
+        models: [
+          { name: "models/gemini-3.5-flash" },
+          { name: "models/gemini-3.1-pro-preview" }
+        ]
+      });
+    }) as typeof fetch;
+
+    await expect(
+      listProviderModels(
+        provider({
+          id: "gemini",
+          kind: "gemini",
+          name: "Gemini",
+          baseURL: "https://generativelanguage.googleapis.com/v1beta/",
+          model: "gemini-3.5-flash",
+          api: "google-generative-ai",
+          auth: { type: "x-api-key", header: "x-goog-api-key" }
+        }),
+        "gemini-key"
+      )
+    ).resolves.toEqual(["gemini-3.5-flash", "gemini-3.1-pro-preview"]);
+    expect(requests).toEqual([
+      {
+        url: "https://generativelanguage.googleapis.com/v1beta/models",
+        apiKey: "gemini-key"
+      }
+    ]);
+  });
+});
+
 describe("reasoning wire options", () => {
-  it("maps DeepSeek high/xhigh/off to thinking and reasoning_effort", async () => {
+  it("maps DeepSeek high/xhigh to thinking fields and keeps off silent", async () => {
     await expect(expectRequestBody(provider({ reasoningMode: "high" }))).resolves.toMatchObject({
       thinking: { type: "enabled" },
       reasoning_effort: "high"
@@ -167,11 +230,11 @@ describe("reasoning wire options", () => {
       reasoning_effort: "max"
     });
     const off = await expectRequestBody(provider({ reasoningMode: "off" }));
-    expect(off).toMatchObject({ thinking: { type: "disabled" } });
+    expect(off).not.toHaveProperty("thinking");
     expect(off).not.toHaveProperty("reasoning_effort");
   });
 
-  it("maps Qwen auto/off to enable_thinking", async () => {
+  it("maps Qwen auto to enable_thinking and keeps off silent", async () => {
     await expect(
       expectRequestBody(
         provider({
@@ -179,23 +242,22 @@ describe("reasoning wire options", () => {
           kind: "qwen",
           name: "千问",
           baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-          model: "qwen-plus",
+          model: "qwen3.7-max",
           reasoningMode: "auto"
         })
       )
     ).resolves.toMatchObject({ enable_thinking: true });
-    await expect(
-      expectRequestBody(
-        provider({
-          id: "qwen",
-          kind: "qwen",
-          name: "千问",
-          baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-          model: "qwen-plus",
-          reasoningMode: "off"
-        })
-      )
-    ).resolves.toMatchObject({ enable_thinking: false });
+    const off = await expectRequestBody(
+      provider({
+        id: "qwen",
+        kind: "qwen",
+        name: "千问",
+        baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        model: "qwen3.7-max",
+        reasoningMode: "off"
+      })
+    );
+    expect(off).not.toHaveProperty("enable_thinking");
   });
 
   it("maps Doubao effort modes through Ark-compatible thinking fields", async () => {
@@ -206,7 +268,7 @@ describe("reasoning wire options", () => {
           kind: "doubao",
           name: "豆包",
           baseURL: "https://ark.cn-beijing.volces.com/api/v3",
-          model: "doubao-seed-1-6-250615",
+          model: "doubao-seed-2.0-pro",
           reasoningMode: "medium"
         })
       )
@@ -325,7 +387,7 @@ describe("deepseek wire format through pi", () => {
       cachedPromptTokens: 4
     });
     expect(usage.costUsd).toBeCloseTo(0.0000022512);
-    // reasoning:false keeps thinking request params off the wire entirely.
+    // reasoning:false 时不应向请求体写入任何 thinking 参数。
     expect(requestBody).not.toHaveProperty("thinking");
     expect(requestBody).toMatchObject({ model: "deepseek-v4-flash", stream: true });
   });

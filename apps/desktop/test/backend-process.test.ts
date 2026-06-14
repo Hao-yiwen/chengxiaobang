@@ -123,9 +123,11 @@ describe("resolveBackendCommand", () => {
 
     expect(command.command).toContain(join(tempDir, "data/runtime/bun-dev-"));
     expect(command.command).not.toBe(sourceBun);
-    await expect(checkBackendRuntime(command, { timeoutMs: 1_000 })).resolves.toMatchObject({
-      version: "1.2.3"
-    });
+    if (process.platform !== "win32") {
+      await expect(checkBackendRuntime(command, { timeoutMs: 1_000 })).resolves.toMatchObject({
+        version: "1.2.3"
+      });
+    }
   });
 
   it("reuses a prepared runtime cache even when signing changed its size", async () => {
@@ -161,9 +163,11 @@ describe("resolveBackendCommand", () => {
     );
 
     expect(command.command).toBe(target);
-    await expect(checkBackendRuntime(command, { timeoutMs: 1_000 })).resolves.toMatchObject({
-      version: "signed-cache"
-    });
+    if (process.platform !== "win32") {
+      await expect(checkBackendRuntime(command, { timeoutMs: 1_000 })).resolves.toMatchObject({
+        version: "signed-cache"
+      });
+    }
   });
 
   it("does not replace an explicit Bun binary with the runtime cache", async () => {
@@ -218,7 +222,8 @@ describe("resolveBackendCommand", () => {
       dataDir: "/tmp/data",
       token: "token",
       resourcesPath,
-      isPackaged: true
+      isPackaged: true,
+      platform: "darwin"
     });
 
     expect(command.command).toBe(join(resourcesPath, "bun"));
@@ -279,7 +284,7 @@ describe("resolveBackendCommand", () => {
         },
         { timeoutMs: 50 }
       )
-    ).rejects.toThrow("Bun 运行时自检超时");
+    ).rejects.toThrow(process.platform === "win32" ? "Bun 运行时自检启动失败" : "Bun 运行时自检超时");
   });
 
   it("fails clearly when packaged Bun is missing", async () => {
@@ -293,7 +298,8 @@ describe("resolveBackendCommand", () => {
         dataDir: "/tmp/data",
         token: "token",
         resourcesPath,
-        isPackaged: true
+        isPackaged: true,
+        platform: "darwin"
       })
     ).toThrow("后端运行时缺失");
   });

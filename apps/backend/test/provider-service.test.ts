@@ -85,18 +85,19 @@ describe("ProviderService", () => {
     await expect(service.listModels("missing")).rejects.toThrow("模型配置不存在");
   });
 
-  it("rejects saving a provider without any API key", async () => {
+  it("allows saving provider connection metadata without an API key", async () => {
     const secrets = new MemorySecretStore();
     const service = new ProviderService(store, secrets, vi.fn());
 
-    await expect(
-      service.saveProvider({
-        kind: "deepseek",
-        name: "DeepSeek",
-        baseURL: "https://api.deepseek.com",
-        model: "deepseek-v4-flash"
-      })
-    ).rejects.toThrow("请填写 API Key");
+    const provider = await service.saveProvider({
+      kind: "deepseek",
+      name: "DeepSeek",
+      baseURL: "https://api.deepseek.com",
+      model: "deepseek-v4-flash"
+    });
+
+    expect(provider.apiKeyRef).toBeUndefined();
+    await expect(service.testProvider(provider.id)).rejects.toThrow("请先填写 API Key");
   });
 
   it("keeps the stored key when editing without entering a new one", async () => {
@@ -135,14 +136,27 @@ describe("ProviderService", () => {
       // 默认模型不在勾选列表里时回退到列表第一个；重复项被去重。
       model: "deepseek-chat",
       models: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash"],
+      modelOverrides: {
+        "deepseek-v4-flash": { maxToolIterations: 500 },
+        "deepseek-v4-pro": { maxToolIterations: 700 },
+        "deepseek-chat": { maxToolIterations: 900 }
+      },
       apiKey: "secret-key"
     });
 
     expect(provider.models).toEqual(["deepseek-v4-flash", "deepseek-v4-pro"]);
     expect(provider.model).toBe("deepseek-v4-flash");
+    expect(provider.modelOverrides).toEqual({
+      "deepseek-v4-flash": { maxToolIterations: 500 },
+      "deepseek-v4-pro": { maxToolIterations: 700 }
+    });
 
     const roundTripped = await store.getProvider(provider.id);
     expect(roundTripped?.models).toEqual(["deepseek-v4-flash", "deepseek-v4-pro"]);
+    expect(roundTripped?.modelOverrides).toEqual({
+      "deepseek-v4-flash": { maxToolIterations: 500 },
+      "deepseek-v4-pro": { maxToolIterations: 700 }
+    });
   });
 
   it("lists merged model options with reasoning capabilities", async () => {

@@ -22,6 +22,7 @@ import {
   mapSession,
   mapSessionSearchResult,
   mapToolCall,
+  mapUsageCostEntry,
   mapUsageStatsSourceRun
 } from "./sqlite-mappers";
 import { resolveSqlWasmPath } from "./sqlite-runtime";
@@ -37,6 +38,9 @@ import type {
   StoredMessage,
   UpdateScheduledTaskInput,
   UpdateSessionInput,
+  UpsertUsageCostEntryInput,
+  UsageCostEntry,
+  UsageCostEntryFilter,
   UsageStatsSourceRun
 } from "./state-store";
 
@@ -620,14 +624,119 @@ export class SqliteStateStore implements StateStore {
       `select
          runs.*,
          sessions.provider_id as fallback_provider_id,
-         sessions.model as session_model,
-         providers.kind as fallback_provider_kind,
-         providers.model as provider_model
+         sessions.model as session_model
        from runs
        left join sessions on sessions.id = runs.session_id
-       left join providers on providers.id = coalesce(runs.provider_id, sessions.provider_id)
        order by runs.created_at asc, runs.id asc`
     ).map(mapUsageStatsSourceRun);
+  }
+
+  async upsertUsageCostEntry(
+    input: UpsertUsageCostEntryInput
+  ): Promise<UsageCostEntry> {
+    const id = input.id ?? createId("usage_cost");
+    const recordedAt = nowIso();
+    this.run(
+      `insert into usage_cost_entries
+       (id, run_id, session_id, attempt_index, provider_id, provider_kind, model,
+        status_code, error_code, error_message, prompt_tokens, completion_tokens,
+        cached_prompt_tokens, total_tokens, input_estimated_tokens, cost_usd,
+        cost_cny, cost_source, token_count_source, billable, entry_created_at, recorded_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       on conflict(run_id, attempt_index) do update set
+         provider_id = excluded.provider_id,
+         provider_kind = excluded.provider_kind,
+         model = excluded.model,
+         status_code = excluded.status_code,
+         error_code = excluded.error_code,
+         error_message = excluded.error_message,
+         prompt_tokens = excluded.prompt_tokens,
+         completion_tokens = excluded.completion_tokens,
+         cached_prompt_tokens = excluded.cached_prompt_tokens,
+         total_tokens = excluded.total_tokens,
+         input_estimated_tokens = excluded.input_estimated_tokens,
+         cost_usd = excluded.cost_usd,
+         cost_cny = excluded.cost_cny,
+         cost_source = excluded.cost_source,
+         token_count_source = excluded.token_count_source,
+         billable = excluded.billable,
+         entry_created_at = excluded.entry_created_at,
+         recorded_at = excluded.recorded_at`,
+      [
+        id,
+        input.runId,
+        input.sessionId,
+        input.attemptIndex,
+        input.providerId ?? null,
+        input.providerKind ?? null,
+        input.model ?? null,
+        input.statusCode ?? null,
+        input.errorCode ?? null,
+        input.errorMessage ?? null,
+        input.promptTokens,
+        input.completionTokens,
+        input.cachedPromptTokens,
+        input.totalTokens,
+        input.inputEstimatedTokens,
+        input.costUsd,
+        input.costCny,
+        input.costSource,
+        input.tokenCountSource,
+        input.billable ? 1 : 0,
+        input.entryCreatedAt,
+        recordedAt
+      ]
+    );
+    await this.flush();
+    const rows = this.query(
+      "select * from usage_cost_entries where run_id = ? and attempt_index = ?",
+      [input.runId, input.attemptIndex]
+    );
+    if (rows.length === 0) {
+      throw new Error("费用账本写入失败");
+    }
+    const entry = mapUsageCostEntry(rows[0]);
+    console.debug("[state-store] 费用账本已写入", {
+      runId: entry.runId,
+      sessionId: entry.sessionId,
+      attemptIndex: entry.attemptIndex,
+      costSource: entry.costSource,
+      billable: entry.billable,
+      costCny: entry.costCny
+    });
+    return entry;
+  }
+
+  async listUsageCostEntries(
+    filter: UsageCostEntryFilter = {}
+  ): Promise<UsageCostEntry[]> {
+    const where: string[] = [];
+    const params: SqlParam[] = [];
+    if (filter.sessionId) {
+      where.push("session_id = ?");
+      params.push(filter.sessionId);
+    }
+    if (filter.finalizedOnly) {
+      where.push("cost_source <> ?");
+      params.push("pending");
+    }
+    const whereSql = where.length > 0 ? ` where ${where.join(" and ")}` : "";
+    return this.query(
+      `select * from usage_cost_entries${whereSql}
+       order by entry_created_at asc, run_id asc, attempt_index asc`,
+      params
+    ).map(mapUsageCostEntry);
+  }
+
+  async getSessionUsageCostCny(sessionId: string): Promise<number> {
+    await this.assertSessionExists(sessionId);
+    const rows = this.query(
+      `select coalesce(sum(cost_cny), 0) as cost_cny
+       from usage_cost_entries
+       where session_id = ? and cost_source <> ?`,
+      [sessionId, "pending"]
+    );
+    return roundCurrency(Number(rows[0]?.cost_cny ?? 0));
   }
 
   async listToolCallsForSession(sessionId: string): Promise<ToolCall[]> {
@@ -653,14 +762,15 @@ export class SqliteStateStore implements StateStore {
   async upsertProvider(provider: ProviderConfig): Promise<ProviderConfig> {
     this.run(
       `insert into providers
-       (id, kind, name, base_url, model, models, reasoning_mode, api_key_ref, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, kind, name, base_url, model, models, model_overrides, reasoning_mode, api_key_ref, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        on conflict(id) do update set
          kind = excluded.kind,
          name = excluded.name,
          base_url = excluded.base_url,
          model = excluded.model,
          models = excluded.models,
+         model_overrides = excluded.model_overrides,
          reasoning_mode = excluded.reasoning_mode,
          api_key_ref = excluded.api_key_ref,
          updated_at = excluded.updated_at`,
@@ -671,6 +781,9 @@ export class SqliteStateStore implements StateStore {
         provider.baseURL,
         provider.model,
         provider.models && provider.models.length > 0 ? JSON.stringify(provider.models) : null,
+        provider.modelOverrides && Object.keys(provider.modelOverrides).length > 0
+          ? JSON.stringify(provider.modelOverrides)
+          : null,
         provider.reasoningMode ?? null,
         provider.apiKeyRef ?? null,
         provider.createdAt,
@@ -863,12 +976,8 @@ export class SqliteStateStore implements StateStore {
   }
 
   private async assertProviderExists(providerId: string | undefined): Promise<void> {
-    if (!providerId) {
-      return;
-    }
-    if (!(await this.getProvider(providerId))) {
-      throw new Error("模型配置不存在");
-    }
+    // provider 已迁移到 ~/.chengxiaobang/config.yaml；SQLite 只保存会话里的 providerId 快照。
+    void providerId;
   }
 
   private async assertSessionExists(sessionId: string): Promise<void> {
@@ -941,4 +1050,8 @@ export class SqliteStateStore implements StateStore {
     }
     return this.db;
   }
+}
+
+function roundCurrency(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }

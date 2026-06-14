@@ -1,4 +1,4 @@
-import { getCatalogModelOptions } from "@chengxiaobang/shared";
+import { getCatalogModelOptions, getCatalogProviderKinds } from "@chengxiaobang/shared";
 import type { ProviderConfig, ProviderKind, ReasoningMode } from "@chengxiaobang/shared";
 import type { AppState } from "../types";
 
@@ -21,13 +21,7 @@ export function configuredProviderById(
   return isConfiguredProvider(provider) ? provider : undefined;
 }
 
-const CATALOG_PROVIDER_KINDS: ProviderKind[] = [
-  "deepseek",
-  "kimi",
-  "minimax",
-  "doubao",
-  "qwen"
-];
+const CATALOG_PROVIDER_KINDS = getCatalogProviderKinds();
 
 function catalogOwnsModel(kind: ProviderKind, model: string): boolean {
   return getCatalogModelOptions(kind).some((option) => option.id === model);

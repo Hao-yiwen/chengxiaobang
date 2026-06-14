@@ -17,7 +17,8 @@ export default defineConfig({
     "docx",
     "exceljs",
     "@larksuiteoapi/node-sdk",
-    "hono"
+    "hono",
+    "js-yaml"
   ],
   // Optional native peers of ws (pulled in via the lark SDK); ws degrades
   // gracefully at runtime when they're absent, but esbuild must not resolve them.

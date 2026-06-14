@@ -1,4 +1,4 @@
-import type { ProviderInput, ProviderKind } from "@chengxiaobang/shared";
+import type { ProviderInput } from "@chengxiaobang/shared";
 
 /** 校验错误对应的 i18n key（与 locales 中 settings.providers.errors.* 一一对应）。 */
 export type ProviderErrorKey =
@@ -14,11 +14,6 @@ export interface ProviderDraftErrors {
   baseURL?: ProviderErrorKey;
   apiKey?: ProviderErrorKey;
   model?: ProviderErrorKey;
-}
-
-/** 目录型供应商内置模型清单（多选）；自定义/OpenAI 兼容则手填模型 ID。 */
-export function isCatalogProvider(kind: ProviderKind): boolean {
-  return kind !== "openai-compatible" && kind !== "custom";
 }
 
 export function isValidBaseUrl(value: string): boolean {

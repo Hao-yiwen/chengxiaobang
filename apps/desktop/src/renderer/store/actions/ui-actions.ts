@@ -50,7 +50,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
               ? normalizeModelForProvider(
                   provider,
                   state.model,
-                  state.reasoningMode,
+                  undefined,
                   "setProviderId"
                 )
               : { model: undefined, reasoningMode: undefined })
@@ -70,6 +70,9 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           ...resetHomePlanMode("setActiveProjectId", state.planMode),
           activeProjectId,
           activeSessionId: undefined,
+          providerId: undefined,
+          model: undefined,
+          reasoningMode: undefined,
           messages: [],
           toolHistory: [],
           runHistory: [],
@@ -97,6 +100,10 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
       setTheme: (theme) => set({ theme }),
       setLocale: (locale) => set({ locale }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      setProjectSortMode: (projectSortMode) => {
+        console.info("[store] 切换项目排序方式", { projectSortMode });
+        set({ projectSortMode });
+      },
       toggleRightPanel: () =>
         set((state) => {
           const patch: RightPanelPatch = state.rightPanelOpen

@@ -1,8 +1,15 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import initSqlJs from "sql.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { nowIso, type ProviderConfig, type ToolCall } from "@chengxiaobang/shared";
+import {
+  nowIso,
+  resolveProviderModelMaxToolIterations,
+  type ProviderConfig,
+  type ToolCall
+} from "@chengxiaobang/shared";
+import { resolveSqlWasmPath } from "../src/repository/sqlite-runtime";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 
 describe("SqliteStateStore", () => {
@@ -467,15 +474,6 @@ describe("SqliteStateStore", () => {
         error: "模型 token 超限"
       }
     ]);
-    const usageStatsRuns = await second.listUsageStatsRuns();
-    expect(usageStatsRuns.find((run) => run.id === "run_1")).toMatchObject({
-      providerId: "deepseek",
-      providerKind: "deepseek",
-      model: "deepseek-v4-flash"
-    });
-    expect(usageStatsRuns.find((run) => run.id === "run_2")).not.toHaveProperty(
-      "providerKind"
-    );
     expect(await second.listToolCallsForSession(session.id)).toMatchObject([
       {
         id: "tool_1",
@@ -1062,6 +1060,11 @@ describe("SqliteStateStore", () => {
       name: "DeepSeek",
       baseURL: "https://api.deepseek.com",
       model: "deepseek-v4-pro",
+      models: ["deepseek-v4-flash", "deepseek-v4-pro"],
+      modelOverrides: {
+        "deepseek-v4-flash": { maxToolIterations: 500 },
+        "deepseek-v4-pro": { maxToolIterations: 900 }
+      },
       reasoningMode: "xhigh",
       apiKeyRef: "memory:deepseek",
       createdAt: timestamp,
@@ -1073,52 +1076,31 @@ describe("SqliteStateStore", () => {
     await second.initialize();
     await expect(second.getProvider("deepseek")).resolves.toMatchObject({
       model: "deepseek-v4-pro",
+      modelOverrides: {
+        "deepseek-v4-flash": { maxToolIterations: 500 },
+        "deepseek-v4-pro": { maxToolIterations: 900 }
+      },
       reasoningMode: "xhigh"
     });
     await second.close();
   });
 
-  it("migrates legacy built-in provider presets to current official models", async () => {
+  it("migrates legacy provider rows without model overrides", async () => {
     const dbPath = join(dir, "state.sqlite");
-    const first = new SqliteStateStore(dbPath);
-    await first.initialize();
-    const timestamp = nowIso();
-    await first.upsertProvider({
-      id: "deepseek",
-      kind: "deepseek",
-      name: "DeepSeek",
-      baseURL: "https://api.deepseek.com",
-      model: "deepseek-chat",
-      apiKeyRef: "memory:deepseek",
-      createdAt: timestamp,
-      updatedAt: timestamp
-    });
-    await first.upsertProvider({
-      id: "kimi",
-      kind: "kimi",
-      name: "Kimi",
-      baseURL: "https://api.moonshot.cn/v1",
-      model: "moonshot-v1-8k",
-      apiKeyRef: "memory:kimi",
-      createdAt: timestamp,
-      updatedAt: timestamp
-    });
-    await first.close();
+    await writeLegacyProviderDatabase(dbPath);
 
-    const second = new SqliteStateStore(dbPath);
-    await second.initialize();
+    const store = new SqliteStateStore(dbPath);
+    await store.initialize();
+    const provider = await store.getProvider("legacy_deepseek");
 
-    await expect(second.getProvider("deepseek")).resolves.toMatchObject({
-      model: "deepseek-v4-flash",
-      apiKeyRef: "memory:deepseek"
+    expect(provider).toMatchObject({
+      id: "legacy_deepseek",
+      model: "deepseek-v4-flash"
     });
-    await expect(second.getProvider("kimi")).resolves.toMatchObject({
-      baseURL: "https://api.moonshot.ai/v1",
-      model: "kimi-k2.6",
-      apiKeyRef: "memory:kimi"
-    });
+    expect(provider?.modelOverrides).toBeUndefined();
+    expect(provider ? resolveProviderModelMaxToolIterations(provider) : undefined).toBe(500);
 
-    await second.close();
+    await store.close();
   });
 
   it("persists scheduled tasks across restarts and supports partial updates", async () => {
@@ -1251,5 +1233,47 @@ async function seedProviders(store: SqliteStateStore): Promise<void> {
   ];
   for (const provider of providers) {
     await store.upsertProvider(provider);
+  }
+}
+
+async function writeLegacyProviderDatabase(dbPath: string): Promise<void> {
+  const SQL = await initSqlJs({ locateFile: () => resolveSqlWasmPath() });
+  const db = new SQL.Database();
+  const timestamp = nowIso();
+  try {
+    db.run(`
+      create table providers (
+        id text primary key,
+        kind text not null,
+        name text not null,
+        base_url text not null,
+        model text not null,
+        models text,
+        reasoning_mode text,
+        api_key_ref text,
+        created_at text not null,
+        updated_at text not null
+      );
+    `);
+    db.run(
+      `insert into providers
+       (id, kind, name, base_url, model, models, reasoning_mode, api_key_ref, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "legacy_deepseek",
+        "deepseek",
+        "Legacy DeepSeek",
+        "https://api.deepseek.com",
+        "deepseek-v4-flash",
+        null,
+        null,
+        "memory:legacy",
+        timestamp,
+        timestamp
+      ]
+    );
+    await writeFile(dbPath, Buffer.from(db.export()));
+  } finally {
+    db.close();
   }
 }

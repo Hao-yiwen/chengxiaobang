@@ -68,9 +68,10 @@ export async function cleanupStaleDevBackends({
   logger = console,
   waitMs = 800,
   execFileImpl = execFileAsync,
-  killImpl = process.kill
+  killImpl = process.kill,
+  platform = process.platform
 }) {
-  if (process.platform === "win32") {
+  if (platform === "win32") {
     return cleanupStaleWindowsDevBackends({ repoRoot, logger, execFileImpl });
   }
 
@@ -114,7 +115,15 @@ async function cleanupStaleWindowsDevBackends({ repoRoot, logger, execFileImpl }
     return { matchedProcesses: [], processGroups: [], pids: [] };
   }
 
-  const targets = collectDevBackendCleanupTargets(parseWindowsProcessList(stdout), { repoRoot });
+  let processes;
+  try {
+    processes = parseWindowsProcessList(stdout);
+  } catch (error) {
+    logger.warn(`[dev] 解析 Windows 进程列表失败，继续启动：${error.message}`);
+    return { matchedProcesses: [], processGroups: [], pids: [] };
+  }
+
+  const targets = collectDevBackendCleanupTargets(processes, { repoRoot });
   if (targets.matchedProcesses.length === 0) {
     logger.log("[dev] 未发现需要清理的旧后端进程。");
     return targets;

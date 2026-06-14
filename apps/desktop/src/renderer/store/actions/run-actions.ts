@@ -29,7 +29,11 @@ import {
   unpauseRunQueue,
   upsertQueuedRunsForSession
 } from "../helpers/queues";
-import { configuredProviderById, normalizeModelForProvider } from "../helpers/providers";
+import {
+  configuredProviderById,
+  firstConfiguredProvider,
+  normalizeModelForProvider
+} from "../helpers/providers";
 import {
   activeRunRecoveryPatch,
   autoOpenProgressPanelPatch,
@@ -42,6 +46,25 @@ import {
 import { latestActiveRunSnapshot, runRecordFromEndEvent, upsertRunHistory } from "../helpers/run-records";
 import { clearRunRunning, clearSessionRunning, markRunRunning, markSessionRunning } from "../helpers/running";
 import { resolveRunProvider, selectActiveProject } from "../selectors";
+
+function missingRunProviderPatch(state: AppState, source: string): Partial<AppState> {
+  const configuredProvider = firstConfiguredProvider(state.providers);
+  if (configuredProvider) {
+    console.warn("[store] 发起模型运行失败：尚未选择供应商", {
+      source,
+      view: state.view,
+      activeSessionId: state.activeSessionId,
+      fallbackProviderId: configuredProvider.id
+    });
+    return { notice: "请先选择供应商" };
+  }
+  console.warn("[store] 发起模型运行失败：尚未配置供应商", {
+    source,
+    view: state.view,
+    activeSessionId: state.activeSessionId
+  });
+  return { onboardingOpen: true };
+}
 
 export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {
   return {
@@ -92,13 +115,13 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           }
           const selectedProvider = resolveRunProvider(state);
           if (!selectedProvider) {
-            set({ onboardingOpen: true });
+            set(missingRunProviderPatch(state, "submit.queue"));
             return;
           }
           const modelState = normalizeModelForProvider(
             selectedProvider,
             state.model,
-            state.reasoningMode,
+            undefined,
             "submit.queue"
           );
           let displayAttachments: MessageAttachment[];
@@ -132,7 +155,6 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             displayAttachments,
             providerId: selectedProvider.id,
             model: modelState.model ?? selectedProvider.model,
-            ...(modelState.reasoningMode ? { reasoningMode: modelState.reasoningMode } : {}),
             accessMode: state.accessMode,
             planMode: state.planMode,
             createdAt: Date.now()
@@ -159,14 +181,13 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
         }
         const selectedProvider = resolveRunProvider(state);
         if (!selectedProvider) {
-          // 尚未配置模型时打开轻量配置弹窗，同时保留用户已经输入的内容。
-          set({ onboardingOpen: true });
+          set(missingRunProviderPatch(state, "submit"));
           return;
         }
         const modelState = normalizeModelForProvider(
           selectedProvider,
           state.model,
-          state.reasoningMode,
+          undefined,
           "submit"
         );
         const { attachments, input } = state;
@@ -221,13 +242,13 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
         }
         const selectedProvider = resolveRunProvider(state);
         if (!selectedProvider) {
-          set({ onboardingOpen: true });
+          set(missingRunProviderPatch(state, "regenerateLast"));
           return;
         }
         const modelState = normalizeModelForProvider(
           selectedProvider,
           state.model,
-          state.reasoningMode,
+          undefined,
           "regenerateLast"
         );
         const preparedRun = await prepareRunInputFromVisibleMessage({
@@ -273,13 +294,13 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
         }
         const selectedProvider = resolveRunProvider(state);
         if (!selectedProvider) {
-          set({ onboardingOpen: true });
+          set(missingRunProviderPatch(state, "editAndResend"));
           return;
         }
         const modelState = normalizeModelForProvider(
           selectedProvider,
           state.model,
-          state.reasoningMode,
+          undefined,
           "editAndResend"
         );
         const displayAttachments = originalMessage?.attachments ?? [];
@@ -314,25 +335,27 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             source: options.source ?? "runPrompt",
             providerId: options.providerId
           });
-          set({
-            onboardingOpen: options.providerId ? state.onboardingOpen : true,
-            notice: options.providerId ? "排队消息使用的模型配置已不可用" : state.notice
-          });
+          set(
+            options.providerId
+              ? {
+                  onboardingOpen: state.onboardingOpen,
+                  notice: "排队消息使用的模型配置已不可用"
+                }
+              : missingRunProviderPatch(state, options.source ?? "runPrompt")
+          );
           return;
         }
         const modelState = normalizeModelForProvider(
           selectedProvider,
           options.preserveSelection ? options.model : (options.model ?? state.model),
-          options.preserveSelection
-            ? options.reasoningMode
-            : (options.reasoningMode ?? state.reasoningMode),
+          undefined,
           options.source ?? "runPrompt"
         );
         if (
           !options.preserveSelection &&
           (selectedProvider.id !== state.providerId ||
             modelState.model !== state.model ||
-            modelState.reasoningMode !== state.reasoningMode)
+            state.reasoningMode !== undefined)
         ) {
           set({ providerId: selectedProvider.id, ...modelState });
         }
@@ -341,7 +364,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
         const activeSessionId = options.sessionId ?? state.activeSessionId;
         const accessMode = options.accessMode ?? state.accessMode;
         const planMode = options.planMode ?? state.planMode;
-        const { model, reasoningMode } = modelState;
+        const { model } = modelState;
         const providerId = selectedProvider.id;
         const activeProject = selectActiveProject(get());
         const projectId =
@@ -371,7 +394,6 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           accessMode,
           planMode,
           ...(model ? { model } : {}),
-          ...(reasoningMode ? { reasoningMode } : {}),
           ...(attachments.length > 0 ? { attachments } : {})
         };
         set({
@@ -482,7 +504,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           attachments,
           providerId: item.providerId,
           model: item.model,
-          reasoningMode: item.reasoningMode,
+          reasoningMode: undefined,
           accessMode: item.accessMode,
           planMode: item.planMode
         }));
@@ -660,7 +682,6 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             projectId: item.projectId,
             providerId: item.providerId,
             model: item.model,
-            reasoningMode: item.reasoningMode,
             accessMode: item.accessMode,
             planMode: item.planMode,
             source: "queuedRun",

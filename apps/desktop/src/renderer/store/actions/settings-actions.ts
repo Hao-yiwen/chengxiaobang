@@ -19,7 +19,7 @@ export function createSettingsActions(set: AppStoreSet, get: AppStoreGet): Parti
           set({
             providerId: saved.id,
             model: saved.model,
-            reasoningMode: saved.reasoningMode,
+            reasoningMode: undefined,
             notice: undefined,
             onboardingOpen: false
           });
@@ -45,7 +45,7 @@ export function createSettingsActions(set: AppStoreSet, get: AppStoreGet): Parti
             ? normalizeModelForProvider(
                 nextProvider,
                 state.model,
-                state.reasoningMode,
+                undefined,
                 "deleteProvider"
               )
             : { model: undefined, reasoningMode: undefined };

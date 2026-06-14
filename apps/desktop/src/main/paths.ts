@@ -2,12 +2,20 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+function chengxiaobangRoot(): string {
+  return process.env.CHENGXIAOBANG_HOME ?? join(homedir(), ".chengxiaobang");
+}
+
 export function defaultDataDir(): string {
-  return join(homedir(), ".chengxiaobang", "data");
+  return join(chengxiaobangRoot(), "data");
 }
 
 export function defaultLogDir(dataDir = defaultDataDir()): string {
   return join(dataDir, "logs");
+}
+
+export function defaultProviderConfigPath(): string {
+  return join(chengxiaobangRoot(), "config.yaml");
 }
 
 /** The 1024px PNG used as the dev dock icon (packaged builds use the .icns). */

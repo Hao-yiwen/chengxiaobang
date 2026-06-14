@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import type { AppEvent } from "@chengxiaobang/shared";
 import { EventHub } from "../events/event-hub";
 import { SlashCommandService } from "../tools/slash-command-service";
+import { UsageCostLedgerService } from "../usage/usage-cost-ledger";
 import type { AppContext, AppOptions } from "./context";
 import { registerRoutes } from "./routes/index";
 
@@ -15,6 +16,8 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   const context: AppContext = {
     ...options,
     slashCommandService: options.slashCommandService ?? new SlashCommandService(),
+    usageCostLedgerService:
+      options.usageCostLedgerService ?? new UsageCostLedgerService(options.store),
     eventHub: options.eventHub ?? new EventHub<AppEvent>()
   };
   const app = new Hono();

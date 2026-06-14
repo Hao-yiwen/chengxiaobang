@@ -1,18 +1,14 @@
 import {
-  estimateProviderModelCostUsd,
   nowIso,
-  type ProviderKind,
-  type TokenUsage,
   type UsageStats,
   type UsageStatsBucket,
   type UsageStatsDataQuality,
   type UsageStatsModelBreakdown,
   type UsageStatsRangeSummary
 } from "@chengxiaobang/shared";
-import type { StateStore, UsageStatsSourceRun } from "../repository/state-store";
+import type { UsageCostEntry } from "../repository/state-store";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const USD_TO_CNY_EXCHANGE_RATE = 6.7625;
 const UNKNOWN_MODEL = "unknown";
 
 interface UsageStatsOptions {
@@ -20,14 +16,14 @@ interface UsageStatsOptions {
   now?: Date;
 }
 
-interface ResolvedRunModel {
-  providerId?: string;
-  providerKind?: ProviderKind;
-  model?: string;
-  fallbackUsed: boolean;
-}
-
-type SummaryDraft = UsageStatsRangeSummary;
+type SummaryDraft = UsageStatsRangeSummary & {
+  runIds: Set<string>;
+  usageRunIds: Set<string>;
+  missingUsageRunIds: Set<string>;
+  pricedRunIds: Set<string>;
+  unknownPriceRunIds: Set<string>;
+  fallbackModelRunIds: Set<string>;
+};
 
 interface BucketDraft {
   key: string;
@@ -39,33 +35,14 @@ interface BucketDraft {
 
 interface ModelDraft {
   providerId?: string;
-  providerKind?: ProviderKind;
+  providerKind?: UsageCostEntry["providerKind"];
   model: string;
   label: string;
   summary: SummaryDraft;
 }
 
-export async function buildUsageStats(
-  store: StateStore,
-  options: UsageStatsOptions
-): Promise<UsageStats> {
-  const runs = await store.listUsageStatsRuns();
-  console.info("[usage-stats] 开始构建全局用量统计", {
-    runCount: runs.length,
-    timezoneOffsetMinutes: options.timezoneOffsetMinutes
-  });
-  const stats = buildUsageStatsFromRuns(runs, options);
-  console.info("[usage-stats] 全局用量统计构建完成", {
-    runCount: stats.dataQuality.totalRunCount,
-    usageRunCount: stats.dataQuality.usageRunCount,
-    unknownPriceRunCount: stats.dataQuality.unknownPriceRunCount,
-    fallbackModelRunCount: stats.dataQuality.fallbackModelRunCount
-  });
-  return stats;
-}
-
-export function buildUsageStatsFromRuns(
-  runs: UsageStatsSourceRun[],
+export function buildUsageStatsFromCostEntries(
+  entries: UsageCostEntry[],
   options: UsageStatsOptions
 ): UsageStats {
   const timezoneOffsetMinutes = normalizeTimezoneOffset(options.timezoneOffsetMinutes);
@@ -85,13 +62,16 @@ export function buildUsageStatsFromRuns(
   const total = emptySummary();
   const models = new Map<string, ModelDraft>();
 
-  for (const run of runs) {
-    const model = resolveRunModel(run);
-    const createdAt = new Date(run.createdAt);
+  for (const entry of entries) {
+    if (entry.costSource === "pending") {
+      continue;
+    }
+    const createdAt = new Date(entry.entryCreatedAt);
     if (Number.isNaN(createdAt.getTime())) {
-      console.warn("[usage-stats] 跳过 createdAt 非法的 run", {
-        runId: run.id,
-        createdAt: run.createdAt
+      console.warn("[usage-stats] 跳过 entryCreatedAt 非法的费用记录", {
+        runId: entry.runId,
+        attemptIndex: entry.attemptIndex,
+        entryCreatedAt: entry.entryCreatedAt
       });
       continue;
     }
@@ -101,26 +81,26 @@ export function buildUsageStatsFromRuns(
     const runWeekStart = weekStart(runDay);
     const runMonthStart = monthStart(runDay);
 
-    applyRun(total, run, model);
-    applyRun(modelDraft(models, model), run, model);
+    applyCostEntry(total, entry);
+    applyCostEntry(modelDraft(models, entry), entry);
 
     if (runDayKey === todayKey) {
-      applyRun(today, run, model);
+      applyCostEntry(today, entry);
     }
     if (dayKey(runWeekStart) === dayKey(currentWeekStart)) {
-      applyRun(week, run, model);
+      applyCostEntry(week, entry);
     }
-    const daily = dailyByKey.get(runDayKey);
-    if (daily) {
-      applyRun(daily.summary, run, model);
+    const dailyBucket = dailyByKey.get(runDayKey);
+    if (dailyBucket) {
+      applyCostEntry(dailyBucket.summary, entry);
     }
-    const weekly = weeklyByKey.get(dayKey(runWeekStart));
-    if (weekly) {
-      applyRun(weekly.summary, run, model);
+    const weeklyBucket = weeklyByKey.get(dayKey(runWeekStart));
+    if (weeklyBucket) {
+      applyCostEntry(weeklyBucket.summary, entry);
     }
-    const monthly = monthlyByKey.get(monthKey(runMonthStart));
-    if (monthly) {
-      applyRun(monthly.summary, run, model);
+    const monthlyBucket = monthlyByKey.get(monthKey(runMonthStart));
+    if (monthlyBucket) {
+      applyCostEntry(monthlyBucket.summary, entry);
     }
   }
 
@@ -143,90 +123,28 @@ export function buildUsageStatsFromRuns(
   };
 }
 
-function applyRun(
-  summary: SummaryDraft,
-  run: UsageStatsSourceRun,
-  model: ResolvedRunModel
-): void {
-  summary.runCount += 1;
-  if (model.fallbackUsed) {
-    summary.fallbackModelRunCount += 1;
-  }
-  if (!run.usage) {
-    summary.missingUsageRunCount += 1;
-    return;
-  }
+function applyCostEntry(summary: SummaryDraft, entry: UsageCostEntry): void {
+  summary.runIds.add(entry.runId);
+  summary.promptTokens += entry.promptTokens;
+  summary.completionTokens += entry.completionTokens;
+  summary.cachedPromptTokens += entry.cachedPromptTokens;
+  summary.totalTokens += entry.totalTokens;
+  summary.costCny += entry.costCny;
 
-  const usage = run.usage;
-  const cachedPromptTokens = usage.cachedPromptTokens ?? 0;
-  summary.usageRunCount += 1;
-  summary.promptTokens += usage.promptTokens;
-  summary.completionTokens += usage.completionTokens;
-  summary.cachedPromptTokens += cachedPromptTokens;
-  summary.totalTokens += usage.totalTokens;
-
-  const costUsd = estimateRunCostUsd(usage, model);
-  if (costUsd === undefined) {
-    summary.unknownPriceRunCount += 1;
-    return;
+  if (entry.tokenCountSource === "provider_usage") {
+    summary.usageRunIds.add(entry.runId);
+  } else {
+    summary.missingUsageRunIds.add(entry.runId);
   }
-  summary.pricedRunCount += 1;
-  summary.costCny += costUsd * USD_TO_CNY_EXCHANGE_RATE;
-}
-
-function estimateRunCostUsd(
-  usage: TokenUsage,
-  model: ResolvedRunModel
-): number | undefined {
-  if (!model.providerKind || !model.model || model.model === UNKNOWN_MODEL) {
-    return undefined;
+  if (entry.costSource === "unpriced") {
+    summary.unknownPriceRunIds.add(entry.runId);
   }
-  const cachedPromptTokens = usage.cachedPromptTokens ?? 0;
-  return estimateProviderModelCostUsd(model.providerKind, model.model, {
-    inputTokens: Math.max(0, usage.promptTokens - cachedPromptTokens),
-    outputTokens: usage.completionTokens,
-    cacheReadTokens: cachedPromptTokens
-  });
-}
-
-function resolveRunModel(run: UsageStatsSourceRun): ResolvedRunModel {
-  const hasRunModel = Boolean(run.providerKind && run.model);
-  const providerKind = run.providerKind ?? run.fallbackProviderKind;
-  const model = run.model ?? run.fallbackModel;
-  return {
-    ...(run.providerId ?? run.fallbackProviderId
-      ? { providerId: run.providerId ?? run.fallbackProviderId }
-      : {}),
-    ...(providerKind ? { providerKind } : {}),
-    ...(model ? { model } : {}),
-    fallbackUsed: !hasRunModel && Boolean(providerKind && model)
-  };
-}
-
-function modelDraft(
-  drafts: Map<string, ModelDraft>,
-  model: ResolvedRunModel
-): SummaryDraft {
-  const modelId = model.model ?? UNKNOWN_MODEL;
-  const key = `${model.providerKind ?? "unknown"}:${model.providerId ?? "unknown"}:${modelId}`;
-  const existing = drafts.get(key);
-  if (existing) {
-    return existing.summary;
+  if (entry.billable) {
+    summary.pricedRunIds.add(entry.runId);
   }
-  const draft: ModelDraft = {
-    ...(model.providerId ? { providerId: model.providerId } : {}),
-    ...(model.providerKind ? { providerKind: model.providerKind } : {}),
-    model: modelId,
-    label:
-      modelId === UNKNOWN_MODEL
-        ? "unknown"
-        : model.providerId
-          ? `${model.providerId} · ${modelId}`
-          : modelId,
-    summary: emptySummary()
-  };
-  drafts.set(key, draft);
-  return draft.summary;
+  if (!entry.providerKind || !entry.model) {
+    summary.fallbackModelRunIds.add(entry.runId);
+  }
 }
 
 function emptySummary(): SummaryDraft {
@@ -241,14 +159,29 @@ function emptySummary(): SummaryDraft {
     missingUsageRunCount: 0,
     pricedRunCount: 0,
     unknownPriceRunCount: 0,
-    fallbackModelRunCount: 0
+    fallbackModelRunCount: 0,
+    runIds: new Set(),
+    usageRunIds: new Set(),
+    missingUsageRunIds: new Set(),
+    pricedRunIds: new Set(),
+    unknownPriceRunIds: new Set(),
+    fallbackModelRunIds: new Set()
   };
 }
 
 function finalizeSummary(summary: SummaryDraft): UsageStatsRangeSummary {
   return {
-    ...summary,
-    costCny: roundCurrency(summary.costCny)
+    costCny: roundCurrency(summary.costCny),
+    promptTokens: summary.promptTokens,
+    completionTokens: summary.completionTokens,
+    cachedPromptTokens: summary.cachedPromptTokens,
+    totalTokens: summary.totalTokens,
+    runCount: summary.runIds.size,
+    usageRunCount: summary.usageRunIds.size,
+    missingUsageRunCount: summary.missingUsageRunIds.size,
+    pricedRunCount: summary.pricedRunIds.size,
+    unknownPriceRunCount: summary.unknownPriceRunIds.size,
+    fallbackModelRunCount: summary.fallbackModelRunIds.size
   };
 }
 
@@ -270,6 +203,29 @@ function finalizeModel(model: ModelDraft): UsageStatsModelBreakdown {
     label: model.label,
     ...finalizeSummary(model.summary)
   };
+}
+
+function modelDraft(drafts: Map<string, ModelDraft>, entry: UsageCostEntry): SummaryDraft {
+  const modelId = entry.model ?? UNKNOWN_MODEL;
+  const key = `${entry.providerKind ?? "unknown"}:${entry.providerId ?? "unknown"}:${modelId}`;
+  const existing = drafts.get(key);
+  if (existing) {
+    return existing.summary;
+  }
+  const draft: ModelDraft = {
+    ...(entry.providerId ? { providerId: entry.providerId } : {}),
+    ...(entry.providerKind ? { providerKind: entry.providerKind } : {}),
+    model: modelId,
+    label:
+      modelId === UNKNOWN_MODEL
+        ? "unknown"
+        : entry.providerId
+          ? `${entry.providerId} · ${modelId}`
+          : modelId,
+    summary: emptySummary()
+  };
+  drafts.set(key, draft);
+  return draft.summary;
 }
 
 function dataQualityFromSummary(summary: UsageStatsRangeSummary): UsageStatsDataQuality {

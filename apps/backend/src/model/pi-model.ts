@@ -1,49 +1,40 @@
-import type { Model, SimpleStreamOptions, ThinkingLevel, Usage } from "@earendil-works/pi-ai";
+import type { Api, Model, SimpleStreamOptions, ThinkingLevel, Usage } from "@earendil-works/pi-ai";
 import {
-  resolveModelContextInfo,
-  resolveModelPricingInfo,
-  resolveModelInputModalities,
-  resolveProviderModelOption,
+  resolveProviderConfigModelContextInfo,
+  resolveProviderConfigModelPricingInfo,
+  resolveProviderConfigModelInputModalities,
+  resolveProviderConfigModelOption,
+  getProviderPiProviderSlug,
   type ProviderConfig,
   type ReasoningMode,
   type TokenUsage
 } from "@chengxiaobang/shared";
 
-/**
- * 内置供应商映射到 pi 的 provider slug；pi 会结合 slug/baseUrl 自动识别兼容差异，
- * 比如 DeepSeek 的 reasoning_content、Moonshot 的 max_tokens 行为。
- */
-const PROVIDER_SLUGS: Partial<Record<ProviderConfig["kind"], string>> = {
-  deepseek: "deepseek",
-  kimi: "moonshotai",
-  minimax: "minimax",
-  qwen: "qwen"
-};
-
-/** 将 OpenAI-compatible 供应商配置转换成 pi 模型描述。 */
-export function buildModel(provider: ProviderConfig): Model<"openai-completions"> {
+/** 将 YAML 供应商配置转换成 pi 模型描述。 */
+export function buildModel(provider: ProviderConfig): Model<Api> {
+  const api = provider.api ?? "openai-completions";
   const reasoning = usesPiReasoning(provider);
-  const context = resolveModelContextInfo(provider.kind, provider.model);
-  const pricing = resolveModelPricingInfo(provider.kind, provider.model);
-  const inputModalities = resolveModelInputModalities(provider.kind, provider.model);
+  const context = resolveProviderConfigModelContextInfo(provider, provider.model);
+  const pricing = resolveProviderConfigModelPricingInfo(provider, provider.model);
+  const inputModalities = resolveProviderConfigModelInputModalities(provider, provider.model);
   const piInputModalities = inputModalities.filter(
     (modality): modality is "text" | "image" => modality === "text" || modality === "image"
   );
   console.info("[pi-model] 构建模型能力", {
     providerId: provider.id,
     kind: provider.kind,
+    api,
     model: provider.model,
     inputModalities,
     piInputModalities,
-    reasoningMode: provider.reasoningMode ?? "default"
+    reasoningMode: effectiveReasoningMode(provider) ?? "default"
   });
   return {
     id: provider.model,
     name: provider.name,
-    api: "openai-completions",
-    provider: PROVIDER_SLUGS[provider.kind] ?? provider.kind,
+    api,
+    provider: provider.piProviderSlug ?? getProviderPiProviderSlug(provider.kind) ?? provider.kind,
     baseUrl: trimSlash(provider.baseURL),
-    // 只有用户显式选择推理模式时才让 pi 写入推理参数；未选择表示沿用平台默认。
     reasoning,
     ...(reasoning ? { thinkingLevelMap: thinkingLevelMap(provider) } : {}),
     ...(reasoning ? { compat: compatOverride(provider) } : {}),
@@ -61,7 +52,7 @@ export function buildModel(provider: ProviderConfig): Model<"openai-completions"
 
 export function buildModelStreamOptions(
   provider: ProviderConfig
-): Pick<SimpleStreamOptions, "reasoning" | "onPayload"> {
+): Pick<SimpleStreamOptions, "reasoning" | "onPayload" | "onResponse"> {
   const mode = supportedReasoningMode(provider);
   if (!mode) {
     return {};
@@ -92,15 +83,22 @@ export function toTokenUsage(usage: Usage): TokenUsage {
 
 function usesPiReasoning(provider: ProviderConfig): boolean {
   const mode = supportedReasoningMode(provider);
-  return Boolean(mode && ["deepseek", "doubao", "qwen"].includes(provider.kind));
+  if (!mode || mode === "off") {
+    return false;
+  }
+  const api = provider.api ?? "openai-completions";
+  if (api === "openai-responses" || api === "anthropic-messages") {
+    return true;
+  }
+  return ["deepseek", "doubao", "qwen", "xiaomi", "openrouter"].includes(provider.kind);
 }
 
 function supportedReasoningMode(provider: ProviderConfig): ReasoningMode | undefined {
-  const mode = provider.reasoningMode;
+  const mode = effectiveReasoningMode(provider);
   if (!mode) {
     return undefined;
   }
-  const option = resolveProviderModelOption(provider.kind, provider.model);
+  const option = resolveProviderConfigModelOption(provider, provider.model);
   if (!option.reasoningModes.includes(mode)) {
     console.warn(
       `[pi-model] 忽略不支持的推理模式 providerId=${provider.id} kind=${provider.kind} model=${provider.model} reasoningMode=${mode}`
@@ -108,6 +106,10 @@ function supportedReasoningMode(provider: ProviderConfig): ReasoningMode | undef
     return undefined;
   }
   return mode;
+}
+
+function effectiveReasoningMode(provider: ProviderConfig): ReasoningMode | undefined {
+  return provider.reasoningMode ?? resolveProviderConfigModelOption(provider, provider.model).defaultReasoningMode;
 }
 
 function toPiThinkingLevel(
@@ -120,19 +122,25 @@ function toPiThinkingLevel(
   return mode === "off" ? undefined : mode;
 }
 
-function thinkingLevelMap(provider: ProviderConfig): Model<"openai-completions">["thinkingLevelMap"] {
+function thinkingLevelMap(provider: ProviderConfig): Model<Api>["thinkingLevelMap"] {
   if (provider.kind === "deepseek") {
     return { xhigh: "max" };
   }
   return undefined;
 }
 
-function compatOverride(provider: ProviderConfig): Model<"openai-completions">["compat"] {
+function compatOverride(provider: ProviderConfig): Model<Api>["compat"] {
   if (provider.kind === "deepseek" || provider.kind === "doubao") {
-    return { thinkingFormat: "deepseek", supportsReasoningEffort: true };
+    return { thinkingFormat: "deepseek", supportsReasoningEffort: true } as Model<Api>["compat"];
   }
   if (provider.kind === "qwen") {
-    return { thinkingFormat: "qwen" };
+    return { thinkingFormat: "qwen" } as Model<Api>["compat"];
+  }
+  if (provider.kind === "xiaomi") {
+    return {
+      thinkingFormat: "deepseek",
+      requiresReasoningContentOnAssistantMessages: true
+    } as Model<Api>["compat"];
   }
   return undefined;
 }
@@ -189,12 +197,31 @@ export async function testProvider(provider: ProviderConfig, apiKey?: string): P
   if (!apiKey) {
     throw new Error("请先填写 API Key");
   }
-  const response = await fetch(`${trimSlash(provider.baseURL)}/models`, {
-    headers: { Authorization: `Bearer ${apiKey}` }
+  const endpoint = providerModelsEndpoint(provider);
+  console.info("[pi-model] 开始测试供应商连接", {
+    providerId: provider.id,
+    kind: provider.kind,
+    api: provider.api ?? "openai-completions",
+    endpoint
+  });
+  const response = await fetch(endpoint, {
+    headers: providerAuthHeaders(provider, apiKey)
   });
   if (!response.ok) {
+    console.warn("[pi-model] 测试供应商连接失败", {
+      providerId: provider.id,
+      kind: provider.kind,
+      api: provider.api ?? "openai-completions",
+      status: response.status,
+      statusText: response.statusText
+    });
     throw new Error(`连接失败 ${response.status}: ${response.statusText}`);
   }
+  console.info("[pi-model] 测试供应商连接成功", {
+    providerId: provider.id,
+    kind: provider.kind,
+    api: provider.api ?? "openai-completions"
+  });
 }
 
 /** 实时读取 provider 的模型列表，不持久化。 */
@@ -206,8 +233,15 @@ export async function listProviderModels(
     console.warn(`[pi-model] 拉取模型列表失败：缺少 API Key providerId=${provider.id}`);
     throw new Error("请先填写 API Key");
   }
-  const response = await fetch(`${trimSlash(provider.baseURL)}/models`, {
-    headers: { Authorization: `Bearer ${apiKey}` }
+  const endpoint = providerModelsEndpoint(provider);
+  console.info("[pi-model] 开始拉取模型列表", {
+    providerId: provider.id,
+    kind: provider.kind,
+    api: provider.api ?? "openai-completions",
+    endpoint
+  });
+  const response = await fetch(endpoint, {
+    headers: providerAuthHeaders(provider, apiKey)
   });
   if (!response.ok) {
     console.warn(
@@ -215,14 +249,53 @@ export async function listProviderModels(
     );
     throw new Error(`连接失败 ${response.status}: ${response.statusText}`);
   }
-  const payload = (await response.json()) as { data?: Array<{ id?: unknown }> };
-  const models = (payload.data ?? [])
-    .map((item) => item.id)
-    .filter((id): id is string => typeof id === "string" && id.length > 0);
-  console.info(`[pi-model] 拉取模型列表成功 providerId=${provider.id} count=${models.length}`);
+  const payload = await response.json();
+  const models = parseProviderModelList(provider, payload);
+  console.info(
+    `[pi-model] 拉取模型列表成功 providerId=${provider.id} api=${
+      provider.api ?? "openai-completions"
+    } count=${models.length}`
+  );
   return models;
+}
+
+function providerModelsEndpoint(provider: ProviderConfig): string {
+  return `${trimSlash(provider.baseURL)}/models`;
+}
+
+function parseProviderModelList(provider: ProviderConfig, payload: unknown): string[] {
+  if (provider.api === "google-generative-ai") {
+    const models = isRecord(payload) && Array.isArray(payload.models) ? payload.models : [];
+    return models
+      .map((item) => (isRecord(item) ? item.name : undefined))
+      .filter((name): name is string => typeof name === "string" && name.length > 0)
+      .map((name) => name.replace(/^models\//, ""));
+  }
+
+  const data = isRecord(payload) && Array.isArray(payload.data) ? payload.data : [];
+  return data
+    .map((item) => (isRecord(item) ? item.id : undefined))
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+function providerAuthHeaders(provider: ProviderConfig, apiKey: string): Record<string, string> {
+  const auth = provider.auth ?? { type: "bearer" as const };
+  if (auth.type === "anthropic") {
+    return {
+      [auth.header ?? "x-api-key"]: apiKey,
+      [auth.versionHeader ?? "anthropic-version"]: auth.version ?? "2023-06-01"
+    };
+  }
+  if (auth.type === "x-api-key") {
+    return { [auth.header ?? "x-api-key"]: apiKey };
+  }
+  return { [auth.header ?? "Authorization"]: `${auth.prefix ?? "Bearer"} ${apiKey}` };
 }
 
 function trimSlash(value: string): string {
   return value.replace(/\/+$/, "");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

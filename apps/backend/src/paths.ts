@@ -15,6 +15,10 @@ export function defaultDataDir(): string {
   return join(chengxiaobangRoot(), "data");
 }
 
+export function defaultProviderConfigPath(): string {
+  return join(chengxiaobangRoot(), "config.yaml");
+}
+
 export function defaultSessionDir(sessionId: string): string {
   return join(chengxiaobangRoot(), sessionId);
 }

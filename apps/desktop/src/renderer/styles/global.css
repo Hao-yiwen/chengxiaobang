@@ -251,6 +251,260 @@
     max-height: min(22rem, calc(100vh - 6rem));
   }
 
+  /* 供应商三栏级联选择：仅用于设置页和首次配置，视觉贴合 DESIGN.md 的输入框与弹层系统。 */
+  .provider-cascade-trigger {
+    display: flex;
+    width: 100%;
+    height: 36px;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid rgb(var(--input));
+    border-radius: 4px;
+    background: rgb(var(--canvas));
+    padding: 0 10px 0 12px;
+    color: rgb(var(--foreground));
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 16px;
+    outline: none;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      background-color 0.15s ease;
+  }
+
+  .provider-cascade-trigger:hover {
+    background: rgb(var(--canvas-soft-2));
+  }
+
+  .provider-cascade-trigger:focus-visible,
+  .provider-cascade-trigger[data-state="open"] {
+    border-color: rgb(var(--form-focus));
+    background: rgb(var(--canvas));
+    box-shadow: 0 0 0 2px rgb(var(--ring) / 0.22);
+  }
+
+  .provider-cascade-count {
+    flex: none;
+    border-radius: 9999px;
+    background: rgb(var(--canvas-soft-2));
+    padding: 2px 7px;
+    color: rgb(var(--muted-foreground));
+    font-size: 11px;
+    line-height: 14px;
+  }
+
+  .provider-cascade-suffix-icon,
+  .provider-cascade-expand-icon {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    color: rgb(var(--mute));
+  }
+
+  .provider-cascade-popup {
+    width: min(628px, calc(100vw - 48px));
+    overflow: hidden;
+    border-color: rgb(var(--border) / 0.78);
+    border-radius: 12px;
+    background: rgb(var(--popover));
+    box-shadow:
+      0 1px 1px rgb(0 0 0 / 0.02),
+      0 8px 16px -4px rgb(0 0 0 / 0.04),
+      0 24px 32px -8px rgb(0 0 0 / 0.06);
+  }
+
+  .provider-cascade-menus {
+    display: grid;
+    min-height: 352px;
+    grid-template-columns: 164px 184px minmax(0, 280px);
+    background: rgb(var(--popover));
+  }
+
+  .provider-cascade-menu {
+    min-height: 352px;
+    max-height: 352px;
+    overflow-y: auto;
+    padding: 8px;
+    background: rgb(var(--popover));
+  }
+
+  .provider-cascade-menu:not(:last-child) {
+    border-right: 1px solid rgb(var(--border));
+  }
+
+  .provider-cascade-menu-item {
+    display: flex;
+    height: 34px;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-radius: 4px;
+    padding: 0 10px;
+    color: rgb(var(--foreground));
+    font-size: 13px;
+    line-height: 18px;
+    text-align: left;
+    transition:
+      background-color 0.12s ease,
+      color 0.12s ease;
+  }
+
+  .provider-cascade-menu-item:hover {
+    background: rgb(var(--canvas-soft-2));
+  }
+
+  .provider-cascade-menu-item-active,
+  .provider-cascade-menu-item-active:hover {
+    background: rgb(var(--link-bg-soft) / 0.66);
+    color: rgb(var(--foreground));
+    font-weight: 600;
+  }
+
+  .provider-cascade-model-menu {
+    padding: 0;
+  }
+
+  .provider-cascade-model-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    min-height: 42px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-bottom: 1px solid rgb(var(--border));
+    background: rgb(var(--popover));
+    padding: 8px 10px 8px 12px;
+    color: rgb(var(--muted-foreground));
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .provider-cascade-text-action {
+    border-radius: 4px;
+    padding: 2px 5px;
+    color: rgb(var(--link));
+    font-size: 11px;
+    line-height: 14px;
+  }
+
+  .provider-cascade-text-action:hover {
+    background: rgb(var(--link-bg-soft) / 0.5);
+  }
+
+  .provider-cascade-confirm-action {
+    background: rgb(var(--foreground));
+    color: rgb(var(--background));
+  }
+
+  .provider-cascade-confirm-action:hover {
+    background: rgb(var(--foreground) / 0.9);
+  }
+
+  .provider-cascade-model-list {
+    display: grid;
+    gap: 2px;
+    padding: 8px;
+  }
+
+  .provider-cascade-model-option {
+    display: flex;
+    min-height: 32px;
+    cursor: pointer;
+    align-items: center;
+    gap: 8px;
+    border-radius: 4px;
+    padding: 0 8px;
+    color: rgb(var(--foreground));
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .provider-cascade-model-option:hover {
+    background: rgb(var(--canvas-soft-2));
+  }
+
+  .provider-cascade-model-option-selected {
+    background: rgb(var(--canvas-soft-2) / 0.78);
+  }
+
+  .provider-cascade-model-option input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .provider-cascade-checkbox {
+    display: inline-flex;
+    width: 15px;
+    height: 15px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(var(--border));
+    border-radius: 4px;
+    background: rgb(var(--canvas));
+    color: rgb(var(--foreground));
+  }
+
+  .provider-cascade-model-option-selected .provider-cascade-checkbox {
+    border-color: rgb(var(--foreground));
+    background: rgb(var(--foreground));
+    color: rgb(var(--background));
+  }
+
+  .provider-cascade-empty {
+    display: flex;
+    height: 100%;
+    min-height: 352px;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    text-align: center;
+    color: rgb(var(--muted-foreground));
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  .provider-model-tag {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid rgb(var(--border));
+    border-radius: 9999px;
+    background: rgb(var(--canvas-soft-2));
+    padding: 3px 7px 3px 9px;
+    color: rgb(var(--foreground));
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .provider-model-tag-remove {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    color: rgb(var(--muted-foreground));
+  }
+
+  .provider-model-tag-remove:hover:not(:disabled) {
+    background: rgb(var(--border));
+    color: rgb(var(--foreground));
+  }
+
+  .provider-model-tag-remove:disabled {
+    cursor: not-allowed;
+    opacity: 0.38;
+  }
+
   /* 侧边栏使用 Radix ScrollArea，但隐藏 viewport 原生滚动条与自定义轨道。 */
   .sidebar-scroll-area {
     scrollbar-width: none;
@@ -374,13 +628,22 @@
     line-height: 16px;
   }
 
+  .markdown-streamdown [data-streamdown="table-header"],
+  .markdown-streamdown [data-streamdown="table-body"],
+  .markdown-streamdown [data-streamdown="table-row"],
+  .markdown-streamdown [data-streamdown="table-header-cell"],
+  .markdown-streamdown [data-streamdown="table-cell"] {
+    font-size: 12px;
+    line-height: 16px;
+  }
+
   .markdown-streamdown [data-streamdown="table-header"] {
     background: rgb(var(--canvas-soft-2));
   }
 
   .markdown-streamdown [data-streamdown="table-header-cell"],
   .markdown-streamdown [data-streamdown="table-cell"] {
-    padding: 8px 12px;
+    padding: 7px 10px;
     border-color: rgb(var(--border));
   }
 

@@ -44,6 +44,7 @@ import type { Locale } from "../i18n";
 export type Theme = "light" | "dark" | "system";
 export type View = "home" | "chat" | "settings" | "tasks" | "skills" | "connectPhone";
 export type RightPanelMode = "changes" | "terminal" | "browser" | "files" | "chat";
+export type ProjectSortMode = "created" | "recent";
 export type ScheduledTaskFinishedEvent = Extract<ScheduledTaskEvent, { type: "scheduled_task_finished" }>;
 export type SessionRunHistory = { runs: RunRecord[]; toolCalls: ToolCall[] };
 
@@ -195,6 +196,7 @@ export interface AppState {
   >;
   // 左侧边栏（持久化）
   sidebarOpen: boolean;
+  projectSortMode: ProjectSortMode;
   // 右侧工作区面板（当前会话状态 + 每会话记忆）
   rightPanelOpen: boolean;
   /** null 表示右侧面板的工具菜单页。 */
@@ -244,6 +246,8 @@ export interface AppState {
   setLocale(locale: Locale): void;
   /** 折叠/展开左侧边栏。 */
   toggleSidebar(): void;
+  /** 设置项目区排序方式。 */
+  setProjectSortMode(mode: ProjectSortMode): void;
   /** 关闭时打开菜单页；打开时关闭面板。 */
   toggleRightPanel(): void;
   /** 打开指定工具页；传 null 时回到菜单页。 */

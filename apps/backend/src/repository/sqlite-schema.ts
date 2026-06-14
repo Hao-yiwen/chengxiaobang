@@ -23,8 +23,7 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       reasoning_mode text,
       created_at text not null,
       updated_at text not null,
-      foreign key (project_id) references projects(id) on delete set null,
-      foreign key (provider_id) references providers(id) on delete set null
+      foreign key (project_id) references projects(id) on delete set null
     );
     create table if not exists messages (
       id text primary key,
@@ -48,6 +47,33 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       error text,
       created_at text not null,
       updated_at text not null,
+      foreign key (session_id) references sessions(id) on delete cascade
+    );
+    create table if not exists usage_cost_entries (
+      id text primary key,
+      run_id text not null,
+      session_id text not null,
+      attempt_index integer not null,
+      provider_id text,
+      provider_kind text,
+      model text,
+      status_code integer,
+      error_code text,
+      error_message text,
+      prompt_tokens integer not null default 0,
+      completion_tokens integer not null default 0,
+      cached_prompt_tokens integer not null default 0,
+      total_tokens integer not null default 0,
+      input_estimated_tokens integer not null default 0,
+      cost_usd real not null default 0,
+      cost_cny real not null default 0,
+      cost_source text not null,
+      token_count_source text not null,
+      billable integer not null default 0,
+      entry_created_at text not null,
+      recorded_at text not null,
+      unique(run_id, attempt_index),
+      foreign key (run_id) references runs(id) on delete cascade,
       foreign key (session_id) references sessions(id) on delete cascade
     );
     create table if not exists tool_calls (
@@ -74,6 +100,7 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       name text not null,
       base_url text not null,
       model text not null,
+      model_overrides text,
       reasoning_mode text,
       api_key_ref text,
       created_at text not null,
@@ -104,6 +131,14 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       on messages(session_id, created_at asc);
     create index if not exists idx_runs_session_updated
       on runs(session_id, updated_at desc);
+    create index if not exists idx_usage_cost_session_entry
+      on usage_cost_entries(session_id, entry_created_at asc);
+    create index if not exists idx_usage_cost_entry_created
+      on usage_cost_entries(entry_created_at asc);
+    create index if not exists idx_usage_cost_provider_model
+      on usage_cost_entries(provider_kind, model);
+    create index if not exists idx_usage_cost_billable
+      on usage_cost_entries(billable);
     create index if not exists idx_tool_calls_run_updated
       on tool_calls(run_id, updated_at desc);
     create index if not exists idx_scheduled_tasks_enabled_next
@@ -124,6 +159,9 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
   ensureColumn(connection, "runs", "model", "text");
   ensureColumn(connection, "runs", "usage", "text");
   ensureColumn(connection, "runs", "error", "text");
+  ensureColumn(connection, "usage_cost_entries", "status_code", "integer");
+  ensureColumn(connection, "usage_cost_entries", "error_code", "text");
+  ensureColumn(connection, "usage_cost_entries", "error_message", "text");
   ensureColumn(connection, "sessions", "compacted_up_to_message_id", "text");
   ensureColumn(connection, "sessions", "parent_session_id", "text");
   ensureColumn(connection, "sessions", "fork_message_id", "text");
@@ -132,11 +170,11 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
   ensureColumn(connection, "sessions", "reasoning_mode", "text");
   ensureColumn(connection, "providers", "reasoning_mode", "text");
   ensureColumn(connection, "providers", "models", "text");
+  ensureColumn(connection, "providers", "model_overrides", "text");
   ensureColumn(connection, "projects", "pinned_at", "text");
   ensureColumn(connection, "sessions", "pinned_at", "text");
   ensureColumn(connection, "scheduled_tasks", "kind", "text not null default 'recurring'");
   ensureColumn(connection, "scheduled_tasks", "run_at", "text");
-  migrateProviderPresets(connection);
   markInterruptedRunsFromPreviousProcess(connection);
 }
 
@@ -150,43 +188,6 @@ function ensureColumn(
   if (!columns.some((row) => String(row.name) === column)) {
     connection.exec(`alter table ${table} add column ${column} ${typeDdl};`);
   }
-}
-
-function migrateProviderPresets(connection: SqliteConnection): void {
-  const timestamp = nowIso();
-  connection.run(
-    `update providers
-     set model = ?, updated_at = ?
-     where id = ?
-       and kind = ?
-       and base_url = ?
-       and model = ?`,
-    [
-      "deepseek-v4-flash",
-      timestamp,
-      "deepseek",
-      "deepseek",
-      "https://api.deepseek.com",
-      "deepseek-chat"
-    ]
-  );
-  connection.run(
-    `update providers
-     set base_url = ?, model = ?, updated_at = ?
-     where id = ?
-       and kind = ?
-       and base_url = ?
-       and model = ?`,
-    [
-      "https://api.moonshot.ai/v1",
-      "kimi-k2.6",
-      timestamp,
-      "kimi",
-      "kimi",
-      "https://api.moonshot.cn/v1",
-      "moonshot-v1-8k"
-    ]
-  );
 }
 
 function markInterruptedRunsFromPreviousProcess(connection: SqliteConnection): void {

@@ -240,7 +240,7 @@ export function App(props: { client?: ApiClient }) {
                         </span>
                       </header>
                       <ChatView />
-                      <div className="chat-layout-scope flex-none bg-background pb-3 pt-4">
+                      <div className="chat-layout-scope flex-none bg-background pb-3 pt-2">
                         <div className="px-12">
                           <div data-testid="chat-composer-column" className="chat-primary-column">
                             <ApprovalDock />

@@ -1,0 +1,1102 @@
+runtimeDefaults:
+  maxToolIterations: 500
+  autoCompactThresholdRatio: 0.8
+
+currency:
+  usdToCnyExchangeRate: 6.7625
+
+providers:
+  deepseek:
+    label: DeepSeek
+    name: DeepSeek
+    region: cn
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://api.deepseek.com
+    defaultModel: deepseek-v4-flash
+    builtinDefault: true
+    apiKeyUrl: https://platform.deepseek.com/api_keys
+    piProviderSlug: deepseek
+    models:
+      - id: deepseek-v4-flash
+        enabled: true
+        label: DeepSeek V4 Flash
+        reasoningModes: [off, high, xhigh]
+        defaultReasoningMode: off
+        inputModalities: [text]
+        contextWindowTokens: 1000000
+        autoCompactThresholdTokens: 800000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.14
+          outputCostPerMillion: 0.28
+          cacheReadCostPerMillion: 0.0028
+          pricingSource: DeepSeek API pricing, 2026-06
+      - id: deepseek-v4-pro
+        enabled: true
+        label: DeepSeek V4 Pro
+        reasoningModes: [off, high, xhigh]
+        defaultReasoningMode: off
+        inputModalities: [text]
+        contextWindowTokens: 1000000
+        autoCompactThresholdTokens: 800000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.435
+          outputCostPerMillion: 0.87
+          cacheReadCostPerMillion: 0.003625
+          pricingSource: DeepSeek API pricing, 2026-06
+    modelFallbacks:
+      - pattern: ^deepseek-v4-
+        reasoningModes: [off, high, xhigh]
+        defaultReasoningMode: off
+        inputModalities: [text]
+        contextWindowTokens: 1000000
+        autoCompactThresholdTokens: 800000
+
+  kimi:
+    label: Kimi
+    name: Kimi
+    region: cn
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://api.moonshot.ai/v1
+    defaultModel: kimi-k2.7-code
+    builtinDefault: true
+    apiKeyUrl: https://platform.kimi.ai/console/api-keys
+    piProviderSlug: moonshotai
+    models:
+      - id: kimi-k2.7-code
+        enabled: true
+        label: Kimi K2.7 Code
+        reasoningModes: []
+        reasoningAlwaysOn: true
+        inputModalities: [text, image, video]
+        contextWindowTokens: 262144
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.95
+          outputCostPerMillion: 4
+          cacheReadCostPerMillion: 0.19
+          pricingSource: Kimi API pricing, 2026-06
+      - id: kimi-k2.6
+        enabled: true
+        label: Kimi K2.6
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 262144
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.95
+          outputCostPerMillion: 4
+          cacheReadCostPerMillion: 0.16
+          pricingSource: Kimi API pricing, 2026-06
+      - id: kimi-k2.5
+        enabled: true
+        label: Kimi K2.5
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 262144
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.6
+          outputCostPerMillion: 3
+          cacheReadCostPerMillion: 0.1
+          pricingSource: Kimi API pricing, 2026-06
+    modelFallbacks:
+      - pattern: ^kimi-k2\.(5|6)\b
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 262144
+      - pattern: ^kimi-k2\.7-code$
+        reasoningModes: []
+        reasoningAlwaysOn: true
+        inputModalities: [text, image, video]
+        contextWindowTokens: 262144
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.95
+          outputCostPerMillion: 4
+          cacheReadCostPerMillion: 0.19
+          pricingSource: Kimi API pricing, 2026-06
+
+  minimax:
+    label: MiniMax
+    name: MiniMax
+    region: cn
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://api.minimaxi.com/v1
+    defaultModel: MiniMax-M3
+    builtinDefault: true
+    apiKeyUrl: https://platform.minimaxi.com/user-center/basic-information/interface-key
+    piProviderSlug: minimax
+    models:
+      - id: MiniMax-M3
+        enabled: true
+        label: MiniMax M3
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.3
+          outputCostPerMillion: 1.2
+          cacheReadCostPerMillion: 0.06
+          pricingSource: MiniMax API pricing, 2026-06
+    modelFallbacks:
+      - pattern: ^minimax-m3$
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.3
+          outputCostPerMillion: 1.2
+          cacheReadCostPerMillion: 0.06
+          pricingSource: MiniMax API pricing, 2026-06
+      - pattern: ^minimax-m2\.
+        reasoningModes: []
+        reasoningAlwaysOn: true
+
+  doubao:
+    label: 豆包
+    name: 豆包
+    region: cn
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://ark.cn-beijing.volces.com/api/v3
+    defaultModel: doubao-seed-2.0-pro
+    builtinDefault: true
+    apiKeyUrl: https://console.volcengine.com/ark
+    piProviderSlug: doubao
+    models:
+      - id: doubao-seed-2.0-pro
+        enabled: true
+        label: Doubao Seed 2.0 Pro
+        reasoningModes: [off, minimal, low, medium, high]
+        defaultReasoningMode: off
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: Volcengine ModelArk pricing 未在目录中固化，先按 0 处理
+      - id: doubao-seed-2.0-code
+        enabled: true
+        label: Doubao Seed 2.0 Code
+        reasoningModes: [off, minimal, low, medium, high]
+        defaultReasoningMode: high
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: Volcengine ModelArk Coding Plan pricing 可变，先按 0 处理
+      - id: doubao-seed-2.0-lite
+        enabled: true
+        label: Doubao Seed 2.0 Lite
+        reasoningModes: [off, minimal, low, medium, high]
+        defaultReasoningMode: off
+        inputModalities: [text]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: Volcengine ModelArk pricing 未在目录中固化，先按 0 处理
+    modelFallbacks:
+      - pattern: seed
+        reasoningModes: [off, minimal, low, medium, high]
+        defaultReasoningMode: off
+      - pattern: seed-2\.0
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+
+  qwen:
+    label: 千问
+    name: 千问
+    region: cn
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://dashscope.aliyuncs.com/compatible-mode/v1
+    defaultModel: qwen3.7-max
+    builtinDefault: true
+    apiKeyUrl: https://bailian.console.aliyun.com/?apiKey=1
+    piProviderSlug: qwen
+    models:
+      - id: qwen3.7-max
+        enabled: true
+        label: Qwen3.7 Max
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 1.774
+          outputCostPerMillion: 5.323
+          pricingSource: Alibaba Cloud Model Studio pricing, 2026-06
+      - id: qwen3.7-plus
+        enabled: true
+        label: Qwen3.7 Plus
+        reasoningModes: [off, auto]
+        defaultReasoningMode: off
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.287
+          outputCostPerMillion: 1.147
+          pricingSource: Alibaba Cloud Model Studio pricing, 2026-06
+      - id: qwen3.6-plus
+        enabled: true
+        label: Qwen3.6 Plus
+        reasoningModes: [off, auto]
+        defaultReasoningMode: off
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.287
+          outputCostPerMillion: 1.721
+          pricingSource: Alibaba Cloud Model Studio pricing, 2026-06
+      - id: qwen3.6-flash
+        enabled: true
+        label: Qwen3.6 Flash
+        reasoningModes: [off, auto]
+        defaultReasoningMode: off
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.043
+          outputCostPerMillion: 0.359
+          pricingSource: Alibaba Cloud Model Studio pricing, 2026-06
+      - id: qwen3-coder-plus
+        enabled: true
+        label: Qwen3 Coder Plus
+        reasoningModes: [off, auto]
+        defaultReasoningMode: off
+        inputModalities: [text]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: Alibaba Cloud Coding Plan pricing 可变，先按 0 处理
+      - id: qwen3-coder-next
+        enabled: true
+        label: Qwen3 Coder Next
+        reasoningModes: [off, auto]
+        defaultReasoningMode: off
+        inputModalities: [text]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: Alibaba Cloud Coding Plan pricing 可变，先按 0 处理
+    modelFallbacks:
+      - pattern: (qwen|qwq)
+        reasoningModes: [off, auto]
+        defaultReasoningMode: off
+      - pattern: ^qwen3\.7-max\b
+        defaultReasoningMode: auto
+        inputModalities: [text]
+        contextWindowTokens: 1000000
+        pricing:
+          currency: USD
+          inputCostPerMillion: 1.774
+          outputCostPerMillion: 5.323
+          pricingSource: Alibaba Cloud Model Studio pricing, 2026-06
+      - pattern: ^qwen3\.7-plus\b
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.287
+          outputCostPerMillion: 1.147
+          pricingSource: Alibaba Cloud Model Studio pricing, 2026-06
+      - pattern: ^qwen3\.6-plus\b
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.287
+          outputCostPerMillion: 1.721
+          pricingSource: Alibaba Cloud Model Studio pricing, 2026-06
+      - pattern: ^qwen3\.6-flash\b
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.043
+          outputCostPerMillion: 0.359
+          pricingSource: Alibaba Cloud Model Studio pricing, 2026-06
+
+  zhipu:
+    label: 智谱 GLM
+    name: 智谱 GLM
+    region: cn
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://open.bigmodel.cn/api/paas/v4
+    defaultModel: glm-5.1
+    builtinDefault: true
+    apiKeyUrl: https://bigmodel.cn/usercenter/proj-mgmt/apikeys
+    piProviderSlug: zai
+    models:
+      - id: glm-5.1
+        enabled: true
+        label: GLM 5.1
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text]
+        contextWindowTokens: 200000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 智谱公开价格未在目录中固化，先按 0 处理
+      - id: glm-5
+        enabled: true
+        label: GLM 5
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text]
+        contextWindowTokens: 200000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 智谱公开价格未在目录中固化，先按 0 处理
+      - id: glm-4.7
+        enabled: true
+        label: GLM 4.7
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text]
+        contextWindowTokens: 200000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.431
+          outputCostPerMillion: 2.011
+          pricingSource: 智谱 API pricing, 2026-06
+      - id: glm-4.7-flashx
+        enabled: true
+        label: GLM 4.7 FlashX
+        reasoningModes: [off, auto]
+        defaultReasoningMode: off
+        inputModalities: [text]
+        contextWindowTokens: 200000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 智谱公开价格未在目录中固化，先按 0 处理
+    modelFallbacks:
+      - pattern: ^glm-5
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text]
+        contextWindowTokens: 200000
+      - pattern: ^glm-4\.7
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text]
+        contextWindowTokens: 200000
+
+  hunyuan:
+    label: 腾讯混元
+    name: 腾讯混元
+    region: cn
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://api.hunyuan.cloud.tencent.com/v1
+    defaultModel: hunyuan-turbos-latest
+    builtinDefault: true
+    apiKeyUrl: https://console.cloud.tencent.com/hunyuan/api-key
+    models:
+      - id: hunyuan-turbos-latest
+        enabled: true
+        label: Hunyuan Turbos Latest
+        reasoningModes: [off, auto]
+        defaultReasoningMode: off
+        inputModalities: [text, image]
+        contextWindowTokens: 32768
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 腾讯混元公开价格未在目录中固化，先按 0 处理
+      - id: hunyuan-large
+        enabled: true
+        label: Hunyuan Large
+        reasoningModes: [off, auto]
+        defaultReasoningMode: off
+        inputModalities: [text]
+        contextWindowTokens: 256000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 腾讯混元公开价格未在目录中固化，先按 0 处理
+      - id: hunyuan-lite
+        enabled: true
+        label: Hunyuan Lite
+        reasoningModes: []
+        inputModalities: [text]
+        contextWindowTokens: 256000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 腾讯混元公开价格未在目录中固化，先按 0 处理
+    modelFallbacks:
+      - pattern: ^hunyuan-turbos
+        reasoningModes: [off, auto]
+        defaultReasoningMode: off
+        inputModalities: [text, image]
+        contextWindowTokens: 32768
+      - pattern: ^hunyuan
+        reasoningModes: [off, auto]
+        defaultReasoningMode: off
+        inputModalities: [text]
+        contextWindowTokens: 256000
+
+  qianfan:
+    label: 百度千帆
+    name: 百度千帆
+    region: cn
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://qianfan.baidubce.com/v2
+    defaultModel: ernie-5.1
+    builtinDefault: true
+    apiKeyUrl: https://console.bce.baidu.com/iam/#/iam/apikey/list
+    models:
+      - id: ernie-5.1
+        enabled: true
+        label: ERNIE 5.1
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 131072
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 百度千帆公开价格未在目录中固化，先按 0 处理
+      - id: ernie-5.0-thinking-latest
+        enabled: true
+        label: ERNIE 5.0 Thinking Latest
+        reasoningModes: []
+        reasoningAlwaysOn: true
+        inputModalities: [text]
+        contextWindowTokens: 131072
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 百度千帆公开价格未在目录中固化，先按 0 处理
+      - id: ernie-x1.1-preview
+        enabled: true
+        label: ERNIE X1.1 Preview
+        reasoningModes: []
+        reasoningAlwaysOn: true
+        inputModalities: [text]
+        contextWindowTokens: 65536
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 百度千帆公开价格未在目录中固化，先按 0 处理
+      - id: ernie-4.5-turbo-128k
+        enabled: true
+        label: ERNIE 4.5 Turbo 128K
+        reasoningModes: []
+        inputModalities: [text, image]
+        contextWindowTokens: 131072
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 百度千帆公开价格未在目录中固化，先按 0 处理
+    modelFallbacks:
+      - pattern: ^ernie-5\.
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 131072
+      - pattern: ^ernie-.*thinking
+        reasoningModes: []
+        reasoningAlwaysOn: true
+        inputModalities: [text]
+        contextWindowTokens: 131072
+      - pattern: ^ernie-
+        reasoningModes: []
+        inputModalities: [text]
+        contextWindowTokens: 131072
+
+  xiaomi:
+    label: 小米 MiMo
+    name: 小米 MiMo
+    region: cn
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://api.xiaomimimo.com/v1
+    defaultModel: mimo-v2.5-pro
+    builtinDefault: true
+    apiKeyUrl: https://platform.mimomodel.com/
+    piProviderSlug: xiaomi
+    models:
+      - id: mimo-v2.5-pro
+        enabled: true
+        label: MiMo V2.5 Pro
+        reasoningModes: [off, high]
+        defaultReasoningMode: high
+        inputModalities: [text]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.435
+          outputCostPerMillion: 0.87
+          pricingSource: Xiaomi MiMo V2.5 Pro API pricing, 2026-06
+      - id: mimo-v2.5
+        enabled: true
+        label: MiMo V2.5
+        reasoningModes: [off, high]
+        defaultReasoningMode: off
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 小米 MiMo 公开价格未在目录中固化，先按 0 处理
+      - id: mimo-v2.5-pro-ultraspeed
+        enabled: true
+        label: MiMo V2.5 Pro UltraSpeed
+        reasoningModes: [off, high]
+        defaultReasoningMode: off
+        inputModalities: [text]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 小米 MiMo 公开价格未在目录中固化，先按 0 处理
+    modelFallbacks:
+      - pattern: ^mimo-v2\.5
+        reasoningModes: [off, high]
+        defaultReasoningMode: off
+        inputModalities: [text]
+        contextWindowTokens: 1000000
+
+  openai:
+    label: OpenAI
+    name: OpenAI
+    region: global
+    api: openai-responses
+    auth:
+      type: bearer
+    defaultBaseURL: https://api.openai.com/v1
+    defaultModel: gpt-5.5
+    builtinDefault: true
+    apiKeyUrl: https://platform.openai.com/api-keys
+    piProviderSlug: openai
+    models:
+      - id: gpt-5.5
+        enabled: true
+        label: GPT-5.5
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 5
+          outputCostPerMillion: 30
+          cacheReadCostPerMillion: 0.5
+          pricingSource: OpenAI API pricing, 2026-06
+      - id: gpt-5.5-pro
+        enabled: true
+        label: GPT-5.5 Pro
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: high
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 30
+          outputCostPerMillion: 180
+          pricingSource: OpenAI API pricing, 2026-06
+      - id: gpt-5.4
+        enabled: true
+        label: GPT-5.4
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 400000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: OpenAI 价格未在目录中固化，先按 0 处理
+      - id: gpt-4.1
+        enabled: true
+        label: GPT-4.1
+        reasoningModes: []
+        inputModalities: [text, image]
+        contextWindowTokens: 1047576
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 2
+          outputCostPerMillion: 8
+          pricingSource: OpenAI API pricing, 2026-06
+    modelFallbacks:
+      - pattern: ^gpt-5
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 400000
+      - pattern: ^gpt-5\.5
+        contextWindowTokens: 1000000
+      - pattern: ^gpt-5\.5-pro
+        defaultReasoningMode: high
+        pricing:
+          currency: USD
+          inputCostPerMillion: 30
+          outputCostPerMillion: 180
+          pricingSource: OpenAI API pricing, 2026-06
+      - pattern: ^gpt-4\.1
+        reasoningModes: []
+        inputModalities: [text, image]
+        contextWindowTokens: 1047576
+
+  anthropic:
+    label: Anthropic
+    name: Anthropic
+    region: global
+    api: anthropic-messages
+    auth:
+      type: anthropic
+      header: x-api-key
+      versionHeader: anthropic-version
+      version: "2023-06-01"
+    defaultBaseURL: https://api.anthropic.com/v1
+    defaultModel: claude-fable-5
+    builtinDefault: true
+    apiKeyUrl: https://console.anthropic.com/settings/keys
+    piProviderSlug: anthropic
+    models:
+      - id: claude-fable-5
+        enabled: true
+        label: Claude Fable 5
+        reasoningModes: []
+        reasoningAlwaysOn: true
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 10
+          outputCostPerMillion: 50
+          pricingSource: Anthropic API pricing, 2026-06
+      - id: claude-opus-4-8
+        enabled: true
+        label: Claude Opus 4.8
+        reasoningModes: [low, medium, high, xhigh]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 200000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: Anthropic 价格未在目录中固化，先按 0 处理
+      - id: claude-sonnet-4-6
+        enabled: true
+        label: Claude Sonnet 4.6
+        reasoningModes: [low, medium, high]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 200000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 3
+          outputCostPerMillion: 15
+          pricingSource: Anthropic API pricing, 2026-06
+    modelFallbacks:
+      - pattern: ^claude-fable-
+        reasoningModes: []
+        reasoningAlwaysOn: true
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+      - pattern: ^claude-
+        reasoningModes: [low, medium, high]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 200000
+
+  gemini:
+    label: Gemini
+    name: Gemini
+    region: global
+    api: google-generative-ai
+    auth:
+      type: x-api-key
+      header: x-goog-api-key
+    defaultBaseURL: https://generativelanguage.googleapis.com/v1beta
+    defaultModel: gemini-3.5-flash
+    builtinDefault: true
+    apiKeyUrl: https://aistudio.google.com/app/apikey
+    piProviderSlug: google
+    models:
+      - id: gemini-3.5-flash
+        enabled: true
+        label: Gemini 3.5 Flash
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1048576
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.125
+          outputCostPerMillion: 0.75
+          cacheReadCostPerMillion: 0.0125
+          pricingSource: Google Gemini API pricing, 2026-06
+      - id: gemini-3.1-pro-preview
+        enabled: true
+        label: Gemini 3.1 Pro Preview
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1048576
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 2
+          outputCostPerMillion: 12
+          cacheReadCostPerMillion: 0.2
+          pricingSource: Google Gemini API pricing, 2026-06
+      - id: gemini-3-flash
+        enabled: true
+        label: Gemini 3 Flash
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1048576
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0.125
+          outputCostPerMillion: 0.75
+          cacheReadCostPerMillion: 0.0125
+          pricingSource: Google Gemini API pricing, 2026-06
+    modelFallbacks:
+      - pattern: ^gemini-
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1048576
+
+  openrouter:
+    label: OpenRouter
+    name: OpenRouter
+    region: gateway
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://openrouter.ai/api/v1
+    defaultModel: openai/gpt-5.5
+    builtinDefault: true
+    apiKeyUrl: https://openrouter.ai/settings/keys
+    piProviderSlug: openrouter
+    models:
+      - id: openai/gpt-5.5
+        enabled: true
+        label: OpenAI GPT-5.5
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: OpenRouter 模型价格随路由变化，先按 0 处理
+      - id: openai/gpt-5.5-pro
+        enabled: true
+        label: OpenAI GPT-5.5 Pro
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: high
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: OpenRouter 模型价格随路由变化，先按 0 处理
+      - id: anthropic/claude-fable-5
+        enabled: true
+        label: Claude Fable 5
+        reasoningModes: []
+        reasoningAlwaysOn: true
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: OpenRouter 模型价格随路由变化，先按 0 处理
+      - id: google/gemini-3.5-flash
+        enabled: true
+        label: Gemini 3.5 Flash
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1048576
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: OpenRouter 模型价格随路由变化，先按 0 处理
+    modelFallbacks:
+      - pattern: ^openai/gpt-5
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 400000
+      - pattern: ^openai/gpt-5\.5
+        contextWindowTokens: 1000000
+      - pattern: ^openai/gpt-5\.5-pro
+        defaultReasoningMode: high
+      - pattern: ^anthropic/claude-
+        reasoningModes: [low, medium, high]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 200000
+      - pattern: ^anthropic/claude-fable-
+        reasoningModes: []
+        reasoningAlwaysOn: true
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+      - pattern: ^google/gemini-
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1048576
+
+  litellm:
+    label: LiteLLM
+    name: LiteLLM
+    region: gateway
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: http://localhost:4000/v1
+    defaultModel: gpt-5.5
+    builtinDefault: true
+    apiKeyUrl: https://docs.litellm.ai/docs/proxy/virtual_keys
+    models:
+      - id: gpt-5.5
+        enabled: true
+        label: GPT-5.5
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: LiteLLM 后端路由可变，先按 0 处理
+      - id: gpt-5.5-pro
+        enabled: true
+        label: GPT-5.5 Pro
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: high
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: LiteLLM 后端路由可变，先按 0 处理
+      - id: claude-fable-5
+        enabled: true
+        label: Claude Fable 5
+        reasoningModes: []
+        reasoningAlwaysOn: true
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: LiteLLM 后端路由可变，先按 0 处理
+      - id: gemini-3.5-flash
+        enabled: true
+        label: Gemini 3.5 Flash
+        reasoningModes: [off, auto]
+        defaultReasoningMode: auto
+        inputModalities: [text, image, video]
+        contextWindowTokens: 1048576
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: LiteLLM 后端路由可变，先按 0 处理
+    modelFallbacks:
+      - pattern: .
+        reasoningModes: []
+        inputModalities: [text]
+        contextWindowTokens: 131072
+
+  openai-compatible:
+    label: OpenAI-compatible
+    name: OpenAI-compatible
+    region: custom
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://api.openai.com/v1
+    defaultModel: gpt-5.5
+    apiKeyUrl: https://platform.openai.com/api-keys
+    models:
+      - id: gpt-5.5
+        enabled: true
+        label: GPT-5.5
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 5
+          outputCostPerMillion: 30
+          cacheReadCostPerMillion: 0.5
+          pricingSource: OpenAI API pricing, 2026-06
+      - id: gpt-5.5-pro
+        enabled: true
+        label: GPT-5.5 Pro
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: high
+        inputModalities: [text, image]
+        contextWindowTokens: 1000000
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 30
+          outputCostPerMillion: 180
+          pricingSource: OpenAI API pricing, 2026-06
+    modelFallbacks:
+      - pattern: ^gpt-5
+        reasoningModes: [minimal, low, medium, high]
+        defaultReasoningMode: medium
+        inputModalities: [text, image]
+        contextWindowTokens: 400000
+      - pattern: ^gpt-5\.5
+        contextWindowTokens: 1000000
+      - pattern: ^gpt-5\.5-pro
+        defaultReasoningMode: high
+        pricing:
+          currency: USD
+          inputCostPerMillion: 30
+          outputCostPerMillion: 180
+          pricingSource: OpenAI API pricing, 2026-06
+      - pattern: .
+        reasoningModes: []
+        inputModalities: [text]
+        contextWindowTokens: 131072
+
+  custom:
+    label: 自定义
+    name: Custom
+    region: custom
+    api: openai-completions
+    auth:
+      type: bearer
+    defaultBaseURL: https://api.example.com/v1
+    defaultModel: custom-model
+    models:
+      - id: custom-model
+        enabled: true
+        label: Custom Model
+        reasoningModes: []
+        inputModalities: [text]
+        contextWindowTokens: 131072
+        maxToolIterations: 500
+        pricing:
+          currency: USD
+          inputCostPerMillion: 0
+          outputCostPerMillion: 0
+          pricingSource: 自定义模型默认不估算费用
+    modelFallbacks:
+      - pattern: .
+        reasoningModes: []
+        inputModalities: [text]
+        contextWindowTokens: 131072

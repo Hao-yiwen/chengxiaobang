@@ -53,10 +53,7 @@ describe("desktop logging", () => {
     infoLoggers.main.info({ marker: "info-default" }, "info default");
     await infoLoggers.flush();
 
-    const infoLog = await readFile(
-      logFilePath("main", join(tempDir, "info"), now()),
-      "utf8"
-    );
+    const infoLog = await readLogUntil(logFilePath("main", join(tempDir, "info"), now()), "info default");
     expect(infoLog).toContain("info default");
     expect(infoLog).not.toContain("debug default");
 
@@ -68,9 +65,9 @@ describe("desktop logging", () => {
     debugLoggers.main.debug({ marker: "debug-enabled" }, "debug enabled");
     await debugLoggers.flush();
 
-    const debugLog = await readFile(
+    const debugLog = await readLogUntil(
       logFilePath("main", join(tempDir, "debug"), now()),
-      "utf8"
+      "debug enabled"
     );
     expect(debugLog).toContain("debug enabled");
   });
@@ -171,3 +168,20 @@ describe("desktop logging", () => {
     ]);
   });
 });
+
+async function readLogUntil(path: string, expected: string): Promise<string> {
+  const deadline = Date.now() + 1_000;
+  let lastContent = "";
+  while (Date.now() < deadline) {
+    try {
+      lastContent = await readFile(path, "utf8");
+      if (lastContent.includes(expected)) {
+        return lastContent;
+      }
+    } catch {
+      // 文件由异步日志 writer 创建，短暂不存在时继续等待。
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return lastContent;
+}

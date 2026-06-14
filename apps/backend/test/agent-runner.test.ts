@@ -120,6 +120,35 @@ describe("AgentRunner", () => {
     await expect(readFile(join(dir, "ordinary.txt"), "utf8")).resolves.toBe("hello");
   });
 
+  it("records a finalized usage ledger entry for a model attempt", async () => {
+    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    let sawRunEnd = false;
+
+    for await (const event of runner.stream({
+      prompt: "请回答一句话",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      // 消费完整事件流，等待 assistant message_end 触发费用账本收口。
+      if (event.type === "run_end") {
+        sawRunEnd = true;
+      }
+    }
+
+    expect(sawRunEnd).toBe(true);
+    const entries = await store.listUsageCostEntries({ finalizedOnly: true });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      attemptIndex: 0,
+      promptTokens: 3,
+      completionTokens: 5,
+      totalTokens: 8,
+      costSource: "catalog_usage",
+      tokenCountSource: "provider_usage",
+      billable: true
+    });
+  });
+
   it("requires approval before direct writes to absolute paths outside the workspace", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
     const outsideDir = await mkdtemp(join(tmpdir(), "cxb-agent-outside-"));

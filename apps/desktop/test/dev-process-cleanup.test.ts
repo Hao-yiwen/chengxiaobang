@@ -54,6 +54,7 @@ describe("dev-process-cleanup", () => {
       repoRoot,
       logger,
       waitMs: 0,
+      platform: "darwin",
       execFileImpl: vi.fn(async () => ({
         stdout: `26155 26076 26155 /Users/haoyiwen/.chengxiaobang/data/runtime/bun-dev-darwin-arm64-63096576 --no-orphans --watch ${backendEntry} --port 31031\n`
       })),

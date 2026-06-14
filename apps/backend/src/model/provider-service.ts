@@ -1,61 +1,73 @@
 import {
   createId,
-  mergeProviderModelOptions,
+  getCatalogDefaultEnabledModelIds,
+  getCatalogModelOptions,
+  getProviderConfigDefaultEnabledModelIds,
+  getProviderConfigModelOptions,
+  mergeProviderConfigModelOptions,
   nowIso,
   providerInputSchema,
   type ProviderConfig,
+  type ProviderModelOverrides,
   type ProviderModelOption,
   type ProviderInput
 } from "@chengxiaobang/shared";
-import type { StateStore } from "../repository/state-store";
 import type { SecretStore } from "../secrets/secret-store";
 import { listProviderModels, testProvider } from "./pi-model";
 
 type TestProviderFn = (provider: ProviderConfig, apiKey?: string) => Promise<void>;
 type ListModelsFn = (provider: ProviderConfig, apiKey?: string) => Promise<string[]>;
+export type ProviderRepository = Pick<
+  import("../repository/state-store").StateStore,
+  "listProviders" | "getProvider" | "upsertProvider" | "deleteProvider"
+>;
 
 export class ProviderService {
   constructor(
-    private readonly store: StateStore,
+    private readonly providers: ProviderRepository,
     private readonly secrets: SecretStore,
     private readonly testProviderFn: TestProviderFn = testProvider,
     private readonly listModelsFn: ListModelsFn = listProviderModels
   ) {}
 
   async listProviders(): Promise<ProviderConfig[]> {
-    return this.store.listProviders();
+    return this.providers.listProviders();
   }
 
   async saveProvider(input: ProviderInput): Promise<ProviderConfig> {
     const parsed = providerInputSchema.parse(input);
-    const existing = parsed.id ? await this.store.getProvider(parsed.id) : undefined;
+    const id = parsed.id ?? parsed.kind ?? createId("provider");
+    const existing = await this.providers.getProvider(id);
     const timestamp = nowIso();
-    const id = parsed.id ?? createId("provider");
     const apiKeyRef =
       parsed.apiKey && parsed.apiKey.length > 0
         ? await this.secrets.setSecret(id, parsed.apiKey)
         : existing?.apiKeyRef;
-    // 没有新密钥也没有已存密钥的配置无法发起任何请求，直接拒绝保存。
-    if (!apiKeyRef) {
-      console.warn(`[provider-service] 保存被拒：缺少 API Key id=${id} kind=${parsed.kind}`);
-      throw new Error("请填写 API Key");
-    }
-    // 启用模型去重；默认模型必须在启用列表内，不在则回退到列表第一个。
-    const models =
-      parsed.models && parsed.models.length > 0 ? [...new Set(parsed.models)] : undefined;
-    const model = models && !models.includes(parsed.model) ? models[0] : parsed.model;
+    // 启用模型去重并按 YAML 目录过滤；默认模型必须在启用列表内，不在则回退到列表第一个。
+    const models = normalizeSelectedModels(parsed, existing);
+    const model = models.includes(parsed.model) ? parsed.model : models[0]!;
+    const modelOverrides = filterModelOverrides(parsed.modelOverrides, models);
 
     console.info(
-      `[provider-service] 保存供应商 id=${id} kind=${parsed.kind} models=${models?.length ?? "默认"}`
+      `[provider-service] 保存供应商 providerId=${id} kind=${parsed.kind} selectedModelCount=${
+        models.length
+      } defaultModel=${model} modelOverrides=${Object.keys(modelOverrides ?? {}).length} hasApiKey=${Boolean(apiKeyRef)}`
     );
-    return this.store.upsertProvider({
+    return this.providers.upsertProvider({
       id,
       kind: parsed.kind,
       name: parsed.name,
       baseURL: parsed.baseURL,
       model,
+      region: parsed.region ?? existing?.region,
+      api: parsed.api ?? existing?.api ?? "openai-completions",
+      auth: parsed.auth ?? existing?.auth,
+      apiKeyUrl: existing?.apiKeyUrl,
+      piProviderSlug: existing?.piProviderSlug,
+      catalog: existing?.catalog,
       models,
-      reasoningMode: parsed.reasoningMode,
+      modelOverrides,
+      reasoningMode: parsed.reasoningMode ?? existing?.reasoningMode,
       apiKeyRef,
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp
@@ -63,22 +75,26 @@ export class ProviderService {
   }
 
   async deleteProvider(id: string): Promise<boolean> {
-    return this.store.deleteProvider(id);
+    return this.providers.deleteProvider(id);
   }
 
   async testProvider(id: string): Promise<void> {
-    const provider = await this.store.getProvider(id);
+    const provider = await this.providers.getProvider(id);
     if (!provider) {
       throw new Error("模型配置不存在");
     }
     const apiKey = provider.apiKeyRef
       ? await this.secrets.getSecret(provider.apiKeyRef)
       : undefined;
+    if (!apiKey) {
+      console.warn(`[provider-service] 测试连接失败：缺少 API Key providerId=${id}`);
+      throw new Error("请先填写 API Key");
+    }
     await this.testProviderFn(provider, apiKey);
   }
 
   async listModels(id: string): Promise<string[]> {
-    const provider = await this.store.getProvider(id);
+    const provider = await this.providers.getProvider(id);
     if (!provider) {
       console.warn(`[provider-service] listModels 失败：模型配置不存在 id=${id}`);
       throw new Error("模型配置不存在");
@@ -86,11 +102,15 @@ export class ProviderService {
     const apiKey = provider.apiKeyRef
       ? await this.secrets.getSecret(provider.apiKeyRef)
       : undefined;
+    if (!apiKey) {
+      console.warn(`[provider-service] listModels 失败：缺少 API Key providerId=${id}`);
+      throw new Error("请先填写 API Key");
+    }
     return this.listModelsFn(provider, apiKey);
   }
 
   async listModelOptions(id: string): Promise<ProviderModelOption[]> {
-    const provider = await this.store.getProvider(id);
+    const provider = await this.providers.getProvider(id);
     if (!provider) {
       console.warn(`[provider-service] listModelOptions 失败：模型配置不存在 id=${id}`);
       throw new Error("模型配置不存在");
@@ -110,8 +130,8 @@ export class ProviderService {
         );
       }
     }
-    const options = mergeProviderModelOptions(
-      provider.kind,
+    const options = mergeProviderConfigModelOptions(
+      provider,
       [...liveModels, ...(provider.models ?? [])],
       provider.model
     );
@@ -120,4 +140,65 @@ export class ProviderService {
     );
     return options;
   }
+}
+
+function normalizeSelectedModels(
+  parsed: ProviderInput,
+  existing: ProviderConfig | undefined
+): string[] {
+  const allowed = selectableModelIds(parsed.kind, existing);
+  const submitted =
+    parsed.models !== undefined
+      ? parsed.models
+      : existing?.models ?? defaultEnabledModelIds(parsed.kind, existing);
+  const models = uniqueStrings(submitted).filter(
+    (modelId) => allowed.size === 0 || allowed.has(modelId)
+  );
+  if (models.length === 0) {
+    console.warn("[provider-service] 保存供应商失败：没有可启用模型", {
+      kind: parsed.kind,
+      submittedModelCount: submitted.length,
+      allowedModelCount: allowed.size
+    });
+    throw new Error("请至少勾选一个模型");
+  }
+  return models;
+}
+
+function selectableModelIds(
+  kind: string,
+  existing: ProviderConfig | undefined
+): Set<string> {
+  const ids = existing
+    ? getProviderConfigModelOptions(existing).map((model) => model.id)
+    : getCatalogModelOptions(kind).map((model) => model.id);
+  return new Set(ids);
+}
+
+function defaultEnabledModelIds(
+  kind: string,
+  existing: ProviderConfig | undefined
+): string[] {
+  const ids = existing
+    ? getProviderConfigDefaultEnabledModelIds(existing)
+    : getCatalogDefaultEnabledModelIds(kind);
+  return ids.length > 0 ? ids : [existing?.model ?? ""].filter(Boolean);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function filterModelOverrides(
+  overrides: ProviderModelOverrides | undefined,
+  enabledModels: string[] | undefined
+): ProviderModelOverrides | undefined {
+  if (!overrides) {
+    return undefined;
+  }
+  const enabled = enabledModels ? new Set(enabledModels) : undefined;
+  const next = Object.fromEntries(
+    Object.entries(overrides).filter(([modelId]) => !enabled || enabled.has(modelId))
+  );
+  return Object.keys(next).length > 0 ? next : undefined;
 }

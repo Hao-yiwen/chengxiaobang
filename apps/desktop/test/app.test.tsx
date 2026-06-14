@@ -93,6 +93,37 @@ beforeEach(() => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
 
+async function findProviderCascadeOption(name: string): Promise<HTMLElement> {
+  return waitFor(() => {
+    const options = Array.from(
+      document.querySelectorAll<HTMLElement>(".provider-cascade-popup .ant-cascader-menu-item")
+    );
+    const option = options.find((item) => item.textContent?.trim() === name);
+    if (!option) {
+      throw new Error(`未找到供应商级联选项：${name}`);
+    }
+    return option;
+  });
+}
+
+function queryProviderCascadeOption(name: string): HTMLElement | undefined {
+  const options = Array.from(
+    document.querySelectorAll<HTMLElement>(".provider-cascade-popup .ant-cascader-menu-item")
+  );
+  return options.find((item) => item.textContent?.trim() === name);
+}
+
+async function clickProviderCascadeConfirm(): Promise<void> {
+  const popup = await waitFor(() => {
+    const element = document.querySelector<HTMLElement>(".provider-cascade-popup");
+    if (!element) {
+      throw new Error("未找到供应商级联弹层");
+    }
+    return element;
+  });
+  fireEvent.click(within(popup).getByRole("button", { name: "确认" }));
+}
+
 describe("App", () => {
   it("renders home composer and model presets", async () => {
     const client = createClient();
@@ -144,14 +175,26 @@ describe("App", () => {
 
     render(<App client={client} />);
 
-    // The home screen stays visible; setup happens in a lightweight dialog.
+    // 首页保持可见，首次配置在轻量弹窗中完成。
     expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
     expect(await screen.findByText("配置模型")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("粘贴你的 API Key")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("粘贴你的 API Key")).not.toBeInTheDocument();
+    expect(screen.getByText("选择区域和供应商")).toBeInTheDocument();
+    expect(screen.queryByText("默认模型")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "供应商" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "稍后再说" }));
+    await waitFor(() => expect(screen.queryByText("配置模型")).not.toBeInTheDocument());
+
+    const providerButton = screen.getByLabelText("选择供应商");
+    expect(providerButton).not.toBeDisabled();
+    fireEvent.click(providerButton);
+
+    expect(await screen.findByText("配置模型")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("粘贴你的 API Key")).not.toBeInTheDocument();
   });
 
-  it("saves one provider enabling all catalog models from the setup dialog", async () => {
+  it("saves one provider from the setup dialog after choosing it through the cascade", async () => {
     const saved = { ...provider, id: "p_new" };
     const saveProvider = vi.fn(async (_input: ProviderInput) => saved);
     const listProviders = vi
@@ -163,21 +206,35 @@ describe("App", () => {
     render(<App client={client} />);
     await screen.findByText("配置模型");
 
+    fireEvent.click(screen.getByLabelText("类型"));
+    expect(await findProviderCascadeOption("国内供应商")).toBeInTheDocument();
+    expect(queryProviderCascadeOption("DeepSeek")).toBeUndefined();
+    fireEvent.click(await findProviderCascadeOption("国内供应商"));
+    fireEvent.click(await findProviderCascadeOption("Kimi"));
+    expect(screen.queryByPlaceholderText("粘贴你的 API Key")).not.toBeInTheDocument();
+    await clickProviderCascadeConfirm();
+    expect(screen.getByText("Kimi")).toBeInTheDocument();
+    expect(screen.getByText("Kimi K2.7 Code")).toBeInTheDocument();
+    expect(screen.queryByText("默认模型")).not.toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("粘贴你的 API Key"), {
       target: { value: "sk-test" }
     });
     fireEvent.click(screen.getByRole("button", { name: "保存并开始" }));
 
-    // 一个 API Key 只生成一条供应商配置，目录模型全部进入 models。
+    // 一个 API Key 只生成一条供应商配置；模型能力与可选列表由 YAML 目录提供。
     await waitFor(() => expect(saveProvider).toHaveBeenCalledTimes(1));
     expect(saveProvider.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
-        kind: "deepseek",
-        model: "deepseek-v4-flash",
-        models: ["deepseek-v4-flash", "deepseek-v4-pro"],
+        kind: "kimi",
+        model: "kimi-k2.7-code",
         apiKey: "sk-test"
       })
     );
+    expect(saveProvider.mock.calls[0]?.[0].models).toEqual([
+      "kimi-k2.7-code",
+      "kimi-k2.6",
+      "kimi-k2.5"
+    ]);
     await waitFor(() =>
       expect(screen.queryByText("配置模型")).not.toBeInTheDocument()
     );

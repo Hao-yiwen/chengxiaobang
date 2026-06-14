@@ -1,5 +1,6 @@
 import {
   messageAttachmentSchema,
+  providerModelOverridesSchema,
   tokenUsageSchema,
   toolCallApprovalSchema,
   type Message,
@@ -13,7 +14,11 @@ import {
   type TokenUsage,
   type ToolCall
 } from "@chengxiaobang/shared";
-import type { StoredMessage, UsageStatsSourceRun } from "./state-store";
+import type {
+  StoredMessage,
+  UsageCostEntry,
+  UsageStatsSourceRun
+} from "./state-store";
 import type { Row } from "./sqlite-types";
 
 export function mapProject(row: Row): Project {
@@ -166,8 +171,9 @@ export function mapUsageStatsSourceRun(row: Row): UsageStatsSourceRun {
   return {
     id: String(row.id),
     sessionId: String(row.session_id),
-    status: row.status as UsageStatsSourceRun["status"],
+    status: row.status as RunRecord["status"],
     ...(row.usage ? { usage: parseRunUsage(row.usage) } : {}),
+    ...(row.error ? { error: String(row.error) } : {}),
     createdAt: String(row.created_at),
     ...(row.provider_id === null || row.provider_id === undefined
       ? {}
@@ -179,19 +185,46 @@ export function mapUsageStatsSourceRun(row: Row): UsageStatsSourceRun {
     ...(row.fallback_provider_id === null || row.fallback_provider_id === undefined
       ? {}
       : { fallbackProviderId: String(row.fallback_provider_id) }),
-    ...(row.fallback_provider_kind === null || row.fallback_provider_kind === undefined
+    ...(row.session_model === null || row.session_model === undefined
       ? {}
-      : {
-          fallbackProviderKind:
-            row.fallback_provider_kind as UsageStatsSourceRun["fallbackProviderKind"]
-        }),
-    ...(row.session_model === null ||
-    row.session_model === undefined ||
-    String(row.session_model).length === 0
-      ? row.provider_model === null || row.provider_model === undefined
-        ? {}
-        : { fallbackModel: String(row.provider_model) }
       : { fallbackModel: String(row.session_model) })
+  };
+}
+
+export function mapUsageCostEntry(row: Row): UsageCostEntry {
+  return {
+    id: String(row.id),
+    runId: String(row.run_id),
+    sessionId: String(row.session_id),
+    attemptIndex: Number(row.attempt_index),
+    ...(row.provider_id === null || row.provider_id === undefined
+      ? {}
+      : { providerId: String(row.provider_id) }),
+    ...(row.provider_kind === null || row.provider_kind === undefined
+      ? {}
+      : { providerKind: row.provider_kind as UsageCostEntry["providerKind"] }),
+    ...(row.model === null || row.model === undefined ? {} : { model: String(row.model) }),
+    ...(row.status_code === null || row.status_code === undefined
+      ? {}
+      : { statusCode: Number(row.status_code) }),
+    ...(row.error_code === null || row.error_code === undefined
+      ? {}
+      : { errorCode: String(row.error_code) }),
+    ...(row.error_message === null || row.error_message === undefined
+      ? {}
+      : { errorMessage: String(row.error_message) }),
+    promptTokens: Number(row.prompt_tokens),
+    completionTokens: Number(row.completion_tokens),
+    cachedPromptTokens: Number(row.cached_prompt_tokens),
+    totalTokens: Number(row.total_tokens),
+    inputEstimatedTokens: Number(row.input_estimated_tokens),
+    costUsd: Number(row.cost_usd),
+    costCny: Number(row.cost_cny),
+    costSource: row.cost_source as UsageCostEntry["costSource"],
+    tokenCountSource: row.token_count_source as UsageCostEntry["tokenCountSource"],
+    billable: Number(row.billable) === 1,
+    entryCreatedAt: String(row.entry_created_at),
+    recordedAt: String(row.recorded_at)
   };
 }
 
@@ -224,6 +257,14 @@ export function mapProvider(row: Row): ProviderConfig {
     ...(row.models === null || row.models === undefined
       ? {}
       : { models: parseProviderModels(String(row.models), String(row.id)) }),
+    ...(row.model_overrides === null || row.model_overrides === undefined
+      ? {}
+      : {
+          modelOverrides: parseProviderModelOverrides(
+            String(row.model_overrides),
+            String(row.id)
+          )
+        }),
     ...(row.reasoning_mode === null || row.reasoning_mode === undefined
       ? {}
       : { reasoningMode: row.reasoning_mode as ProviderConfig["reasoningMode"] }),
@@ -231,6 +272,22 @@ export function mapProvider(row: Row): ProviderConfig {
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
+}
+
+function parseProviderModelOverrides(
+  raw: string,
+  providerId: string
+): ProviderConfig["modelOverrides"] | undefined {
+  try {
+    return providerModelOverridesSchema.parse(JSON.parse(raw));
+  } catch (error) {
+    console.warn(
+      `[sqlite-state-store] 解析 providers.model_overrides 失败 providerId=${providerId} error=${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    return undefined;
+  }
 }
 
 function buildSearchSnippet(content: string, query: string): string {

@@ -2,12 +2,16 @@ import type { Project, ProviderConfig, Session } from "@chengxiaobang/shared";
 import { firstConfiguredProvider, isConfiguredProvider } from "./helpers/providers";
 import type { AppState } from "./types";
 
-/** 当前运行会使用的供应商：优先选中项，否则使用第一个已配置供应商。 */
+/** 当前运行会使用的供应商：首页新对话必须显式选择，已有会话才回退到第一个已配置供应商。 */
 export function resolveRunProvider(state: AppState): ProviderConfig | undefined {
-  const selected =
-    state.providers.find((provider) => provider.id === state.providerId) ??
-    firstConfiguredProvider(state.providers);
-  return isConfiguredProvider(selected) ? selected : undefined;
+  const selected = state.providers.find((provider) => provider.id === state.providerId);
+  if (isConfiguredProvider(selected)) {
+    return selected;
+  }
+  if (state.view === "home" && !state.activeSessionId) {
+    return undefined;
+  }
+  return firstConfiguredProvider(state.providers);
 }
 
 export function selectActiveSession(state: AppState): Session | undefined {

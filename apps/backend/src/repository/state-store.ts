@@ -15,6 +15,20 @@ import type {
   ToolCall
 } from "@chengxiaobang/shared";
 
+export type UsageCostSource =
+  | "pending"
+  | "reported_usage"
+  | "catalog_usage"
+  | "input_estimate_error"
+  | "non_billable_error"
+  | "unpriced";
+
+export type UsageTokenCountSource =
+  | "provider_usage"
+  | "js_tiktoken"
+  | "fallback_estimate"
+  | "none";
+
 export interface CreateProjectInput {
   name: string;
   path: string;
@@ -64,6 +78,7 @@ export interface UsageStatsSourceRun {
   sessionId: string;
   status: RunRecord["status"];
   usage?: TokenUsage;
+  error?: string;
   createdAt: string;
   providerId?: string;
   providerKind?: ProviderKind;
@@ -71,6 +86,43 @@ export interface UsageStatsSourceRun {
   fallbackProviderId?: string;
   fallbackProviderKind?: ProviderKind;
   fallbackModel?: string;
+}
+
+export interface UsageCostEntry {
+  id: string;
+  runId: string;
+  sessionId: string;
+  attemptIndex: number;
+  providerId?: string;
+  providerKind?: ProviderKind;
+  model?: string;
+  statusCode?: number;
+  errorCode?: string;
+  errorMessage?: string;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens: number;
+  totalTokens: number;
+  inputEstimatedTokens: number;
+  costUsd: number;
+  costCny: number;
+  costSource: UsageCostSource;
+  tokenCountSource: UsageTokenCountSource;
+  billable: boolean;
+  entryCreatedAt: string;
+  recordedAt: string;
+}
+
+export type UpsertUsageCostEntryInput = Omit<
+  UsageCostEntry,
+  "id" | "recordedAt"
+> & {
+  id?: string;
+};
+
+export interface UsageCostEntryFilter {
+  sessionId?: string;
+  finalizedOnly?: boolean;
 }
 
 export interface UpdateSessionInput {
@@ -159,6 +211,9 @@ export interface StateStore {
   ): Promise<void>;
   listRuns(sessionId: string): Promise<RunRecord[]>;
   listUsageStatsRuns(): Promise<UsageStatsSourceRun[]>;
+  upsertUsageCostEntry(input: UpsertUsageCostEntryInput): Promise<UsageCostEntry>;
+  listUsageCostEntries(filter?: UsageCostEntryFilter): Promise<UsageCostEntry[]>;
+  getSessionUsageCostCny(sessionId: string): Promise<number>;
   listToolCallsForSession(sessionId: string): Promise<ToolCall[]>;
   listProviders(): Promise<ProviderConfig[]>;
   getProvider(id: string): Promise<ProviderConfig | undefined>;

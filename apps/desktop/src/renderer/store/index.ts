@@ -13,6 +13,7 @@ export type {
   Attachment,
   NotificationToast,
   PreviewFileState,
+  ProjectSortMode,
   QueuedRunItem,
   RightPanelMode,
   TerminalEntry,

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { PROVIDER_CATALOG_SETTINGS } from "./provider-catalog.generated";
+
 export const reasoningModeSchema = z.enum([
   "off",
   "auto",
@@ -14,10 +16,26 @@ export type ReasoningMode = z.infer<typeof reasoningModeSchema>;
 export const modelInputModalitySchema = z.enum(["text", "image", "video"]);
 export type ModelInputModality = z.infer<typeof modelInputModalitySchema>;
 
-export const DEFAULT_CONTEXT_COMPACT_THRESHOLD_RATIO = 0.8;
+export const DEFAULT_CONTEXT_COMPACT_THRESHOLD_RATIO =
+  PROVIDER_CATALOG_SETTINGS.runtimeDefaults.autoCompactThresholdRatio;
+export const DEFAULT_MAX_TOOL_ITERATIONS = 500;
+export const MAX_CONFIGURABLE_TOOL_ITERATIONS = 5000;
+
+export const modelRuntimeOverrideSchema = z
+  .object({
+    maxToolIterations: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_CONFIGURABLE_TOOL_ITERATIONS)
+      .optional()
+  })
+  .strict();
+export type ModelRuntimeOverride = z.infer<typeof modelRuntimeOverrideSchema>;
 
 export const modelContextInfoSchema = z.object({
   contextWindowTokens: z.number().int().positive().optional(),
+  autoCompactThresholdTokens: z.number().int().positive().optional(),
   autoCompactThresholdRatio: z
     .number()
     .positive()
@@ -39,6 +57,9 @@ export type ModelPricingInfo = z.infer<typeof modelPricingInfoSchema>;
 export function contextCompactThresholdTokens(
   info: ModelContextInfo
 ): number | undefined {
+  if (info.autoCompactThresholdTokens) {
+    return info.autoCompactThresholdTokens;
+  }
   return info.contextWindowTokens
     ? Math.floor(info.contextWindowTokens * info.autoCompactThresholdRatio)
     : undefined;

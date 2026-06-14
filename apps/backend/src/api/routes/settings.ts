@@ -8,7 +8,6 @@ import {
   webSearchConfigInputSchema
 } from "@chengxiaobang/shared";
 import type { AppContext } from "../context";
-import { buildUsageStats } from "../../usage/usage-stats";
 
 export function settingsRoutes(context: AppContext): Hono {
   const app = new Hono();
@@ -109,7 +108,7 @@ export function settingsRoutes(context: AppContext): Hono {
       timezoneOffsetMinutes
     });
     const stats = usageStatsSchema.parse(
-      await buildUsageStats(context.store, { timezoneOffsetMinutes })
+      await context.usageCostLedgerService.buildUsageStats({ timezoneOffsetMinutes })
     );
     console.info("[settings-routes] 全局用量统计返回完成", {
       totalRunCount: stats.dataQuality.totalRunCount,

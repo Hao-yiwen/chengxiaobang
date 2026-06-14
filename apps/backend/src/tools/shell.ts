@@ -3,7 +3,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import type { TerminalExecResult } from "@chengxiaobang/shared";
 
 export const DEFAULT_COMMAND_TIMEOUT_MS = 120_000;
@@ -204,7 +204,7 @@ export async function runShellCommand(
 ): Promise<ShellCommandResult> {
   const backgroundAfterMs = options.backgroundAfterMs ?? DEFAULT_SHELL_BACKGROUND_AFTER_MS;
   const id = `shell_${randomUUID()}`;
-  const relativeOutputPath = join(SHELL_BACKGROUND_OUTPUT_DIR, `${sanitizePathPart(id)}.log`);
+  const relativeOutputPath = posix.join(SHELL_BACKGROUND_OUTPUT_DIR, `${sanitizePathPart(id)}.log`);
   const outputPath = join(cwd, relativeOutputPath);
   await mkdir(join(cwd, SHELL_BACKGROUND_OUTPUT_DIR), { recursive: true });
 

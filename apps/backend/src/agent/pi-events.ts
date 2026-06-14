@@ -30,8 +30,6 @@ import { requiresApproval } from "../tools/registry";
 import { normalizeDecision, type ApprovalQueue } from "./approval-queue";
 import type { AsyncEventQueue } from "./async-queue";
 
-export const MAX_TOOL_ITERATIONS = 25;
-
 const REJECTED_RESULT = "用户拒绝执行该操作";
 const REJECTED_MODEL_HINT = "用户拒绝执行该操作。请考虑其他方式或向用户说明。";
 const TOOL_ACTIVITY_PREVIEW_KEYS = [
@@ -98,10 +96,13 @@ export class RunEventTranslator {
       accessMode: AccessMode;
       strictApproval?: boolean;
       signal: AbortSignal;
+      model: string;
+      maxToolIterations: number;
       planMode?: boolean;
       planConfirmed?: boolean;
       initialUsage?: TokenUsage;
       smartApproval?: (toolCall: ToolCall) => Promise<ToolCallApproval>;
+      onAssistantMessageEnd?: (message: AssistantMessage) => void | Promise<void>;
       onPlanApproved?: (toolCallId: string, args: ProposePlanArgs) => void;
       onAskUserAnswered?: (toolCallId: string, answer: AskUserAnswer) => void;
     }
@@ -269,14 +270,22 @@ export class RunEventTranslator {
     return undefined;
   };
 
-  /** AgentLoopConfig.shouldStopAfterTurn: abort fast, cap runaway tool loops. */
+  /** AgentLoopConfig.shouldStopAfterTurn：快速响应中止，并限制异常工具循环。 */
   readonly shouldStopAfterTurn = (input: { message: unknown }): boolean => {
     if (this.options.signal.aborted) {
       return true;
     }
     const message = input.message as AssistantMessage;
-    if (message.stopReason === "toolUse" && this.turnCount >= MAX_TOOL_ITERATIONS) {
+    if (message.stopReason === "toolUse" && this.turnCount >= this.options.maxToolIterations) {
       this.maxIterationsHit = true;
+      console.warn("[pi-events] 已达到模型工具调用上限，停止本次 run", {
+        runId: this.options.runId,
+        sessionId: this.options.sessionId,
+        model: this.options.model,
+        turnCount: this.turnCount,
+        limit: this.options.maxToolIterations,
+        stopReason: message.stopReason
+      });
       return true;
     }
     return false;
@@ -287,6 +296,7 @@ export class RunEventTranslator {
     const reasoning = joinBlocks(message.content, "thinking");
     const hasToolCalls = message.content.some((block) => block.type === "toolCall");
     this.usage = message.usage;
+    await this.options.onAssistantMessageEnd?.(message);
 
     if (message.stopReason === "error") {
       this.errorMessage = message.errorMessage ?? "模型请求失败";
@@ -544,7 +554,7 @@ export class RunEventTranslator {
     if (this.maxIterationsHit) {
       await this.finish({
         status: "failed",
-        error: `已达到最大工具调用轮数（${MAX_TOOL_ITERATIONS}），任务可能过于复杂，请拆分后重试。`
+        error: `已达到当前模型的工具调用上限（${this.options.maxToolIterations}），本次任务可能过长或陷入循环，请检查当前进展后重试。`
       });
       return;
     }

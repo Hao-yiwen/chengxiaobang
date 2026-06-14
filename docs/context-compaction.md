@@ -126,19 +126,20 @@
 自动压缩阈值来自模型上下文配置：
 
 ```text
-autoCompactThresholdTokens = contextWindowTokens * autoCompactThresholdRatio
+autoCompactThresholdTokens = 模型显式 autoCompactThresholdTokens
+  或 contextWindowTokens * autoCompactThresholdRatio
 ```
 
-当前默认 `autoCompactThresholdRatio = 0.8`。例如 DeepSeek V4 系列上下文窗口配置为 `1,000,000` tokens，自动压缩阈值就是 `800,000` tokens。
+默认 `autoCompactThresholdRatio` 来自 `packages/shared/provider-catalog.yaml` 的 `runtimeDefaults.autoCompactThresholdRatio`，当前是 `0.8`。单个模型也可以在 YAML 里直接写 `autoCompactThresholdTokens`，例如 DeepSeek V4 系列上下文窗口配置为 `1,000,000` tokens，压缩点显式配置为 `800,000` tokens。
 
 状态判断：
 
 - `ok`：低于阈值的 90%。
 - `near_threshold`：达到阈值的 90%，但未达到阈值。
 - `over_threshold`：达到或超过自动压缩阈值。
-- `unknown`：模型没有可识别的 `contextWindowTokens`。
+- `unknown`：模型没有可识别的 `autoCompactThresholdTokens`，也无法从上下文窗口和比例推导阈值。
 
-只有存在 `contextWindowTokens` 且估算值达到阈值时，才会自动压缩。未知窗口大小的模型不会自动压缩。
+只要能得到 `autoCompactThresholdTokens` 且估算值达到阈值，就会自动压缩。完全未知窗口大小、且没有显式压缩点的模型不会自动压缩。
 
 ---
 
@@ -215,8 +216,8 @@ autoCompactThresholdTokens = contextWindowTokens * autoCompactThresholdRatio
 | 参数 | 当前值 | 说明 |
 | --- | ---: | --- |
 | 最近消息保留数 | `4` | 每次摘要压缩都会保留最后 4 条普通消息 |
-| 默认自动压缩比例 | `0.8` | 达到模型窗口 80% 时触发自动压缩 |
-| DeepSeek V4 窗口 | `1,000,000` tokens | 对应自动压缩阈值 `800,000` tokens |
+| 默认自动压缩比例 | YAML `runtimeDefaults.autoCompactThresholdRatio = 0.8` | 未配置显式 tokens 时，达到模型窗口 80% 触发自动压缩 |
+| DeepSeek V4 窗口 | `1,000,000` tokens | YAML 显式压缩阈值 `800,000` tokens |
 | 长工具结果内联上限 | `24KB` | 超过后写入 `.chengxiaobang/tool-results/**` |
 | 长工具结果预览 | 头尾各 `4KB` | 返回给模型的短摘要里包含开头和末尾预览 |
 | `read_file` 分段上限 | `1000` 行 | 防止模型再次一次性读入过大文件 |
@@ -225,7 +226,7 @@ autoCompactThresholdTokens = contextWindowTokens * autoCompactThresholdRatio
 
 - 压缩不会删除消息，只影响模型上下文构造。
 - 多次压缩只把最新摘要作为旧摘要输入。
-- 自动压缩依赖模型上下文窗口配置，未知窗口大小时不会触发。
+- 自动压缩依赖模型上下文窗口与比例推导，或模型显式 `autoCompactThresholdTokens` 配置；两者都没有时不会触发。
 - 长工具结果落盘保护是防爆机制，不会生成语义摘要；模型需要按路径自行分段读取完整内容。
 
 ---

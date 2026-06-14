@@ -1,3 +1,5 @@
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   isTrustedAppWindowUrl,
@@ -39,13 +41,18 @@ describe("shouldOpenExternalFromAppWindow", () => {
 
 describe("shouldAllowWebviewSrc", () => {
   it("allows http(s) and local HTML/SVG preview files", () => {
+    const htmlUrl = pathToFileURL(join(process.cwd(), "tmp", "page one.html")).href;
+    const svgUrl = pathToFileURL(join(process.cwd(), "tmp", "vector.svg")).href;
+
     expect(shouldAllowWebviewSrc("https://example.com")).toBe(true);
-    expect(shouldAllowWebviewSrc("file:///tmp/page%20one.html")).toBe(true);
-    expect(shouldAllowWebviewSrc("file:///tmp/vector.svg")).toBe(true);
+    expect(shouldAllowWebviewSrc(htmlUrl)).toBe(true);
+    expect(shouldAllowWebviewSrc(svgUrl)).toBe(true);
   });
 
   it("rejects unsafe or unsupported file urls", () => {
-    expect(shouldAllowWebviewSrc("file:///tmp/secrets.txt")).toBe(false);
+    const textUrl = pathToFileURL(join(process.cwd(), "tmp", "secrets.txt")).href;
+
+    expect(shouldAllowWebviewSrc(textUrl)).toBe(false);
     expect(shouldAllowWebviewSrc("file://remote-host/tmp/page.html")).toBe(false);
     expect(shouldAllowWebviewSrc("javascript:alert(1)")).toBe(false);
   });
@@ -53,7 +60,8 @@ describe("shouldAllowWebviewSrc", () => {
 
 describe("localPathFromFileUrl", () => {
   it("decodes local file URLs into paths", () => {
-    expect(localPathFromFileUrl("file:///tmp/page%20one.html")).toBe("/tmp/page one.html");
+    const path = join(process.cwd(), "tmp", "page one.html");
+    expect(localPathFromFileUrl(pathToFileURL(path).href)).toBe(path);
   });
 });
 
@@ -72,14 +80,18 @@ describe("isTrustedAppWindowUrl", () => {
   });
 
   it("trusts only the packaged renderer file", () => {
+    const rendererPath = join(process.cwd(), "dist", "index.html");
+    const rendererUrl = `${pathToFileURL(rendererPath).href}#chat`;
+    const secretUrl = pathToFileURL(join(process.cwd(), "secrets.html")).href;
+
     expect(
-      isTrustedAppWindowUrl("file:///Applications/App.app/Contents/Resources/dist/index.html#chat", {
-        rendererFilePath: "/Applications/App.app/Contents/Resources/dist/index.html"
+      isTrustedAppWindowUrl(rendererUrl, {
+        rendererFilePath: rendererPath
       })
     ).toBe(true);
     expect(
-      isTrustedAppWindowUrl("file:///Users/me/secrets.html", {
-        rendererFilePath: "/Applications/App.app/Contents/Resources/dist/index.html"
+      isTrustedAppWindowUrl(secretUrl, {
+        rendererFilePath: rendererPath
       })
     ).toBe(false);
     expect(isTrustedAppWindowUrl("data:text/html,boom")).toBe(false);

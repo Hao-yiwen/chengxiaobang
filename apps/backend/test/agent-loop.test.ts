@@ -773,9 +773,34 @@ describe("AgentRunner agentic loop (pi)", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("fails the run after 25 consecutive tool turns", async () => {
+  it("allows long tool runs under the model-level default limit", async () => {
     const project = await store.createProject({ name: "proj", path: dir });
-    const turns: ScriptedTurn[] = Array.from({ length: 30 }, (_, index) => ({
+    const turns: ScriptedTurn[] = [
+      ...Array.from({ length: 30 }, (_, index) => ({
+        toolCalls: [{ id: `call_${index}`, name: "list_directory", arguments: {} }]
+      })),
+      { text: "已经列完目录。" }
+    ];
+    const { runner, calls } = runnerWith(turns);
+
+    const events = await drain(
+      runner.stream({ prompt: "一直列目录", projectId: project.id, accessMode: "full_access" })
+    );
+
+    const end = events.at(-1);
+    expect(end).toMatchObject({ type: "run_end", status: "completed" });
+    expect(events.filter((event) => event.type === "tool_call")).toHaveLength(60);
+    expect(calls).toHaveLength(31);
+  });
+
+  it("fails the run at the selected model's configured tool limit", async () => {
+    const saved = await store.getProvider("deepseek");
+    await store.upsertProvider({
+      ...saved!,
+      modelOverrides: { "deepseek-v4-flash": { maxToolIterations: 3 } }
+    });
+    const project = await store.createProject({ name: "proj", path: dir });
+    const turns: ScriptedTurn[] = Array.from({ length: 5 }, (_, index) => ({
       toolCalls: [{ id: `call_${index}`, name: "list_directory", arguments: {} }]
     }));
     const { runner, calls } = runnerWith(turns);
@@ -786,8 +811,8 @@ describe("AgentRunner agentic loop (pi)", () => {
 
     const end = events.at(-1);
     expect(end).toMatchObject({ type: "run_end", status: "failed" });
-    expect(end?.type === "run_end" && end.error).toContain("已达到最大工具调用轮数（25）");
-    expect(calls).toHaveLength(25);
+    expect(end?.type === "run_end" && end.error).toContain("工具调用上限（3）");
+    expect(calls).toHaveLength(3);
   });
 
   it("surfaces provider errors as a failed run", async () => {

@@ -950,10 +950,25 @@ describe("createApp", () => {
       providerKind: "deepseek",
       model: "deepseek-v4-flash"
     });
-    await store.updateRunStatus("run_usage_stats", "completed", {
+    await store.updateRunStatus("run_usage_stats", "completed");
+    await store.upsertUsageCostEntry({
+      runId: "run_usage_stats",
+      sessionId: session.id,
+      attemptIndex: 0,
+      providerId: "deepseek",
+      providerKind: "deepseek",
+      model: "deepseek-v4-flash",
       promptTokens: 1_000_000,
       completionTokens: 1_000_000,
-      totalTokens: 2_000_000
+      cachedPromptTokens: 0,
+      totalTokens: 2_000_000,
+      inputEstimatedTokens: 1_000_000,
+      costUsd: 0.5,
+      costCny: 3.5,
+      costSource: "catalog_usage",
+      tokenCountSource: "provider_usage",
+      billable: true,
+      entryCreatedAt: nowIso()
     });
 
     const response = await app(

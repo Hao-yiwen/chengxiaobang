@@ -53,7 +53,14 @@ import {
   shouldAllowWebviewSrc,
   shouldOpenExternalFromAppWindow
 } from "./navigation";
-import { defaultDataDir, defaultLogDir, devDockIconPath, preloadPath, rendererIndexPath } from "./paths";
+import {
+  defaultDataDir,
+  defaultLogDir,
+  defaultProviderConfigPath,
+  devDockIconPath,
+  preloadPath,
+  rendererIndexPath
+} from "./paths";
 import {
   previewPathCandidates,
   type FilePreviewResolveContext
@@ -710,6 +717,17 @@ async function createWindow(): Promise<void> {
     }
     console.info(`[main] 已打开日志目录 path=${dir}`);
     return { ok: true, path: dir };
+  });
+
+  trustedIpc.handle("open-provider-config", async () => {
+    const target = defaultProviderConfigPath();
+    const error = await shell.openPath(target);
+    if (error) {
+      console.error("[main] 打开供应商 config.yaml 失败", { target, error });
+      return { ok: false, path: target, error };
+    }
+    console.info("[main] 已打开供应商 config.yaml", { target });
+    return { ok: true, path: target };
   });
 
   trustedIpc.handle("create-project-folder", async (_event, rawName: unknown) => {

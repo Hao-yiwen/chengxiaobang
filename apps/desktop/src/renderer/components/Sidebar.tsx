@@ -4,7 +4,10 @@ import {
   ChatCenteredTextIcon as MessageSquareText,
   CheckIcon as Check,
   ClockIcon as Clock,
+  ArrowsInSimpleIcon as CollapseAll,
+  ArrowsOutSimpleIcon as ExpandAll,
   DeviceMobileIcon as DeviceMobile,
+  DotsThreeIcon as MoreHorizontal,
   FileArrowDownIcon as FileDown,
   FolderIcon as Folder,
   FolderOpenIcon as FolderOpen,
@@ -32,11 +35,20 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store";
+import { useAppStore, type ProjectSortMode } from "@/store";
+
+type ProjectSessionGroup = { project: Project; sessions: Session[] };
 
 /** 左侧边栏的折叠/展开按钮：固定悬浮在窗口左上角，折叠前后位置不变。 */
 export function SidebarToggle() {
@@ -120,19 +132,144 @@ function SectionLabel(props: {
   );
 }
 
+function latestProjectActivityAt(group: ProjectSessionGroup): string {
+  return group.sessions.reduce(
+    (latest, session) => (session.updatedAt > latest ? session.updatedAt : latest),
+    group.project.updatedAt
+  );
+}
+
+function compareProjectGroups(
+  left: ProjectSessionGroup,
+  right: ProjectSessionGroup,
+  mode: ProjectSortMode
+): number {
+  if (mode === "recent") {
+    const recent = latestProjectActivityAt(right).localeCompare(latestProjectActivityAt(left));
+    if (recent !== 0) {
+      return recent;
+    }
+  }
+  const created = right.project.createdAt.localeCompare(left.project.createdAt);
+  if (created !== 0) {
+    return created;
+  }
+  return (
+    left.project.name.localeCompare(right.project.name) ||
+    left.project.id.localeCompare(right.project.id)
+  );
+}
+
+function ProjectSectionLabel(props: {
+  className?: string;
+  allCollapsed: boolean;
+  canToggleAll: boolean;
+  sortMode: ProjectSortMode;
+  onToggleAll(): void;
+  onSortModeChange(mode: ProjectSortMode): void;
+  onOpenFolder(): void;
+}) {
+  const { t } = useTranslation();
+  const toggleLabel = props.allCollapsed
+    ? t("sidebar.expandAllProjects")
+    : t("sidebar.collapseAllProjects");
+  const selectSortMode = (mode: ProjectSortMode) => {
+    if (mode === props.sortMode) {
+      return;
+    }
+    props.onSortModeChange(mode);
+  };
+  return (
+    <div
+      className={cn(
+        "group/section relative mb-1 flex items-center px-2.5 font-mono text-caption tracking-[0.28px] text-mute",
+        props.className
+      )}
+    >
+      <span className="min-w-0 truncate pr-16">{t("sidebar.projects")}</span>
+      <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/section:opacity-100 focus-within:opacity-100">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={toggleLabel}
+              disabled={!props.canToggleAll}
+              onClick={props.onToggleAll}
+              className="flex size-6 flex-none items-center justify-center rounded-xs p-1 text-muted-slate transition-colors hover:bg-canvas-soft-2 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            >
+              {props.allCollapsed ? (
+                <ExpandAll className="size-4" />
+              ) : (
+                <CollapseAll className="size-4" />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{toggleLabel}</TooltipContent>
+        </Tooltip>
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t("sidebar.projectSortMenu")}
+                  className="flex size-6 flex-none items-center justify-center rounded-xs p-1 text-muted-slate transition-colors hover:bg-canvas-soft-2 hover:text-foreground data-[state=open]:bg-canvas-soft-2 data-[state=open]:text-foreground"
+                >
+                  <MoreHorizontal className="size-4" />
+                </button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{t("sidebar.projectSortMenu")}</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent
+            side="right"
+            align="start"
+            sideOffset={8}
+            className="min-w-[136px]"
+          >
+            <DropdownMenuItem onSelect={() => selectSortMode("created")}>
+              <span>{t("sidebar.sortByCreated")}</span>
+              {props.sortMode === "created" ? <Check className="ml-auto size-3.5" /> : null}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => selectSortMode("recent")}>
+              <span>{t("sidebar.sortByRecent")}</span>
+              {props.sortMode === "recent" ? <Check className="ml-auto size-3.5" /> : null}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={t("sidebar.openFolder")}
+              onClick={props.onOpenFolder}
+              className="flex size-6 flex-none items-center justify-center rounded-xs p-1 text-muted-slate transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
+            >
+              <Plus className="size-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{t("sidebar.openFolder")}</TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
+  );
+}
+
 export function Sidebar() {
   const { t } = useTranslation();
   const confirmDialog = useConfirmDialog();
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
-  const { projects, sessions, activeSessionId, view, runningSessionsById } = useAppStore(
-    useShallow((state) => ({
-      projects: state.projects,
-      sessions: state.sessions,
-      activeSessionId: state.activeSessionId,
-      view: state.view,
-      runningSessionsById: state.runningSessionsById
-    }))
-  );
+  const { projects, sessions, activeSessionId, view, runningSessionsById, projectSortMode } =
+    useAppStore(
+      useShallow((state) => ({
+        projects: state.projects,
+        sessions: state.sessions,
+        activeSessionId: state.activeSessionId,
+        view: state.view,
+        runningSessionsById: state.runningSessionsById,
+        projectSortMode: state.projectSortMode
+      }))
+    );
   const newChat = useAppStore((state) => state.newChat);
   const newChatInProject = useAppStore((state) => state.newChatInProject);
   const openFolder = useAppStore((state) => state.openFolder);
@@ -146,19 +283,23 @@ export function Sidebar() {
   const renameProject = useAppStore((state) => state.renameProject);
   const setSessionPinned = useAppStore((state) => state.setSessionPinned);
   const setProjectPinned = useAppStore((state) => state.setProjectPinned);
+  const setProjectSortMode = useAppStore((state) => state.setProjectSortMode);
 
   const [editingId, setEditingId] = useState<string>();
   const [draftTitle, setDraftTitle] = useState("");
   const [editingProjectId, setEditingProjectId] = useState<string>();
   const [projectDraft, setProjectDraft] = useState("");
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
 
   // 置顶项只在置顶区展示，原「项目」/「对话」区域不再重复出现。
   const ungrouped = sessions.filter((session) => !session.projectId && !session.pinnedAt);
-  const projectSessions = projects
-    .map((project) => ({
-      project,
-      sessions: sessions.filter((session) => session.projectId === project.id)
-    }));
+  const projectSessions = projects.map((project) => ({
+    project,
+    sessions: sessions.filter((session) => session.projectId === project.id)
+  }));
+  const allProjectIds = projectSessions.map(({ project }) => project.id);
+  const allProjectGroupsCollapsed =
+    allProjectIds.length > 0 && allProjectIds.every((id) => collapsedProjectIds.has(id));
 
   // 置顶区：项目组在前、单会话在后，各按置顶时间降序（ISO 字符串可直接字典序比较）。
   // 被单独置顶的会话以单行展示，置顶项目组内不再重复。
@@ -177,6 +318,7 @@ export function Sidebar() {
   // 项目区只展示未置顶项目，组内排除已单独置顶的会话。
   const unpinnedProjects = projectSessions
     .filter(({ project }) => !project.pinnedAt)
+    .sort((left, right) => compareProjectGroups(left, right, projectSortMode))
     .map(({ project, sessions: list }) => ({
       project,
       sessions: list.filter((session) => !session.pinnedAt)
@@ -248,6 +390,42 @@ export function Sidebar() {
     setEditingProjectId(undefined);
   }
 
+  function setProjectOpen(project: Project, open: boolean): void {
+    console.debug("[sidebar] 切换项目组折叠状态", {
+      projectId: project.id,
+      name: project.name,
+      open
+    });
+    setCollapsedProjectIds((current) => {
+      const next = new Set(current);
+      if (open) {
+        next.delete(project.id);
+      } else {
+        next.add(project.id);
+      }
+      return next;
+    });
+  }
+
+  function toggleAllProjectGroups(): void {
+    const shouldExpand = allProjectGroupsCollapsed;
+    console.info("[sidebar] 批量切换项目组折叠状态", {
+      action: shouldExpand ? "expand" : "collapse",
+      projectCount: allProjectIds.length
+    });
+    setCollapsedProjectIds((current) => {
+      const next = new Set(current);
+      for (const id of allProjectIds) {
+        if (shouldExpand) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+      }
+      return next;
+    });
+  }
+
   function renderSession(session: Session, indent: boolean): ReactNode {
     const branchHint = session.parentSessionId
       ? titleById.has(session.parentSessionId)
@@ -292,8 +470,10 @@ export function Sidebar() {
         key={project.id}
         name={project.name}
         pinned={Boolean(project.pinnedAt)}
+        open={!collapsedProjectIds.has(project.id)}
         editing={editingProjectId === project.id}
         draftName={projectDraft}
+        onOpenChange={(open) => setProjectOpen(project, open)}
         onNewChat={() => newChatInProject(project.id)}
         onStartRename={() => {
           setEditingProjectId(project.id);
@@ -374,16 +554,18 @@ export function Sidebar() {
               {pinnedSessions.map((session) => renderSession(session, false))}
             </>
           ) : null}
-          <SectionLabel
+          <ProjectSectionLabel
             className={hasPinned ? "mt-6" : undefined}
-            actionLabel={t("sidebar.openFolder")}
-            onAction={() => {
+            allCollapsed={allProjectGroupsCollapsed}
+            canToggleAll={allProjectIds.length > 0}
+            sortMode={projectSortMode}
+            onToggleAll={toggleAllProjectGroups}
+            onSortModeChange={setProjectSortMode}
+            onOpenFolder={() => {
               console.debug("[sidebar] 点击「项目」区块加号，打开文件夹选择");
               void openFolder();
             }}
-          >
-            {t("sidebar.projects")}
-          </SectionLabel>
+          />
           {unpinnedProjects.map(({ project, sessions: projectSessionList }) =>
             renderProjectGroup(project, projectSessionList, { sliceTo: 8 })
           )}
@@ -435,8 +617,10 @@ function ProjectGroup(props: {
   name: string;
   /** 当前置顶状态，决定菜单项显示「置顶」还是「取消置顶」。 */
   pinned: boolean;
+  open: boolean;
   editing: boolean;
   draftName: string;
+  onOpenChange(open: boolean): void;
   onNewChat(): void;
   onStartRename(): void;
   onDraftChange(value: string): void;
@@ -447,15 +631,10 @@ function ProjectGroup(props: {
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(true);
-  const onOpenChange = (nextOpen: boolean) => {
-    console.debug("[sidebar] 切换项目组折叠状态", { name: props.name, open: nextOpen });
-    setOpen(nextOpen);
-  };
 
   if (props.editing) {
     return (
-      <Collapsible open={open} onOpenChange={onOpenChange} className="mb-1">
+      <Collapsible open={props.open} onOpenChange={props.onOpenChange} className="mb-1">
         <div className="flex items-center gap-1 py-1 pl-1.5 pr-1">
           <Folder className="size-4 flex-none stroke-[1.75] text-muted-slate" />
           <Input
@@ -492,17 +671,17 @@ function ProjectGroup(props: {
   }
 
   return (
-    <Collapsible open={open} onOpenChange={onOpenChange} className="mb-1">
+    <Collapsible open={props.open} onOpenChange={props.onOpenChange} className="mb-1">
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div className="group/header relative mb-0.5 flex w-full min-w-0 max-w-full items-center">
             <CollapsibleTrigger asChild>
               <button
                 type="button"
-                title={open ? t("sidebar.collapseFolder") : t("sidebar.expandFolder")}
+                title={props.open ? t("sidebar.collapseFolder") : t("sidebar.expandFolder")}
                 className="flex h-7 w-full min-w-0 max-w-full flex-1 items-center gap-1.5 overflow-hidden rounded-sm px-1.5 pr-8 text-left text-body-sm text-foreground transition-colors hover:bg-surface-hover"
               >
-                {open ? (
+                {props.open ? (
                   <FolderOpen className="size-4 flex-none stroke-[1.75] text-muted-slate" />
                 ) : (
                   <Folder className="size-4 flex-none stroke-[1.75] text-muted-slate" />
@@ -512,7 +691,11 @@ function ProjectGroup(props: {
                 </span>
                 {/* 展开/收起指示：紧跟名字，悬停浮现。 */}
                 <span className="ml-0.5 flex size-4 flex-none items-center justify-center text-muted-slate opacity-0 transition-opacity group-hover/header:opacity-100">
-                  {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                  {props.open ? (
+                    <ChevronDown className="size-3.5" />
+                  ) : (
+                    <ChevronRight className="size-3.5" />
+                  )}
                 </span>
               </button>
             </CollapsibleTrigger>

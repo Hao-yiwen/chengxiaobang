@@ -127,7 +127,7 @@ export function UsageStatsSection() {
             title={t("settings.usage.heatmapTitle")}
             description={t("settings.usage.heatmapDesc")}
           >
-            <div data-testid="settings-usage-heatmap" className="rounded-sm border bg-background p-5">
+            <div data-testid="settings-usage-heatmap" className="min-w-0 rounded-sm border bg-background p-5">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-body-lg font-medium">{t("settings.usage.tokenActivity")}</h3>
@@ -288,44 +288,47 @@ function UsageBarChart(props: {
   return (
     <div className="relative">
       {hovered ? <BucketTooltip bucket={hovered} mode={props.mode} locale={props.locale} /> : null}
-      <div className="overflow-x-auto pb-1">
-        <div className="flex h-48 w-max min-w-full items-end gap-2 border-b border-border px-1 pt-8">
-          {props.buckets.map((bucket) => {
-            const ratio = maxTokens > 0 ? bucket.totalTokens / maxTokens : 0;
-            const height = bucket.totalTokens > 0 ? Math.max(8, ratio * 150) : 2;
-            return (
-              <button
-                key={bucket.key}
-                type="button"
-                data-testid="settings-usage-chart-bar"
-                aria-label={bucketAriaLabel(bucket, props.mode, props.locale)}
-                onBlur={() => setHovered(undefined)}
-                onFocus={() => setHovered(bucket)}
-                onMouseEnter={() => setHovered(bucket)}
-                onMouseLeave={() => setHovered(undefined)}
-                className={cn(
-                  "flex h-full flex-none items-end justify-center rounded-xs px-1 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                  props.mode === "weekly" ? "w-5" : "w-10"
-                )}
-              >
-                <span
+      <div className="min-w-0 overflow-x-auto overflow-y-hidden pb-1">
+        <div className="w-max min-w-full">
+          <div className="flex h-48 items-end gap-2 border-b border-border px-1 pt-8">
+            {props.buckets.map((bucket) => {
+              const ratio = maxTokens > 0 ? bucket.totalTokens / maxTokens : 0;
+              const height = bucket.totalTokens > 0 ? Math.max(8, ratio * 150) : 2;
+              return (
+                <button
+                  key={bucket.key}
+                  type="button"
+                  data-testid="settings-usage-chart-bar"
+                  aria-label={bucketAriaLabel(bucket, props.mode, props.locale)}
+                  onBlur={() => setHovered(undefined)}
+                  onFocus={() => setHovered(bucket)}
+                  onMouseEnter={() => setHovered(bucket)}
+                  onMouseLeave={() => setHovered(undefined)}
                   className={cn(
-                    "block w-full rounded-t-xs transition-all",
-                    bucket.totalTokens > 0 ? "bg-link" : "bg-canvas-soft-2"
+                    "flex h-full flex-none items-end justify-center rounded-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                    props.mode === "weekly" ? "w-4" : "w-10 px-1"
                   )}
-                  style={{ height: `${height}px` }}
-                />
-              </button>
-            );
-          })}
+                >
+                  <span
+                    className={cn(
+                      "block rounded-t-xs transition-all",
+                      props.mode === "weekly" ? "w-1.5" : "w-full",
+                      bucket.totalTokens > 0 ? "bg-link" : "bg-canvas-soft-2"
+                    )}
+                    style={{ height: `${height}px` }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex min-w-full justify-between gap-3 text-caption text-muted-foreground">
+            {labels.map((label) => (
+              <span key={label.key} className="truncate">
+                {label.label}
+              </span>
+            ))}
+          </div>
         </div>
-      </div>
-      <div className="mt-3 flex min-w-0 justify-between gap-3 text-caption text-muted-foreground">
-        {labels.map((label) => (
-          <span key={label.key} className="truncate">
-            {label.label}
-          </span>
-        ))}
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ export * from "./model-catalog";
 export * from "./plan";
 export * from "./project";
 export * from "./provider";
+export * from "./provider-catalog.generated";
 export * from "./run";
 export * from "./scheduled-task";
 export * from "./session";

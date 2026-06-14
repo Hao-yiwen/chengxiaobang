@@ -69,6 +69,23 @@ beforeEach(() => {
 });
 
 describe("store home selection restore", () => {
+  it("does not default to the first configured provider while restored on home", async () => {
+    const streamRun = vi.fn(async () => {});
+    const client = { ...createClient(), streamRun } as unknown as ApiClient;
+
+    await useAppStore.getState().initClient(client);
+
+    expect(useAppStore.getState().view).toBe("home");
+    expect(useAppStore.getState().providerId).toBeUndefined();
+    expect(useAppStore.getState().model).toBeUndefined();
+
+    useAppStore.getState().setInput("首页未选供应商");
+    await useAppStore.getState().submit();
+
+    expect(streamRun).not.toHaveBeenCalled();
+    expect(useAppStore.getState().notice).toBe("请先选择供应商");
+  });
+
   it("clears stale activeSessionId before publishing loaded home sessions", async () => {
     const snapshots: Array<string | undefined> = [];
     const unsubscribe = useAppStore.subscribe((state) => {
@@ -110,6 +127,8 @@ describe("store home selection restore", () => {
     expect(useAppStore.getState().view).toBe("home");
     expect(useAppStore.getState().activeSessionId).toBeUndefined();
     expect(useAppStore.getState().activeProjectId).toBeUndefined();
+    expect(useAppStore.getState().providerId).toBeUndefined();
+    expect(useAppStore.getState().model).toBeUndefined();
     expect(useAppStore.getState().planMode).toBe(false);
   });
 

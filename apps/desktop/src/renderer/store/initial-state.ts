@@ -26,6 +26,7 @@ import type {
   ComposerDraftScope,
   NotificationToast,
   PreviewFileState,
+  ProjectSortMode,
   QueuedRunItem,
   RightPanelMode,
   RightPanelSessionState,
@@ -95,6 +96,7 @@ export const initialState =  {
     }
   >,
   sidebarOpen: true,
+  projectSortMode: "created" as ProjectSortMode,
   rightPanelOpen: false,
   rightPanelMode: null as RightPanelMode | null,
   rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH,

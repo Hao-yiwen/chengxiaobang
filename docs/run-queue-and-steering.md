@@ -25,7 +25,7 @@
 - 引导队列是后端当前进程内的 run-scoped 状态，run 结束后清理。
 - 引导不打断正在流式输出的 provider 请求，也不中止正在执行的工具。
 - 无活跃 run 时，`POST /api/runs/:runId/steering` 返回 409，不静默丢弃。
-- 队列项按“入队时”的 provider/model/reasoning/accessMode/planMode/project 选择执行，不按消费时的 Composer 控件重新读取。
+- 队列项按“入队时”的 provider/model/accessMode/planMode/project 选择执行，不按消费时的 Composer 控件重新读取。推理档位由供应商与模型 YAML 配置决定，Composer 不提供手动覆盖入口。
 
 ## Shared 契约
 
@@ -63,7 +63,7 @@
 - `sessionId`
 - `providerId?`
 - `model?`
-- `reasoningMode?`
+- `reasoningMode?`：后端按 YAML/provider/session 解析出的实际推理档位，仅作为运行元信息回传。
 
 run 启动后登记到 `activeRuns`；run 完成、失败或中止后调用 `forget()` 移除，同时删除该 run 的 steering queue，并在日志里记录丢弃的引导条数。
 
@@ -116,7 +116,6 @@ run 启动后登记到 `activeRuns`；run 完成、失败或中止后调用 `for
 - `displayAttachments`
 - `providerId`
 - `model?`
-- `reasoningMode?`
 - `accessMode`
 - `planMode`
 - `createdAt`
@@ -144,7 +143,7 @@ run 启动后登记到 `activeRuns`；run 完成、失败或中止后调用 `for
 
 运行中入队时会：
 
-- 解析当前 provider/model/reasoningMode。
+- 解析当前 provider/model。推理档位不从 Composer 读取，而是由后端根据本次选中的供应商与模型配置解析。
 - 保存可见附件快照。
 - 记录当前 accessMode、planMode、project。
 - append 到 `queuedRunsBySession[sessionId]`。
@@ -179,7 +178,6 @@ run 启动后登记到 `activeRuns`；run 完成、失败或中止后调用 `for
 - `projectId`
 - `providerId`
 - `model`
-- `reasoningMode`
 - `accessMode`
 - `planMode`
 - `preserveSelection`
@@ -235,7 +233,7 @@ run 启动后登记到 `activeRuns`；run 完成、失败或中止后调用 `for
 1. store 调用 `editQueuedRunInComposer(id)`。
 2. 该队列项从队列中移除。
 3. 原文和附件回填到 Composer 输入框。
-4. provider/model/reasoningMode/accessMode/planMode 回填到 Composer 控件。
+4. provider/model/accessMode/planMode 回填到 Composer 控件；推理档位继续由 YAML/provider 默认值决定。
 5. Composer 聚焦输入框，用户修改后再次发送即可重新入队。
 
 ## 清理与恢复
