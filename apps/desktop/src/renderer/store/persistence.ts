@@ -6,7 +6,7 @@ import type { AppState } from "./types";
 export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
       name: "chengxiaobang.app",
       storage: createJSONStorage(() => localStorage),
-      version: 4,
+      version: 5,
       partialize: (state) => ({
         view: state.view,
         activeSessionId: state.view === "home" ? undefined : state.activeSessionId,
@@ -24,7 +24,10 @@ export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
         pausedRunQueuesBySession: state.pausedRunQueuesBySession,
         projectSortMode: state.projectSortMode,
         theme: state.theme,
-        locale: state.locale
+        locale: state.locale,
+        onboardingCompleted: state.onboardingCompleted,
+        onboardingStep: state.onboardingStep,
+        onboardingProfile: state.onboardingProfile
       }),
       migrate: (persisted, version) => {
         if (version === 1 && persisted) {

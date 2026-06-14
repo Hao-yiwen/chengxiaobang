@@ -5,19 +5,26 @@ import { describe, expect, it } from "vitest";
 import {
   defaultDataDir,
   defaultLogDir,
+  defaultProfilePath,
   devDockIconPath,
   preloadPath,
   rendererIndexPath
 } from "../src/main/paths";
 
 describe("main process paths", () => {
-  it("defaults data dir to ~/.chengxiaobang/data", () => {
-    expect(defaultDataDir()).toBe(join(homedir(), ".chengxiaobang", "data"));
+  it("resolves data dir inside the configured chengxiaobang root", () => {
+    const root = process.env.CHENGXIAOBANG_HOME ?? join(homedir(), ".chengxiaobang");
+    expect(defaultDataDir()).toBe(join(root, "data"));
   });
 
   it("defaults log dir to the logs folder inside the data dir", () => {
     expect(defaultLogDir()).toBe(join(defaultDataDir(), "logs"));
     expect(defaultLogDir("/tmp/cxb-data")).toBe(join("/tmp/cxb-data", "logs"));
+  });
+
+  it("resolves profile path inside the configured chengxiaobang root", () => {
+    const root = process.env.CHENGXIAOBANG_HOME ?? join(homedir(), ".chengxiaobang");
+    expect(defaultProfilePath()).toBe(join(root, "profile.json"));
   });
 
   it("resolves the dev dock icon inside the app's build directory", () => {

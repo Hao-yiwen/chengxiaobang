@@ -366,9 +366,57 @@
     "title": "配置模型",
     "desc": "添加一个带 API Key 的模型即可开始对话，之后可以在「设置 → 供应商」中修改。",
     "apiKeyPlaceholder": "粘贴你的 API Key",
+    "back": "上一步",
+    "next": "下一步",
     "later": "稍后再说",
     "save": "保存并开始",
-    "saving": "保存中…"
+    "saving": "保存中…",
+    "steps": {
+      "welcome": "欢迎",
+      "profile": "用途",
+      "model": "模型"
+    },
+    "welcome": {
+      "badge": "新的工作台已准备好",
+      "title": "先认识一下你的工作方式",
+      "desc": "用几步完成基础偏好和模型配置，进入应用后就能直接开始对话。",
+      "start": "开始设置",
+      "imageAlt": "程小帮欢迎插画"
+    },
+    "profile": {
+      "title": "你主要会怎么使用程小帮？",
+      "desc": "这些信息只用于本机首启体验，后续可以继续手动调整模型和工具。",
+      "primaryLabel": "主要用途",
+      "scenarioLabel": "常见场景",
+      "primary": {
+        "work": {
+          "title": "日常工作",
+          "desc": "文档、PPT、资料整理和跨工具协作。"
+        },
+        "code": {
+          "title": "写代码",
+          "desc": "读代码、改代码、调试和执行开发命令。"
+        },
+        "both": {
+          "title": "工作和代码都要",
+          "desc": "在办公与开发任务之间自然切换。"
+        }
+      },
+      "scenarios": {
+        "docs": "文档 / PPT",
+        "research": "资料研究",
+        "automation": "自动化",
+        "frontend": "前端",
+        "backend": "后端",
+        "debugging": "调试",
+        "data": "数据处理"
+      }
+    },
+    "model": {
+      "existingDesc": "当前已经有可用模型，可以直接开始；也可以在这里新增另一个供应商。",
+      "currentModel": "当前可用模型",
+      "useExisting": "开始使用"
+    }
   },
   "rightPanel": {
     "open": "打开侧边面板",

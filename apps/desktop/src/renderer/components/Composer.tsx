@@ -176,7 +176,7 @@ export function Composer() {
   const createBlankProject = useAppStore((state) => state.createBlankProject);
   const submit = useAppStore((state) => state.submit);
   const abortRun = useAppStore((state) => state.abortRun);
-  const setOnboardingOpen = useAppStore((state) => state.setOnboardingOpen);
+  const openOnboarding = useAppStore((state) => state.openOnboarding);
   const removeQueuedRun = useAppStore((state) => state.removeQueuedRun);
   const editQueuedRunInComposer = useAppStore((state) => state.editQueuedRunInComposer);
   const clearQueuedRuns = useAppStore((state) => state.clearQueuedRuns);
@@ -493,10 +493,11 @@ export function Composer() {
   };
 
   const openProviderSetupFromComposer = () => {
-    console.info("[composer] 未配置供应商，打开首次配置弹窗", {
-      configuredProviderCount: configuredProviders.length
+    console.info("[composer] 未配置供应商，打开模型配置引导", {
+      configuredProviderCount: configuredProviders.length,
+      targetOnboardingStep: "model"
     });
-    setOnboardingOpen(true);
+    openOnboarding("model");
   };
 
   const insertSlashCommand = (command: SlashCommand) => {

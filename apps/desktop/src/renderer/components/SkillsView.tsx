@@ -89,7 +89,7 @@ export function SkillsView() {
           type="button"
           variant="secondary"
           size="sm"
-          className="flex-none [-webkit-app-region:no-drag]"
+          className="flex-none [-webkit-app-region:no-drag] [&_svg]:text-link"
           onClick={() => setAddOpen(true)}
         >
           <Plus className="size-3.5" />
@@ -134,6 +134,7 @@ export function SkillsView() {
                 key={value}
                 value={value}
                 aria-label={t(`skills.category.${value}`)}
+                className="hover:border-link/20 hover:bg-canvas-soft-2 data-[state=on]:ring-1 data-[state=on]:ring-link/20"
               >
                 {t(`skills.category.${value}`)}
               </ToggleGroupItem>
@@ -164,7 +165,40 @@ export function SkillsView() {
 
 function SectionTitle(props: { children: ReactNode }) {
   return (
-    <h2 className="font-mono text-caption tracking-[0.28px] text-mute">{props.children}</h2>
+    <h2 className="flex items-center gap-2 font-mono text-caption tracking-[0.28px] text-mute">
+      <span className="h-3 w-px rounded-full bg-link/70" aria-hidden />
+      {props.children}
+    </h2>
+  );
+}
+
+function SkillSourceBadge(props: { skill: Pick<SkillSummary, "source"> }) {
+  const { t } = useTranslation();
+
+  return (
+    <Badge
+      variant="outline"
+      className="h-4 flex-none gap-1 border-hairline bg-canvas-soft-2 px-1.5 py-0 text-[11px] leading-4 text-body"
+    >
+      <span className="size-1 rounded-full bg-link/70" aria-hidden />
+      {t(`skills.source.${props.skill.source}`)}
+    </Badge>
+  );
+}
+
+function SkillCategoryBadge(props: { category: SkillCategory; className?: string }) {
+  const { t } = useTranslation();
+
+  return (
+    <span
+      className={cn(
+        "inline-flex min-w-0 items-center gap-1 rounded-full border border-hairline bg-canvas-soft-2 px-1.5 py-0.5 text-micro text-mute",
+        props.className
+      )}
+    >
+      <span className="size-1 rounded-full bg-link/65" aria-hidden />
+      {t(`skills.category.${props.category}`)}
+    </span>
   );
 }
 
@@ -179,7 +213,7 @@ function SkillCard(props: { skill: SkillSummary; mine?: boolean; onOpen(): void 
   return (
     <Card
       asChild
-      className="flex cursor-pointer flex-col px-4 py-3 transition-colors hover:border-hairline-strong hover:bg-canvas-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex cursor-pointer flex-col px-4 py-3 transition-colors hover:border-link/20 hover:bg-canvas-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <article
         data-testid={`skill-card-${skill.source}-${skill.name}`}
@@ -198,18 +232,13 @@ function SkillCard(props: { skill: SkillSummary; mine?: boolean; onOpen(): void 
           <span className="truncate font-mono text-body-xs font-medium text-foreground">
             {skill.name}
           </span>
-          <Badge
-            variant={skill.source === "builtin" ? "default" : "secondary"}
-            className="h-4 flex-none px-1.5 py-0 text-[11px] leading-4"
-          >
-            {t(`skills.source.${skill.source}`)}
-          </Badge>
+          <SkillSourceBadge skill={skill} />
         </div>
         <p className="mt-1.5 line-clamp-3 min-h-[2rem] flex-1 text-caption leading-relaxed text-body">
           {skill.description}
         </p>
         <div className="mt-3 flex items-center justify-between">
-          <span className="text-micro text-mute">{t(`skills.category.${skill.category}`)}</span>
+          <SkillCategoryBadge category={skill.category} />
           <SkillActionButton skill={skill} mine={mine} compact />
         </div>
       </article>
@@ -267,7 +296,7 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
   if (skill.source === "builtin") {
     return (
       <span className="flex items-center gap-1 text-micro text-mute">
-        <Check className="size-3.5" />
+        <Check className="size-3.5 text-link" />
         {t("skills.alwaysOn")}
       </span>
     );
@@ -380,15 +409,8 @@ function SkillDetailDialog(props: { name: string | null; onClose(): void }) {
             <DialogTitle className="font-mono text-body-sm">{name}</DialogTitle>
             {heading ? (
               <>
-                <Badge
-                  variant={heading.source === "builtin" ? "default" : "secondary"}
-                  className="flex-none"
-                >
-                  {t(`skills.source.${heading.source}`)}
-                </Badge>
-                <span className="text-micro text-mute">
-                  {t(`skills.category.${heading.category}`)}
-                </span>
+                <SkillSourceBadge skill={heading} />
+                <SkillCategoryBadge category={heading.category} className="flex-none" />
               </>
             ) : null}
           </div>
@@ -496,7 +518,7 @@ function AddSkillDialog(props: { open: boolean; onOpenChange(open: boolean): voi
           <span className="h-px flex-1 bg-hairline" />
         </div>
 
-        <Card className="bg-canvas-soft px-4 py-3.5">
+        <Card className="border-link/10 bg-canvas-soft px-4 py-3.5">
           <h3 className="text-body-sm font-medium text-foreground">
             {t("skills.chatCreateTitle")}
           </h3>
@@ -507,7 +529,7 @@ function AddSkillDialog(props: { open: boolean; onOpenChange(open: boolean): voi
             type="button"
             variant="secondary"
             size="sm"
-            className="mt-3"
+            className="mt-3 [&_svg]:text-link"
             onClick={startChatCreation}
           >
             <ChatText className="size-3.5" />

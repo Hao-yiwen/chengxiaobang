@@ -377,9 +377,57 @@
     "title": "Set up a model",
     "desc": "Add one model with an API key to start chatting. You can change it later in Settings → Providers.",
     "apiKeyPlaceholder": "Paste your API key",
+    "back": "Back",
+    "next": "Next",
     "later": "Maybe later",
     "save": "Save & start",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "steps": {
+      "welcome": "Welcome",
+      "profile": "Use case",
+      "model": "Model"
+    },
+    "welcome": {
+      "badge": "Your workspace is ready",
+      "title": "Let’s tune this workspace to you",
+      "desc": "Set a few basics and connect a model before the first conversation.",
+      "start": "Start setup",
+      "imageAlt": "程小帮 onboarding illustration"
+    },
+    "profile": {
+      "title": "What will you mostly use 程小帮 for?",
+      "desc": "These choices only shape the local first-run experience. You can still adjust models and tools later.",
+      "primaryLabel": "Main use",
+      "scenarioLabel": "Common scenarios",
+      "primary": {
+        "work": {
+          "title": "Daily work",
+          "desc": "Docs, decks, research, and cross-tool workflows."
+        },
+        "code": {
+          "title": "Coding",
+          "desc": "Read code, edit code, debug, and run developer commands."
+        },
+        "both": {
+          "title": "Work and code",
+          "desc": "Move naturally between office and development tasks."
+        }
+      },
+      "scenarios": {
+        "docs": "Docs / decks",
+        "research": "Research",
+        "automation": "Automation",
+        "frontend": "Frontend",
+        "backend": "Backend",
+        "debugging": "Debugging",
+        "data": "Data work"
+      }
+    },
+    "model": {
+      "existingDesc": "A model is already available. You can start now or add another provider here.",
+      "currentModel": "Current model",
+      "useExisting": "Start using"
+    }
   },
   "rightPanel": {
     "open": "Open side panel",

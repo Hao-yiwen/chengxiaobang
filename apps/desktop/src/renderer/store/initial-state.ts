@@ -18,6 +18,7 @@ import type {
   WebSearchConfig
 } from "@chengxiaobang/shared";
 import { DEFAULT_LOCALE, type Locale } from "../i18n";
+import { normalizeOnboardingProfile, type OnboardingProfile } from "../../common/profile";
 import { DEFAULT_RIGHT_PANEL_WIDTH } from "./helpers/right-panel";
 import type {
   AppState,
@@ -25,6 +26,7 @@ import type {
   ComposerDraft,
   ComposerDraftScope,
   NotificationToast,
+  OnboardingStep,
   PreviewFileState,
   ProjectSortMode,
   QueuedRunItem,
@@ -53,6 +55,9 @@ export const initialState =  {
   view: "home" as View,
   paletteOpen: false,
   onboardingOpen: false,
+  onboardingCompleted: false,
+  onboardingStep: "welcome" as OnboardingStep,
+  onboardingProfile: normalizeOnboardingProfile({ primaryUse: "both" }) as OnboardingProfile,
   notice: undefined as string | undefined,
   notificationToasts: [] as NotificationToast[],
   input: "",

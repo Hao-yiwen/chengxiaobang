@@ -36,6 +36,7 @@ import type {
   WebSearchConfigInput
 } from "@chengxiaobang/shared";
 import type { PreviewKind } from "../../common/file-preview";
+import type { OnboardingPrimaryUse, OnboardingProfile } from "../../common/profile";
 import type { AttachmentDescriptor } from "../lib/attachment-preparation";
 import type { ArtifactKind } from "../lib/artifact";
 import type { ApiClient } from "../lib/api";
@@ -45,6 +46,7 @@ export type Theme = "light" | "dark" | "system";
 export type View = "home" | "chat" | "settings" | "tasks" | "skills" | "connectPhone";
 export type RightPanelMode = "changes" | "terminal" | "browser" | "files" | "chat";
 export type ProjectSortMode = "created" | "recent";
+export type OnboardingStep = "welcome" | "profile" | "model";
 export type ScheduledTaskFinishedEvent = Extract<ScheduledTaskEvent, { type: "scheduled_task_finished" }>;
 export type SessionRunHistory = { runs: RunRecord[]; toolCalls: ToolCall[] };
 
@@ -151,8 +153,11 @@ export interface AppState {
   // 界面状态
   view: View;
   paletteOpen: boolean;
-  /** 首次配置供应商弹窗：优先轻量引导，而不是强制跳转设置页。 */
+  /** 首启引导弹窗：欢迎页、用途画像与模型配置共用同一入口。 */
   onboardingOpen: boolean;
+  onboardingCompleted: boolean;
+  onboardingStep: OnboardingStep;
+  onboardingProfile: OnboardingProfile;
   notice?: string;
   notificationToasts: NotificationToast[];
   // 运行态（瞬态）
@@ -234,6 +239,10 @@ export interface AppState {
   setInput(input: string): void;
   setPaletteOpen(open: boolean): void;
   setOnboardingOpen(open: boolean): void;
+  openOnboarding(step?: OnboardingStep): void;
+  setOnboardingStep(step: OnboardingStep): void;
+  saveOnboardingProfile(profile: OnboardingProfile): void;
+  completeOnboarding(): void;
   setNotice(notice: string | undefined): void;
   dismissNotificationToast(id: string): void;
   setProviderId(id: string | undefined): void;

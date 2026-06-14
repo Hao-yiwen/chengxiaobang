@@ -1,4 +1,5 @@
 import { createId } from "@chengxiaobang/shared";
+import { normalizeOnboardingProfile, type OnboardingProfile } from "../../../common/profile";
 import { isAbsolutePathLike } from "../../../common/file-preview";
 import { apiClientRef } from "../client";
 import type { AppState, AppStoreGet, AppStoreSet, RightPanelPatch } from "../types";
@@ -8,7 +9,11 @@ import {
   resetHomePlanMode,
   switchComposerDraftScope
 } from "../helpers/composer-drafts";
-import { configuredProviderById, normalizeModelForProvider } from "../helpers/providers";
+import {
+  configuredProviderById,
+  firstConfiguredProvider,
+  normalizeModelForProvider
+} from "../helpers/providers";
 import {
   RIGHT_PANEL_FILE_WIDTH,
   RIGHT_PANEL_MAX_WIDTH,
@@ -35,7 +40,57 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
       clearSkillsAddRequest: () => set({ skillsAddRequested: false }),
       setInput: (input) => set({ input }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
-      setOnboardingOpen: (onboardingOpen) => set({ onboardingOpen }),
+      setOnboardingOpen: (onboardingOpen) =>
+        set((state) => {
+          console.info("[store] 切换首启引导可见性", {
+            onboardingOpen,
+            step: state.onboardingStep,
+            completed: state.onboardingCompleted
+          });
+          return { onboardingOpen };
+        }),
+      openOnboarding: (step = "welcome") =>
+        set((state) => {
+          console.info("[store] 打开首启引导", {
+            step,
+            completed: state.onboardingCompleted,
+            hasConfiguredProvider: Boolean(firstConfiguredProvider(state.providers))
+          });
+          return { onboardingOpen: true, onboardingStep: step };
+        }),
+      setOnboardingStep: (onboardingStep) =>
+        set((state) => {
+          console.info("[store] 切换首启引导步骤", {
+            from: state.onboardingStep,
+            to: onboardingStep,
+            completed: state.onboardingCompleted
+          });
+          return { onboardingStep };
+        }),
+      saveOnboardingProfile: (onboardingProfile) => {
+        const normalizedProfile = normalizeOnboardingProfile(onboardingProfile);
+        console.info("[store] 保存首启用途画像", {
+          primaryUse: normalizedProfile.primaryUse,
+          scenarios: normalizedProfile.scenarios,
+          scenarioCount: normalizedProfile.scenarios.length
+        });
+        set({ onboardingProfile: normalizedProfile });
+        persistProfileFile(normalizedProfile);
+      },
+      completeOnboarding: () =>
+        set((state) => {
+          console.info("[store] 完成首启引导", {
+            step: state.onboardingStep,
+            primaryUse: state.onboardingProfile.primaryUse,
+            scenarioCount: state.onboardingProfile.scenarios.length,
+            hasConfiguredProvider: Boolean(firstConfiguredProvider(state.providers))
+          });
+          return {
+            onboardingOpen: false,
+            onboardingCompleted: true,
+            onboardingStep: "welcome"
+          };
+        }),
       setNotice: (notice) => set({ notice }),
       dismissNotificationToast: (id) =>
         set((state) => ({
@@ -235,4 +290,39 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         }
       },
   };
+}
+
+function persistProfileFile(onboardingProfile: OnboardingProfile): void {
+  const saveProfile = window.chengxiaobang?.saveProfile;
+  if (!saveProfile) {
+    console.debug("[store] 当前环境没有本地 profile.json 写入桥，跳过用户画像文件持久化", {
+      primaryUse: onboardingProfile.primaryUse,
+      scenarioCount: onboardingProfile.scenarios.length
+    });
+    return;
+  }
+  void saveProfile(onboardingProfile)
+    .then((result) => {
+      if (result.ok) {
+        console.info("[store] 用户画像已持久化到 profile.json", {
+          path: result.path,
+          primaryUse: onboardingProfile.primaryUse,
+          scenarioCount: onboardingProfile.scenarios.length
+        });
+        return;
+      }
+      console.warn("[store] 用户画像写入 profile.json 失败", {
+        path: result.path,
+        error: result.error,
+        primaryUse: onboardingProfile.primaryUse
+      });
+    })
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[store] 用户画像写入 profile.json 异常", {
+        error: message,
+        primaryUse: onboardingProfile.primaryUse,
+        scenarioCount: onboardingProfile.scenarios.length
+      });
+    });
 }

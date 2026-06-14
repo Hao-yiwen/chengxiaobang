@@ -120,6 +120,7 @@ async function openSkillsView(client: ApiClient): Promise<void> {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
+  useAppStore.setState({ onboardingCompleted: true });
 });
 
 describe("SkillsView", () => {

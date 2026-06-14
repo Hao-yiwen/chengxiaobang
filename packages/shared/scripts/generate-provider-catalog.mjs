@@ -24,7 +24,7 @@ if (mode === "check") {
     console.error("[provider-catalog] generated 文件不存在，请运行 pnpm --filter @chengxiaobang/shared catalog:generate");
     process.exit(1);
   }
-  if (current !== generated) {
+  if (normalizeLineEndings(current) !== normalizeLineEndings(generated)) {
     console.error("[provider-catalog] provider-catalog.generated.ts 已过期，请运行 pnpm --filter @chengxiaobang/shared catalog:generate");
     process.exit(1);
   }
@@ -254,6 +254,10 @@ export const PROVIDER_CATALOG = ${JSON.stringify(
 
 function compactObject(value) {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
+}
+
+function normalizeLineEndings(value) {
+  return value.replace(/\r\n/g, "\n");
 }
 
 function asArray(value, path) {

@@ -303,7 +303,7 @@
   }
 
   .provider-cascade-popup {
-    width: min(628px, calc(100vw - 48px));
+    width: min(598px, calc(100vw - 48px));
     overflow: hidden;
     border-color: rgb(var(--border) / 0.78);
     border-radius: 12px;
@@ -317,7 +317,7 @@
   .provider-cascade-menus {
     display: grid;
     min-height: 352px;
-    grid-template-columns: 164px 184px minmax(0, 280px);
+    grid-template-columns: 164px 184px minmax(0, 250px);
     background: rgb(var(--popover));
   }
 

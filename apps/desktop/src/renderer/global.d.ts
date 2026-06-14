@@ -2,6 +2,7 @@ export {};
 
 import type { MessageAttachment } from "@chengxiaobang/shared";
 import type { PreviewKind } from "../common/file-preview";
+import type { OnboardingProfile, UserProfileJson } from "../common/profile";
 import type { DesktopUpdateState } from "../common/update";
 
 declare module "react" {
@@ -92,6 +93,10 @@ export type SaveAttachmentSnapshotsResult =
   | { ok: true; attachments: MessageAttachment[]; totalBytes: number; elapsedMs: number }
   | { ok: false; error: string };
 
+export type SaveProfileResult =
+  | { ok: true; path: string; profile: UserProfileJson }
+  | { ok: false; path: string; error: string };
+
 export interface InstalledProjectOpener {
   id: string;
   name: string;
@@ -158,6 +163,7 @@ declare global {
       openSkillsDir?(): Promise<{ ok: boolean; path: string }>;
       openLogDir?(): Promise<{ ok: boolean; path?: string; error?: string }>;
       openProviderConfig?(): Promise<{ ok: boolean; path?: string; error?: string }>;
+      saveProfile?(profile: OnboardingProfile): Promise<SaveProfileResult>;
       getUpdateState?(): Promise<DesktopUpdateState>;
       checkForUpdates?(input?: { manual?: boolean }): Promise<DesktopUpdateState>;
       downloadUpdate?(): Promise<DesktopUpdateState>;

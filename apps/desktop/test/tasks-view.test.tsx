@@ -113,7 +113,9 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
 
 beforeEach(() => {
   window.localStorage.clear();
+  delete (window as { chengxiaobang?: unknown }).chengxiaobang;
   resetAppStore();
+  useAppStore.setState({ onboardingCompleted: true });
 });
 
 afterEach(() => {

@@ -31,11 +31,31 @@ function formatTime(value?: string): string {
 
 function TaskStatus({ task }: { task: ScheduledTask }) {
   const { t } = useTranslation();
+  const baseClassName =
+    "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-micro font-medium";
   if (!task.lastStatus) {
-    return <span className="text-mute">{t("tasks.neverRun")}</span>;
+    return (
+      <span className={cn(baseClassName, "border-hairline bg-canvas-soft-2 text-mute")}>
+        {t("tasks.neverRun")}
+      </span>
+    );
   }
+  const statusClassName =
+    task.lastStatus === "completed"
+      ? "border-hairline bg-canvas-soft-2 text-body"
+      : task.lastStatus === "failed"
+        ? "border-error-soft bg-error-soft/30 text-error-deep"
+        : "border-warning/25 bg-warning-soft/45 text-warning-deep";
+  const dotClassName =
+    task.lastStatus === "completed"
+      ? "bg-link/75"
+      : task.lastStatus === "failed"
+        ? "bg-error-deep"
+        : "bg-warning";
+
   return (
-    <span className={task.lastStatus === "failed" ? "text-error-deep" : "text-body"}>
+    <span className={cn(baseClassName, statusClassName)}>
+      <span className={cn("size-1 rounded-full", dotClassName)} aria-hidden />
       {t(`tasks.status.${task.lastStatus}`)}
     </span>
   );
@@ -112,7 +132,7 @@ export function TasksView() {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-12 py-4">
         {tasks.length === 0 ? (
-          <Card className="border-dashed bg-canvas-soft px-4 py-4 text-body-sm text-body">
+          <Card className="border-dashed border-link/20 bg-canvas-soft px-4 py-4 text-body-sm text-body">
             {t("tasks.empty")}
           </Card>
         ) : (
@@ -120,7 +140,7 @@ export function TasksView() {
             <section>
               <TaskSectionHeader title={t("tasks.activeTitle")} count={activeTasks.length} />
               {activeTasks.length === 0 ? (
-                <Card className="mt-3 border-dashed bg-canvas-soft px-4 py-4 text-body-sm text-body">
+                <Card className="mt-3 border-dashed border-link/20 bg-canvas-soft px-4 py-4 text-body-sm text-body">
                   {t("tasks.activeEmpty")}
                 </Card>
               ) : (
@@ -153,7 +173,7 @@ export function TasksView() {
                       />
                       <ChevronDown
                         className={cn(
-                          "size-4 flex-none text-mute transition-transform",
+                          "size-4 flex-none text-link transition-transform",
                           expiredOpen && "rotate-180"
                         )}
                       />
@@ -185,8 +205,12 @@ export function TasksView() {
 function TaskSectionHeader(props: { title: string; count: number; compact?: boolean }) {
   return (
     <div className={cn("flex items-center gap-2", props.compact ? "min-w-0" : "")}>
-      <h2 className="font-mono text-caption tracking-[0.28px] text-mute">{props.title}</h2>
-      <span className="rounded-full bg-canvas-soft-2 px-2 py-0.5 text-micro text-mute">
+      <h2 className="flex items-center gap-2 font-mono text-caption tracking-[0.28px] text-mute">
+        <span className="h-3 w-px rounded-full bg-link/70" aria-hidden />
+        {props.title}
+      </h2>
+      <span className="inline-flex items-center gap-1 rounded-full border border-hairline bg-canvas-soft-2 px-2 py-0.5 text-micro text-mute">
+        <span className="size-1 rounded-full bg-link/65" aria-hidden />
         {props.count}
       </span>
     </div>
@@ -239,7 +263,7 @@ function TaskCard(props: {
   return (
     <Card
       asChild
-      className="min-h-[148px] cursor-pointer px-4 py-3 transition-colors hover:border-hairline-strong hover:bg-canvas-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="min-h-[148px] cursor-pointer px-4 py-3 transition-colors hover:border-link/20 hover:bg-canvas-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <article
         role="button"
@@ -280,7 +304,7 @@ function TaskCard(props: {
               variant="ghost"
               size="icon"
               title={t("tasks.runNow")}
-              className="size-8 rounded-xs"
+              className="size-8 rounded-xs text-link hover:bg-link-bg-soft/45 hover:text-link-deep"
               onClick={() => {
                 console.debug("[tasks-view] 立即执行定时任务", { taskId: task.id });
                 void props.onRunNow(task.id);
@@ -307,7 +331,10 @@ function TaskCard(props: {
           {task.prompt}
         </p>
         <div className="mt-3 flex items-center justify-between gap-3 border-t border-hairline pt-3 text-caption">
-          <span className="min-w-0 truncate text-mute">{scheduleText}</span>
+          <span className="inline-flex min-w-0 items-center gap-1.5 truncate rounded-full border border-hairline bg-canvas-soft-2 px-2 py-0.5 text-body">
+            <span className="size-1 rounded-full bg-link/65" aria-hidden />
+            {scheduleText}
+          </span>
           <span className="flex-none">
             <TaskStatus task={task} />
           </span>
@@ -410,7 +437,10 @@ function TaskDetailDialog(props: {
 function TaskDetailSection(props: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h3 className="font-mono text-micro text-mute">{props.title}</h3>
+      <h3 className="flex items-center gap-1.5 font-mono text-micro text-mute">
+        <span className="size-1 rounded-full bg-link/70" aria-hidden />
+        {props.title}
+      </h3>
       <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">{props.children}</div>
     </section>
   );
@@ -418,7 +448,7 @@ function TaskDetailSection(props: { title: string; children: ReactNode }) {
 
 function TaskDetailField(props: { label: string; value: ReactNode; mono?: boolean }) {
   return (
-    <div className="rounded-sm border border-hairline bg-canvas-soft px-3 py-2">
+    <div className="rounded-sm border border-hairline border-l-link/25 bg-canvas-soft px-3 py-2">
       <div className="text-micro text-mute">{props.label}</div>
       <div
         className={cn(

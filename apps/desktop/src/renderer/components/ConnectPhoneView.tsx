@@ -8,6 +8,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { QRCodeSVG } from "qrcode.react";
+import feishuLogoUrl from "../../../assets/feishu-logo.png";
 import connectPhoneIllustrationUrl from "../../../assets/connect-phone-illustration.png";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -197,9 +198,10 @@ export function ConnectPhoneView() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-12 py-8">
-        <div className="mx-auto grid max-w-[1040px] items-center gap-12 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="mx-auto grid max-w-[1040px] items-center gap-12 lg:grid-cols-[320px_minmax(0,1fr)]">
           <div className="rounded-sm border bg-background p-5" data-testid="connect-phone-feishu-panel">
-            <h2 className="mb-5 text-center text-body-sm font-medium text-foreground">
+            <h2 className="mb-5 flex items-center justify-center gap-2 text-center text-body-sm font-medium text-foreground">
+              <img src={feishuLogoUrl} alt="" aria-hidden="true" className="size-[20px] flex-none object-contain" />
               {t("connectPhone.qrTitle")}
             </h2>
             <QrSurface install={install} onRefresh={() => void startInstall()} />
@@ -208,7 +210,7 @@ export function ConnectPhoneView() {
           <img
             src={connectPhoneIllustrationUrl}
             alt={t("connectPhone.illustrationAlt")}
-            className="hidden max-h-[calc(100vh-140px)] w-full select-none object-contain xl:block"
+            className="hidden max-h-[calc(100vh-140px)] w-full max-w-[560px] select-none justify-self-center object-contain lg:block"
             draggable={false}
           />
         </div>

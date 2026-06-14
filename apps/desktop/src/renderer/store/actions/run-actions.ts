@@ -61,9 +61,10 @@ function missingRunProviderPatch(state: AppState, source: string): Partial<AppSt
   console.warn("[store] 发起模型运行失败：尚未配置供应商", {
     source,
     view: state.view,
-    activeSessionId: state.activeSessionId
+    activeSessionId: state.activeSessionId,
+    targetOnboardingStep: "model"
   });
-  return { onboardingOpen: true };
+  return { onboardingOpen: true, onboardingStep: "model" };
 }
 
 export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {

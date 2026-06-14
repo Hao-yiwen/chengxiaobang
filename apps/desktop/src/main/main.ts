@@ -56,6 +56,7 @@ import {
 import {
   defaultDataDir,
   defaultLogDir,
+  defaultProfilePath,
   defaultProviderConfigPath,
   devDockIconPath,
   preloadPath,
@@ -69,6 +70,7 @@ import { registerOcrIpc } from "./ocr";
 import { registerTerminalIpc, type TerminalSessionManager } from "./terminal";
 import { DesktopUpdateService, registerUpdateIpc, type DesktopUpdater } from "./update-service";
 import { createTrustedIpcRegistrar } from "./trusted-ipc";
+import { saveUserProfile } from "./profile";
 
 const MAX_CONTEXT_FILE_BYTES = 256 * 1024;
 const DEFAULT_BLANK_PROJECT_NAME = "未命名项目";
@@ -728,6 +730,24 @@ async function createWindow(): Promise<void> {
     }
     console.info("[main] 已打开供应商 config.yaml", { target });
     return { ok: true, path: target };
+  });
+
+  trustedIpc.handle("profile:save", async (_event, input: unknown) => {
+    const target = defaultProfilePath();
+    const result = await saveUserProfile(input, { profilePath: target });
+    if (result.ok) {
+      console.info("[main] 用户画像已写入 profile.json", {
+        path: result.path,
+        primaryUse: result.profile.onboardingProfile.primaryUse,
+        scenarioCount: result.profile.onboardingProfile.scenarios.length
+      });
+      return result;
+    }
+    console.warn("[main] 用户画像写入 profile.json 失败", {
+      path: result.path,
+      error: result.error
+    });
+    return result;
   });
 
   trustedIpc.handle("create-project-folder", async (_event, rawName: unknown) => {

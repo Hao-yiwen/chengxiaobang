@@ -18,6 +18,10 @@ export function defaultProviderConfigPath(): string {
   return join(chengxiaobangRoot(), "config.yaml");
 }
 
+export function defaultProfilePath(): string {
+  return join(chengxiaobangRoot(), "profile.json");
+}
+
 /** The 1024px PNG used as the dev dock icon (packaged builds use the .icns). */
 export function devDockIconPath(appPath: string): string {
   return join(appPath, "build", "icon.png");

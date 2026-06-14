@@ -12,6 +12,7 @@ export type {
   AppState,
   Attachment,
   NotificationToast,
+  OnboardingStep,
   PreviewFileState,
   ProjectSortMode,
   QueuedRunItem,
@@ -20,6 +21,7 @@ export type {
   Theme,
   View
 } from "./types";
+export type { OnboardingPrimaryUse, OnboardingProfile, OnboardingScenario } from "../../common/profile";
 export { getApiClient } from "./client";
 export { resolveRunProvider, selectActiveProject, selectActiveSession } from "./selectors";
 

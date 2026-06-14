@@ -90,6 +90,7 @@ beforeEach(() => {
   window.localStorage.clear();
   delete window.chengxiaobang;
   resetAppStore();
+  useAppStore.setState({ onboardingCompleted: true });
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
 
@@ -124,6 +125,16 @@ async function clickProviderCascadeConfirm(): Promise<void> {
   fireEvent.click(within(popup).getByRole("button", { name: "确认" }));
 }
 
+async function selectDeepSeekForHome(): Promise<void> {
+  await waitFor(() =>
+    expect(useAppStore.getState().providers.some((item) => item.id === provider.id)).toBe(true)
+  );
+  await act(async () => {
+    useAppStore.getState().setProviderId(provider.id);
+    useAppStore.getState().setModel(provider.model);
+  });
+}
+
 describe("App", () => {
   it("renders home composer and model presets", async () => {
     const client = createClient();
@@ -141,8 +152,9 @@ describe("App", () => {
     expect(screen.getByLabelText("输入消息")).toBeInTheDocument();
     expect(screen.getByTestId("composer-shell")).toHaveClass("rounded-xl");
     expect(screen.getByTestId("composer-shell")).not.toHaveClass("rounded-pill");
-    // 模型选择器展示可读名称，不重复露出原始模型 id。
-    expect(await screen.findByText("DeepSeek V4 Flash")).toBeInTheDocument();
+    await selectDeepSeekForHome();
+    // 首页模型入口展示供应商名，不重复露出原始模型 id。
+    expect(await screen.findByText("DeepSeek")).toBeInTheDocument();
     expect(screen.queryByText("DeepSeek · deepseek-v4-flash")).not.toBeInTheDocument();
   });
 
@@ -164,6 +176,7 @@ describe("App", () => {
   });
 
   it("stays on home and opens the setup dialog when no provider has an API key", async () => {
+    useAppStore.setState({ onboardingCompleted: false, onboardingStep: "welcome" });
     const client = createClient({
       listProviders: vi.fn(async () => [
         {
@@ -175,26 +188,88 @@ describe("App", () => {
 
     render(<App client={client} />);
 
-    // 首页保持可见，首次配置在轻量弹窗中完成。
+    // 首页保持可见，首次进入先展示欢迎和用途步骤，不直接露出模型密钥表单。
     expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
-    expect(await screen.findByText("配置模型")).toBeInTheDocument();
+    expect(await screen.findByText("先认识一下你的工作方式")).toBeInTheDocument();
+    expect(screen.queryByText("配置模型")).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText("粘贴你的 API Key")).not.toBeInTheDocument();
-    expect(screen.getByText("选择区域和供应商")).toBeInTheDocument();
+    expect(screen.queryByText("选择区域和供应商")).not.toBeInTheDocument();
     expect(screen.queryByText("默认模型")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "供应商" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "稍后再说" }));
-    await waitFor(() => expect(screen.queryByText("配置模型")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "开始设置" }));
+    expect(await screen.findByText("你主要会怎么使用程小帮？")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "写代码" }));
+    fireEvent.click(screen.getByRole("button", { name: "前端" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    const providerButton = screen.getByLabelText("选择供应商");
-    expect(providerButton).not.toBeDisabled();
-    fireEvent.click(providerButton);
-
-    expect(await screen.findByText("配置模型")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "配置模型" })).toBeInTheDocument();
+    expect(screen.getByText("选择区域和供应商")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("粘贴你的 API Key")).not.toBeInTheDocument();
   });
 
+  it("links visible scenario tabs to the selected primary use and persists only selected tags", async () => {
+    const saveProfile = vi.fn(async () => ({
+      ok: true as const,
+      path: "/Users/test/.chengxiaobang/profile.json",
+      profile: {
+        version: 1 as const,
+        updatedAt: "2026-06-14T00:00:00.000Z",
+        onboardingProfile: {
+          primaryUse: "code" as const,
+          scenarios: ["frontend"] as const
+        }
+      }
+    }));
+    window.chengxiaobang = {
+      saveProfile
+    } as unknown as NonNullable<Window["chengxiaobang"]>;
+    useAppStore.setState({ onboardingCompleted: false, onboardingStep: "welcome" });
+    const client = createClient({
+      listProviders: vi.fn(async () => [
+        {
+          ...provider,
+          apiKeyRef: undefined
+        }
+      ])
+    });
+
+    render(<App client={client} />);
+
+    await screen.findByText("先认识一下你的工作方式");
+    fireEvent.click(screen.getByRole("button", { name: "开始设置" }));
+    fireEvent.click(await screen.findByRole("button", { name: "日常工作" }));
+
+    expect(screen.getByRole("button", { name: "文档 / PPT" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "资料研究" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "前端" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "后端" })).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "写代码" }));
+
+    expect(screen.queryByRole("button", { name: "文档 / PPT" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "资料研究" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "前端" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "后端" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "调试" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "数据处理" })).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "前端" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+    expect(saveProfile).toHaveBeenCalledWith({
+      primaryUse: "code",
+      scenarios: ["frontend"]
+    });
+    expect(useAppStore.getState().onboardingProfile).toEqual({
+      primaryUse: "code",
+      scenarios: ["frontend"]
+    });
+  });
+
   it("saves one provider from the setup dialog after choosing it through the cascade", async () => {
+    useAppStore.setState({ onboardingCompleted: false, onboardingStep: "welcome" });
     const saved = { ...provider, id: "p_new" };
     const saveProvider = vi.fn(async (_input: ProviderInput) => saved);
     const listProviders = vi
@@ -204,7 +279,12 @@ describe("App", () => {
     const client = createClient({ listProviders, saveProvider: saveProvider as never });
 
     render(<App client={client} />);
-    await screen.findByText("配置模型");
+    await screen.findByText("先认识一下你的工作方式");
+    fireEvent.click(screen.getByRole("button", { name: "开始设置" }));
+    await screen.findByText("你主要会怎么使用程小帮？");
+    fireEvent.click(screen.getByRole("button", { name: "资料研究" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    await screen.findByRole("heading", { name: "配置模型" });
 
     fireEvent.click(screen.getByLabelText("类型"));
     expect(await findProviderCascadeOption("国内供应商")).toBeInTheDocument();
@@ -235,9 +315,60 @@ describe("App", () => {
       "kimi-k2.6",
       "kimi-k2.5"
     ]);
+    await waitFor(() => expect(useAppStore.getState().onboardingCompleted).toBe(true));
     await waitFor(() =>
       expect(screen.queryByText("配置模型")).not.toBeInTheDocument()
     );
+  });
+
+  it("shows the first-run guide once even when a provider already exists", async () => {
+    useAppStore.setState({ onboardingCompleted: false, onboardingStep: "welcome" });
+    const client = createClient();
+
+    const { unmount } = render(<App client={client} />);
+
+    expect(await screen.findByText("先认识一下你的工作方式")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "开始设置" }));
+    fireEvent.click(await screen.findByRole("button", { name: "下一步" }));
+
+    expect(await screen.findByTestId("onboarding-current-model")).toHaveTextContent(
+      "DeepSeek · DeepSeek V4 Flash"
+    );
+    fireEvent.click(screen.getByRole("button", { name: "开始使用" }));
+
+    await waitFor(() => expect(useAppStore.getState().onboardingCompleted).toBe(true));
+    await waitFor(() =>
+      expect(screen.queryByText("先认识一下你的工作方式")).not.toBeInTheDocument()
+    );
+
+    unmount();
+    render(<App client={client} />);
+
+    expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
+    expect(screen.queryByText("先认识一下你的工作方式")).not.toBeInTheDocument();
+  });
+
+  it("opens the model step directly after completed onboarding when no provider is configured", async () => {
+    const client = createClient({
+      listProviders: vi.fn(async () => [
+        {
+          ...provider,
+          apiKeyRef: undefined
+        }
+      ])
+    });
+
+    render(<App client={client} />);
+
+    expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
+    expect(screen.queryByText("先认识一下你的工作方式")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "配置模型" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("选择供应商"));
+
+    expect(await screen.findByRole("heading", { name: "配置模型" })).toBeInTheDocument();
+    expect(screen.queryByText("先认识一下你的工作方式")).not.toBeInTheDocument();
+    expect(screen.getByText("选择区域和供应商")).toBeInTheDocument();
   });
 
   it("switches UI language to English when the locale changes", async () => {
@@ -945,6 +1076,7 @@ describe("App", () => {
     });
 
     render(<App client={client} />);
+    await selectDeepSeekForHome();
 
     fireEvent.change(await screen.findByLabelText("输入消息"), {
       target: { value: "清理构建产物" }
@@ -1001,6 +1133,7 @@ describe("App", () => {
     });
 
     render(<App client={client} />);
+    await selectDeepSeekForHome();
 
     fireEvent.change(await screen.findByLabelText("输入消息"), {
       target: { value: "写一个很大的文件" }
@@ -1046,6 +1179,7 @@ describe("App", () => {
     });
 
     render(<App client={client} />);
+    await selectDeepSeekForHome();
 
     fireEvent.change(await screen.findByLabelText("输入消息"), {
       target: { value: "停一下" }
@@ -1081,6 +1215,7 @@ describe("App", () => {
     });
 
     render(<App client={client} />);
+    await selectDeepSeekForHome();
 
     fireEvent.change(await screen.findByLabelText("输入消息"), {
       target: { value: "登录页面报错了，帮我看看" }
@@ -1177,6 +1312,7 @@ describe("App", () => {
     const client = createClient({ streamRun: streamRun as never });
 
     render(<App client={client} />);
+    await selectDeepSeekForHome();
     const input = await screen.findByLabelText("输入消息");
 
     fireEvent.change(input, { target: { value: "你好" } });
@@ -1335,6 +1471,7 @@ describe("App", () => {
 
     render(<App client={client} />);
     await screen.findByText("做一份 PPT");
+    await selectDeepSeekForHome();
 
     fireEvent.change(screen.getByLabelText("输入消息"), {
       target: { value: "独立对话" }
@@ -1494,6 +1631,7 @@ describe("App", () => {
     });
 
     render(<App client={client} />);
+    await selectDeepSeekForHome();
     fireEvent.change(await screen.findByLabelText("输入消息"), { target: { value: "你好" } });
     fireEvent.click(screen.getByTitle("发送"));
 

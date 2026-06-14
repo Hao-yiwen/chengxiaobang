@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("chengxiaobang", {
   openSkillsDir: () => ipcRenderer.invoke("open-skills-dir"),
   openLogDir: () => ipcRenderer.invoke("open-log-dir"),
   openProviderConfig: () => ipcRenderer.invoke("open-provider-config"),
+  saveProfile: (profile: unknown) => ipcRenderer.invoke("profile:save", profile),
   getUpdateState: () => ipcRenderer.invoke("update:get-state"),
   checkForUpdates: (input?: { manual?: boolean }) => ipcRenderer.invoke("update:check", input),
   downloadUpdate: () => ipcRenderer.invoke("update:download"),

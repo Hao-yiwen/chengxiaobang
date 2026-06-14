@@ -1,6 +1,6 @@
 {
   "name": "chengxiaobang",
-  "version": "0.1.5",
+  "version": "0.1.9",
   "private": true,
   "description": "程小帮 Electron AI assistant desktop app.",
   "packageManager": "pnpm@11.0.9",

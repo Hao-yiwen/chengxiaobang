@@ -183,8 +183,17 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           return;
         }
         const configuredProvider = firstConfiguredProvider(data.providers);
+        const shouldShowFirstRunOnboarding = !get().onboardingCompleted;
+        const firstRunOnboardingPatch = shouldShowFirstRunOnboarding
+          ? ({ onboardingOpen: true, onboardingStep: "welcome" } as const)
+          : {};
+        if (shouldShowFirstRunOnboarding) {
+          console.info("[store] 首次启动打开欢迎引导", {
+            hasConfiguredProvider: Boolean(configuredProvider)
+          });
+        }
         if (!configuredProvider) {
-          // 首次运行停留在首页，用轻量弹窗完成配置，避免直接把用户甩到设置页。
+          // 未配置模型时停留首页；首启未完成才展示欢迎，否则等用户发起运行再进入模型配置。
           set((state) => ({
             ...resetHomePlanMode("restoreInitialState.noProvider", get().planMode),
             ...switchComposerDraftScope(
@@ -205,7 +214,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             rightPanelMode: null,
             previewFile: undefined,
             browserUrl: "",
-            onboardingOpen: true
+            onboardingOpen: shouldShowFirstRunOnboarding,
+            ...(shouldShowFirstRunOnboarding ? { onboardingStep: "welcome" as const } : {})
           }));
           return;
         }
@@ -241,7 +251,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             rightPanelMode: null,
             previewFile: undefined,
             browserUrl: "",
-            view: "home"
+            view: "home",
+            ...firstRunOnboardingPatch
           }));
           await get().refreshSlashCommands();
           return;
@@ -271,7 +282,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             rightPanelMode: null,
             previewFile: undefined,
             browserUrl: "",
-            view: "home"
+            view: "home",
+            ...firstRunOnboardingPatch
           }));
           await get().refreshSlashCommands();
           return;
@@ -305,7 +317,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             accessMode: targetSession.accessMode,
             ...restoredRightPanel(state, targetSession.id),
             providerId: sessionProvider?.id,
-            ...modelState
+            ...modelState,
+            ...firstRunOnboardingPatch
           };
         });
         await get().refreshSlashCommands();
@@ -601,9 +614,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
 
       newChat() {
         console.info("[store] 新建普通对话");
-        // 未配置模型时直接打开轻量配置弹窗，避免用户回到首页后无从开始。
+        // 未配置模型时直接打开模型配置步骤，避免用户回到首页后无从开始。
         if (!firstConfiguredProvider(get().providers)) {
-          set({ onboardingOpen: true });
+          get().openOnboarding("model");
         }
         get().clearRunState();
         set((state) => ({
@@ -631,7 +644,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
       newChatInProject(projectId) {
         console.debug("[store] 在项目下新建会话", { projectId });
         if (!firstConfiguredProvider(get().providers)) {
-          set({ onboardingOpen: true });
+          get().openOnboarding("model");
         }
         get().clearRunState();
         set((state) => ({
