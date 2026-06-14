@@ -153,8 +153,8 @@ describe("App", () => {
     expect(screen.getByTestId("composer-shell")).toHaveClass("rounded-xl");
     expect(screen.getByTestId("composer-shell")).not.toHaveClass("rounded-pill");
     await selectDeepSeekForHome();
-    // 首页模型入口展示供应商名，不重复露出原始模型 id。
-    expect(await screen.findByText("DeepSeek")).toBeInTheDocument();
+    // 首页模型入口展示友好模型名，不重复露出原始模型 id。
+    expect(await screen.findByText("DeepSeek V4 Flash")).toBeInTheDocument();
     expect(screen.queryByText("DeepSeek · deepseek-v4-flash")).not.toBeInTheDocument();
   });
 
@@ -364,7 +364,7 @@ describe("App", () => {
     expect(screen.queryByText("先认识一下你的工作方式")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "配置模型" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText("选择供应商"));
+    fireEvent.click(screen.getByLabelText("选择模型"));
 
     expect(await screen.findByRole("heading", { name: "配置模型" })).toBeInTheDocument();
     expect(screen.queryByText("先认识一下你的工作方式")).not.toBeInTheDocument();

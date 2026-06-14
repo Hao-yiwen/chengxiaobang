@@ -19,7 +19,7 @@ import {
   sideChatReducer,
   type SideChatState
 } from "../src/renderer/lib/side-chat";
-import { resetAppStore } from "../src/renderer/store";
+import { resetAppStore, useAppStore } from "../src/renderer/store";
 
 const provider: ProviderConfig = {
   id: "deepseek",
@@ -117,6 +117,7 @@ async function openSideChat(): Promise<void> {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
+  useAppStore.setState({ onboardingOpen: false, onboardingCompleted: true });
 });
 
 describe("sideChatReducer", () => {

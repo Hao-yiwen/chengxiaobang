@@ -77,8 +77,8 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
-  // 这些用例都在操作一个已打开的对话，模拟用户停在对话视图（刷新会保留该视图）。
-  useAppStore.setState({ view: "chat" });
+  // 这些用例都在操作一个已打开的对话，模拟已完成首启后停在对话视图。
+  useAppStore.setState({ view: "chat", onboardingOpen: false, onboardingCompleted: true });
 });
 
 describe("MessageActions", () => {

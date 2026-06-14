@@ -268,6 +268,7 @@ beforeEach(() => {
   pptxRendererMock.setZoom.mockClear();
   pptxRendererMock.destroy.mockClear();
   resetAppStore();
+  useAppStore.setState({ onboardingOpen: false, onboardingCompleted: true });
 });
 
 afterEach(() => {

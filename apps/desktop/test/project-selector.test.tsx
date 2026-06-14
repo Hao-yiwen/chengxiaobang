@@ -93,6 +93,7 @@ beforeAll(() => {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
+  useAppStore.setState({ onboardingOpen: false, onboardingCompleted: true });
 });
 
 afterEach(() => {

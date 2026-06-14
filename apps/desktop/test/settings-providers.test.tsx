@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
-import { resetAppStore } from "../src/renderer/store";
+import { resetAppStore, useAppStore } from "../src/renderer/store";
 import type { ProviderConfig, ProviderInput } from "@chengxiaobang/shared";
 
 const deepseek: ProviderConfig = {
@@ -87,6 +87,7 @@ beforeAll(() => {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
+  useAppStore.setState({ onboardingOpen: false, onboardingCompleted: true });
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
 

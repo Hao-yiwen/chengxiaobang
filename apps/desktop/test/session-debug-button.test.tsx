@@ -160,7 +160,13 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
-  useAppStore.setState({ view: "chat", activeSessionId: session.id, notice: "测试 Toast" });
+  useAppStore.setState({
+    view: "chat",
+    activeSessionId: session.id,
+    notice: "测试 Toast",
+    onboardingOpen: false,
+    onboardingCompleted: true
+  });
 });
 
 afterEach(() => {

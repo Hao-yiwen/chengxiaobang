@@ -83,8 +83,8 @@ async function openChangesPane(): Promise<void> {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
-  // 变更面板是对话视图里的右侧工具，模拟用户停在对话（刷新会保留该视图）。
-  useAppStore.setState({ view: "chat" });
+  // 变更面板是对话视图里的右侧工具，模拟已完成首启后停在对话（刷新会保留该视图）。
+  useAppStore.setState({ view: "chat", onboardingOpen: false, onboardingCompleted: true });
 });
 
 describe("changes panel", () => {

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FeishuConfig, FeishuStatus, ProviderConfig } from "@chengxiaobang/shared";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
-import { resetAppStore } from "../src/renderer/store";
+import { resetAppStore, useAppStore } from "../src/renderer/store";
 
 const provider: ProviderConfig = {
   id: "deepseek",
@@ -76,6 +76,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
+  useAppStore.setState({ onboardingOpen: false, onboardingCompleted: true });
 });
 
 afterEach(() => {
