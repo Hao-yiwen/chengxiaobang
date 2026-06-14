@@ -207,7 +207,7 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
 
 - `registry.ts`:`createAgentTools(workspacePath, getFeishuSender?)` 汇集工厂;`MUTATING_TOOLS` 集合 + `requiresApproval(name)` 是审批门控的唯一事实源。
 - `workspace.ts`:`safeResolve` 强制路径不逃逸工作目录;glob/search 实现(忽略 node_modules/.git/dist 等);`listProjectFiles` 供 @-mention 自动补全。
-- Shell 命令默认最多前台等待 15 秒,也可通过 `background=true` 立即转入后台;输出持续写入工作区文件,再由 `shell_status` 查询状态、`shell_cancel` 主动终止;详见 [Shell 异步执行与后台命令](./shell-background-execution.md)。
+- Shell 命令通过 `mode` 选择执行策略：默认 `async` 前台等待 15 秒后转后台，`background` 立即转后台，`blocking` 按 `waitMs` 最多等待 300 秒后转后台；输出持续写入工作区文件,再由 `shell_status` 查询状态、`shell_cancel` 主动终止;详见 [Shell 执行模式与后台命令](./shell-background-execution.md)。
 - 参数校验由 pi 在执行前按 TypeBox schema 完成,非法参数直接变成错误工具结果(不经 beforeToolCall)。
 
 ### 4.6 模型层与压缩

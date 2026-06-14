@@ -11,15 +11,29 @@ import {
 import { resolveToolPath } from "./workspace";
 import { textResult } from "./tool-result";
 
+const SHELL_BLOCKING_DEFAULT_WAIT_MS = 120_000;
+const SHELL_BLOCKING_MAX_WAIT_MS = 300_000;
+const COMMAND_LOG_MAX_CHARS = 200;
+
+type ShellExecutionMode = "async" | "background" | "blocking";
+
 const shellParams = Type.Object({
   command: Type.String({ description: "要执行的 shell 命令" }),
   cwd: Type.Optional(
     Type.String({ description: "可选，命令工作目录；可为相对当前工作目录的路径或显式绝对路径" })
   ),
-  background: Type.Optional(
-    Type.Boolean({
+  mode: Type.Optional(
+    Type.Union([Type.Literal("async"), Type.Literal("background"), Type.Literal("blocking")], {
       description:
-        "预计命令会长时间运行或持续监听时设为 true，工具会立即转入后台并返回输出文件路径"
+        "shell 执行模式：async 为默认，前台最多等待 15 秒后转后台；background 立即转后台；blocking 按 waitMs 等待更久，超过后转后台"
+    })
+  ),
+  waitMs: Type.Optional(
+    Type.Number({
+      description:
+        "mode=blocking 时的前台等待毫秒数，默认 120000，最大 300000；超过等待窗口后命令转后台继续执行",
+      minimum: 1,
+      maximum: SHELL_BLOCKING_MAX_WAIT_MS
     })
   )
 });
@@ -39,7 +53,13 @@ export interface ShellToolOptions {
 }
 
 interface ShellRunRequestOptions {
-  background?: boolean;
+  mode?: ShellExecutionMode;
+  waitMs?: number;
+}
+
+interface NormalizedShellRunOptions {
+  mode: ShellExecutionMode;
+  backgroundAfterMs: number;
 }
 
 async function runShell(
@@ -50,21 +70,19 @@ async function runShell(
   options: ShellToolOptions = {},
   requestOptions: ShellRunRequestOptions = {}
 ): Promise<string> {
-  const requestedBackground = requestOptions.background === true;
-  const backgroundAfterMs = requestedBackground
-    ? 0
-    : (options.backgroundAfterMs ?? DEFAULT_SHELL_BACKGROUND_AFTER_MS);
+  const normalized = normalizeShellRunOptions(command, cwd, options, requestOptions);
+  console.info("[shell-tools] 准备执行 shell 命令", {
+    mode: normalized.mode,
+    waitMs: normalized.backgroundAfterMs,
+    cwd,
+    command: commandForLog(command)
+  });
   const result = await runShellCommand(command, cwd, {
     signal,
-    backgroundAfterMs
+    backgroundAfterMs: normalized.backgroundAfterMs
   });
   if (result.kind === "background") {
-    return renderBackgroundStarted(
-      result.command,
-      backgroundAfterMs,
-      requestedBackground,
-      workspacePath
-    );
+    return renderBackgroundStarted(result.command, normalized, workspacePath);
   }
   const { output, exitCode } = result;
   if (exitCode !== 0) {
@@ -83,10 +101,12 @@ export function createShellTools(
     description: "在工作目录或指定 cwd 中执行一条 shell 命令并返回输出。用于构建、安装依赖、运行脚本等。",
     parameters: shellParams,
     execute: async (_id, params, signal) => {
+      rejectRemovedShellParams(params);
       const cwd = resolveShellCwd(workspacePath, "shell", params.cwd || ".");
       return textResult(
         await runShell(params.command, cwd, workspacePath, signal, options, {
-          background: params.background
+          mode: params.mode,
+          waitMs: params.waitMs
         })
       );
     }
@@ -149,16 +169,23 @@ export function createShellTools(
   return [shellTool, gitStatus, gitDiff, shellStatus, shellCancel];
 }
 
+function rejectRemovedShellParams(params: Record<string, unknown>): void {
+  if (!Object.prototype.hasOwnProperty.call(params, "background")) {
+    return;
+  }
+  console.warn("[shell-tools] shell 参数包含已移除字段", {
+    field: "background"
+  });
+  throw new Error('shell 参数已不支持 background，请使用 mode="background"');
+}
+
 function renderBackgroundStarted(
   snapshot: BackgroundShellCommandSnapshot,
-  backgroundAfterMs: number,
-  requestedBackground: boolean,
+  options: NormalizedShellRunOptions,
   workspacePath: string
 ): string {
   const outputPath = shellOutputPathForRead(snapshot, workspacePath);
-  const firstLine = requestedBackground
-    ? "命令已按 background=true 请求转入后台继续运行；本次工具调用不会等待它结束。"
-    : `命令已执行超过 ${formatDuration(backgroundAfterMs)}，已转入后台继续运行；本次工具调用不会继续等待它结束。`;
+  const firstLine = renderBackgroundStartLine(options);
   return [
     firstLine,
     `后台命令 ID：${snapshot.id}`,
@@ -170,6 +197,78 @@ function renderBackgroundStarted(
     `- 查看状态：调用 shell_status，参数为 {"id":"${snapshot.id}"}`,
     `- 如果命令没有进展或不再需要：调用 shell_cancel，参数为 {"id":"${snapshot.id}"}`
   ].join("\n");
+}
+
+function normalizeShellRunOptions(
+  command: string,
+  cwd: string,
+  options: ShellToolOptions,
+  requestOptions: ShellRunRequestOptions
+): NormalizedShellRunOptions {
+  const mode = requestOptions.mode ?? "async";
+  if (!isShellExecutionMode(mode)) {
+    console.warn("[shell-tools] shell mode 参数非法", {
+      mode,
+      cwd,
+      command: commandForLog(command)
+    });
+    throw new Error("shell mode 参数非法，必须是 async、background 或 blocking");
+  }
+
+  if (mode !== "blocking" && requestOptions.waitMs !== undefined) {
+    console.info("[shell-tools] 非 blocking 模式忽略 waitMs", {
+      mode,
+      waitMs: requestOptions.waitMs,
+      cwd,
+      command: commandForLog(command)
+    });
+  }
+
+  if (mode === "background") {
+    return { mode, backgroundAfterMs: 0 };
+  }
+  if (mode === "blocking") {
+    const waitMs = normalizeBlockingWaitMs(requestOptions.waitMs, command, cwd);
+    return { mode, backgroundAfterMs: waitMs };
+  }
+  return {
+    mode,
+    backgroundAfterMs: options.backgroundAfterMs ?? DEFAULT_SHELL_BACKGROUND_AFTER_MS
+  };
+}
+
+function normalizeBlockingWaitMs(
+  waitMs: number | undefined,
+  command: string,
+  cwd: string
+): number {
+  const value = waitMs ?? SHELL_BLOCKING_DEFAULT_WAIT_MS;
+  if (!Number.isInteger(value) || value < 1 || value > SHELL_BLOCKING_MAX_WAIT_MS) {
+    console.warn("[shell-tools] shell blocking waitMs 参数非法", {
+      waitMs: value,
+      maxWaitMs: SHELL_BLOCKING_MAX_WAIT_MS,
+      cwd,
+      command: commandForLog(command)
+    });
+    throw new Error(
+      `shell 阻塞等待 waitMs 必须是 1 到 ${SHELL_BLOCKING_MAX_WAIT_MS} 之间的整数毫秒`
+    );
+  }
+  return value;
+}
+
+function isShellExecutionMode(value: unknown): value is ShellExecutionMode {
+  return value === "async" || value === "background" || value === "blocking";
+}
+
+function renderBackgroundStartLine(options: NormalizedShellRunOptions): string {
+  if (options.mode === "background") {
+    return '命令已按 mode="background" 请求转入后台继续运行；本次工具调用不会等待它结束。';
+  }
+  if (options.mode === "blocking") {
+    return `命令在 mode="blocking" 下等待超过 ${formatDuration(options.backgroundAfterMs)} 仍未结束，已转入后台继续运行；本次工具调用不会继续等待它结束。`;
+  }
+  return `命令已执行超过 ${formatDuration(options.backgroundAfterMs)}，已转入后台继续运行；本次工具调用不会继续等待它结束。`;
 }
 
 function renderBackgroundStatus(snapshot: BackgroundShellCommandSnapshot, workspacePath: string): string {
@@ -219,4 +318,10 @@ function formatDuration(ms: number): string {
     return `${ms} 毫秒`;
   }
   return `${Math.round(ms / 1000)} 秒`;
+}
+
+function commandForLog(command: string): string {
+  return command.length > COMMAND_LOG_MAX_CHARS
+    ? `${command.slice(0, COMMAND_LOG_MAX_CHARS)}...`
+    : command;
 }

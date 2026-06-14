@@ -357,19 +357,49 @@ describe("builtin agent tools", () => {
 
     const result = await run(shellTools, "shell", {
       command: longCommandWithTrailingEcho("should-not-print"),
-      background: true
+      mode: "background"
     });
     const id = parseBackgroundId(result);
     const outputPath = parseOutputPath(result);
 
     expect(Date.now() - startedAt).toBeLessThan(500);
-    expect(result).toContain("background=true");
+    expect(result).toContain('mode="background"');
     expect(outputPath).toMatch(/^\.chengxiaobang\/shell-outputs\/shell_/);
     const cancelled = await run(shellTools, "shell_cancel", { id });
     expect(cancelled).toContain("状态：aborted");
     await expect(readFile(join(dir, outputPath), "utf8")).resolves.not.toContain(
       "should-not-print"
     );
+  });
+
+  it("waits for blocking shell commands before moving them to the background", async () => {
+    const shellTools = createShellTools(dir, { backgroundAfterMs: 50 });
+
+    const result = await run(shellTools, "shell", {
+      command: shortDelayedEchoCommand("blocking-done"),
+      mode: "blocking",
+      waitMs: 1_000
+    });
+
+    expect(result).toContain("blocking-done");
+    expect(result).not.toContain("后台命令 ID");
+  });
+
+  it("rejects invalid shell mode and blocking waitMs values with a clear message", async () => {
+    const shellTools = createShellTools(dir);
+
+    await expect(
+      run(shellTools, "shell", { command: "echo hi", background: true })
+    ).rejects.toThrow("已不支持 background");
+    await expect(
+      run(shellTools, "shell", { command: "echo hi", mode: "foreground" })
+    ).rejects.toThrow("mode 参数非法");
+    await expect(
+      run(shellTools, "shell", { command: "echo hi", mode: "blocking", waitMs: 300_001 })
+    ).rejects.toThrow("waitMs 必须是 1 到 300000");
+    await expect(
+      run(shellTools, "shell", { command: "echo hi", mode: "blocking", waitMs: "soon" })
+    ).rejects.toThrow("waitMs 必须是 1 到 300000");
   });
 
   it("returns an absolute background output path for shell commands outside the workspace", async () => {
@@ -379,7 +409,7 @@ describe("builtin agent tools", () => {
       const result = await run(shellTools, "shell", {
         command: delayedEchoCommand("outside-background"),
         cwd: outsideDir,
-        background: true
+        mode: "background"
       });
       const id = parseBackgroundId(result);
       const outputPath = parseOutputPath(result);
@@ -648,6 +678,12 @@ function printWorkingDirectoryCommand(): string {
 function delayedEchoCommand(text: string): string {
   return process.platform === "win32"
     ? `ping 127.0.0.1 -n 2 >nul & echo ${text}`
+    : `sleep 0.2; echo ${text}`;
+}
+
+function shortDelayedEchoCommand(text: string): string {
+  return process.platform === "win32"
+    ? `powershell -NoProfile -Command "Start-Sleep -Milliseconds 200; Write-Output ${text}"`
     : `sleep 0.2; echo ${text}`;
 }
 

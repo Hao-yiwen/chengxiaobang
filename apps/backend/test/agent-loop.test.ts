@@ -29,6 +29,12 @@ function delayedEchoShellCommand(text: string): string {
     : `sleep 0.2; echo ${text}`;
 }
 
+function shortDelayedEchoShellCommand(text: string): string {
+  return process.platform === "win32"
+    ? `powershell -NoProfile -Command "Start-Sleep -Milliseconds 200; Write-Output ${text}"`
+    : `sleep 0.2; echo ${text}`;
+}
+
 function longRunningShellCommand(): string {
   return process.platform === "win32" ? "ping 127.0.0.1 -n 6 >nul" : "sleep 5";
 }
@@ -451,7 +457,7 @@ describe("AgentRunner agentic loop (pi)", () => {
             name: "shell",
             arguments: {
               command: delayedEchoShellCommand("requested-background-done"),
-              background: true
+              mode: "background"
             }
           }
         ]
@@ -474,9 +480,82 @@ describe("AgentRunner agentic loop (pi)", () => {
     const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
     const outputPath = parseBackgroundOutputPath(summary);
 
-    expect(summary).toContain("background=true");
+    expect(summary).toContain('mode="background"');
     expect(summary).toContain("后台命令 ID");
     await waitForFileToContain(join(dir, outputPath), "requested-background-done");
+  });
+
+  it("waits for model-requested shell commands in blocking mode", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    const scripted = scriptedStreamFn([
+      {
+        toolCalls: [
+          {
+            id: "call_shell_blocking",
+            name: "shell",
+            arguments: {
+              command: shortDelayedEchoShellCommand("blocking-loop-done"),
+              mode: "blocking",
+              waitMs: 1_000
+            }
+          }
+        ]
+      },
+      { text: "阻塞等待拿到了结果。" }
+    ]);
+    const runner = new AgentRunner(store, secrets, {
+      streamFn: scripted.streamFn,
+      createTools: (workspacePath) => createShellTools(workspacePath, { backgroundAfterMs: 50 })
+    });
+
+    const events = await drain(
+      runner.stream({ prompt: "阻塞等待慢命令", projectId: project.id, accessMode: "full_access" })
+    );
+
+    const completed = events.find(
+      (event) => event.type === "tool_call" && event.toolCall.status === "completed"
+    );
+    const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
+
+    expect(summary).toContain("blocking-loop-done");
+    expect(summary).not.toContain("后台命令 ID");
+  });
+
+  it("returns blocking shell commands as background output files when waitMs elapses", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    const scripted = scriptedStreamFn([
+      {
+        toolCalls: [
+          {
+            id: "call_shell_blocking_background",
+            name: "shell",
+            arguments: {
+              command: delayedEchoShellCommand("blocking-background-done"),
+              mode: "blocking",
+              waitMs: 50
+            }
+          }
+        ]
+      },
+      { text: "阻塞窗口结束后转后台。" }
+    ]);
+    const runner = new AgentRunner(store, secrets, {
+      streamFn: scripted.streamFn
+    });
+
+    const events = await drain(
+      runner.stream({ prompt: "阻塞等待超时", projectId: project.id, accessMode: "full_access" })
+    );
+
+    const completed = events.find(
+      (event) => event.type === "tool_call" && event.toolCall.status === "completed"
+    );
+    const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
+    const outputPath = parseBackgroundOutputPath(summary);
+
+    expect(summary).toContain('mode="blocking"');
+    expect(summary).toContain("后台命令 ID");
+    await waitForFileToContain(join(dir, outputPath), "blocking-background-done");
   });
 
   it("emits tool_activity while tool arguments stream and omits large content", async () => {
