@@ -15,7 +15,7 @@
 ## 1. 总览（闭环链路）
 
 ```
-会话中自然语言 ──→ 模型调用 schedule_create（审批卡确认 cron）──→ scheduled_tasks 落库
+会话中自然语言 ──→ 模型调用 ScheduleCreate（审批卡确认 cron）──→ scheduled_tasks 落库
                                                                        │ nextRunAt
         TasksView（侧边栏「定时任务」页）                                │
         启停 / 立即运行 / 删除  ←── /api/tasks ──┐                      ▼
@@ -96,13 +96,13 @@ create table if not exists scheduled_tasks (
 
 | 工具 | 审批 | 行为 |
 |---|---|---|
-| `schedule_create(name, cron, prompt, full_access?)` | **mutating**（审批门控） | 校验 cron → 落库（算好 nextRunAt）→ 返回任务 id + **接下来 1-2 次触发时间**，让模型向用户复述自检 |
-| `schedule_list()` | read-only | 列出全部任务（id、cron、启停、下次/上次执行、是否本会话） |
-| `schedule_cancel(id)` | **mutating** | 删除任务 |
+| `ScheduleCreate(kind, name, prompt, cron?, run_at?, full_access?)` | **mutating**（审批门控） | `kind=recurring` 校验 5 字段 cron → 落库（算好 nextRunAt）→ 返回任务 id + **接下来 1-2 次触发时间**；`kind=once` 校验带时区 `run_at` → 创建一次性任务 |
+| `ScheduleList()` | read-only | 列出全部任务（id、cron、启停、下次/上次执行、是否本会话） |
+| `ScheduleCancel(id)` | **mutating** | 删除任务 |
 
 配套改动：
 
-- `registry.ts`：`MUTATING_TOOLS` += `schedule_create/schedule_cancel`（审批模式下用户会在审批卡上**看到 cron 参数再确认**），`READ_ONLY_TOOLS` += `schedule_list`。
+- `registry.ts`：`MUTATING_TOOLS` += `ScheduleCreate/ScheduleCancel`（审批模式下用户会在审批卡上**看到 cron 参数再确认**），`READ_ONLY_TOOLS` += `ScheduleList`。
 - `system-prompt.ts` 注入**当前本地时间 + 时区**（一行，所有 run 受益）——模型没有时间就无法把"明早 9 点"换算成 cron。
 - **飞书绑定会话拒绝创建**：调度执行的产出只写进会话、不会回发飞书群，对飞书用户是静默黑洞，工具直接报错提示去桌面端创建。
 - 渲染层 `chat.toolLine` 已配好三个工具的友好文案（"创建定时任务「{{name}}」"等）。
@@ -111,7 +111,7 @@ create table if not exists scheduled_tasks (
 
 `AgentRunner.stream(input, internal?: { headless?: boolean })` 新增**进程内第二参数**——刻意不进 shared 的 `runRequestSchema`，不暴露到 HTTP API 面。`headless: true` 时：
 
-1. **隐藏 `ask_user` 工具**（`selectAgentTools` 新增 `headless` 标志）。这是硬要求而不是优化：`pi-events.ts` 中 `ask_user` **无条件**进入 `pending_approval` 等待，无人值守的 run 一旦调用它就永久挂起（飞书链路曾踩过同一坑，`full_access` 也救不了）。
+1. **隐藏 `AskUserQuestion` 工具**（`selectAgentTools` 新增 `headless` 标志）。这是硬要求而不是优化：`pi-events.ts` 中 `AskUserQuestion` **无条件**进入 `pending_approval` 等待，无人值守的 run 一旦调用它就永久挂起（飞书链路曾踩过同一坑，`full_access` 也救不了）。
 2. **跳过 run 起始的 `updateSession` 覆写**——正常 run 会把 `providerId/accessMode` 写回会话；调度 run 不得污染原会话设置（否则 fullAccess 任务每跑一次就把会话翻成 full_access）。
 3. 系统提示追加无人值守说明（"独立完成、不要等待用户确认"）。
 
@@ -159,7 +159,7 @@ create table if not exists scheduled_tasks (
 | `test/schedule.test.ts` | cron 纯函数：合法/非法/6 字段拒绝、下次触发计算、补跑基准 |
 | `test/task-scheduler.test.ts` | 到期执行进原会话并推进 nextRunAt；无 provider 时记录 failed；只读自动拒绝 mutating 工具且 run 完成；headless 不覆写会话设置；disabled/未到期不执行；会话忙跳过且不推进；busy 防重入；runNow 未知任务报错 |
 | `test/schedule-tools.test.ts` | create 绑定会话 + 触发预览；非法 cron 友好报错；飞书会话拒绝；list/cancel 往返 |
-| `test/agent-runner.test.ts`（增量） | headless 过滤 ask_user、交互 run 保留；schedule 工具对两种 run 均可见 |
+| `test/agent-runner.test.ts`（增量） | headless 过滤 AskUserQuestion、交互 run 保留；schedule 工具对两种 run 均可见 |
 | `test/api-app.test.ts`（增量） | 路由 CRUD、非法 cron 400、重新启用重算 nextRunAt、run-now 202/503 |
 | `test/sqlite-state-store.test.ts`（增量) | 跨重启持久化、部分更新、null 清空 lastError、行缺失 no-op、删会话级联删任务 |
 | `apps/desktop/test/tasks-view.test.tsx` | 侧边栏入口切换视图、列表渲染、开关/立即运行/删除走 ApiClient、空态文案 |

@@ -4,7 +4,7 @@
 
 ## 背景
 
-`ask_user`、`propose_plan` 和普通工具审批本质上已经是同一套后端机制：
+`AskUserQuestion`、`ExitPlanMode` 和普通工具审批本质上已经是同一套后端机制：
 
 1. 模型产生工具调用。
 2. 后端持久化并发出 `tool_call(pending_approval)`。
@@ -12,7 +12,7 @@
 4. 前端通过 `POST /api/approvals/:toolCallId` 提交审批、计划确认或 ask-user 回答。
 5. 后端继续同一个 run，并把决议作为工具结果喂回模型。
 
-因此这次迁移没有重写 `ask_user`、`propose_plan` 或审批队列，而是调整桌面端接收运行事件的方式：run 的启动、审批、abort 都走普通 POST，运行事件统一从全局 SSE `/api/events` 推送。
+因此这次迁移没有重写 `AskUserQuestion`、`ExitPlanMode` 或审批队列，而是调整桌面端接收运行事件的方式：run 的启动、审批、abort 都走普通 POST，运行事件统一从全局 SSE `/api/events` 推送。
 
 ## 目标与边界
 
@@ -126,8 +126,8 @@
 - mutating tool 在 `beforeToolCall` 中落 `pending_approval`。
 - `ApprovalQueue.wait()` 继续阻塞当前 run。
 - 拒绝审批仍作为工具错误结果返回模型，run 继续。
-- `ask_user` 仍通过 approval decision 的 `answer` payload 恢复。
-- `propose_plan` 仍通过 approval decision 的 `editedSteps` 等 payload 恢复。
+- `AskUserQuestion` 仍通过 approval decision 的 `answer` payload 恢复。
+- `ExitPlanMode` 仍通过 approval decision 的 `editedSteps` 等 payload 恢复。
 
 ## Desktop API 实现
 
@@ -293,11 +293,11 @@ sequenceDiagram
   Store->>Store: clear transient state and reload DB snapshot
 ```
 
-## ask_user 与 plan 的实际走法
+## AskUserQuestion 与 plan 的实际走法
 
 迁移后，ask-user 和 plan 的关键行为没有变：
 
-- 模型请求 `ask_user` 或 `propose_plan`。
+- 模型请求 `AskUserQuestion` 或 `ExitPlanMode`。
 - 后端发出 `tool_call(pending_approval)`。
 - 主聊天 `handleRunEvent()` 设置 `pendingTool`。
 - UI 根据 tool name 渲染对应卡片。

@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   nowIso,
@@ -657,7 +657,7 @@ describe("AgentRunner", () => {
 
   it("exposes OCR tool only when the current run has OCR-capable attachment paths", async () => {
     const fakeOcrTool = {
-      name: "ocr_extract_text",
+      name: "OcrExtractText",
       label: "OCR 提取文字",
       description: "test OCR",
       parameters: {} as never,
@@ -686,7 +686,7 @@ describe("AgentRunner", () => {
       // consume stream
     }
 
-    expect(calls[0].context.tools?.map((tool) => tool.name)).toContain("ocr_extract_text");
+    expect(calls[0].context.tools?.map((tool) => tool.name)).toContain("OcrExtractText");
   });
 
   it("titles new sessions with the AI summary and streams session_updated mid-run", async () => {
@@ -786,14 +786,14 @@ describe("AgentRunner", () => {
     });
 
     const debug = await runner.buildSessionDebugContext(session.id);
-    expect(debug?.availableTools.some((tool) => tool.name === "memory")).toBe(true);
+    expect(debug?.availableTools.some((tool) => tool.name === "Memory")).toBe(true);
     expect(debug?.systemPrompt).toContain("## 长期记忆");
     expect(debug?.systemPrompt).toContain("/memories/user.md");
 
     // 未配置 memoryDir 时两者都不出现。
     const { runner: plain } = runnerWith(store, secrets, [{ text: "完成" }]);
     const plainDebug = await plain.buildSessionDebugContext(session.id);
-    expect(plainDebug?.availableTools.some((tool) => tool.name === "memory")).toBe(false);
+    expect(plainDebug?.availableTools.some((tool) => tool.name === "Memory")).toBe(false);
     expect(plainDebug?.systemPrompt).not.toContain("长期记忆");
   });
 
@@ -833,7 +833,7 @@ describe("AgentRunner", () => {
     const { runner } = runnerWith(store, secrets, [
       {
         thinking: "先想清楚要列哪个目录",
-        toolCalls: [{ id: "call_1", name: "list_directory", arguments: { path: "." } }]
+        toolCalls: [{ id: "call_1", name: "LS", arguments: { path: "." } }]
       },
       { text: "目录已列出" }
     ]);
@@ -1227,17 +1227,14 @@ describe("AgentRunner", () => {
         .map((message) => ("content" in message ? JSON.stringify(message.content) : ""))
         .join("\n")
     ).not.toContain("DIRECT_MIDDLE");
-    await expect(
-      readFile(
-        join(
-          dir,
-          TOOL_RESULT_SPILL_DIR,
-          runId,
-          `${completed?.type === "tool_call" ? completed.toolCall.id : ""}-read_file.txt`
-        ),
-        "utf8"
-      )
-    ).resolves.toBe(largeText);
+    const spillPathMatch = summary.match(/完整结果路径：(.+)/);
+    expect(spillPathMatch?.[1]).toBeTruthy();
+    const spillPath = spillPathMatch![1]!;
+    const spilledContent = await readFile(isAbsolute(spillPath) ? spillPath : join(dir, spillPath), "utf8");
+    expect(spilledContent).toContain("large.txt 的第 1-5 行");
+    expect(spilledContent).toContain("1\tDIRECT_START");
+    expect(spilledContent).toContain("3\tDIRECT_MIDDLE");
+    expect(spilledContent).toContain("5\tDIRECT_END");
   });
 
   it("expands pi prompt template slash commands before model streaming", async () => {
@@ -1281,13 +1278,13 @@ describe("AgentRunner", () => {
     expect(toolNames(calls[0])).not.toContain("create_pptx");
     expect(toolNames(calls[0])).not.toContain("create_docx");
     expect(toolNames(calls[0])).not.toContain("create_xlsx");
-    expect(toolNames(calls[0])).toContain("use_skill");
+    expect(toolNames(calls[0])).toContain("Skill");
   });
 
   it("loads skill instructions without adding office tools to the next turn", async () => {
     const { runner, calls } = runnerWith(store, secrets, [
       {
-        toolCalls: [{ id: "call_skill", name: "use_skill", arguments: { name: "ppt" } }]
+        toolCalls: [{ id: "call_skill", name: "Skill", arguments: { name: "ppt" } }]
       },
       { text: "可以开始做 PPT" }
     ], {
@@ -1324,10 +1321,10 @@ describe("AgentRunner", () => {
     const project = await store.createProject({ name: "project", path: projectPath });
     const { runner } = runnerWith(store, secrets, [
       {
-        toolCalls: [{ id: "call_skill", name: "use_skill", arguments: { name: "daily-report" } }]
+        toolCalls: [{ id: "call_skill", name: "Skill", arguments: { skill: "daily-report" } }]
       },
       {
-        toolCalls: [{ id: "call_read", name: "read_file", arguments: { path: resourcePath } }]
+        toolCalls: [{ id: "call_read", name: "Read", arguments: { file_path: resourcePath } }]
       },
       { text: "已读取日报技能模板" }
     ], {
@@ -1346,7 +1343,7 @@ describe("AgentRunner", () => {
     const completedRead = events.find(
       (event) =>
         event.type === "tool_call" &&
-        event.toolCall.name === "read_file" &&
+        event.toolCall.name === "Read" &&
         event.toolCall.status === "completed"
     );
     expect(completedRead?.type).toBe("tool_call");
@@ -1367,8 +1364,8 @@ describe("AgentRunner", () => {
         toolCalls: [
           {
             id: "call_write",
-            name: "write_file",
-            arguments: { path: outsideFile, content: "技能生成内容" }
+            name: "Write",
+            arguments: { file_path: outsideFile, content: "技能生成内容" }
           }
         ]
       },
@@ -1421,7 +1418,7 @@ describe("AgentRunner", () => {
     expect(toolNames(calls[0])).not.toContain("create_xlsx");
   });
 
-  it("hides ask_user from headless runs but keeps it for interactive ones", async () => {
+  it("hides AskUserQuestion from headless runs but keeps it for interactive ones", async () => {
     const { runner, calls } = runnerWith(store, secrets, [{ text: "好" }, { text: "好" }]);
 
     for await (const _event of runner.stream(
@@ -1431,11 +1428,11 @@ describe("AgentRunner", () => {
       // 消费完整事件流
     }
     const headlessTools = calls[0].context.tools?.map((tool) => tool.name) ?? [];
-    expect(headlessTools).not.toContain("ask_user");
-    expect(headlessTools).not.toContain("todo_create");
-    expect(headlessTools).not.toContain("todo_update");
+    expect(headlessTools).not.toContain("AskUserQuestion");
+    expect(headlessTools).not.toContain("TodoWrite");
+    expect(headlessTools).not.toContain("TodoWrite");
     // 定时任务工具对所有 run 可见（含 headless，模型可在执行中管理任务）。
-    expect(headlessTools).toContain("schedule_create");
+    expect(headlessTools).toContain("ScheduleCreate");
 
     for await (const _event of runner.stream({
       prompt: "普通对话",
@@ -1445,10 +1442,10 @@ describe("AgentRunner", () => {
       // 消费完整事件流
     }
     const interactiveTools = calls[1].context.tools?.map((tool) => tool.name) ?? [];
-    expect(interactiveTools).toContain("ask_user");
-    expect(interactiveTools).toContain("todo_create");
-    expect(interactiveTools).toContain("todo_update");
-    expect(interactiveTools).toContain("schedule_create");
+    expect(interactiveTools).toContain("AskUserQuestion");
+    expect(interactiveTools).toContain("TodoWrite");
+    expect(interactiveTools).toContain("TodoWrite");
+    expect(interactiveTools).toContain("ScheduleCreate");
   });
 
   it("auto-compacts long session context before the model loop", async () => {

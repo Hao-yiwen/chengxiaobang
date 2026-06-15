@@ -64,8 +64,8 @@ const toolResultMessage: Message = {
 const toolCall: ToolCall = {
   id: "tool_1",
   runId: "run_1",
-  name: "read_file",
-  args: { path: "README.md" },
+  name: "Read",
+  args: { file_path: "README.md" },
   status: "completed",
   result: "ok",
   createdAt: "2026-06-13T00:00:01.000Z",
@@ -96,13 +96,13 @@ function createDebugContext(): SessionDebugContext {
     skills: [],
     availableTools: [
       {
-        name: "read_file",
+        name: "Read",
         label: "读取文件",
         description: "读取工作目录中的文件",
         requiresApproval: false
       },
       {
-        name: "write_file",
+        name: "Write",
         label: "写入文件",
         description: "写入或覆盖工作目录中的文件",
         requiresApproval: true
@@ -201,11 +201,11 @@ describe("SessionDebugButton", () => {
     expect(report.getByText(/需要先确认项目说明/)).toBeInTheDocument();
     expect(report.getByText(/助手回复/)).toBeInTheDocument();
     expect(report.getByText(/我来读取 README。/)).toBeInTheDocument();
-    expect(report.getByText(/工具调用: read_file/)).toBeInTheDocument();
-    expect(report.getAllByText(/参数: path=README.md/).length).toBeGreaterThanOrEqual(1);
+    expect(report.getByText(/工具调用: Read/)).toBeInTheDocument();
+    expect(report.getAllByText(/参数: file_path=README.md/).length).toBeGreaterThanOrEqual(1);
     const toolDetails = report.getByTestId("debug-tool-tool_1");
     expect(toolDetails).toHaveAttribute("open");
-    fireEvent.click(report.getByText(/工具调用: read_file/));
+    fireEvent.click(report.getByText(/工具调用: Read/));
     expect(toolDetails).not.toHaveAttribute("open");
     expect(toolDetails).not.toHaveTextContent("结果: ok");
     const resultMessage = report.getByTestId("debug-tool-result-message-msg_3");
@@ -229,11 +229,11 @@ describe("SessionDebugButton", () => {
     expect(tools.getByText("当前可用工具")).toBeInTheDocument();
     expect(tools.getByText("工具数量: 2")).toBeInTheDocument();
     expect(tools.getByText("访问模式: 需要审批")).toBeInTheDocument();
-    expect(tools.getByText("read_file")).toBeInTheDocument();
+    expect(tools.getByText("Read")).toBeInTheDocument();
     expect(tools.getByText("读取文件")).toBeInTheDocument();
     expect(tools.getByText("读取工作目录中的文件")).toBeInTheDocument();
     expect(tools.getByText("自动可用")).toBeInTheDocument();
-    expect(tools.getByText("write_file")).toBeInTheDocument();
+    expect(tools.getByText("Write")).toBeInTheDocument();
     expect(tools.getByText("写入文件")).toBeInTheDocument();
     expect(tools.getByText("写入或覆盖工作目录中的文件")).toBeInTheDocument();
     expect(tools.getByText("需要审批")).toBeInTheDocument();

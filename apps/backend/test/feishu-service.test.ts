@@ -163,7 +163,11 @@ describe("FeishuService", () => {
 
   it("auto-denies mutating tools in read-only mode and the model recovers", async () => {
     const { calls } = await createService([
-      { toolCalls: [{ id: "call_1", name: "write_file", arguments: { path: "a.txt", content: "x" } }] },
+      {
+        toolCalls: [
+          { id: "call_1", name: "Write", arguments: { file_path: "a.txt", content: "x" } }
+        ]
+      },
       { text: "好的，那我只说结论。" }
     ]);
 
@@ -173,7 +177,7 @@ describe("FeishuService", () => {
     expect(bridge.replied[0].text).toBe("好的，那我只说结论。");
     const session = await store.findSessionByFeishuChatId("oc_chat1");
     const toolCalls = await store.listToolCallsForSession(session!.id);
-    expect(toolCalls[0]).toMatchObject({ name: "write_file", status: "rejected" });
+    expect(toolCalls[0]).toMatchObject({ name: "Write", status: "rejected" });
     // The rejection text was fed back to the model.
     const secondCall = calls[1]?.context.messages ?? [];
     expect(secondCall.map(flattenContent).join("\n")).toContain("用户拒绝");
@@ -184,7 +188,7 @@ describe("FeishuService", () => {
       [
         {
           toolCalls: [
-            { id: "call_1", name: "write_file", arguments: { path: "a.txt", content: "x" } }
+            { id: "call_1", name: "Write", arguments: { file_path: "a.txt", content: "x" } }
           ]
         },
         { text: "已写入。" }
@@ -197,7 +201,7 @@ describe("FeishuService", () => {
 
     const session = await store.findSessionByFeishuChatId("oc_chat1");
     const toolCalls = await store.listToolCallsForSession(session!.id);
-    expect(toolCalls[0]).toMatchObject({ name: "write_file", status: "completed" });
+    expect(toolCalls[0]).toMatchObject({ name: "Write", status: "completed" });
   });
 
   it("chunks long replies across multiple messages", async () => {

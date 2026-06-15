@@ -85,7 +85,7 @@ export class FeishuService {
     return this.status;
   }
 
-  /** The outbound surface for the feishu_send_message tool, when connected. */
+  /** The outbound surface for the FeishuSendMessage tool, when connected. */
   getSender(): FeishuSender | undefined {
     return this.bridge;
   }

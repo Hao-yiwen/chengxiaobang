@@ -4,6 +4,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   statSync,
   writeFileSync
@@ -114,6 +115,7 @@ export function resolveBackendCommand(options: {
   const env = { ...process.env };
   const root = projectRoot();
   const bundledBun = join(options.resourcesPath, backendRuntimeResourceName(platform));
+  const bundledRg = join(options.resourcesPath, searchRuntimeResourceName(platform));
   const devBun = join(root, "node_modules", "bun", "bin", "bun.exe");
   const devBunShim = resolve(root, "node_modules/.bin/bun");
   const devBunWinShims = [
@@ -123,6 +125,11 @@ export function resolveBackendCommand(options: {
   const bunBinary = process.env.BUN_BINARY ?? (options.isPackaged
     ? firstExisting([bundledBun])
     : firstExisting([devBun, ...(platform === "win32" ? devBunWinShims : []), devBunShim]));
+  const rgBinary =
+    process.env.CHENGXIAOBANG_RG_PATH?.trim() ||
+    (options.isPackaged
+      ? firstExisting([bundledRg])
+      : firstExisting(workspaceRipgrepCandidates(root, platform, process.arch)));
 
   // 开发模式用 Bun watch 自动重启后端，避免每次改后端都重启 Electron。
   const dev = !options.isPackaged;
@@ -133,6 +140,12 @@ export function resolveBackendCommand(options: {
         ? `后端运行时缺失：未找到 Bun binary（${bundledBun}）`
         : `后端运行时缺失：未找到 Bun binary，请先运行 pnpm install 或设置 BUN_BINARY（${devBun}）`
     );
+  }
+  if (options.isPackaged && !rgBinary) {
+    throw new Error(`搜索运行时缺失：未找到 ripgrep binary（${bundledRg}）`);
+  }
+  if (rgBinary) {
+    env.CHENGXIAOBANG_RG_PATH = rgBinary;
   }
 
   const args = dev ? ["--no-orphans", "--watch", ...commonArgs] : commonArgs;
@@ -305,6 +318,34 @@ function projectRoot(): string {
 
 function firstExisting(paths: string[]): string | undefined {
   return paths.find((path) => existsSync(path));
+}
+
+function workspaceRipgrepCandidates(
+  root: string,
+  platform: NodeJS.Platform,
+  arch: string
+): string[] {
+  const binaryName = searchRuntimeResourceName(platform);
+  const packageName = `ripgrep-${platform}-${arch}`;
+  const candidates = [
+    join(root, "node_modules", "@vscode", packageName, "bin", binaryName),
+    join(root, "node_modules", ".bin", binaryName)
+  ];
+  const pnpmDir = join(root, "node_modules", ".pnpm");
+  try {
+    const prefix = `@vscode+${packageName}@`;
+    for (const entry of readdirSync(pnpmDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.startsWith(prefix)) {
+        continue;
+      }
+      candidates.push(
+        join(pnpmDir, entry.name, "node_modules", "@vscode", packageName, "bin", binaryName)
+      );
+    }
+  } catch {
+    // pnpm 布局不存在时走上面的常规 node_modules / PATH 兜底。
+  }
+  return candidates;
 }
 
 export function prepareBackendRuntimeCommand(
@@ -741,6 +782,10 @@ function signalBackendChild(
 
 function backendRuntimeResourceName(platform: NodeJS.Platform): string {
   return platform === "win32" ? "bun.exe" : "bun";
+}
+
+function searchRuntimeResourceName(platform: NodeJS.Platform): string {
+  return platform === "win32" ? "rg.exe" : "rg";
 }
 
 function killBackendProcessTree(pid: number, force: boolean): void {

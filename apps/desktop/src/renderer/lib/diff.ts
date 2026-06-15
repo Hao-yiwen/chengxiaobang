@@ -7,7 +7,7 @@ export interface DiffLine {
 const MAX_LCS_CELLS = 100_000;
 
 /**
- * Line-level diff via LCS, for presenting edit_file/write_file changes.
+ * Line-level diff via LCS, for presenting Edit/Write changes.
  * Replacements emit removed lines before added ones. Inputs large enough to
  * make the O(n·m) table expensive degrade to a correct (if blunt)
  * removed+added presentation instead of hanging the UI.

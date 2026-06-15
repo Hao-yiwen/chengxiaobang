@@ -11,7 +11,7 @@ function toolCall(partial: Partial<ToolCall>): ToolCall {
   return {
     id: "tool_1",
     runId: "run_1",
-    name: "shell",
+    name: "Bash",
     args: {},
     status: "completed",
     createdAt: "2026-06-08T00:00:00.000Z",
@@ -75,9 +75,12 @@ describe("shortenPath", () => {
 });
 
 describe("buildToolCallDiff", () => {
-  it("diffs edit_file old → new from its args", () => {
+  it("diffs Edit old_string → new_string from its args", () => {
     const lines = buildToolCallDiff(
-      toolCall({ name: "edit_file", args: { path: "a.ts", oldText: "x = 1", newText: "x = 2" } })
+      toolCall({
+        name: "Edit",
+        args: { file_path: "a.ts", old_string: "x = 1", new_string: "x = 2" }
+      })
     );
     expect(lines).toEqual([
       { type: "removed", text: "x = 1" },
@@ -85,9 +88,9 @@ describe("buildToolCallDiff", () => {
     ]);
   });
 
-  it("treats write_file content as all added", () => {
+  it("treats Write content as all added", () => {
     const lines = buildToolCallDiff(
-      toolCall({ name: "write_file", args: { path: "a.txt", content: "hello\nworld" } })
+      toolCall({ name: "Write", args: { file_path: "a.txt", content: "hello\nworld" } })
     );
     expect(lines).toEqual([
       { type: "added", text: "hello" },
@@ -96,8 +99,8 @@ describe("buildToolCallDiff", () => {
   });
 
   it("returns undefined for other tools or malformed args", () => {
-    expect(buildToolCallDiff(toolCall({ name: "shell", args: { command: "ls" } }))).toBeUndefined();
-    expect(buildToolCallDiff(toolCall({ name: "edit_file", args: { path: "a" } }))).toBeUndefined();
-    expect(buildToolCallDiff(toolCall({ name: "write_file", args: {} }))).toBeUndefined();
+    expect(buildToolCallDiff(toolCall({ name: "Bash", args: { command: "ls" } }))).toBeUndefined();
+    expect(buildToolCallDiff(toolCall({ name: "Edit", args: { file_path: "a" } }))).toBeUndefined();
+    expect(buildToolCallDiff(toolCall({ name: "Write", args: {} }))).toBeUndefined();
   });
 });

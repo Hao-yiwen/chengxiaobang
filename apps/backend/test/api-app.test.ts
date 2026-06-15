@@ -241,8 +241,8 @@ describe("createApp", () => {
     await store.insertToolCall({
       id: "tool_skill_ppt",
       runId: "run_interrupted",
-      name: "use_skill",
-      args: { name: "ppt" },
+      name: "Skill",
+      args: { skill: "ppt" },
       status: "completed",
       result: "已加载技能 ppt",
       createdAt: timestamp,
@@ -260,7 +260,7 @@ describe("createApp", () => {
     );
     await expect(before.json()).resolves.toMatchObject({
       runs: [expect.objectContaining({ id: "run_interrupted", status: "failed" })],
-      toolCalls: [expect.objectContaining({ id: "tool_skill_ppt", name: "use_skill" })]
+      toolCalls: [expect.objectContaining({ id: "tool_skill_ppt", name: "Skill" })]
     });
 
     const response = await app(
@@ -789,8 +789,8 @@ describe("createApp", () => {
         toolCalls: [
           {
             id: "call_write",
-            name: "write_file",
-            arguments: { path: ".env", content: "TOKEN=ok" }
+            name: "Write",
+            arguments: { file_path: ".env", content: "TOKEN=ok" }
           }
         ]
       },
@@ -830,7 +830,7 @@ describe("createApp", () => {
         sessionId: started.sessionId
       });
       expect(activePayload?.runs[0]?.toolCalls).toEqual([
-        expect.objectContaining({ name: "write_file", status: "pending_approval" })
+        expect.objectContaining({ name: "Write", status: "pending_approval" })
       ]);
     });
 
@@ -893,7 +893,7 @@ describe("createApp", () => {
     const toolCall: ToolCall = {
       id: "tool_1",
       runId: "run_1",
-      name: "list_directory",
+      name: "LS",
       args: { path: "." },
       status: "completed",
       result: "file package.json",
@@ -926,7 +926,7 @@ describe("createApp", () => {
         {
           id: "tool_1",
           runId: "run_1",
-          name: "list_directory",
+          name: "LS",
           args: { path: "." },
           status: "completed",
           result: "file package.json"

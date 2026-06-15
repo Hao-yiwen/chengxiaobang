@@ -11,8 +11,8 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("/tmp/proj");
     expect(prompt).toContain("demo");
     expect(prompt).toContain("审批模式");
-    expect(prompt).toContain("use_skill");
-    expect(prompt).toContain("todo_create");
+    expect(prompt).toContain("Skill");
+    expect(prompt).toContain("TodoWrite");
     expect(prompt).toContain("简单问答、小改动或单次工具调用不要创建 todo");
     expect(prompt).toContain("<artifacts><artifact path=\"page.html\" />");
     expect(prompt).toContain("不要放进 Markdown 代码块");
@@ -32,7 +32,7 @@ describe("buildSystemPrompt", () => {
 
     const empty = buildSystemPrompt({ workspacePath: "/w", accessMode: "approval", memory: {} });
     expect(empty).toContain("## 长期记忆");
-    expect(empty).toContain("memory 工具");
+    expect(empty).toContain("Memory 工具");
     expect(empty).toContain("/memories 是虚拟路径前缀");
     expect(empty).toContain("它不是系统根目录下的 /memories");
     expect(empty).toContain("（记忆目录为空）");
@@ -48,7 +48,7 @@ describe("buildSystemPrompt", () => {
 
   it("mentions the feishu tool and adds plain-text guidance for feishu sessions", () => {
     const local = buildSystemPrompt({ workspacePath: "/w", accessMode: "approval" });
-    expect(local).toContain("feishu_send_message");
+    expect(local).toContain("FeishuSendMessage");
     expect(local).not.toContain("当前对话来自飞书");
 
     const viaFeishu = buildSystemPrompt({
@@ -57,7 +57,7 @@ describe("buildSystemPrompt", () => {
       viaFeishu: true
     });
     expect(viaFeishu).toContain("当前对话来自飞书");
-    expect(viaFeishu).toContain("不要调用 feishu_send_message 重复发送你的回复");
+    expect(viaFeishu).toContain("不要调用 FeishuSendMessage 重复发送你的回复");
     expect(viaFeishu).not.toContain("<artifacts>");
   });
 });

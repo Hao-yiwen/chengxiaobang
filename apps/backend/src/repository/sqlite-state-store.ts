@@ -833,7 +833,7 @@ export class SqliteStateStore implements StateStore {
 
   async updateToolCall(toolCall: ToolCall): Promise<ToolCall> {
     await this.assertToolCallExists(toolCall.id);
-    // args 一并更新：旧版 propose_plan 的 editedSteps 仍可写回，跨 run 展示依赖最终参数。
+    // args 一并更新：ExitPlanMode 的确认后参数会写回，跨 run 展示依赖最终参数。
     this.run(
       `update tool_calls
        set args_json = ?, status = ?, result = ?, approval_json = ?, started_at = ?, updated_at = ?

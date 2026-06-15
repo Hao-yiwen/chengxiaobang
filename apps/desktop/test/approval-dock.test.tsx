@@ -20,7 +20,7 @@ function pendingTool(partial: Partial<ToolCall> = {}): ToolCall {
   return {
     id: "tool_1",
     runId: "run_1",
-    name: "shell",
+    name: "Bash",
     args: { command: "rm -rf dist" },
     status: "pending_approval",
     createdAt: "2026-06-13T00:00:00.000Z",
@@ -67,11 +67,11 @@ describe("ApprovalDock", () => {
     expect(screen.queryByTestId("approval-dock")).not.toBeInTheDocument();
   });
 
-  it("previews edit_file approvals as a path plus diff", () => {
+  it("previews Edit approvals as a path plus diff", () => {
     useAppStore.setState({
       pendingTool: pendingTool({
-        name: "edit_file",
-        args: { path: "src/a.ts", oldText: "x = 1", newText: "x = 2" }
+        name: "Edit",
+        args: { file_path: "src/a.ts", old_string: "x = 1", new_string: "x = 2" }
       }),
       approve: vi.fn()
     });
@@ -83,11 +83,11 @@ describe("ApprovalDock", () => {
     expect(diff).toHaveTextContent("x = 2");
   });
 
-  it("renders ask_user as the option card and forwards the picked answer", async () => {
+  it("renders AskUserQuestion as the option card and forwards the picked answer", async () => {
     const approve = vi.fn();
     useAppStore.setState({
       pendingTool: pendingTool({
-        name: "ask_user",
+        name: "AskUserQuestion",
         args: { questions: [{ question: "继续吗？", options: ["继续", "停止"], allowFreeText: false }] }
       }),
       approve
@@ -105,13 +105,13 @@ describe("ApprovalDock", () => {
     expect(screen.queryByTestId("approval-dock")).not.toBeInTheDocument();
   });
 
-  it("renders propose_plan as an implementation choice and turns off plan mode when approved", () => {
+  it("renders ExitPlanMode as an implementation choice and turns off plan mode when approved", () => {
     const approve = vi.fn();
     useAppStore.setState({
       planMode: true,
       pendingTool: pendingTool({
-        name: "propose_plan",
-        args: { markdown: "# 示例计划\n\n## Summary\n先确认。" }
+        name: "ExitPlanMode",
+        args: { plan: "# 示例计划\n\n## Summary\n先确认。" }
       }),
       approve
     });
@@ -125,13 +125,13 @@ describe("ApprovalDock", () => {
     expect(screen.queryByTestId("plan-approval-dock")).not.toBeInTheDocument();
   });
 
-  it("forwards propose_plan adjustment text without turning off plan mode", () => {
+  it("forwards ExitPlanMode adjustment text without turning off plan mode", () => {
     const approve = vi.fn();
     useAppStore.setState({
       planMode: true,
       pendingTool: pendingTool({
-        name: "propose_plan",
-        args: { markdown: "# 示例计划\n\n## Summary\n先确认。" }
+        name: "ExitPlanMode",
+        args: { plan: "# 示例计划\n\n## Summary\n先确认。" }
       }),
       approve
     });

@@ -12,7 +12,7 @@ export function createFeishuTools(
   getFeishuSender?: () => FeishuSender | undefined
 ): AgentTool<any>[] {
   const sendMessage: AgentTool<typeof sendMessageParams> = {
-    name: "feishu_send_message",
+    name: "FeishuSendMessage",
     label: "发送飞书消息",
     description:
       "将一条文本消息主动发送到飞书群聊或私聊。需要用户已在设置中配置并启用飞书机器人。",

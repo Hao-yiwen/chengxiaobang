@@ -34,7 +34,7 @@ function tool(
 }
 
 const planArgs = {
-  markdown: `# 重构 store
+  plan: `# 重构 store
 
 ## Summary
 整理 store 的状态边界。
@@ -62,7 +62,7 @@ describe("timelineItems", () => {
       reasoningMs: 12000
     };
     const empty = msg("assistant", "2026-06-11T00:00:02.000Z", "  ");
-    const tool1 = tool("use_skill", { at: "2026-06-11T00:00:03.000Z", args: { name: "excel" } });
+    const tool1 = tool("Skill", { at: "2026-06-11T00:00:03.000Z", args: { skill: "excel" } });
 
     const items = timelineItems([reasoningOnly, empty], [tool1]);
 
@@ -97,8 +97,8 @@ describe("timelineItems", () => {
     const at = "2026-06-11T00:00:00.000Z";
     const m1 = msg("user", at);
     const m2 = msg("assistant", at);
-    const t1 = tool("shell", { at });
-    const t2 = tool("read_file", { at });
+    const t1 = tool("Bash", { at });
+    const t2 = tool("Read", { at });
     const items = timelineItems([m1, m2], [t1, t2]);
     expect(
       items.map((item) => (item.kind === "message" ? item.message.id : item.toolCall.id))
@@ -108,9 +108,9 @@ describe("timelineItems", () => {
 
 describe("groupTimelineItems", () => {
   it("folds consecutive groupable tools into one tool-group anchored at the first call", () => {
-    const t1 = tool("read_file", { at: "2026-06-11T00:00:01.000Z" });
-    const t2 = tool("search", { at: "2026-06-11T00:00:02.000Z" });
-    const t3 = tool("shell", { at: "2026-06-11T00:00:03.000Z" });
+    const t1 = tool("Read", { at: "2026-06-11T00:00:01.000Z" });
+    const t2 = tool("Grep", { at: "2026-06-11T00:00:02.000Z" });
+    const t3 = tool("Bash", { at: "2026-06-11T00:00:03.000Z" });
     const items = groupTimelineItems(timelineItems([], [t1, t2, t3]));
     expect(items).toEqual([
       { kind: "tool-group", at: t1.updatedAt, toolCalls: [t1, t2, t3] }
@@ -118,66 +118,66 @@ describe("groupTimelineItems", () => {
   });
 
   it("breaks groups on any message", () => {
-    const t1 = tool("read_file", { at: "2026-06-11T00:00:01.000Z" });
-    const t2 = tool("read_file", { at: "2026-06-11T00:00:02.000Z" });
+    const t1 = tool("Read", { at: "2026-06-11T00:00:01.000Z" });
+    const t2 = tool("Read", { at: "2026-06-11T00:00:02.000Z" });
     const a1 = msg("assistant", "2026-06-11T00:00:03.000Z");
-    const t3 = tool("shell", { at: "2026-06-11T00:00:04.000Z" });
-    const t4 = tool("shell", { at: "2026-06-11T00:00:05.000Z" });
+    const t3 = tool("Bash", { at: "2026-06-11T00:00:04.000Z" });
+    const t4 = tool("Bash", { at: "2026-06-11T00:00:05.000Z" });
     const items = groupTimelineItems(timelineItems([a1], [t1, t2, t3, t4]));
     expect(items.map((item) => item.kind)).toEqual(["tool-group", "message", "tool-group"]);
   });
 
   it("keeps specially-rendered tools out of groups and breaks runs on them", () => {
     for (const name of [
-      "ask_user",
-      "use_skill",
-      "propose_plan",
-      "update_plan",
-      "todo_create",
-      "todo_update"
+      "AskUserQuestion",
+      "Skill",
+      "ExitPlanMode",
+      "ExitPlanMode",
+      "TodoWrite",
+      "TodoWrite"
     ]) {
-      const t1 = tool("read_file", { at: "2026-06-11T00:00:01.000Z" });
+      const t1 = tool("Read", { at: "2026-06-11T00:00:01.000Z" });
       const t2 = tool(name, { at: "2026-06-11T00:00:02.000Z", args: planArgs });
-      const t3 = tool("read_file", { at: "2026-06-11T00:00:03.000Z" });
+      const t3 = tool("Read", { at: "2026-06-11T00:00:03.000Z" });
       const items = groupTimelineItems(timelineItems([], [t1, t2, t3]));
       expect(items.map((item) => item.kind), name).toEqual(["tool", "tool", "tool"]);
     }
   });
 
-  it("groups legacy create_* tools like ordinary tool rows", () => {
-    const t1 = tool("read_file", { at: "2026-06-11T00:00:01.000Z" });
-    const t2 = tool("create_pptx", {
+  it("groups unknown tools like ordinary tool rows", () => {
+    const t1 = tool("Read", { at: "2026-06-11T00:00:01.000Z" });
+    const t2 = tool("UnknownTool", {
       at: "2026-06-11T00:00:02.000Z",
       status: "running",
-      args: { path: "deck.pptx" }
+      args: { target: "deck.pptx" }
     });
-    const t3 = tool("read_file", { at: "2026-06-11T00:00:03.000Z" });
+    const t3 = tool("Read", { at: "2026-06-11T00:00:03.000Z" });
     const items = groupTimelineItems(timelineItems([], [t1, t2, t3]));
     expect(items.map((item) => item.kind)).toEqual(["tool-group"]);
   });
 
-  it("groups write_file regardless of the target extension", () => {
-    const code = tool("write_file", {
+  it("groups Write regardless of the target extension", () => {
+    const code = tool("Write", {
       at: "2026-06-11T00:00:01.000Z",
-      args: { path: "src/app.ts", content: "x" }
+      args: { file_path: "src/app.ts", content: "x" }
     });
-    const read = tool("read_file", { at: "2026-06-11T00:00:02.000Z" });
+    const read = tool("Read", { at: "2026-06-11T00:00:02.000Z" });
     expect(groupTimelineItems(timelineItems([], [code, read])).map((item) => item.kind)).toEqual([
       "tool-group"
     ]);
 
-    const doc = tool("write_file", {
+    const doc = tool("Write", {
       at: "2026-06-11T00:00:01.000Z",
-      args: { path: "notes.md", content: "x" }
+      args: { file_path: "notes.md", content: "x" }
     });
-    const read2 = tool("read_file", { at: "2026-06-11T00:00:02.000Z" });
+    const read2 = tool("Read", { at: "2026-06-11T00:00:02.000Z" });
     expect(groupTimelineItems(timelineItems([], [doc, read2])).map((item) => item.kind)).toEqual([
       "tool-group"
     ]);
   });
 
   it("degrades a run of one back to a plain tool item", () => {
-    const t1 = tool("shell", { at: "2026-06-11T00:00:01.000Z" });
+    const t1 = tool("Bash", { at: "2026-06-11T00:00:01.000Z" });
     const items = groupTimelineItems(timelineItems([], [t1]));
     expect(items).toEqual([{ kind: "tool", at: t1.updatedAt, toolCall: t1 }]);
   });
@@ -204,42 +204,42 @@ describe("chatTimeline", () => {
   });
 
   it("numbers tool rows 1-based per run and keeps runs independent", () => {
-    const t1 = tool("read_file", { runId: "run_1", at: "2026-06-11T00:00:01.000Z" });
-    const t2 = tool("shell", { runId: "run_1", at: "2026-06-11T00:00:02.000Z" });
-    const t3 = tool("shell", { runId: "run_2", at: "2026-06-11T00:00:03.000Z" });
+    const t1 = tool("Read", { runId: "run_1", at: "2026-06-11T00:00:01.000Z" });
+    const t2 = tool("Bash", { runId: "run_1", at: "2026-06-11T00:00:02.000Z" });
+    const t3 = tool("Bash", { runId: "run_2", at: "2026-06-11T00:00:03.000Z" });
     const items = chatTimeline([], [t1, t2, t3]);
     const indices = items.map((item) => (item.kind === "tool" ? item.index : -1));
     expect(indices).toEqual([1, 2, 1]);
   });
 
-  it("filters update_plan rows out of the timeline because plan progress is legacy-only", () => {
-    const anchor = tool("propose_plan", {
+  it("keeps only the latest ExitPlanMode as the active plan", () => {
+    const anchor = tool("ExitPlanMode", {
       args: planArgs,
       status: "completed",
       at: "2026-06-11T00:00:01.000Z"
     });
-    const upd = tool("update_plan", {
-      args: { stepId: "s1", status: "completed" },
+    const next = tool("ExitPlanMode", {
+      args: { plan: "# 新计划\n\n## Summary\n新版计划。" },
+      status: "completed",
       at: "2026-06-11T00:00:02.000Z"
     });
-    const items = chatTimeline([], [anchor, upd]);
-    expect(kinds(items)).toEqual(["plan"]);
+    const items = chatTimeline([], [anchor, next]);
+    expect(kinds(items)).toEqual(["plan-history", "plan"]);
   });
 
   it("filters todo rows out of the chat timeline because the right panel owns progress", () => {
-    const create = tool("todo_create", {
-      args: { title: "实现进度面板", items: [{ id: "s1", title: "共享契约" }] },
+    const read = tool("TodoRead", {
       at: "2026-06-11T00:00:01.000Z"
     });
-    const update = tool("todo_update", {
-      args: { itemId: "s1", status: "completed" },
+    const write = tool("TodoWrite", {
+      args: { todos: [{ content: "共享契约", status: "completed", priority: "medium" }] },
       at: "2026-06-11T00:00:02.000Z"
     });
-    expect(chatTimeline([], [create, update])).toEqual([]);
+    expect(chatTimeline([], [read, write])).toEqual([]);
   });
 
-  it("renders the anchor propose_plan as a plan item with approved status", () => {
-    const anchor = tool("propose_plan", { args: planArgs, status: "completed" });
+  it("renders the anchor ExitPlanMode as a plan item with approved status", () => {
+    const anchor = tool("ExitPlanMode", { args: planArgs, status: "completed" });
     const items = chatTimeline([], [anchor]);
     const plan = items[0];
     if (plan?.kind !== "plan") {
@@ -253,15 +253,15 @@ describe("chatTimeline", () => {
 
   it("derives approved / rejected / draft / awaiting plan statuses", () => {
     expect(
-      derivePlanView([tool("propose_plan", { args: planArgs, status: "completed" })])?.status
+      derivePlanView([tool("ExitPlanMode", { args: planArgs, status: "completed" })])?.status
     ).toBe("approved");
     expect(
-      derivePlanView([tool("propose_plan", { args: planArgs, status: "rejected" })])?.status
+      derivePlanView([tool("ExitPlanMode", { args: planArgs, status: "rejected" })])?.status
     ).toBe("rejected");
     expect(
       derivePlanView(
         [
-          tool("propose_plan", {
+          tool("ExitPlanMode", {
             args: planArgs,
             status: "pending_approval",
             runId: "run_live"
@@ -271,20 +271,20 @@ describe("chatTimeline", () => {
       )?.status
     ).toBe("draft");
     expect(
-      derivePlanView([tool("propose_plan", { args: planArgs, status: "pending_approval" })])
+      derivePlanView([tool("ExitPlanMode", { args: planArgs, status: "pending_approval" })])
         ?.status
     ).toBe("awaiting");
   });
 
-  it("renders superseded propose_plan history as collapsed plan-history rows", () => {
-    const rejected = tool("propose_plan", {
+  it("renders superseded ExitPlanMode history as collapsed plan-history rows", () => {
+    const rejected = tool("ExitPlanMode", {
       args: {
-        markdown: "# 旧计划\n\n## Summary\n旧版计划。"
+        plan: "# 旧计划\n\n## Summary\n旧版计划。"
       },
       status: "rejected",
       at: "2026-06-11T00:00:01.000Z"
     });
-    const anchor = tool("propose_plan", {
+    const anchor = tool("ExitPlanMode", {
       args: planArgs,
       status: "completed",
       at: "2026-06-11T00:00:02.000Z"
@@ -298,8 +298,8 @@ describe("chatTimeline", () => {
     expect(history.title).toBe("旧计划");
   });
 
-  it("keeps active pending propose_plan in the timeline even when it is also the pending tool", () => {
-    const pending = tool("propose_plan", {
+  it("keeps active pending ExitPlanMode in the timeline even when it is also the pending tool", () => {
+    const pending = tool("ExitPlanMode", {
       args: planArgs,
       status: "pending_approval",
       id: "t_pending",
@@ -314,38 +314,37 @@ describe("chatTimeline", () => {
     expect(plan?.kind === "plan" && plan.plan.status).toBe("draft");
   });
 
-  it("converts legacy step plans to Markdown titles in history", () => {
-    const legacy = tool("propose_plan", {
+  it("renders rejected ExitPlanMode history by Markdown title", () => {
+    const rejected = tool("ExitPlanMode", {
       args: {
-        title: "旧计划",
-        steps: [{ id: "s1", title: "第一步" }]
+        plan: "# 旧计划\n\n## Summary\n第一步。"
       },
       status: "rejected",
       at: "2026-06-11T00:00:01.000Z"
     });
-    const anchor = tool("propose_plan", {
+    const anchor = tool("ExitPlanMode", {
       args: planArgs,
       status: "completed",
       at: "2026-06-11T00:00:02.000Z"
     });
-    const items = chatTimeline([], [legacy, anchor]);
+    const items = chatTimeline([], [rejected, anchor]);
     const history = items[0];
     expect(history?.kind === "plan-history" && history.title).toBe("旧计划");
   });
 
-  it("skips the active pendingTool row except for propose_plan", () => {
-    const pending = tool("write_file", { status: "pending_approval", id: "t_pending" });
+  it("skips the active pendingTool row except for ExitPlanMode", () => {
+    const pending = tool("Write", { status: "pending_approval", id: "t_pending" });
     const items = chatTimeline([], [pending], { pendingToolId: "t_pending" });
     expect(items).toEqual([]);
   });
 
   it("flags residual pending_approval rows from non-active runs", () => {
-    const stale = tool("shell", {
+    const stale = tool("Bash", {
       status: "pending_approval",
       runId: "run_old",
       at: "2026-06-11T00:00:01.000Z"
     });
-    const fresh = tool("shell", {
+    const fresh = tool("Bash", {
       status: "pending_approval",
       runId: "run_live",
       at: "2026-06-11T00:00:02.000Z"

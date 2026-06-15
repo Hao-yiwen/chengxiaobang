@@ -6,16 +6,19 @@ import { textResult } from "./tool-result";
 const MAX_FETCH_CHARS = 20_000;
 
 const fetchUrlParams = Type.Object({
-  url: Type.String({ description: "要抓取的 http(s) 地址" })
+  url: Type.String({ description: "要抓取的 http(s) 地址" }),
+  prompt: Type.String({ description: "抓取后要当前模型完成的处理要求；工具只返回内容，不另起模型" })
 });
 
 const webSearchParams = Type.Object({
   query: Type.String({ description: "要搜索的公网信息关键词或问题" }),
-  maxResults: Type.Optional(
+  allowed_domains: Type.Optional(Type.Array(Type.String(), { description: "只允许搜索这些域名，最多 20 个" })),
+  blocked_domains: Type.Optional(Type.Array(Type.String(), { description: "排除这些域名，最多 20 个" })),
+  maxUses: Type.Optional(
     Type.Number({
-      description: "返回结果数量，默认 5，范围 1-10",
+      description: "返回结果数量，默认 5，范围 1-8",
       minimum: 1,
-      maximum: 10
+      maximum: 8
     })
   )
 });
@@ -62,29 +65,37 @@ async function fetchUrl(url: string): Promise<string> {
 
 export function createWebTools(webSearch?: WebSearchExecutor): AgentTool<any>[] {
   const fetchUrlTool: AgentTool<typeof fetchUrlParams> = {
-    name: "fetch_url",
+    name: "WebFetch",
     label: "抓取网页",
-    description: "抓取一个网页或接口的内容并返回纯文本，用于联网查资料、读取文档或 API 数据。",
+    description:
+      "抓取一个网页或接口的内容并返回纯文本，同时附上 prompt 交给当前模型继续处理；不会另起嵌套模型。",
     parameters: fetchUrlParams,
-    execute: async (_id, params) => textResult(await fetchUrl(params.url))
+    execute: async (_id, params) =>
+      textResult(["用户要求：", params.prompt, "", "抓取内容：", await fetchUrl(params.url)].join("\n"))
   };
 
   if (!webSearch) {
     return [fetchUrlTool];
   }
   const webSearchTool: AgentTool<typeof webSearchParams> = {
-    name: "web_search",
+    name: "WebSearch",
     label: "网络搜索",
     description:
       "使用 Tavily 纯搜索 API 查询实时公网信息，返回标题、URL 与摘要；适合新闻、文档、资料调研和需要来源的事实核查。",
     parameters: webSearchParams,
-    execute: async (_id, params) =>
-      textResult(
+    execute: async (_id, params) => {
+      if (params.allowed_domains?.length && params.blocked_domains?.length) {
+        throw new Error("WebSearch 的 allowed_domains 和 blocked_domains 不能同时传入");
+      }
+      return textResult(
         await webSearch({
           query: params.query,
-          maxResults: params.maxResults
+          maxResults: params.maxUses,
+          allowedDomains: params.allowed_domains,
+          blockedDomains: params.blocked_domains
         })
-      )
+      );
+    }
   };
 
   return [fetchUrlTool, webSearchTool];

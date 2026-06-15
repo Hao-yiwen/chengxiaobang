@@ -458,7 +458,7 @@ describe("SqliteStateStore", () => {
     const toolCall: ToolCall = {
       id: "tool_1",
       runId: "run_1",
-      name: "list_directory",
+      name: "LS",
       args: { path: "." },
       status: "completed",
       result: "file package.json",
@@ -505,7 +505,7 @@ describe("SqliteStateStore", () => {
       {
         id: "tool_1",
         runId: "run_1",
-        name: "list_directory",
+        name: "LS",
         args: { path: "." },
         status: "completed",
         result: "file package.json"
@@ -532,8 +532,8 @@ describe("SqliteStateStore", () => {
     await first.insertToolCall({
       id: "tool_pending",
       runId: "run_interrupted",
-      name: "write_file",
-      args: { path: "a.txt", content: "ok" },
+      name: "Write",
+      args: { file_path: "a.txt", content: "ok" },
       status: "pending_approval",
       createdAt: timestamp,
       updatedAt: timestamp
@@ -541,8 +541,8 @@ describe("SqliteStateStore", () => {
     await first.insertToolCall({
       id: "tool_smart_pending",
       runId: "run_interrupted",
-      name: "edit_file",
-      args: { path: "a.txt", oldText: "a", newText: "b" },
+      name: "Edit",
+      args: { file_path: "a.txt", old_string: "a", new_string: "b" },
       status: "pending_smart_approval",
       createdAt: timestamp,
       updatedAt: timestamp
@@ -550,7 +550,7 @@ describe("SqliteStateStore", () => {
     await first.insertToolCall({
       id: "tool_running",
       runId: "run_interrupted",
-      name: "shell",
+      name: "Bash",
       args: { command: "echo hi" },
       status: "running",
       startedAt: timestamp,
@@ -560,8 +560,8 @@ describe("SqliteStateStore", () => {
     await first.insertToolCall({
       id: "tool_completed",
       runId: "run_interrupted",
-      name: "read_file",
-      args: { path: "done.txt" },
+      name: "Read",
+      args: { file_path: "done.txt" },
       status: "completed",
       result: "done",
       createdAt: timestamp,
@@ -644,8 +644,8 @@ describe("SqliteStateStore", () => {
     await first.insertToolCall({
       id: "tool_1",
       runId: "run_1",
-      name: "write_file",
-      args: { path: "a.txt", content: "hi" },
+      name: "Write",
+      args: { file_path: "a.txt", content: "hi" },
       status: "pending_approval",
       createdAt,
       updatedAt: createdAt
@@ -655,8 +655,8 @@ describe("SqliteStateStore", () => {
     await first.updateToolCall({
       id: "tool_1",
       runId: "run_1",
-      name: "write_file",
-      args: { path: "a.txt", content: "hi" },
+      name: "Write",
+      args: { file_path: "a.txt", content: "hi" },
       status: "completed",
       result: "已写入",
       startedAt,
@@ -674,8 +674,8 @@ describe("SqliteStateStore", () => {
     await second.insertToolCall({
       id: "tool_2",
       runId: "run_1",
-      name: "read_file",
-      args: { path: "a.txt" },
+      name: "Read",
+      args: { file_path: "a.txt" },
       status: "pending_approval",
       createdAt: nowIso(),
       updatedAt: nowIso()
@@ -699,8 +699,8 @@ describe("SqliteStateStore", () => {
     await first.insertToolCall({
       id: "tool_1",
       runId: "run_1",
-      name: "write_file",
-      args: { path: "smart.txt", content: "hi" },
+      name: "Write",
+      args: { file_path: "smart.txt", content: "hi" },
       status: "pending_smart_approval",
       approval: {
         kind: "smart",
@@ -745,7 +745,7 @@ describe("SqliteStateStore", () => {
     await first.insertToolCall({
       id: "tool_plan",
       runId: "run_1",
-      name: "propose_plan",
+      name: "ExitPlanMode",
       args: { title: "计划", steps: [{ id: "s1", title: "原步骤" }] },
       status: "pending_approval",
       createdAt,
@@ -755,7 +755,7 @@ describe("SqliteStateStore", () => {
     await first.updateToolCall({
       id: "tool_plan",
       runId: "run_1",
-      name: "propose_plan",
+      name: "ExitPlanMode",
       args: { title: "计划", steps: [{ id: "s1", title: "编辑后的步骤", status: "pending" }] },
       status: "completed",
       result: "{}",
@@ -855,7 +855,7 @@ describe("SqliteStateStore", () => {
     await store.insertToolCall({
       id: "tool_late",
       runId: "run_late",
-      name: "shell",
+      name: "Bash",
       args: { command: "pwd" },
       status: "completed",
       result: "/tmp",
@@ -899,8 +899,8 @@ describe("SqliteStateStore", () => {
     await store.insertToolCall({
       id: "tool_interrupted",
       runId: "run_interrupted",
-      name: "write_file",
-      args: { path: "app/globals.css", content: "body {}" },
+      name: "Write",
+      args: { file_path: "app/globals.css", content: "body {}" },
       status: "failed",
       result: "运行进程已重启，无法继续等待审批或工具结果。请重新发起本次请求。",
       createdAt: timestamp,

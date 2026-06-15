@@ -197,17 +197,16 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
 
 | 文件 | 工具 | 审批 |
 |---|---|---|
-| `fs-tools.ts` | list_directory、read_file、glob、search | 否 |
-| | write_file、edit_file、make_directory | **是** |
-| `shell-tools.ts` | git_status、git_diff、shell_status、shell_cancel | 否 |
-| | shell | **是** |
-| `web-tools.ts` | fetch_url(HTML→纯文本,30s 超时,20k 截断) | 否 |
-| `office-tools.ts` | create_pptx / create_docx / create_xlsx(结构化规格→真实文件,复用 `{pptx,docx,xlsx}-builder.ts`) | **是** |
-| `feishu-tools.ts` | feishu_send_message(sender 经闭包懒解析,因 FeishuService 在 runner 之后构造) | **是** |
+| `fs-tools.ts` | LS、Read、Glob、Grep | 否 |
+| | Write、Edit、MakeDirectory | **是** |
+| `shell-tools.ts` | GitStatus、GitDiff、BashStatus、BashCancel | 否 |
+| | Bash | **是** |
+| `web-tools.ts` | WebFetch(HTML→纯文本,30s 超时,20k 截断) | 否 |
+| `feishu-tools.ts` | FeishuSendMessage(sender 经闭包懒解析,因 FeishuService 在 runner 之后构造) | **是** |
 
 - `registry.ts`:`createAgentTools(workspacePath, getFeishuSender?)` 汇集工厂;`MUTATING_TOOLS` 集合 + `requiresApproval(name)` 是审批门控的唯一事实源。
-- `workspace.ts`:`safeResolve` 强制路径不逃逸工作目录;glob/search 实现(忽略 node_modules/.git/dist 等);`listProjectFiles` 供 @-mention 自动补全。
-- Shell 命令通过 `mode` 选择执行策略：默认 `async` 前台等待 15 秒后转后台，`background` 立即转后台，`blocking` 按 `waitMs` 最多等待 300 秒后转后台；输出持续写入工作区文件,再由 `shell_status` 查询状态、`shell_cancel` 主动终止;详见 [Shell 执行模式与后台命令](./shell-background-execution.md)。
+- `workspace.ts`:`safeResolve` 强制路径不逃逸工作目录;Glob/Grep 的路径边界与忽略规则(忽略 node_modules/.git/dist 等);`listProjectFiles` 供 @-mention 自动补全。`Grep` 依赖 ripgrep,桌面打包时随平台 `rg/rg.exe` 打入并通过 `CHENGXIAOBANG_RG_PATH` 传给后端。
+- Shell 命令通过 `Bash.timeout` / `Bash.run_in_background` 选择等待策略：默认前台等待 15 秒后转后台，`run_in_background=true` 立即转后台，`timeout` 最多等待 600000ms 后转后台；输出持续写入工作区文件,再由 `BashStatus` 查询状态、`BashCancel` 主动终止;详见 [Shell 执行与后台命令](./shell-background-execution.md)。
 - 参数校验由 pi 在执行前按 TypeBox schema 完成,非法参数直接变成错误工具结果(不经 beforeToolCall)。
 
 ### 4.6 模型层与压缩
@@ -239,7 +238,7 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
 
 ## 5. 桌面端:apps/desktop
 
-- **main 进程**(`main/backend-process.ts`):随机端口(30000–50000)+ 随机 token 拉起后端子进程——dev 用 `node_modules/.bin/bun --watch src/main.ts`(后端改动自动重启),打包后用捆绑的 Bun binary 跑 `resources/backend/main.js`;轮询 `/api/health` 就绪后经 `backend-info` IPC 把 `{baseURL, token}` 交给渲染层。每次启动 = 全新端口的全新后端。
+- **main 进程**(`main/backend-process.ts`):随机端口(30000–50000)+ 随机 token 拉起后端子进程——dev 用 `node_modules/.bin/bun --watch src/main.ts`(后端改动自动重启),打包后用捆绑的 Bun binary 跑 `resources/backend/main.js`;同时把随包携带的 `rg/rg.exe` 路径注入 `CHENGXIAOBANG_RG_PATH`;轮询 `/api/health` 就绪后经 `backend-info` IPC 把 `{baseURL, token}` 交给渲染层。每次启动 = 全新端口的全新后端。
 - **preload**:沙箱渲染层只拿到最小 `window.chengxiaobang` bridge(backend info、原生文件/目录选择器、读文件)。
 - **渲染层**:
   - `lib/api.ts`:类型化 `ApiClient`(从 shared 导入全部类型),`streamRun` 用 `readSseStream` 解析 SSE 并逐事件回调;
@@ -288,7 +287,7 @@ renderer                 backend AgentRunner / pi              SQLite
 - **构建顺序**:shared → backend → desktop(`pnpm build`);shared 必须先 build,其 `dist/` 类型被两端 typecheck 消费(`pnpm typecheck` 已编排)。
 - **后端打包**(`apps/backend/tsup.config.ts`):单文件 `dist/main.js`;`noExternal` 强制打入 `sql.js`、`@earendil-works/pi-ai`、`@earendil-works/pi-agent-core`、`pptxgenjs`、`docx`、`exceljs`、lark SDK、`hono`;banner 重建 `require`/`__dirname`/`__filename`(打入的 CJS 依赖需要)。`ws` 的可选原生 peer(`bufferutil`/`utf-8-validate`)标记 external。
 - **运行时是 Bun,不是 Node**:打入的依赖含动态 require,纯 `node dist/main.js` 会崩;`server.ts` 也只接受 `Bun.serve`。dev 与生产统一由 desktop main 进程用 Bun 拉起;开发冒烟可用 `node_modules/.bin/bun dist/main.js`,打包冒烟用 `apps/desktop/scripts/smoke-packaged-backend.mjs` 从 `resources/bun(.exe)` 启动 `backend/main.js` 并轮询 `/api/health`。
-- **打包桌面应用**:`pnpm package:mac` 产出 dmg + zip,`pnpm package:win` 产出 Windows x64 NSIS;后端 `dist/`、平台对应 Bun binary、OCR 模型和 `node-pty`/`sharp`/`onnxruntime-node`/`@napi-rs/canvas` 等 native 依赖一同打入。Windows 包在 Windows runner / Windows 本机构建,Windows v1 不启用自动更新入口。
+- **打包桌面应用**:`pnpm package:mac` 产出 dmg + zip,`pnpm package:win` 产出 Windows x64 NSIS;后端 `dist/`、平台对应 Bun binary、平台对应 `rg/rg.exe`、OCR 模型和 `node-pty`/`sharp`/`onnxruntime-node`/`@napi-rs/canvas` 等 native 依赖一同打入。Windows 包在 Windows runner / Windows 本机构建,Windows v1 不启用自动更新入口。
 - **开发**:`pnpm dev` 一条命令——Vite(渲染层 HMR)+ tsup --watch(main/preload)+ Electron(自动拉起 `bun --watch` 后端),三层全部热更新。
 - 后端也可独立运行:`bun src/main.ts --port <n> --data-dir <dir> --token <t>`。
 

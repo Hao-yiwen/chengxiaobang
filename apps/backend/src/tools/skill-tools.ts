@@ -37,7 +37,7 @@ export interface SkillToolRuntime {
  */
 export function createSkillTools(runtime: SkillToolRuntime): AgentTool<any>[] {
   const createSkill: AgentTool<typeof createParams> = {
-    name: "create_skill",
+    name: "CreateSkill",
     label: "创建技能",
     description:
       "为用户创建并安装一个自定义技能。两种用法：①传 url（GitHub 仓库/目录/SKILL.md 链接），后端会抓取该处 SKILL.md 并安装；②传 name + description + content 现写一个技能。安装成功后该技能立即生效，用户可在「技能」页看到、并在对话中以 /技能名 调用。",

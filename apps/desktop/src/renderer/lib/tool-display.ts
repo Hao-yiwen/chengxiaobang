@@ -4,11 +4,8 @@ import {
   ChatCircleDotsIcon,
   ClockCountdownIcon,
   ClockIcon,
-  FileDocIcon,
   FilePlusIcon,
-  FilePptIcon,
   FileTextIcon,
-  FileXlsIcon,
   FilesIcon,
   FolderOpenIcon,
   FolderPlusIcon,
@@ -42,34 +39,32 @@ export type ToolCategory =
   | "other";
 
 const TOOL_ICONS: Record<string, Icon> = {
-  read_file: FileTextIcon,
-  write_file: FilePlusIcon,
-  edit_file: PencilSimpleIcon,
-  list_directory: FolderOpenIcon,
-  make_directory: FolderPlusIcon,
-  glob: FilesIcon,
-  search: MagnifyingGlassIcon,
-  shell: TerminalWindowIcon,
-  shell_status: TerminalWindowIcon,
-  shell_cancel: TerminalWindowIcon,
-  git_status: GitBranchIcon,
-  git_diff: GitDiffIcon,
-  fetch_url: GlobeIcon,
-  web_search: MagnifyingGlassIcon,
-  create_pptx: FilePptIcon,
-  create_docx: FileDocIcon,
-  create_xlsx: FileXlsIcon,
-  feishu_send_message: PaperPlaneTiltIcon,
-  propose_plan: ListChecksIcon,
-  update_plan: ListChecksIcon,
-  todo_create: ListChecksIcon,
-  todo_update: ListChecksIcon,
-  ask_user: ChatCircleDotsIcon,
-  use_skill: SparkleIcon,
-  schedule_create: AlarmIcon,
-  schedule_list: ClockIcon,
-  schedule_cancel: ClockCountdownIcon,
-  memory: BrainIcon
+  Read: FileTextIcon,
+  Write: FilePlusIcon,
+  Edit: PencilSimpleIcon,
+  LS: FolderOpenIcon,
+  MakeDirectory: FolderPlusIcon,
+  Glob: FilesIcon,
+  Grep: MagnifyingGlassIcon,
+  Bash: TerminalWindowIcon,
+  BashStatus: TerminalWindowIcon,
+  BashCancel: TerminalWindowIcon,
+  GitStatus: GitBranchIcon,
+  GitDiff: GitDiffIcon,
+  WebFetch: GlobeIcon,
+  WebSearch: MagnifyingGlassIcon,
+  FeishuSendMessage: PaperPlaneTiltIcon,
+  ExitPlanMode: ListChecksIcon,
+  TodoRead: ListChecksIcon,
+  TodoWrite: ListChecksIcon,
+  AskUserQuestion: ChatCircleDotsIcon,
+  Skill: SparkleIcon,
+  ScheduleCreate: AlarmIcon,
+  ScheduleList: ClockIcon,
+  ScheduleCancel: ClockCountdownIcon,
+  Memory: BrainIcon,
+  OcrExtractText: FileTextIcon,
+  CreateSkill: SparkleIcon
 };
 
 export const FALLBACK_TOOL_ICON: Icon = WrenchIcon;
@@ -90,32 +85,30 @@ export function toolIcon(name: string): Icon {
 }
 
 const TOOL_CATEGORIES: Record<string, ToolCategory> = {
-  read_file: "read",
-  write_file: "edit",
-  edit_file: "edit",
-  make_directory: "edit",
-  list_directory: "search",
-  glob: "search",
-  search: "search",
-  shell: "command",
-  shell_status: "command",
-  shell_cancel: "command",
-  git_status: "command",
-  git_diff: "command",
-  fetch_url: "web",
-  web_search: "web",
-  create_pptx: "artifact",
-  create_docx: "artifact",
-  create_xlsx: "artifact",
-  feishu_send_message: "message",
-  propose_plan: "plan",
-  update_plan: "plan",
-  todo_create: "plan",
-  todo_update: "plan",
-  schedule_create: "schedule",
-  schedule_list: "schedule",
-  schedule_cancel: "schedule",
-  memory: "memory"
+  Read: "read",
+  Write: "edit",
+  Edit: "edit",
+  MakeDirectory: "edit",
+  LS: "search",
+  Glob: "search",
+  Grep: "search",
+  Bash: "command",
+  BashStatus: "command",
+  BashCancel: "command",
+  GitStatus: "command",
+  GitDiff: "command",
+  WebFetch: "web",
+  WebSearch: "web",
+  FeishuSendMessage: "message",
+  ExitPlanMode: "plan",
+  TodoRead: "plan",
+  TodoWrite: "plan",
+  ScheduleCreate: "schedule",
+  ScheduleList: "schedule",
+  ScheduleCancel: "schedule",
+  Memory: "memory",
+  OcrExtractText: "read",
+  CreateSkill: "edit"
 };
 
 export function toolCategory(name: string): ToolCategory {
@@ -146,34 +139,32 @@ export function truncateEnd(text: string, max: number): string {
 }
 
 type ToolLineKey = `chat.toolLine.${
-  | "read_file"
-  | "write_file"
-  | "edit_file"
-  | "list_directory"
-  | "make_directory"
-  | "glob"
-  | "search"
-  | "shell"
-  | "shell_status"
-  | "shell_cancel"
-  | "git_status"
-  | "git_diff"
-  | "fetch_url"
-  | "web_search"
-  | "create_pptx"
-  | "create_docx"
-  | "create_xlsx"
-  | "feishu_send_message"
-  | "propose_plan"
-  | "update_plan"
-  | "todo_create"
-  | "todo_update"
-  | "ask_user"
-  | "use_skill"
-  | "schedule_create"
-  | "schedule_list"
-  | "schedule_cancel"
-  | "memory"
+  | "Read"
+  | "Write"
+  | "Edit"
+  | "LS"
+  | "MakeDirectory"
+  | "Glob"
+  | "Grep"
+  | "Bash"
+  | "BashStatus"
+  | "BashCancel"
+  | "GitStatus"
+  | "GitDiff"
+  | "WebFetch"
+  | "WebSearch"
+  | "FeishuSendMessage"
+  | "ExitPlanMode"
+  | "TodoRead"
+  | "TodoWrite"
+  | "AskUserQuestion"
+  | "Skill"
+  | "CreateSkill"
+  | "ScheduleCreate"
+  | "ScheduleList"
+  | "ScheduleCancel"
+  | "Memory"
+  | "OcrExtractText"
   | "fallback"}`;
 
 export interface ToolLineLabel {
@@ -190,57 +181,56 @@ function stringArg(args: ToolCall["args"], key: string): string | undefined {
 export function toolLineLabel(toolCall: ToolCall): ToolLineLabel {
   const { name, args } = toolCall;
   switch (name) {
-    case "read_file":
-    case "write_file":
-    case "edit_file":
-    case "list_directory":
-    case "make_directory":
-    case "create_pptx":
-    case "create_docx":
-    case "create_xlsx":
+    case "Read":
+    case "Write":
+    case "Edit":
+      return { key: `chat.toolLine.${name}`, params: { path: shortenPath(stringArg(args, "file_path") ?? ".") } };
+    case "LS":
+    case "MakeDirectory":
       return { key: `chat.toolLine.${name}`, params: { path: shortenPath(stringArg(args, "path") ?? ".") } };
-    case "glob":
-      return { key: "chat.toolLine.glob", params: { pattern: truncateEnd(stringArg(args, "pattern") ?? "", 40) } };
-    case "search":
-      return { key: "chat.toolLine.search", params: { query: truncateEnd(stringArg(args, "query") ?? "", 40) } };
-    case "web_search":
-      return { key: "chat.toolLine.web_search", params: { query: truncateEnd(stringArg(args, "query") ?? "", 40) } };
-    case "shell":
+    case "Glob":
+      return { key: "chat.toolLine.Glob", params: { pattern: truncateEnd(stringArg(args, "pattern") ?? "", 40) } };
+    case "Grep":
+      return { key: "chat.toolLine.Grep", params: { query: truncateEnd(stringArg(args, "pattern") ?? "", 40) } };
+    case "WebSearch":
+      return { key: "chat.toolLine.WebSearch", params: { query: truncateEnd(stringArg(args, "query") ?? "", 40) } };
+    case "Bash":
       return {
-        key: "chat.toolLine.shell",
+        key: "chat.toolLine.Bash",
         params: { command: truncateEnd((stringArg(args, "command") ?? "").replace(/\s+/g, " ").trim(), 60) }
       };
-    case "fetch_url":
-      return { key: "chat.toolLine.fetch_url", params: { url: truncateEnd(stringArg(args, "url") ?? "", 60) } };
-    case "propose_plan":
+    case "WebFetch":
+      return { key: "chat.toolLine.WebFetch", params: { url: truncateEnd(stringArg(args, "url") ?? "", 60) } };
+    case "ExitPlanMode":
       return {
-        key: "chat.toolLine.propose_plan",
+        key: "chat.toolLine.ExitPlanMode",
         params: { title: truncateEnd(proposePlanLabel(args), 30) }
       };
-    case "todo_create":
-      return { key: "chat.toolLine.todo_create", params: { title: truncateEnd(stringArg(args, "title") ?? "", 30) } };
-    case "todo_update":
-      return { key: "chat.toolLine.todo_update" };
-    case "use_skill":
-      return { key: "chat.toolLine.use_skill", params: { name: stringArg(args, "name") ?? "" } };
-    case "schedule_create":
-      return { key: "chat.toolLine.schedule_create", params: { name: stringArg(args, "name") ?? "" } };
-    case "memory":
+    case "TodoWrite":
+      return { key: "chat.toolLine.TodoWrite" };
+    case "Skill":
+      return { key: "chat.toolLine.Skill", params: { name: stringArg(args, "skill") ?? "" } };
+    case "CreateSkill":
+      return { key: "chat.toolLine.CreateSkill", params: { name: stringArg(args, "name") ?? stringArg(args, "url") ?? "" } };
+    case "ScheduleCreate":
+      return { key: "chat.toolLine.ScheduleCreate", params: { name: stringArg(args, "name") ?? "" } };
+    case "Memory":
       return {
-        key: "chat.toolLine.memory",
+        key: "chat.toolLine.Memory",
         params: {
           path: shortenPath(stringArg(args, "path") ?? stringArg(args, "old_path") ?? "/memories")
         }
       };
-    case "git_status":
-    case "git_diff":
-    case "shell_status":
-    case "shell_cancel":
-    case "feishu_send_message":
-    case "update_plan":
-    case "ask_user":
-    case "schedule_list":
-    case "schedule_cancel":
+    case "GitStatus":
+    case "GitDiff":
+    case "BashStatus":
+    case "BashCancel":
+    case "FeishuSendMessage":
+    case "TodoRead":
+    case "AskUserQuestion":
+    case "ScheduleList":
+    case "ScheduleCancel":
+    case "OcrExtractText":
       return { key: `chat.toolLine.${name}` };
     default:
       return { key: "chat.toolLine.fallback", params: { name } };

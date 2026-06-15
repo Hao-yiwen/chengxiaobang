@@ -17,7 +17,7 @@ function memorySettings() {
   };
 }
 
-describe("create_skill tool", () => {
+describe("CreateSkill tool", () => {
   let dir: string;
   let service: SkillMarketService;
   let tool: AgentTool<any>;

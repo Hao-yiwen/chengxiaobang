@@ -279,8 +279,8 @@ describe("MessageActions", () => {
     const htmlToolCall: ToolCall = {
       id: "tool_1",
       runId: "run_1",
-      name: "write_file",
-      args: { path: "beautiful-page.html", content: "<!doctype html>" },
+      name: "Write",
+      args: { file_path: "beautiful-page.html", content: "<!doctype html>" },
       status: "completed",
       result: "已写入 beautiful-page.html",
       createdAt: "2026-06-08T00:00:02.000Z",

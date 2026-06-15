@@ -52,6 +52,7 @@ function createMockBackendChild(pid = 4321): MockBackendChild {
 
 describe("resolveBackendCommand", () => {
   const previousBunBinary = process.env.BUN_BINARY;
+  const previousRgPath = process.env.CHENGXIAOBANG_RG_PATH;
   const tempDirs: string[] = [];
 
   afterEach(async () => {
@@ -60,6 +61,11 @@ describe("resolveBackendCommand", () => {
       delete process.env.BUN_BINARY;
     } else {
       process.env.BUN_BINARY = previousBunBinary;
+    }
+    if (previousRgPath === undefined) {
+      delete process.env.CHENGXIAOBANG_RG_PATH;
+    } else {
+      process.env.CHENGXIAOBANG_RG_PATH = previousRgPath;
     }
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
@@ -234,6 +240,7 @@ describe("resolveBackendCommand", () => {
     const resourcesPath = await mkdtemp(join(tmpdir(), "cxb-resources-"));
     tempDirs.push(resourcesPath);
     await writeFile(join(resourcesPath, "bun"), "");
+    await writeFile(join(resourcesPath, "rg"), "");
 
     const command = resolveBackendCommand({
       port: 3210,
@@ -245,6 +252,7 @@ describe("resolveBackendCommand", () => {
     });
 
     expect(command.command).toBe(join(resourcesPath, "bun"));
+    expect(command.env.CHENGXIAOBANG_RG_PATH).toBe(join(resourcesPath, "rg"));
     expect(command.args).not.toContain("--watch");
   });
 
@@ -253,6 +261,7 @@ describe("resolveBackendCommand", () => {
     const resourcesPath = await mkdtemp(join(tmpdir(), "cxb-resources-"));
     tempDirs.push(resourcesPath);
     await writeFile(join(resourcesPath, "bun.exe"), "");
+    await writeFile(join(resourcesPath, "rg.exe"), "");
 
     const command = resolveBackendCommand({
       port: 3210,
@@ -264,7 +273,26 @@ describe("resolveBackendCommand", () => {
     });
 
     expect(command.command).toBe(join(resourcesPath, "bun.exe"));
+    expect(command.env.CHENGXIAOBANG_RG_PATH).toBe(join(resourcesPath, "rg.exe"));
     expect(command.args).not.toContain("--watch");
+  });
+
+  it("fails clearly when packaged ripgrep is missing", async () => {
+    delete process.env.BUN_BINARY;
+    const resourcesPath = await mkdtemp(join(tmpdir(), "cxb-resources-"));
+    tempDirs.push(resourcesPath);
+    await writeFile(join(resourcesPath, "bun"), "");
+
+    expect(() =>
+      resolveBackendCommand({
+        port: 3210,
+        dataDir: "/tmp/data",
+        token: "token",
+        resourcesPath,
+        isPackaged: true,
+        platform: "darwin"
+      })
+    ).toThrow("搜索运行时缺失");
   });
 
   it("checks backend runtime before launching the backend", async () => {

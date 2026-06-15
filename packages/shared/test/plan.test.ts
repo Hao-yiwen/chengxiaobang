@@ -43,23 +43,15 @@ const markdownPlan = `# 示例计划：登录页错误提示优化
 ## Assumptions
 - 不改后端接口。`;
 
-const legacyPlanArgs = {
-  title: "旧计划",
-  steps: [
-    { id: "s1", title: "梳理现状" },
-    { id: "s2", title: "修改前端提示" }
-  ]
-};
-
 describe("derivePlanState", () => {
-  it("无 propose_plan → undefined，update_plan 不再单独产生计划状态", () => {
+  it("无 ExitPlanMode → undefined", () => {
     expect(derivePlanState([])).toBeUndefined();
     expect(
       derivePlanState([
         makeToolCall({
-          name: "update_plan",
+          name: "Read",
           status: "completed",
-          args: { stepId: "s1", status: "completed" },
+          args: { file_path: "README.md" },
           createdAt: "2026-06-11T00:00:00.000Z"
         })
       ])
@@ -68,9 +60,9 @@ describe("derivePlanState", () => {
 
   it("pending 锚点解析 Markdown 计划，confirmed=false", () => {
     const anchor = makeToolCall({
-      name: "propose_plan",
+      name: "ExitPlanMode",
       status: "pending_approval",
-      args: { markdown: markdownPlan },
+      args: { plan: markdownPlan },
       createdAt: "2026-06-11T00:00:00.000Z"
     });
     const state = derivePlanState([anchor]);
@@ -82,21 +74,15 @@ describe("derivePlanState", () => {
     expect(state!.finished).toBe(false);
   });
 
-  it("completed 锚点确认后即结束计划阶段，update_plan 不再叠加状态", () => {
+  it("completed 锚点确认后即结束计划阶段", () => {
     const anchor = makeToolCall({
-      name: "propose_plan",
+      name: "ExitPlanMode",
       status: "completed",
-      args: { markdown: markdownPlan },
-      createdAt: "2026-06-11T00:00:00.000Z"
-    });
-    const update = makeToolCall({
-      name: "update_plan",
-      status: "completed",
-      args: { stepId: "s1", status: "completed" },
+      args: { plan: markdownPlan },
       createdAt: "2026-06-11T00:01:00.000Z"
     });
 
-    const state = derivePlanState([anchor, update]);
+    const state = derivePlanState([anchor]);
 
     expect(state).toMatchObject({
       confirmed: true,
@@ -105,33 +91,17 @@ describe("derivePlanState", () => {
     });
   });
 
-  it("旧版 {title, steps} 自动转换成 Markdown 展示", () => {
-    const anchor = makeToolCall({
-      name: "propose_plan",
-      status: "completed",
-      args: legacyPlanArgs,
-      createdAt: "2026-06-11T00:00:00.000Z"
-    });
-
-    const state = derivePlanState([anchor]);
-
-    expect(state!.title).toBe("旧计划");
-    expect(state!.markdown).toContain("# 旧计划");
-    expect(state!.markdown).toContain("- 梳理现状");
-    expect(state!.markdown).toContain("## Assumptions");
-  });
-
-  it("最新 propose_plan 是当前计划锚点，即使上一版已确认", () => {
+  it("最新 ExitPlanMode 是当前计划锚点，即使上一版已确认", () => {
     const approved = makeToolCall({
-      name: "propose_plan",
+      name: "ExitPlanMode",
       status: "completed",
-      args: { markdown: "# 旧计划\n\n## Summary\n旧内容" },
+      args: { plan: "# 旧计划\n\n## Summary\n旧内容" },
       createdAt: "2026-06-11T00:00:00.000Z"
     });
     const rejected = makeToolCall({
-      name: "propose_plan",
+      name: "ExitPlanMode",
       status: "rejected",
-      args: { markdown: "# 新计划\n\n## Summary\n用户要求继续调整" },
+      args: { plan: "# 新计划\n\n## Summary\n用户要求继续调整" },
       createdAt: "2026-06-11T00:05:00.000Z"
     });
 
@@ -144,9 +114,9 @@ describe("derivePlanState", () => {
 
   it("锚点 args 非法时返回 undefined（不抛错）", () => {
     const anchor = makeToolCall({
-      name: "propose_plan",
+      name: "ExitPlanMode",
       status: "completed",
-      args: { markdown: "   " },
+      args: { plan: "   " },
       createdAt: "2026-06-11T00:00:00.000Z"
     });
     expect(derivePlanState([anchor])).toBeUndefined();

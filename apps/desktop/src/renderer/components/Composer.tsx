@@ -280,7 +280,7 @@ export function Composer() {
   });
   const currentComposerRunning =
     view !== "home" && isRunning && (Boolean(activeRunId) || Boolean(activeRunClientRequestId));
-  const awaitingAskUser = currentComposerRunning && pendingTool?.name === "ask_user";
+  const awaitingAskUser = currentComposerRunning && pendingTool?.name === "AskUserQuestion";
   const slashQuery = getSlashQuery(value, selectionStart);
   const filteredSlashCommands = useMemo(
     () => filterSlashCommands(slashCommands, slashQuery ?? ""),

@@ -41,17 +41,17 @@ export function shortenPath(path: string, segments = 2): string {
 
 /**
  * Diff presentation for file-mutating tools, derived purely from their args
- * (edit_file carries oldText/newText; write_file content counts as all-added).
+ * (Edit carries old_string/new_string; Write content counts as all-added).
  */
 export function buildToolCallDiff(toolCall: ToolCall): DiffLine[] | undefined {
-  if (toolCall.name === "edit_file") {
-    const { oldText, newText } = toolCall.args;
-    if (typeof oldText === "string" && typeof newText === "string") {
-      return diffLines(oldText, newText);
+  if (toolCall.name === "Edit") {
+    const { old_string, new_string } = toolCall.args;
+    if (typeof old_string === "string" && typeof new_string === "string") {
+      return diffLines(old_string, new_string);
     }
     return undefined;
   }
-  if (toolCall.name === "write_file" && typeof toolCall.args.content === "string") {
+  if (toolCall.name === "Write" && typeof toolCall.args.content === "string") {
     return diffLines("", toolCall.args.content);
   }
   return undefined;

@@ -2,7 +2,7 @@ import type { ApprovalDecision } from "@chengxiaobang/shared";
 
 /**
  * 泛化后的审批队列：决议从 boolean 升级为带 payload 的 ApprovalDecision
- * （计划调整意见和 ask_user 都携带 answer）。abort 与早到决议
+ * （计划调整意见和 AskUserQuestion 都携带 answer）。abort 与早到决议
  * （decide 先于 wait 到达）语义与旧实现一致。
  */
 export class ApprovalQueue {
@@ -56,14 +56,14 @@ export class ApprovalQueue {
 
 /** 按工具名裁决 payload 有效性，杜绝误发/恶意 payload 静默通过。 */
 export function normalizeDecision(name: string, decision: ApprovalDecision): ApprovalDecision {
-  if (name === "ask_user") {
+  if (name === "AskUserQuestion") {
     if (decision.approved && !decision.answer) {
-      console.warn(`[approval-queue] ask_user 决议缺少 answer，按拒绝处理`);
+      console.warn(`[approval-queue] AskUserQuestion 决议缺少 answer，按拒绝处理`);
       return { approved: false };
     }
     return { approved: decision.approved, answer: decision.answer };
   }
-  if (name === "propose_plan") {
+  if (name === "ExitPlanMode") {
     // editedSteps 只为旧客户端保留；新版计划调整通过 answer 反馈给模型。
     return {
       approved: decision.approved,

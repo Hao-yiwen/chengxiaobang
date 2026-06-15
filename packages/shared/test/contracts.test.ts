@@ -15,10 +15,8 @@ import {
   streamEventSchema,
   toolCallSchema,
   toolNameSchema,
-  todoCreateArgsSchema,
-  todoUpdateArgsSchema,
+  todoWriteArgsSchema,
   webSearchConfigInputSchema,
-  updatePlanArgsSchema,
   useSkillArgsSchema,
   type Message,
   type AppEvent,
@@ -55,8 +53,8 @@ const session: Session = {
 const toolCall: ToolCall = {
   id: "tc_1",
   runId: "run_1",
-  name: "propose_plan",
-  args: { title: "t", steps: [{ id: "s1", title: "第一步" }] },
+  name: "ExitPlanMode",
+  args: { plan: "# 计划\n\n## Summary\n先规划再执行。" },
   status: "pending_approval",
   createdAt: "2026-06-11T00:00:00.000Z",
   updatedAt: "2026-06-11T00:00:00.000Z"
@@ -65,19 +63,32 @@ const toolCall: ToolCall = {
 describe("toolNameSchema", () => {
   it("接受新增工具名", () => {
     for (const name of [
-      "propose_plan",
-      "update_plan",
-      "ask_user",
-      "use_skill",
-      "web_search",
-      "todo_create",
-      "todo_update",
-      "schedule_create",
-      "schedule_list",
-      "schedule_cancel",
-      "memory",
-      "shell_status",
-      "shell_cancel"
+      "Read",
+      "Write",
+      "Edit",
+      "LS",
+      "MakeDirectory",
+      "Glob",
+      "Grep",
+      "Bash",
+      "BashStatus",
+      "BashCancel",
+      "GitStatus",
+      "GitDiff",
+      "WebFetch",
+      "WebSearch",
+      "ExitPlanMode",
+      "AskUserQuestion",
+      "Skill",
+      "TodoRead",
+      "TodoWrite",
+      "CreateSkill",
+      "ScheduleCreate",
+      "ScheduleList",
+      "ScheduleCancel",
+      "Memory",
+      "OcrExtractText",
+      "FeishuSendMessage"
     ]) {
       expect(toolNameSchema.parse(name)).toBe(name);
     }
@@ -248,7 +259,7 @@ describe("askUserAnswerSchema", () => {
 describe("新工具参数 schema", () => {
   it("proposePlanArgs 解析 Markdown 计划并清理包裹标签", () => {
     const parsed = proposePlanArgsSchema.parse({
-      markdown: `<proposed_plan>
+      plan: `<proposed_plan>
 # 示例计划
 
 ## Summary
@@ -260,26 +271,7 @@ describe("新工具参数 schema", () => {
   });
 
   it("proposePlanArgs 拒绝空 Markdown", () => {
-    expect(proposePlanArgsSchema.safeParse({ markdown: "   " }).success).toBe(false);
-  });
-
-  it("proposePlanArgs 兼容旧版步骤计划并转换为 Markdown", () => {
-    const parsed = proposePlanArgsSchema.parse({
-      title: "计划",
-      steps: [{ id: "s1", title: "第一步", detail: "细节" }]
-    });
-    expect(parsed.markdown).toContain("# 计划");
-    expect(parsed.markdown).toContain("- 第一步");
-  });
-
-  it("updatePlanArgs 作为旧版计划进度参数保留解析能力", () => {
-    expect(updatePlanArgsSchema.parse({ stepId: "s1", status: "completed" })).toEqual({
-      stepId: "s1",
-      status: "completed"
-    });
-    expect(updatePlanArgsSchema.safeParse({ stepId: "s1", status: "pending" }).success).toBe(
-      false
-    );
+    expect(proposePlanArgsSchema.safeParse({ plan: "   " }).success).toBe(false);
   });
 
   it("askUserArgs 拒绝旧版单题，只接受 questions 数组", () => {
@@ -296,13 +288,18 @@ describe("新工具参数 schema", () => {
       askUserArgsSchema.parse({
         questions: [
           { id: "q1", question: "类型？", options: ["A", "B"], allowFreeText: false },
-          { id: "q2", question: "补充说明？" }
+          { id: "q2", header: "补充", question: "补充说明？", options: [{ label: "继续", description: "保持当前方向" }] }
         ]
       })
     ).toEqual({
       questions: [
         { id: "q1", question: "类型？", options: ["A", "B"], allowFreeText: false },
-        { id: "q2", question: "补充说明？", allowFreeText: true }
+        {
+          id: "q2",
+          header: "补充",
+          question: "补充说明？",
+          options: [{ label: "继续", description: "保持当前方向" }]
+        }
       ]
     });
     expect(
@@ -319,37 +316,29 @@ describe("新工具参数 schema", () => {
   });
 
   it("useSkillArgs 解析", () => {
-    expect(useSkillArgsSchema.parse({ name: "excel" })).toEqual({ name: "excel" });
+    expect(useSkillArgsSchema.parse({ skill: "excel", args: "表格" })).toEqual({
+      skill: "excel",
+      args: "表格"
+    });
     expect(useSkillArgsSchema.safeParse({}).success).toBe(false);
   });
 
-  it("todoCreateArgs 解析并限制 1 到 20 项", () => {
+  it("todoWriteArgs 解析并限制最多一个 in_progress", () => {
     expect(
-      todoCreateArgsSchema.parse({
-        title: "实现右侧进度",
-        items: [{ id: "s1", title: "新增契约", detail: "shared" }]
+      todoWriteArgsSchema.parse({
+        todos: [{ content: "新增契约", status: "in_progress", priority: "high" }]
       })
     ).toEqual({
-      title: "实现右侧进度",
-      items: [{ id: "s1", title: "新增契约", status: "pending", detail: "shared" }]
+      todos: [{ content: "新增契约", status: "in_progress", priority: "high" }]
     });
-    expect(todoCreateArgsSchema.safeParse({ title: "空清单", items: [] }).success).toBe(false);
     expect(
-      todoCreateArgsSchema.safeParse({
-        title: "过长清单",
-        items: Array.from({ length: 21 }, (_, i) => ({ id: `s${i}`, title: `任务 ${i}` }))
+      todoWriteArgsSchema.safeParse({
+        todos: [
+          { content: "一", status: "in_progress", priority: "high" },
+          { content: "二", status: "in_progress", priority: "medium" }
+        ]
       }).success
     ).toBe(false);
-  });
-
-  it("todoUpdateArgs 解析且拒绝 pending 状态", () => {
-    expect(todoUpdateArgsSchema.parse({ itemId: "s1", status: "completed" })).toEqual({
-      itemId: "s1",
-      status: "completed"
-    });
-    expect(todoUpdateArgsSchema.safeParse({ itemId: "s1", status: "pending" }).success).toBe(
-      false
-    );
   });
 });
 
@@ -454,8 +443,8 @@ describe("streamEventSchema", () => {
         activity: {
           contentIndex: 0,
           toolCallId: "tc_1",
-          name: "write_file",
-          argsPreview: { path: "src/app.ts" },
+          name: "Write",
+          argsPreview: { file_path: "src/app.ts" },
           updatedAt: "2026-06-11T00:00:00.000Z"
         }
       },
@@ -481,8 +470,8 @@ describe("streamEventSchema", () => {
         runId: "run_1",
         activity: {
           contentIndex: 0,
-          name: "write_file",
-          argsPreview: { path: "src/app.ts" },
+          name: "Write",
+          argsPreview: { file_path: "src/app.ts" },
           updatedAt: "2026-06-11T00:00:00.000Z"
         }
       }).success
@@ -493,7 +482,7 @@ describe("streamEventSchema", () => {
         runId: "run_1",
         activity: {
           contentIndex: 0,
-          argsPreview: { path: 123 },
+          argsPreview: { file_path: 123 },
           updatedAt: "2026-06-11T00:00:00.000Z"
         }
       }).success

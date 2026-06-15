@@ -79,8 +79,8 @@ describe("session debug context API", () => {
     await store.insertToolCall({
       id: "tool_debug",
       runId: "run_debug",
-      name: "read_file",
-      args: { path: "README.md" },
+      name: "Read",
+      args: { file_path: "README.md" },
       status: "completed",
       result: "ok",
       createdAt: timestamp,
@@ -100,10 +100,10 @@ describe("session debug context API", () => {
       content: "payload 用户消息"
     });
     expect(body.debug.messages[0]).not.toHaveProperty("payload");
-    expect(body.debug.toolCalls[0]).toMatchObject({ id: "tool_debug", name: "read_file" });
+    expect(body.debug.toolCalls[0]).toMatchObject({ id: "tool_debug", name: "Read" });
     expect(body.debug.availableTools).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "read_file", requiresApproval: false })
+        expect.objectContaining({ name: "Read", requiresApproval: false })
       ])
     );
   });
@@ -115,7 +115,7 @@ describe("session debug context API", () => {
     await expect(response.json()).resolves.toEqual({ error: "会话不存在" });
   });
 
-  it("shows web_search in debug tools when the runtime registry enables it", async () => {
+  it("shows WebSearch in debug tools when the runtime registry enables it", async () => {
     const secrets = new MemorySecretStore();
     const webApp = createApp({
       token,
@@ -141,7 +141,7 @@ describe("session debug context API", () => {
     const body = JSON.parse(text) as Record<string, any>;
     expect(body.debug.availableTools).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "web_search", requiresApproval: false })
+        expect.objectContaining({ name: "WebSearch", requiresApproval: false })
       ])
     );
   });

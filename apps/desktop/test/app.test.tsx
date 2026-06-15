@@ -595,7 +595,7 @@ describe("App", () => {
     const toolCall: ToolCall = {
       id: "tool_1",
       runId: "run_1",
-      name: "list_directory",
+      name: "LS",
       args: { path: "." },
       status: "completed",
       result: "file package.json",
@@ -627,7 +627,7 @@ describe("App", () => {
     // The row is a clean one-liner with a human-readable description; the raw
     // result only appears once expanded (no noisy collapsed preview).
     expect(await screen.findByText("浏览目录 .")).toBeInTheDocument();
-    expect(screen.queryByText("list_directory")).not.toBeInTheDocument();
+    expect(screen.queryByText("LS")).not.toBeInTheDocument();
     expect(screen.queryByText("completed")).not.toBeInTheDocument();
     expect(screen.queryByText("file package.json")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("浏览目录 ."));
@@ -655,8 +655,8 @@ describe("App", () => {
     const pendingTool: ToolCall = {
       id: "tool_pending",
       runId: activeRun.id,
-      name: "write_file",
-      args: { path: "active.txt", content: "ok" },
+      name: "Write",
+      args: { file_path: "active.txt", content: "ok" },
       status: "pending_approval",
       createdAt: "2026-06-13T00:00:01.000Z",
       updatedAt: "2026-06-13T00:00:01.000Z"
@@ -709,7 +709,7 @@ describe("App", () => {
     const pendingTool: ToolCall = {
       id: "tool_stale_pending",
       runId: staleRun.id,
-      name: "shell",
+      name: "Bash",
       args: { command: "python3 - <<'PY'\nprint('hi')\nPY" },
       status: "pending_approval",
       createdAt: "2026-06-13T00:00:01.000Z",
@@ -775,8 +775,8 @@ describe("App", () => {
     const skillTool: ToolCall = {
       id: "tool_skill_ppt",
       runId: failedRun.id,
-      name: "use_skill",
-      args: { name: "ppt" },
+      name: "Skill",
+      args: { skill: "ppt" },
       status: "completed",
       result: "已加载技能 ppt",
       createdAt: "2026-06-13T00:00:00.700Z",
@@ -852,8 +852,8 @@ describe("App", () => {
     const pendingTool: ToolCall = {
       id: "tool_pending",
       runId: activeRun.id,
-      name: "write_file",
-      args: { path: "active.txt", content: "ok" },
+      name: "Write",
+      args: { file_path: "active.txt", content: "ok" },
       status: "pending_approval",
       createdAt: "2026-06-13T00:00:01.000Z",
       updatedAt: "2026-06-13T00:00:01.000Z"
@@ -1012,8 +1012,8 @@ describe("App", () => {
     const toolCall: ToolCall = {
       id: "tool_1",
       runId: "run_1",
-      name: "use_skill",
-      args: { name: "excel" },
+      name: "Skill",
+      args: { skill: "excel" },
       status: "completed",
       createdAt: "2026-06-08T00:00:02.000Z",
       updatedAt: "2026-06-08T00:00:02.000Z"
@@ -1062,7 +1062,7 @@ describe("App", () => {
           toolCall: {
             id: "tool_1",
             runId: "run_1",
-            name: "shell",
+            name: "Bash",
             args: { command: "rm -rf dist" },
             status: "pending_approval",
             createdAt: "2026-06-13T00:00:00.000Z",
@@ -1104,8 +1104,8 @@ describe("App", () => {
     const runningTool: ToolCall = {
       id: "tool_1",
       runId: "run_1",
-      name: "write_file",
-      args: { path: "out.txt", content: "完整内容不应出现在状态条里" },
+      name: "Write",
+      args: { file_path: "out.txt", content: "完整内容不应出现在状态条里" },
       status: "running",
       startedAt: "2026-06-13T00:00:01.000Z",
       createdAt: "2026-06-13T00:00:00.000Z",
@@ -1121,8 +1121,8 @@ describe("App", () => {
           activity: {
             contentIndex: 0,
             toolCallId: "tool_1",
-            name: "write_file",
-            argsPreview: { path: "out.txt" },
+            name: "Write",
+            argsPreview: { file_path: "out.txt" },
             updatedAt: "2026-06-13T00:00:00.500Z"
           }
         });

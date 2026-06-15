@@ -801,7 +801,7 @@ describe("Composer 计划模式（＋下拉 Switch + 标记）", () => {
     const planTool: ToolCall = {
       id: "tool_plan",
       runId: "run_1",
-      name: "propose_plan",
+      name: "ExitPlanMode",
       args: {
         markdown:
           "# 示例计划\n\n## Summary\n先确认计划。\n\n## Key Changes\n- 调整 UI。\n\n## Test Plan\n- 检查计划卡。\n\n## Assumptions\n- 当前会话继续执行。"
@@ -1162,12 +1162,12 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
     );
   });
 
-  it("hides the normal composer and answers from the ask_user dock", async () => {
+  it("hides the normal composer and answers from the AskUserQuestion dock", async () => {
     const approve = vi.fn(async () => {});
     const ask: ToolCall = {
       id: "tool_q1",
       runId: "run_1",
-      name: "ask_user",
+      name: "AskUserQuestion",
       args: { questions: [{ question: "选哪个方案？" }] },
       status: "pending_approval",
       createdAt: "2026-06-11T00:00:01.000Z",

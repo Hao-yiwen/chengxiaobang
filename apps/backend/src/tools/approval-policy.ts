@@ -28,8 +28,13 @@ export function assessToolApprovalRisk(
     };
   }
 
-  if (toolName === "write_file" || toolName === "edit_file" || toolName === "make_directory") {
-    const path = typeof args.path === "string" ? args.path : "";
+  if (toolName === "Write" || toolName === "Edit" || toolName === "MakeDirectory") {
+    const path =
+      typeof args.file_path === "string"
+        ? args.file_path
+        : typeof args.path === "string"
+          ? args.path
+          : "";
     if (isSensitivePath(path)) {
       return {
         risk: "high",
@@ -53,9 +58,8 @@ export function assessToolApprovalRisk(
     };
   }
 
-  if (toolName === "shell") {
+  if (toolName === "Bash") {
     const command = typeof args.command === "string" ? args.command : "";
-    const cwd = typeof args.cwd === "string" ? args.cwd : "";
     const dangerous = dangerousShellReason(command);
     if (dangerous) {
       return {
@@ -74,14 +78,6 @@ export function assessToolApprovalRisk(
         reason: sensitive
       };
     }
-    if (isExplicitOutsideWorkspace(cwd, context.workspacePath, context.platform)) {
-      return {
-        risk: "high",
-        requiresGate: true,
-        smartVerdict: "ask_user",
-        reason: `命令将在工作目录外的绝对路径 ${cwd} 中执行，需要你确认。`
-      };
-    }
     if (isLowRiskShellCommand(command)) {
       return {
         risk: "low",
@@ -97,7 +93,7 @@ export function assessToolApprovalRisk(
     };
   }
 
-  if (toolName === "feishu_send_message") {
+  if (toolName === "FeishuSendMessage") {
     return {
       risk: "high",
       requiresGate: true,
@@ -106,7 +102,7 @@ export function assessToolApprovalRisk(
     };
   }
 
-  if (toolName === "schedule_create" || toolName === "schedule_cancel") {
+  if (toolName === "ScheduleCreate" || toolName === "ScheduleCancel") {
     return {
       risk: "medium",
       requiresGate: true,
@@ -115,7 +111,7 @@ export function assessToolApprovalRisk(
     };
   }
 
-  if (toolName === "create_skill") {
+  if (toolName === "CreateSkill") {
     return {
       risk: "medium",
       requiresGate: true,

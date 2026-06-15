@@ -7,12 +7,13 @@ import {
   type AskUserAnswer,
   type AskUserAnswerItem,
   type AskUserQuestion,
+  type AskUserQuestionOption,
   type ToolCall
 } from "@chengxiaobang/shared";
 import { cn } from "@/lib/utils";
 
 /**
- * ask_user 的活跃提问面板。
+ * AskUserQuestion 的活跃提问面板。
  *
  * 结构化参数固定为 questions[1..4]。
  * 单题选择题保留点选即提交，多题模式则先收集所有答案，再一次性提交。
@@ -41,6 +42,14 @@ function questionKey(question: AskUserQuestion, index: number): string {
   return question.id ?? `q${index + 1}`;
 }
 
+function optionLabel(option: AskUserQuestionOption): string {
+  return typeof option === "string" ? option : option.label;
+}
+
+function optionDescription(option: AskUserQuestionOption): string | undefined {
+  return typeof option === "string" ? undefined : option.description;
+}
+
 function questionAnswer(question: AskUserQuestion, index: number, draft: DraftAnswer): AskUserAnswerItem | undefined {
   const base = {
     ...(question.id ? { id: question.id } : {}),
@@ -48,7 +57,7 @@ function questionAnswer(question: AskUserQuestion, index: number, draft: DraftAn
   };
   const options = question.options ?? [];
   if (draft.optionIndex !== undefined && options[draft.optionIndex] !== undefined) {
-    return { ...base, optionLabel: options[draft.optionIndex] };
+    return { ...base, optionLabel: optionLabel(options[draft.optionIndex]) };
   }
   const text = draft.text.trim();
   return text ? { ...base, text } : undefined;
@@ -84,7 +93,7 @@ export function AskUserCard({ toolCall, onDecide, resolved }: AskUserCardProps) 
 
   useEffect(() => {
     if (!parsed.success) {
-      console.warn("[AskUserCard] ask_user 参数解析失败", {
+      console.warn("[AskUserCard] AskUserQuestion 参数解析失败", {
         toolCallId: toolCall.id,
         runId: toolCall.runId,
         issues: parsed.error.issues
@@ -337,7 +346,9 @@ export function AskUserCard({ toolCall, onDecide, resolved }: AskUserCardProps) 
                 </div>
                 {options.length > 0 ? (
                   <div className="grid gap-1.5">
-                    {options.map((label, optionIndex) => {
+                    {options.map((option, optionIndex) => {
+                      const label = optionLabel(option);
+                      const description = optionDescription(option);
                       const selected = draft.optionIndex === optionIndex;
                       const lit =
                         selected ||
@@ -356,7 +367,14 @@ export function AskUserCard({ toolCall, onDecide, resolved }: AskUserCardProps) 
                           <span className="flex size-5 flex-none items-center justify-center rounded-full border bg-card font-mono text-micro text-muted-foreground">
                             {letterOf(optionIndex)}
                           </span>
-                          <span className="min-w-0 flex-1 break-words">{label}</span>
+                          <span className="min-w-0 flex-1 break-words">
+                            {label}
+                            {description ? (
+                              <span className="mt-0.5 block text-micro text-muted-foreground">
+                                {description}
+                              </span>
+                            ) : null}
+                          </span>
                         </button>
                       );
                     })}

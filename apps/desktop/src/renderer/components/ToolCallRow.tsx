@@ -23,13 +23,13 @@ interface ToolCallRowProps {
   onOpenFile?: (path: string, kind: ArtifactKind) => void;
 }
 
-/** 时间线中的单个工具调用：ask_user、use_skill 各自用专属轻量形态。 */
+/** 时间线中的单个工具调用：AskUserQuestion、Skill 各自用专属轻量形态。 */
 export function ToolCallRow({ toolCall, onOpenFile }: ToolCallRowProps) {
-  if (toolCall.name === "ask_user") {
+  if (toolCall.name === "AskUserQuestion") {
     return <AskUserReceipt toolCall={toolCall} />;
   }
 
-  if (toolCall.name === "use_skill") {
+  if (toolCall.name === "Skill") {
     return <UseSkillChip toolCall={toolCall} />;
   }
 
@@ -79,7 +79,7 @@ function AskUserReceipt({ toolCall }: { toolCall: ToolCall }) {
         aria-expanded={open}
         onClick={() => {
           const nextOpen = !open;
-          console.info("[ToolCallRow] 切换 ask_user 历史详情", {
+          console.info("[ToolCallRow] 切换 AskUserQuestion 历史详情", {
             toolCallId: toolCall.id,
             open: nextOpen,
             questionCount: questions.length
@@ -117,7 +117,7 @@ function parseAskUserQuestions(toolCall: ToolCall): AskUserQuestion[] {
   if (parsed.success) {
     return parsed.data.questions;
   }
-  console.warn("[ToolCallRow] ask_user 历史参数解析失败", {
+  console.warn("[ToolCallRow] AskUserQuestion 历史参数解析失败", {
     toolCallId: toolCall.id,
     issues: parsed.error.issues
   });
@@ -171,7 +171,7 @@ function answerTextFor(toolCall: ToolCall, answer: AskUserAnswerItem | undefined
 }
 
 function UseSkillChip({ toolCall }: { toolCall: ToolCall }) {
-  const skillName = textArg(toolCall, "name") ?? "unknown";
+  const skillName = textArg(toolCall, "skill") ?? "unknown";
   const failed = toolCall.status === "failed";
   const label =
     toolCall.status === "running" ||

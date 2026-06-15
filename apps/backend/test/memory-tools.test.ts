@@ -24,7 +24,7 @@ describe("memory tool", () => {
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "cxb-memory-"));
     const tools = createMemoryTools(dir);
-    expect(tools.map((tool) => tool.name)).toEqual(["memory"]);
+    expect(tools.map((tool) => tool.name)).toEqual(["Memory"]);
     memory = tools[0];
   });
 

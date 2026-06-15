@@ -10,19 +10,11 @@ import {
   FileTextIcon as FileText,
   FileVideoIcon as FileVideo,
   FileXlsIcon as FileSpreadsheet,
-  PresentationChartIcon as Presentation,
   type Icon
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
-import type { ToolCall } from "@chengxiaobang/shared";
 import type { Artifact } from "@/lib/artifact";
 import { useAppStore } from "@/store";
-
-const TOOL_ICON: Partial<Record<ToolCall["name"], Icon>> = {
-  create_pptx: Presentation,
-  create_docx: FileText,
-  create_xlsx: FileSpreadsheet
-};
 
 const KIND_ICON: Partial<Record<Artifact["kind"], Icon>> = {
   code: FileCode,
@@ -43,17 +35,10 @@ const KIND_ICON: Partial<Record<Artifact["kind"], Icon>> = {
 /**
  * 生成物卡片：无论是 HTML、PDF、Office 还是媒体，都统一进入右侧文件预览工作台。
  */
-export function ArtifactCard({
-  artifact,
-  toolName
-}: {
-  artifact: Artifact;
-  toolName?: ToolCall["name"];
-}) {
+export function ArtifactCard({ artifact }: { artifact: Artifact }) {
   const { t } = useTranslation();
   const openArtifact = useAppStore((state) => state.openArtifact);
-  const Icon =
-    (toolName ? TOOL_ICON[toolName] : undefined) ?? KIND_ICON[artifact.kind] ?? FileText;
+  const Icon = KIND_ICON[artifact.kind] ?? FileText;
   return (
     <button
       type="button"

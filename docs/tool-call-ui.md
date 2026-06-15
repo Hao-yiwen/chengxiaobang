@@ -19,7 +19,7 @@
 - 折叠态:`[图标] 读取 3 个文件 · 检索 2 次 ⌄`,点击展开为逐条轻量行(图标 + 人话描述),每条仍可再点开看原始 result/diff。
 - 每个内置工具映射专属图标,未知工具名(模型可能请求不存在的工具)有兜底图标。
 - 审批面板移到 Composer 正上方;只做允许/拒绝,**不做**"后续同类不再询问"(留待后续白名单机制)。
-- `ask_user` 提问顺势接线现成的 `AskUserCard`(选项点击 + 键盘快捷键),告别 JSON 卡。
+- `AskUserQuestion` 提问顺势接线现成的 `AskUserCard`(选项点击 + 键盘快捷键),告别 JSON 卡。
 
 ---
 
@@ -45,15 +45,15 @@ ChatView 只把 `timelineItems(...)` 的结果再过一遍这个 fold;`session-e
 - **仅 ≥2 个连续可分组工具才成组**;单个退化为原 `tool` item(同一形态的单独轻量行),避免"组中组"双层展开。
 - **任何 message 都打断分组**(user 消息、assistant 的工具间叙述都算)。
 - **不可分组、且打断分组**的工具:
-  - 专属渲染类:`ask_user`(问答回执)、`use_skill`(技能 chip)、`propose_plan` / `update_plan`(计划体系);
-  - 交付物类:`create_pptx/docx/xlsx` 一律独立;`write_file` 当 path 是交付物扩展名(md/html/office/csv/媒体等)时独立——它们完成后渲染为 ArtifactCard。
+  - 专属渲染类:`AskUserQuestion`(问答回执)、`Skill`(技能 chip)、`ExitPlanMode`(计划提交);
+  - 交付物类:`Write` 当 `file_path` 是交付物扩展名(md/html/office/csv/媒体等)时独立——完成后渲染为 ArtifactCard。
 
 ### 2.3 交付物判定忽略 status(`isDeliverableToolCall`)
 
 `artifactFromToolCall()` 只在 `completed` 时返回 artifact。如果分组按它判定,工具 running 时在组里、完成瞬间弹出为 ArtifactCard,会导致**组分裂 → React key 漂移 → 展开状态丢失**。因此 `lib/artifact.ts` 提取了不看状态的判定:
 
 ```ts
-export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 name + path 扩展名
+export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 name + file_path 扩展名
 ```
 
 `artifactFromToolCall` 内部复用它(行为不变),分组层用它把交付物从头到尾排除在组外。
@@ -70,7 +70,7 @@ export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 na
 
 ### 2.5.1 无边框行,与思考面板同构对齐
 
-工具组折叠头、单独工具行和 use_skill chip 都**不用白色边框卡**,而是与 ReasoningPanel 头部完全同构的灰字行:左侧 size-3.5 图标占据 chevron 槽位 + gap-1.5 + `text-caption text-muted-foreground` 文字(hover 提亮),尾随小 chevron(折叠 `-rotate-90`)。这样「已深度思考 · 用时 N 秒」「读取 3 个文件 ⌄」「已加载技能 excel」的图标和文字左缘逐像素对齐。
+工具组折叠头、单独工具行和 Skill chip 都**不用白色边框卡**,而是与 ReasoningPanel 头部完全同构的灰字行:左侧 size-3.5 图标占据 chevron 槽位 + gap-1.5 + `text-caption text-muted-foreground` 文字(hover 提亮),尾随小 chevron(折叠 `-rotate-90`)。这样「已深度思考 · 用时 N 秒」「读取 3 个文件 ⌄」「已加载技能 excel」的图标和文字左缘逐像素对齐。
 
 - 组展开内容放在与 ReasoningPanel 展开体相同的 `ml-1.5 border-l border-hairline pl-3` 左竖线容器里,逐条 ToolCallLine。
 - 行内再展开的 result 用无边框 `bg-muted/50` 圆角小块,diff 用细边框容器包 DiffView。
@@ -78,7 +78,7 @@ export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 na
 
 ### 2.6 纯思考轮次是时间线一等公民
 
-模型的一轮可能是「只思考 + 调工具,没有正文」(典型:思考 12 秒 → use_skill)。改造前这类轮次的 assistant 消息只落库不推送、且被时间线过滤(content 为空),它的思考没有自己的时间线位置——直播时思考面板固定渲染在 items 之后,后到的工具 chip 反而插到它上面,看起来"工具在思考前面"。
+模型的一轮可能是「只思考 + 调工具,没有正文」(典型:思考 12 秒 → Skill)。改造前这类轮次的 assistant 消息只落库不推送、且被时间线过滤(content 为空),它的思考没有自己的时间线位置——直播时思考面板固定渲染在 items 之后,后到的工具 chip 反而插到它上面,看起来"工具在思考前面"。
 
 修复(三处对齐):
 
@@ -101,8 +101,8 @@ export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 na
 │ Composer …                                    │
 ```
 
-- 预览区:`shell` → 近黑 mono 命令块(DESIGN.md 代码卡片形态);`edit_file/write_file` → mono 路径 + `DiffView`(`buildToolCallDiff` 纯参数驱动,审批前即可算);其余 → JSON `<pre>`。
-- `pendingTool.name === "ask_user"` → 渲染 `AskUserCard`(选项单击提交、A-Z/↑↓/回车键盘直达、自定义输入),决议经同一个 `onDecide` 回调走 `approve(toolCallId, decision)`。
+- 预览区:`Bash` → 近黑 mono 命令块(DESIGN.md 代码卡片形态);`Edit/Write` → mono 路径 + `DiffView`(`buildToolCallDiff` 纯参数驱动,审批前即可算);其余 → JSON `<pre>`。
+- `pendingTool.name === "AskUserQuestion"` → 渲染 `AskUserCard`(选项单击提交、A-Z/↑↓/回车键盘直达、自定义输入),决议经同一个 `onDecide` 回调走 `approve(toolCallId, decision)`。
 - **决议即隐藏**:`decidedId` state 在提交瞬间卸载卡片,避免与时间线上随 `tool_call` 事件出现的回执短暂双显。
 - 与 Composer 的 `awaitingAskUser` 通道(输入框文本当答案)共存:后端 `ApprovalQueue` 只取第一个决议,`AskUserCard` 自带 `lockedRef` 防重,无需前端互斥。
 - 侧栏 `SideChatPanel` 的内联审批卡是独立 side-chat 通道,本方案未动;后续可复用 ApprovalCard 统一形态。
@@ -117,7 +117,7 @@ StreamEvent(tool_call)
        │                          │
        ▼                          ▼
   ApprovalDock(底部)        ChatView
-   ├ ask_user → AskUserCard    └ groupTimelineItems(timelineItems(messages, toolHistory))
+   ├ AskUserQuestion → AskUserCard    └ groupTimelineItems(timelineItems(messages, toolHistory))
    └ 其他 → ApprovalCard            ├ kind=message    → MessageBubble
        │                            ├ kind=tool       → ToolCallRow(分发:ArtifactCard /
        ▼                            │                    AskUserReceipt / UseSkillChip /
@@ -143,7 +143,7 @@ StreamEvent(tool_call)
 
 ### 文案与截断规则
 
-- 描述模板按工具取参:path 类用 `shortenPath`(尾两段);`search.query`/`glob.pattern` 截 40;`shell.command` 压缩空白后截 60;`fetch_url.url` 截 60;`propose_plan.title` 截 30。
+- 描述模板按工具取参:path 类用 `shortenPath`(尾两段);`search.query`/`glob.pattern` 截 40;`Bash.command` 压缩空白后截 60;`WebFetch.url` 截 60;`ExitPlanMode.title` 截 30。
 - 摘要类别:read / edit / search / command / web / artifact / message / plan / schedule / other,组件层以 `" · "` 连接。
 - `ToolCall.name` 是普通 string(模型可能请求未知工具),未知名 → `chat.toolLine.fallback`(「调用 {{name}}」)+ 兜底图标。
 
@@ -154,11 +154,11 @@ StreamEvent(tool_call)
 | 测试文件 | 钉住的行为 |
 |---|---|
 | `test/tool-display.test.ts` | 全部内置名有专属图标且不落兜底;未知名兜底;每个 key 在 zh/en 文案中存在;截断规则;摘要聚合顺序 |
-| `test/timeline.test.ts`(扩) | 连续成组 / 消息打断 / 专属工具与交付物独立(含 running 状态) / write_file 按扩展名分流 / 单工具退化 / 组 at = 首工具 |
+| `test/timeline.test.ts`(扩) | 连续成组 / 消息打断 / 专属工具与交付物独立(含 running 状态) / Write 按扩展名分流 / 单工具退化 / 组 at = 首工具 |
 | `test/artifact.test.ts`(扩) | `isDeliverableToolCall` 忽略 status;`artifactFromToolCall` 回归 |
 | `test/tool-call-group.test.tsx` | 默认折叠摘要;展开逐条;行内再展开 result;running 头部描述;失败红标不展开;**rerender 追加后展开状态保留**;onOpenFile 透传 |
 | `test/tool-call-row.test.tsx`(改) | 人话描述替代裸工具名;时长/diff/预览/三个专属分支回归 |
-| `test/approval-dock.test.tsx` | shell 命令预览 + 允许/拒绝 decision;edit_file 路径+diff 预览;ask_user 选项转发 `{approved, answer}`;决议即消失;无 pendingTool 渲染空 |
+| `test/approval-dock.test.tsx` | shell 命令预览 + 允许/拒绝 decision;Edit 路径+diff 预览;AskUserQuestion 选项转发 `{approved, answer}`;决议即消失;无 pendingTool 渲染空 |
 | `test/app.test.tsx`(扩) | 集成:pending_approval 事件 → dock 出现在 composer 侧,消息流中无审批卡 |
 
 ---

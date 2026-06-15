@@ -63,12 +63,11 @@ export function timelineItems(messages: Message[], toolCalls: ToolCall[]): Timel
 
 /** 有专属渲染（提问卡、技能 chip、计划卡）的工具不进普通分组。 */
 const UNGROUPABLE_TOOLS = new Set<string>([
-  "ask_user",
-  "use_skill",
-  "propose_plan",
-  "update_plan",
-  "todo_create",
-  "todo_update"
+  "AskUserQuestion",
+  "Skill",
+  "ExitPlanMode",
+  "TodoRead",
+  "TodoWrite"
 ]);
 
 /** 可并入「连续工具调用」折叠组的普通工具。 */
@@ -152,16 +151,13 @@ export function chatTimeline(
     }
 
     const toolCall = item.toolCall;
-    if (toolCall.id === options.pendingToolId && toolCall.name !== "propose_plan") {
+    if (toolCall.id === options.pendingToolId && toolCall.name !== "ExitPlanMode") {
       continue;
     }
-    if (toolCall.name === "update_plan") {
+    if (toolCall.name === "TodoRead" || toolCall.name === "TodoWrite") {
       continue;
     }
-    if (toolCall.name === "todo_create" || toolCall.name === "todo_update") {
-      continue;
-    }
-    if (toolCall.name === "propose_plan") {
+    if (toolCall.name === "ExitPlanMode") {
       appendPlanItem(result, item, toolCall, plan);
       continue;
     }

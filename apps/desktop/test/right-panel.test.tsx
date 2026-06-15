@@ -416,7 +416,7 @@ async function clickArtifactButton(name: string): Promise<void> {
 
 function todoToolCall(
   id: string,
-  name: "todo_create" | "todo_update",
+  name: "TodoWrite",
   args: ToolCall["args"],
   status: ToolCall["status"] = "completed"
 ): ToolCall {
@@ -431,15 +431,28 @@ function todoToolCall(
   };
 }
 
+function todoArgs(
+  todos: Array<{
+    content: string;
+    status: "pending" | "in_progress" | "completed";
+    priority?: "high" | "medium" | "low";
+  }>
+): ToolCall["args"] {
+  return {
+    todos: todos.map((todo) => ({
+      content: todo.content,
+      status: todo.status,
+      priority: todo.priority ?? "medium"
+    }))
+  };
+}
+
 function historicalTodoToolCall(partial: Partial<ToolCall>): ToolCall {
   return {
     id: "todo_history_1",
     runId: "run_history",
-    name: "todo_create",
-    args: {
-      title: "历史执行进度",
-      items: [{ id: "s1", title: "历史步骤" }]
-    },
+    name: "TodoWrite",
+    args: todoArgs([{ content: "历史步骤", status: "in_progress" }]),
     status: "completed",
     createdAt: "2026-06-12T00:00:01.000Z",
     updatedAt: "2026-06-12T00:00:01.000Z",
@@ -491,14 +504,11 @@ describe("right panel", () => {
           runId: "run_todo",
           toolCall: todoToolCall(
             "todo_1",
-            "todo_create",
-            {
-              title: "实现进度面板",
-              items: [
-                { id: "s1", title: "新增契约" },
-                { id: "s2", title: "接入右侧面板" }
-              ]
-            },
+            "TodoWrite",
+            todoArgs([
+              { content: "新增契约", status: "in_progress" },
+              { content: "接入右侧面板", status: "pending" }
+            ]),
             "running"
           )
         },
@@ -508,11 +518,14 @@ describe("right panel", () => {
         {
           type: "tool_call",
           runId: "run_todo",
-          toolCall: todoToolCall("todo_2", "todo_update", {
-            itemId: "s1",
-            status: "completed",
-            note: "共享契约完成"
-          })
+          toolCall: todoToolCall(
+            "todo_2",
+            "TodoWrite",
+            todoArgs([
+              { content: "共享契约完成", status: "completed" },
+              { content: "接入右侧面板", status: "in_progress" }
+            ])
+          )
         },
         { force: true }
       );
@@ -523,7 +536,7 @@ describe("right panel", () => {
     expect(useAppStore.getState().rightPanelMode).toBeNull();
     expect(screen.queryByTestId("right-panel")).not.toBeInTheDocument();
     expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
-    expect(await screen.findByText("实现进度面板")).toBeInTheDocument();
+    expect(await screen.findByText("执行清单")).toBeInTheDocument();
     expect(screen.getByText("共享契约完成")).toBeInTheDocument();
     expect(screen.getByText("完成")).toBeInTheDocument();
   });
@@ -543,22 +556,18 @@ describe("right panel", () => {
         toolCalls: [
           historicalTodoToolCall({
             id: "todo_history_1",
-            args: {
-              title: "历史执行进度",
-              items: [
-                { id: "s1", title: "读取项目结构" },
-                { id: "s2", title: "生成总结" }
-              ]
-            }
+            args: todoArgs([
+              { content: "读取项目结构", status: "in_progress" },
+              { content: "生成总结", status: "pending" }
+            ])
           }),
           historicalTodoToolCall({
             id: "todo_history_2",
-            name: "todo_update",
-            args: {
-              itemId: "s1",
-              status: "completed",
-              note: "项目结构读取完成"
-            },
+            name: "TodoWrite",
+            args: todoArgs([
+              { content: "项目结构读取完成", status: "completed" },
+              { content: "生成总结", status: "in_progress" }
+            ]),
             createdAt: "2026-06-12T00:00:02.000Z",
             updatedAt: "2026-06-12T00:00:02.000Z"
           })
@@ -572,7 +581,7 @@ describe("right panel", () => {
     expect(useAppStore.getState().progressPanelOpen).toBe(false);
     expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
     expect(screen.getByText("最近清单")).toBeInTheDocument();
-    expect(screen.getByText("历史执行进度")).toBeInTheDocument();
+    expect(screen.getByText("执行清单")).toBeInTheDocument();
     expect(screen.getByText("项目结构读取完成")).toBeInTheDocument();
   });
 
@@ -591,15 +600,12 @@ describe("right panel", () => {
         toolCalls: [
           historicalTodoToolCall({
             id: "todo_done_1",
-            args: {
-              title: "已完成的历史进度",
-              items: [{ id: "s1", title: "完成页面" }]
-            }
+            args: todoArgs([{ content: "完成页面", status: "in_progress" }])
           }),
           historicalTodoToolCall({
             id: "todo_done_2",
-            name: "todo_update",
-            args: { itemId: "s1", status: "completed", note: "页面已完成" },
+            name: "TodoWrite",
+            args: todoArgs([{ content: "页面已完成", status: "completed" }]),
             createdAt: "2026-06-12T00:00:02.000Z",
             updatedAt: "2026-06-12T00:00:02.000Z"
           })
@@ -611,9 +617,116 @@ describe("right panel", () => {
     await selectSession("项目对话");
 
     expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
-    expect(screen.getByText("已完成的历史进度")).toBeInTheDocument();
+    expect(screen.getByText("执行清单")).toBeInTheDocument();
     expect(screen.getByText("1 / 1")).toBeInTheDocument();
     expect(screen.getByText("页面已完成")).toBeInTheDocument();
+  });
+
+  it("treats the latest empty TodoWrite snapshot as cleared progress", async () => {
+    const client = createClient({
+      listSessionRuns: vi.fn(async () => ({
+        runs: [
+          {
+            id: "run_history",
+            sessionId: session.id,
+            status: "completed" as const,
+            createdAt: "2026-06-12T00:00:00.000Z",
+            updatedAt: "2026-06-12T00:00:03.000Z"
+          }
+        ],
+        toolCalls: [
+          historicalTodoToolCall({
+            id: "todo_old",
+            args: todoArgs([{ content: "旧清单", status: "in_progress" }])
+          }),
+          historicalTodoToolCall({
+            id: "todo_clear",
+            name: "TodoWrite",
+            args: todoArgs([]),
+            createdAt: "2026-06-12T00:00:02.000Z",
+            updatedAt: "2026-06-12T00:00:02.000Z"
+          })
+        ]
+      }))
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("progress-floating-panel")).not.toBeInTheDocument()
+    );
+    expect(screen.queryByText("旧清单")).not.toBeInTheDocument();
+  });
+
+  it("does not auto-open progress for an empty TodoWrite snapshot", async () => {
+    const client = createClient();
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.handleRunEvent(
+        { type: "run_started", runId: "run_todo", sessionId: session.id },
+        { force: true }
+      );
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall("todo_clear", "TodoWrite", todoArgs([]))
+        },
+        { force: true }
+      );
+    });
+
+    expect(useAppStore.getState().progressPanelOpen).toBe(false);
+    expect(screen.queryByTestId("progress-floating-panel")).not.toBeInTheDocument();
+  });
+
+  it("closes the floating progress state when a running todo is cleared", async () => {
+    const client = createClient();
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.handleRunEvent(
+        { type: "run_started", runId: "run_todo", sessionId: session.id },
+        { force: true }
+      );
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall(
+            "todo_1",
+            "TodoWrite",
+            todoArgs([{ content: "执行中", status: "in_progress" }])
+          )
+        },
+        { force: true }
+      );
+    });
+
+    expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
+    expect(useAppStore.getState().progressPanelOpen).toBe(true);
+
+    act(() => {
+      useAppStore.getState().handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall("todo_clear", "TodoWrite", todoArgs([]))
+        },
+        { force: true }
+      );
+    });
+
+    expect(useAppStore.getState().progressPanelOpen).toBe(false);
+    expect(screen.queryByTestId("progress-floating-panel")).not.toBeInTheDocument();
   });
 
   it("hides historical progress after switching to a session without todo history", async () => {
@@ -666,7 +779,7 @@ describe("right panel", () => {
 
     render(<App client={client} />);
     await selectSession("项目对话");
-    expect(await screen.findByText("历史执行进度")).toBeInTheDocument();
+    expect(await screen.findByText("历史步骤")).toBeInTheDocument();
 
     act(() => {
       useAppStore
@@ -683,10 +796,11 @@ describe("right panel", () => {
         {
           type: "tool_call",
           runId: "run_todo",
-          toolCall: todoToolCall("todo_1", "todo_create", {
-            title: "当前运行进度",
-            items: [{ id: "s1", title: "开始执行" }]
-          })
+          toolCall: todoToolCall(
+            "todo_1",
+            "TodoWrite",
+            todoArgs([{ content: "开始执行", status: "in_progress" }])
+          )
         },
         { force: true }
       );
@@ -694,7 +808,7 @@ describe("right panel", () => {
 
     expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
     expect(screen.getByText("当前运行")).toBeInTheDocument();
-    expect(screen.getByText("当前运行进度")).toBeInTheDocument();
+    expect(screen.getByText("执行清单")).toBeInTheDocument();
   });
 
   it("keeps progress updates in the floating panel without opening the right panel", async () => {
@@ -714,10 +828,11 @@ describe("right panel", () => {
         {
           type: "tool_call",
           runId: "run_todo",
-          toolCall: todoToolCall("todo_1", "todo_create", {
-            title: "稳定右侧面板宽度",
-            items: [{ id: "s1", title: "预留滚动条空间并约束长文本" }]
-          })
+          toolCall: todoToolCall(
+            "todo_1",
+            "TodoWrite",
+            todoArgs([{ content: "预留滚动条空间并约束长文本", status: "in_progress" }])
+          )
         },
         { force: true }
       );
@@ -739,13 +854,18 @@ describe("right panel", () => {
         {
           type: "tool_call",
           runId: "run_todo",
-          toolCall: todoToolCall("todo_2", "todo_update", {
-            itemId: "s1",
-            status: "completed",
-            note: "这是一段较长的流式进度说明，用来模拟更新进入面板时的内容增长。".repeat(
-              5
-            )
-          })
+          toolCall: todoToolCall(
+            "todo_2",
+            "TodoWrite",
+            todoArgs([
+              {
+                content: "这是一段较长的流式进度说明，用来模拟更新进入面板时的内容增长。".repeat(
+                  5
+                ),
+                status: "completed"
+              }
+            ])
+          )
         },
         { force: true }
       );
@@ -776,15 +896,16 @@ describe("right panel", () => {
         {
           type: "tool_call",
           runId: "run_todo",
-          toolCall: todoToolCall("todo_1", "todo_create", {
-            title: "实现进度面板",
-            items: [{ id: "s1", title: "新增契约" }]
-          })
+          toolCall: todoToolCall(
+            "todo_1",
+            "TodoWrite",
+            todoArgs([{ content: "新增契约", status: "in_progress" }])
+          )
         },
         { force: true }
       );
     });
-    expect(await screen.findByText("实现进度面板")).toBeInTheDocument();
+    expect(await screen.findByText("新增契约")).toBeInTheDocument();
     expect(screen.getByTestId("progress-floating-panel")).toHaveClass("rounded-xl");
     expect(screen.queryByTitle("关闭进度")).not.toBeInTheDocument();
 
@@ -793,10 +914,11 @@ describe("right panel", () => {
         {
           type: "tool_call",
           runId: "run_todo",
-          toolCall: todoToolCall("todo_2", "todo_create", {
-            title: "第二份清单",
-            items: [{ id: "s2", title: "继续执行" }]
-          })
+          toolCall: todoToolCall(
+            "todo_2",
+            "TodoWrite",
+            todoArgs([{ content: "继续执行", status: "in_progress" }])
+          )
         },
         { force: true }
       );
@@ -804,7 +926,7 @@ describe("right panel", () => {
 
     expect(useAppStore.getState().rightPanelOpen).toBe(false);
     expect(useAppStore.getState().progressPanelOpen).toBe(true);
-    expect(await screen.findByText("第二份清单")).toBeInTheDocument();
+    expect(await screen.findByText("继续执行")).toBeInTheDocument();
   });
 
   it("keeps the right panel tools available while the floating progress panel is open", async () => {
@@ -823,10 +945,11 @@ describe("right panel", () => {
         {
           type: "tool_call",
           runId: "run_todo",
-          toolCall: todoToolCall("todo_1", "todo_create", {
-            title: "对话右侧进度",
-            items: [{ id: "s1", title: "保持工具入口可用" }]
-          })
+          toolCall: todoToolCall(
+            "todo_1",
+            "TodoWrite",
+            todoArgs([{ content: "保持工具入口可用", status: "in_progress" }])
+          )
         },
         { force: true }
       );
@@ -1014,7 +1137,7 @@ describe("right panel", () => {
     );
   });
 
-  it("restores legacy HTML tool artifacts in the floating artifact panel", async () => {
+  it("restores Write HTML tool artifacts in the floating artifact panel", async () => {
     const bridge = installPreviewBridge({
       kind: "html",
       fileUrl: "file:///tmp/demo/page.html"
@@ -1027,8 +1150,8 @@ describe("right panel", () => {
           {
             id: "tool_html",
             runId: "run_html",
-            name: "write_file",
-            args: { path: "page.html", content: "<!doctype html>" },
+            name: "Write",
+            args: { file_path: "page.html", content: "<!doctype html>" },
             status: "completed",
             createdAt: "2026-06-08T00:00:01.000Z",
             updatedAt: "2026-06-08T00:00:02.000Z"
@@ -1036,8 +1159,8 @@ describe("right panel", () => {
           {
             id: "tool_code",
             runId: "run_code",
-            name: "write_file",
-            args: { path: "src/App.tsx", content: "export {}" },
+            name: "Write",
+            args: { file_path: "src/App.tsx", content: "export {}" },
             status: "completed",
             createdAt: "2026-06-08T00:00:03.000Z",
             updatedAt: "2026-06-08T00:00:04.000Z"
@@ -1082,10 +1205,11 @@ describe("right panel", () => {
         {
           type: "tool_call",
           runId: "run_todo",
-          toolCall: todoToolCall("todo_1", "todo_create", {
-            title: "带产物的任务",
-            items: [{ id: "s1", title: "生成页面" }]
-          })
+          toolCall: todoToolCall(
+            "todo_1",
+            "TodoWrite",
+            todoArgs([{ content: "生成页面", status: "in_progress" }])
+          )
         },
         { force: true }
       );
@@ -1156,8 +1280,8 @@ describe("right panel", () => {
     const toolCall: ToolCall = {
       id: "tool_1",
       runId: "run_1",
-      name: "read_file",
-      args: { path: "src/a.ts" },
+      name: "Read",
+      args: { file_path: "src/a.ts" },
       status: "completed",
       result: "line one\nline two",
       createdAt: "2026-06-08T00:00:01.000Z",

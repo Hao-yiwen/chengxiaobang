@@ -160,7 +160,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
         }
         if (
           state.isRunning &&
-          state.pendingTool?.name === "ask_user" &&
+          state.pendingTool?.name === "AskUserQuestion" &&
           state.activeRunId === state.pendingTool.runId
         ) {
           const answer = state.input.trim();
@@ -169,13 +169,13 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             ? parsedAskUser.data.questions
             : [{ question: "用户回答" }];
           if (questions.length > 1) {
-            console.warn("[store] 多题 ask_user 不接受输入框快捷回答，请使用提问面板提交", {
+            console.warn("[store] 多题 AskUserQuestion 不接受输入框快捷回答，请使用提问面板提交", {
               toolCallId: state.pendingTool.id,
               questionCount: questions.length
             });
             return;
           }
-          console.info("[store] 将输入框内容作为 ask_user 回答", {
+          console.info("[store] 将输入框内容作为 AskUserQuestion 回答", {
             toolCallId: state.pendingTool.id,
             answerLength: answer.length
           });

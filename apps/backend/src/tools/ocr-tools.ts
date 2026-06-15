@@ -33,7 +33,7 @@ export function createOcrTools(
   runtime: OcrToolRuntime
 ): AgentTool<any>[] {
   const ocrExtractText: AgentTool<typeof ocrParams> = {
-    name: "ocr_extract_text",
+    name: "OcrExtractText",
     label: "OCR 提取文字",
     description:
       "从图片或 PDF 中提取可见文字。只读工具，不会压缩、修改或转换文件；不支持视频。需要处理附件时优先使用附件清单里的本地路径。",

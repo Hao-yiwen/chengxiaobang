@@ -189,8 +189,8 @@ autoCompactThresholdTokens = 模型显式 autoCompactThresholdTokens
   - 完整结果字符数。
   - 开头预览。
   - 末尾预览。
-  - 如何用 `read_file` 分段读取。
-  - 如何用 `search` 搜索关键词。
+  - 如何用 `Read` 分段读取。
+  - 如何用 `Grep` 搜索关键词。
 
 这个保护同时覆盖：
 
@@ -202,12 +202,12 @@ autoCompactThresholdTokens = 模型显式 autoCompactThresholdTokens
 
 ### 6.1 分段读取
 
-`read_file` 支持可选参数：
+`Read` 支持可选参数：
 
-- `startLine`：从第几行开始，1 表示第一行。
-- `lineLimit`：最多读取多少行。
+- `offset`：起始行号，1 表示第一行。
+- `limit`：最多读取多少行。
 
-默认不传这两个参数时，`read_file` 仍按旧行为读取完整文件。传入分段参数时会返回带行号的局部内容，并提示下一段可从哪个 `startLine` 继续读取。单次最多读取 `1000` 行。
+默认不传这两个参数时，`Read` 最多读取 2000 行并返回带行号内容；传入分段参数时会返回指定行段，并提示下一段可从哪个 `offset` 继续读取。单次最多读取 `2000` 行。
 
 ---
 
@@ -220,7 +220,7 @@ autoCompactThresholdTokens = 模型显式 autoCompactThresholdTokens
 | DeepSeek V4 窗口 | `1,000,000` tokens | YAML 显式压缩阈值 `800,000` tokens |
 | 长工具结果内联上限 | `24KB` | 超过后写入 `.chengxiaobang/tool-results/**` |
 | 长工具结果预览 | 头尾各 `4KB` | 返回给模型的短摘要里包含开头和末尾预览 |
-| `read_file` 分段上限 | `1000` 行 | 防止模型再次一次性读入过大文件 |
+| `Read` 分段上限 | `2000` 行 | 防止模型再次一次性读入过大文件 |
 
 需要注意：
 

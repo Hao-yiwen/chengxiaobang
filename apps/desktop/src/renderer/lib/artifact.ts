@@ -257,13 +257,14 @@ function collectToolCallArtifacts(
     if (toolCall.status !== "completed") {
       continue;
     }
-    const path = typeof toolCall.args.path === "string" ? toolCall.args.path : undefined;
+    const path =
+      typeof toolCall.args.file_path === "string" ? toolCall.args.file_path : undefined;
     if (!path) {
       continue;
     }
     const normalized = normalizeArtifactPath(path);
     if (!normalized) {
-      // 工具历史只是旧会话的产物兜底；绝对路径常见于普通文件工具，静默跳过即可，
+      // 工具历史只是产物兜底；绝对路径常见于普通文件工具，静默跳过即可，
       // 避免渲染层在每次重算浮层时刷出大量无行动价值的诊断日志。
       continue;
     }
@@ -281,16 +282,7 @@ function collectToolCallArtifacts(
 }
 
 function toolArtifactKind(toolName: string, path: string): ArtifactKind | undefined {
-  if (toolName === "create_pptx") {
-    return "presentation";
-  }
-  if (toolName === "create_docx") {
-    return "docx";
-  }
-  if (toolName === "create_xlsx") {
-    return "spreadsheet";
-  }
-  if (toolName !== "write_file") {
+  if (toolName !== "Write") {
     return undefined;
   }
   const kind = artifactKind(path);

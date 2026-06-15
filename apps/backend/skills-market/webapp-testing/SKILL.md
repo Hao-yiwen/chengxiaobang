@@ -23,7 +23,7 @@ metadata:
 
 动态应用先把服务跑起来：
 
-1. **后台启动**服务，并把输出重定向到日志文件，记下端口。用程小帮 `shell` 工具时优先传 `mode: "background"`，命令本身保持平台原生写法：
+1. **后台启动**服务，并把输出重定向到日志文件，记下端口。用程小帮 `Bash` 工具时优先传 `run_in_background: true`，命令本身保持平台原生写法：
    ```sh
    # macOS / Linux
    npm run dev > /tmp/webapp-test.log 2>&1

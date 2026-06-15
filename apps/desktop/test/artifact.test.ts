@@ -184,7 +184,7 @@ describe("collectArtifactsFromSession", () => {
     return {
       id: "tool_1",
       runId: "run_1",
-      name: "write_file",
+      name: "Write",
       args: {},
       status: "completed",
       createdAt: "2026-06-08T00:00:00.000Z",
@@ -225,23 +225,23 @@ describe("collectArtifactsFromSession", () => {
     const collection = collectArtifactsFromSession([], [
       tool({
         id: "tool_old_html",
-        args: { path: "page.html" },
+        args: { file_path: "page.html" },
         updatedAt: "2026-06-08T00:00:01.000Z"
       }),
       tool({
         id: "tool_code",
-        args: { path: "src/App.tsx" },
+        args: { file_path: "src/App.tsx" },
         updatedAt: "2026-06-08T00:00:02.000Z"
       }),
       tool({
         id: "tool_new_html",
-        args: { path: "page.html" },
+        args: { file_path: "page.html" },
         updatedAt: "2026-06-08T00:00:03.000Z"
       }),
       tool({
         id: "tool_failed",
         status: "failed",
-        args: { path: "failed.html" },
+        args: { file_path: "failed.html" },
         updatedAt: "2026-06-08T00:00:04.000Z"
       })
     ]);
@@ -262,17 +262,17 @@ describe("collectArtifactsFromSession", () => {
     const collection = collectArtifactsFromSession([], [
       tool({
         id: "tool_abs_path",
-        args: { path: "/Users/me/out.html" },
+        args: { file_path: "/Users/me/out.html" },
         updatedAt: "2026-06-08T00:00:01.000Z"
       }),
       tool({
         id: "tool_escape_path",
-        args: { path: "../out.html" },
+        args: { file_path: "../out.html" },
         updatedAt: "2026-06-08T00:00:02.000Z"
       }),
       tool({
         id: "tool_safe_path",
-        args: { path: "page.html" },
+        args: { file_path: "page.html" },
         updatedAt: "2026-06-08T00:00:03.000Z"
       })
     ]);
@@ -302,13 +302,13 @@ describe("collectArtifactsFromSession", () => {
       [
         tool({
           id: "tool_1",
-          args: { path: "page.html" },
+          args: { file_path: "page.html" },
           updatedAt: "2026-06-08T00:00:02.000Z"
         }),
         tool({
           id: "tool_2",
-          name: "create_xlsx",
-          args: { path: "budget" },
+          name: "Write",
+          args: { file_path: "budget.xlsx", content: "xlsx bytes" },
           updatedAt: "2026-06-08T00:00:03.000Z"
         })
       ]
@@ -323,8 +323,8 @@ describe("collectArtifactsFromSession", () => {
         declaredAt: "2026-06-08T00:00:01.000Z"
       },
       {
-        path: "budget",
-        name: "budget",
+        path: "budget.xlsx",
+        name: "budget.xlsx",
         kind: "spreadsheet",
         toolCallId: "tool_2",
         declaredAt: "2026-06-08T00:00:03.000Z"

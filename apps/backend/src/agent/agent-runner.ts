@@ -306,11 +306,13 @@ export class AgentRunner {
       : "none";
     const tools = [
       ...(await this.createTools(workspacePath)),
-      ...createTodoTools(),
+      ...createTodoTools({
+        listToolCalls: () => this.store.listToolCallsForSession(session.id)
+      }),
       ...createPlanTools({
         getApprovedPlanArgs: () => undefined,
         getAskUserAnswer: () => undefined,
-        loadSkill: async (name) => this.loadSkillContent(name, project)
+        loadSkill: async (skill) => this.loadSkillContent(skill, project)
       }),
       ...createScheduleTools({
         store: this.store,
@@ -400,11 +402,13 @@ export class AgentRunner {
       : "none";
     const tools = [
       ...(await this.createTools(workspacePath)),
-      ...createTodoTools(),
+      ...createTodoTools({
+        listToolCalls: () => this.store.listToolCallsForSession(session.id)
+      }),
       ...createPlanTools({
         getApprovedPlanArgs: () => undefined,
         getAskUserAnswer: () => undefined,
-        loadSkill: async (name) => this.loadSkillContent(name, project)
+        loadSkill: async (skill) => this.loadSkillContent(skill, project)
       }),
       ...createScheduleTools({
         store: this.store,
@@ -634,11 +638,14 @@ export class AgentRunner {
       const skills = await this.slashCommandService.listSkills(project);
       const tools = [
         ...(await this.createTools(workspacePath)),
-        ...createTodoTools(),
+        ...createTodoTools({
+          listToolCalls: () => this.store.listToolCallsForSession(activeSession.id),
+          runId
+        }),
         ...createPlanTools({
           getApprovedPlanArgs: (toolCallId) => approvedPlans.get(toolCallId),
           getAskUserAnswer: (toolCallId) => askUserAnswers.get(toolCallId),
-          loadSkill: async (name) => this.loadSkillContent(name, project)
+          loadSkill: async (skill) => this.loadSkillContent(skill, project)
         }),
         ...createScheduleTools({
           store: this.store,

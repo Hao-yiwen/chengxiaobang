@@ -18,7 +18,7 @@ import { toolIcon, toolLineLabel } from "@/lib/tool-display";
 import { cn } from "@/lib/utils";
 
 /** 可在右侧预览面板打开 path 参数的文件类工具。 */
-const FILE_PREVIEW_TOOLS = new Set<ToolCall["name"]>(["read_file", "write_file", "edit_file"]);
+const FILE_PREVIEW_TOOLS = new Set<ToolCall["name"]>(["Read", "Write", "Edit"]);
 
 export interface ToolCallLineProps {
   toolCall: ToolCall;
@@ -41,8 +41,10 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
     toolCall.status === "pending_smart_approval";
   const isError = toolCall.status === "failed" || toolCall.status === "rejected";
   const filePath =
-    onOpenFile && FILE_PREVIEW_TOOLS.has(toolCall.name) && typeof toolCall.args.path === "string"
-      ? toolCall.args.path
+    onOpenFile &&
+    FILE_PREVIEW_TOOLS.has(toolCall.name) &&
+    typeof toolCall.args.file_path === "string"
+      ? toolCall.args.file_path
       : undefined;
   const durationMs = toolCallDurationMs(toolCall);
   const diff = toolCall.status === "completed" ? buildToolCallDiff(toolCall) : undefined;
@@ -150,7 +152,7 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
 }
 
 function shellCommandDetail(toolCall: ToolCall): string | undefined {
-  if (toolCall.name !== "shell") {
+  if (toolCall.name !== "Bash") {
     return undefined;
   }
   const command = toolCall.args.command;

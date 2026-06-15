@@ -1,85 +1,89 @@
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { todoCreateArgsSchema, todoUpdateArgsSchema } from "@chengxiaobang/shared";
+import { deriveTodoState, todoWriteArgsSchema, type ToolCall } from "@chengxiaobang/shared";
 import { textResult } from "./tool-result";
 
 const todoStatusParams = Type.Union([
   Type.Literal("pending"),
   Type.Literal("in_progress"),
-  Type.Literal("completed"),
-  Type.Literal("skipped")
+  Type.Literal("completed")
+]);
+
+const todoPriorityParams = Type.Union([
+  Type.Literal("high"),
+  Type.Literal("medium"),
+  Type.Literal("low")
 ]);
 
 const todoItemParams = Type.Object({
-  id: Type.String({ description: "稳定步骤 ID，例如 s1、s2" }),
-  title: Type.String({ description: "步骤标题，一句话描述" }),
-  status: Type.Optional(todoStatusParams),
-  detail: Type.Optional(Type.String({ description: "可选步骤细节" }))
+  content: Type.String({ description: "步骤内容，一句话描述" }),
+  status: todoStatusParams,
+  priority: todoPriorityParams
 });
 
-const todoCreateParams = Type.Object({
-  title: Type.String({ description: "这组 todo 的标题" }),
-  items: Type.Array(todoItemParams, { description: "1 到 20 个步骤" })
+const todoWriteParams = Type.Object({
+  todos: Type.Array(todoItemParams, { description: "完整 todo 快照，最多 20 个；最多一个 in_progress" })
 });
 
-const todoUpdateParams = Type.Object({
-  itemId: Type.String({ description: "要更新的 todo 步骤 ID" }),
-  status: Type.Union([
-    Type.Literal("in_progress"),
-    Type.Literal("completed"),
-    Type.Literal("skipped")
-  ]),
-  note: Type.Optional(Type.String({ description: "可选进展说明" }))
-});
+const todoReadParams = Type.Object({});
 
-export function createTodoTools(): AgentTool<any>[] {
-  const todoCreate: AgentTool<typeof todoCreateParams> = {
-    name: "todo_create",
-    label: "创建 Todo",
-    description:
-      "为稍复杂的任务创建 AI 自用执行清单。用户只旁观进度，不需要确认，也不应替代计划模式。",
-    parameters: todoCreateParams,
-    execute: async (_toolCallId, params) => {
-      const parsed = todoCreateArgsSchema.safeParse(params);
-      if (!parsed.success) {
-        console.warn("[todo-tools] todo_create 参数非法", { error: parsed.error.message });
-        throw new Error("todo_create 参数非法");
+export interface TodoToolRuntime {
+  listToolCalls?: () => Promise<ToolCall[]>;
+  runId?: string;
+}
+
+export function createTodoTools(runtime: TodoToolRuntime = {}): AgentTool<any>[] {
+  const todoRead: AgentTool<typeof todoReadParams> = {
+    name: "TodoRead",
+    label: "读取 Todo",
+    description: "读取当前会话最新 AI 自用执行清单。",
+    parameters: todoReadParams,
+    execute: async () => {
+      const toolCalls = await runtime.listToolCalls?.();
+      if (!toolCalls) {
+        return textResult("当前没有可读取的 Todo 快照。");
       }
-      console.info("[todo-tools] 创建 todo 清单", {
-        title: parsed.data.title,
-        items: parsed.data.items.length
-      });
+      const state = deriveTodoState(toolCalls, runtime.runId ? { runId: runtime.runId } : {});
+      if (!state || state.items.length === 0) {
+        return textResult("当前没有 Todo。");
+      }
       return textResult(
-        [`已创建 todo「${parsed.data.title}」。`, ...parsed.data.items.map((item) => `- ${item.id} ${item.title}`)].join(
+        state.items
+          .map(
+            (item) =>
+              `- [${item.status === "completed" ? "x" : item.status === "in_progress" ? ">" : " "}] ${item.content} (${item.priority})`
+          )
+          .join("\n")
+      );
+    }
+  };
+
+  const todoWrite: AgentTool<typeof todoWriteParams> = {
+    name: "TodoWrite",
+    label: "写入 Todo",
+    description:
+      "替换 AI 自用执行清单的完整快照。适合多步任务进度展示；简单问答、小改动或单次工具调用不要创建 todo。",
+    parameters: todoWriteParams,
+    execute: async (_toolCallId, params) => {
+      const parsed = todoWriteArgsSchema.safeParse(params);
+      if (!parsed.success) {
+        console.warn("[todo-tools] TodoWrite 参数非法", { error: parsed.error.message });
+        throw new Error("TodoWrite 参数非法：" + parsed.error.message);
+      }
+      console.info("[todo-tools] 写入 todo 快照", {
+        itemCount: parsed.data.todos.length,
+        inProgressCount: parsed.data.todos.filter((todo) => todo.status === "in_progress").length
+      });
+      if (parsed.data.todos.length === 0) {
+        return textResult("已清空 todo。");
+      }
+      return textResult(
+        ["已更新 todo：", ...parsed.data.todos.map((todo) => `- ${todo.status} ${todo.priority} ${todo.content}`)].join(
           "\n"
         )
       );
     }
   };
 
-  const todoUpdate: AgentTool<typeof todoUpdateParams> = {
-    name: "todo_update",
-    label: "更新 Todo",
-    description: "更新 AI 自用执行清单中的某个步骤状态。",
-    parameters: todoUpdateParams,
-    execute: async (_toolCallId, params) => {
-      const parsed = todoUpdateArgsSchema.safeParse(params);
-      if (!parsed.success) {
-        console.warn("[todo-tools] todo_update 参数非法", { error: parsed.error.message });
-        throw new Error("todo_update 参数非法");
-      }
-      console.info("[todo-tools] 更新 todo 步骤", {
-        itemId: parsed.data.itemId,
-        status: parsed.data.status,
-        note: parsed.data.note
-      });
-      return textResult(
-        `已更新 todo ${parsed.data.itemId} -> ${parsed.data.status}${
-          parsed.data.note ? `（${parsed.data.note}）` : ""
-        }`
-      );
-    }
-  };
-
-  return [todoCreate, todoUpdate];
+  return [todoRead, todoWrite];
 }

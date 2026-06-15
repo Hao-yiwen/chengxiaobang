@@ -2,7 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import type { TerminalExecResult } from "@chengxiaobang/shared";
 
@@ -207,6 +207,7 @@ export async function runShellCommand(
   const relativeOutputPath = posix.join(SHELL_BACKGROUND_OUTPUT_DIR, `${sanitizePathPart(id)}.log`);
   const outputPath = join(cwd, relativeOutputPath);
   await mkdir(join(cwd, SHELL_BACKGROUND_OUTPUT_DIR), { recursive: true });
+  await writeFile(outputPath, "", "utf8");
 
   if (options.signal?.aborted) {
     console.info("[shell] 命令启动前已收到中止信号", {

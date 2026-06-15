@@ -34,13 +34,14 @@ const REJECTED_RESULT = "用户拒绝执行该操作";
 const REJECTED_MODEL_HINT = "用户拒绝执行该操作。请考虑其他方式或向用户说明。";
 const TOOL_ACTIVITY_PREVIEW_KEYS = [
   "path",
-  "cwd",
+  "file_path",
   "command",
   "query",
   "pattern",
   "url",
   "title",
-  "name"
+  "name",
+  "skill"
 ] as const;
 const TOOL_ACTIVITY_PREVIEW_MAX = 120;
 
@@ -201,11 +202,11 @@ export class RunEventTranslator {
     );
     if (!decision.approved) {
       const rejectedResult =
-        entity.name === "propose_plan" && decision.answer
+        entity.name === "ExitPlanMode" && decision.answer
           ? planAdjustmentResult(decision.answer)
           : REJECTED_RESULT;
       const rejectedReason =
-        entity.name === "propose_plan" && decision.answer
+        entity.name === "ExitPlanMode" && decision.answer
           ? planAdjustmentHint(decision.answer)
           : REJECTED_MODEL_HINT;
       const rejected = await this.saveToolCall(context.toolCall.id, {
@@ -220,7 +221,7 @@ export class RunEventTranslator {
     }
 
     let args = entity.args;
-    if (entity.name === "propose_plan") {
+    if (entity.name === "ExitPlanMode") {
       args = decision.editedSteps ? { ...entity.args, steps: decision.editedSteps } : entity.args;
       const parsed = proposePlanArgsSchema.safeParse(args);
       if (!parsed.success) {
@@ -248,10 +249,10 @@ export class RunEventTranslator {
       });
     }
 
-    if (entity.name === "ask_user" && decision.answer) {
+    if (entity.name === "AskUserQuestion" && decision.answer) {
       args = { ...entity.args, answer: decision.answer };
       this.options.onAskUserAnswered?.(context.toolCall.id, decision.answer);
-      console.info("[pi-events] 用户已回答 ask_user", {
+      console.info("[pi-events] 用户已回答 AskUserQuestion", {
         toolCallId: entity.id,
         modelToolCallId: context.toolCall.id,
         answerCount: decision.answer.answers.length
@@ -353,8 +354,8 @@ export class RunEventTranslator {
     const requiresGate =
       risk.requiresGate || Boolean(this.options.strictApproval && requiresApproval(toolName));
     const needsManualApproval =
-      toolName === "propose_plan" ||
-      toolName === "ask_user" ||
+      toolName === "ExitPlanMode" ||
+      toolName === "AskUserQuestion" ||
       (requiresGate && this.options.accessMode === "approval");
     const needsSmartApproval =
       requiresGate && this.options.accessMode === "smart_approval";

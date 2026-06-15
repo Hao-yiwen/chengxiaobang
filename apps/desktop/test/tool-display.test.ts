@@ -14,34 +14,32 @@ import zh from "../src/renderer/i18n/locales/zh.json";
 import en from "../src/renderer/i18n/locales/en.json";
 
 const BUILTIN_TOOLS = [
-  "read_file",
-  "write_file",
-  "edit_file",
-  "list_directory",
-  "make_directory",
-  "glob",
-  "search",
-  "shell",
-  "shell_status",
-  "shell_cancel",
-  "git_status",
-  "git_diff",
-  "fetch_url",
-  "web_search",
-  "create_pptx",
-  "create_docx",
-  "create_xlsx",
-  "feishu_send_message",
-  "propose_plan",
-  "update_plan",
-  "todo_create",
-  "todo_update",
-  "ask_user",
-  "use_skill",
-  "schedule_create",
-  "schedule_list",
-  "schedule_cancel",
-  "memory"
+  "Read",
+  "Write",
+  "Edit",
+  "LS",
+  "MakeDirectory",
+  "Glob",
+  "Grep",
+  "Bash",
+  "BashStatus",
+  "BashCancel",
+  "GitStatus",
+  "GitDiff",
+  "WebFetch",
+  "WebSearch",
+  "CreateSkill",
+  "FeishuSendMessage",
+  "ExitPlanMode",
+  "AskUserQuestion",
+  "Skill",
+  "TodoRead",
+  "TodoWrite",
+  "ScheduleCreate",
+  "ScheduleList",
+  "ScheduleCancel",
+  "Memory",
+  "OcrExtractText"
 ] as const;
 
 const CATEGORIES: ToolCategory[] = [
@@ -62,7 +60,7 @@ function toolCall(partial: Partial<ToolCall>): ToolCall {
   return {
     id: "tool_1",
     runId: "run_1",
-    name: "shell",
+    name: "Bash",
     args: {},
     status: "completed",
     createdAt: "2026-06-13T00:00:00.000Z",
@@ -87,21 +85,21 @@ describe("toolIcon", () => {
 
 describe("toolCategory / categoryIcon", () => {
   it("内置工具归入已知类别，未知工具归 other", () => {
-    expect(toolCategory("read_file")).toBe("read");
-    expect(toolCategory("edit_file")).toBe("edit");
-    expect(toolCategory("search")).toBe("search");
-    expect(toolCategory("list_directory")).toBe("search");
-    expect(toolCategory("shell")).toBe("command");
-    expect(toolCategory("shell_status")).toBe("command");
-    expect(toolCategory("shell_cancel")).toBe("command");
-    expect(toolCategory("fetch_url")).toBe("web");
-    expect(toolCategory("web_search")).toBe("web");
-    expect(toolCategory("create_pptx")).toBe("artifact");
-    expect(toolCategory("feishu_send_message")).toBe("message");
-    expect(toolCategory("propose_plan")).toBe("plan");
-    expect(toolCategory("todo_create")).toBe("plan");
-    expect(toolCategory("schedule_create")).toBe("schedule");
-    expect(toolCategory("memory")).toBe("memory");
+    expect(toolCategory("Read")).toBe("read");
+    expect(toolCategory("Edit")).toBe("edit");
+    expect(toolCategory("Grep")).toBe("search");
+    expect(toolCategory("LS")).toBe("search");
+    expect(toolCategory("Bash")).toBe("command");
+    expect(toolCategory("BashStatus")).toBe("command");
+    expect(toolCategory("BashCancel")).toBe("command");
+    expect(toolCategory("WebFetch")).toBe("web");
+    expect(toolCategory("WebSearch")).toBe("web");
+    expect(toolCategory("CreateSkill")).toBe("edit");
+    expect(toolCategory("FeishuSendMessage")).toBe("message");
+    expect(toolCategory("ExitPlanMode")).toBe("plan");
+    expect(toolCategory("TodoWrite")).toBe("plan");
+    expect(toolCategory("ScheduleCreate")).toBe("schedule");
+    expect(toolCategory("Memory")).toBe("memory");
     expect(toolCategory("nonexistent")).toBe("other");
   });
 
@@ -115,7 +113,7 @@ describe("toolCategory / categoryIcon", () => {
 describe("toolLineLabel", () => {
   it("每个内置工具的 key 在 zh/en 文案中都存在", () => {
     for (const name of BUILTIN_TOOLS) {
-      const label = toolLineLabel(toolCall({ name, args: { path: "a.ts" } }));
+      const label = toolLineLabel(toolCall({ name, args: { file_path: "a.ts" } }));
       const suffix = label.key.replace("chat.toolLine.", "");
       expect(zh.chat.toolLine, `zh 缺少 ${suffix}`).toHaveProperty(suffix);
       expect(en.chat.toolLine, `en 缺少 ${suffix}`).toHaveProperty(suffix);
@@ -126,45 +124,40 @@ describe("toolLineLabel", () => {
 
   it("文件类工具缩短路径", () => {
     const label = toolLineLabel(
-      toolCall({ name: "read_file", args: { path: "apps/desktop/src/renderer/lib/timeline.ts" } })
+      toolCall({ name: "Read", args: { file_path: "apps/desktop/src/renderer/lib/timeline.ts" } })
     );
-    expect(label.key).toBe("chat.toolLine.read_file");
+    expect(label.key).toBe("chat.toolLine.Read");
     expect(label.params).toEqual({ path: "…/lib/timeline.ts" });
   });
 
   it("shell 命令压缩空白并截断到 60 字符", () => {
     const command = `pnpm   test\n  --filter ${"x".repeat(80)}`;
-    const label = toolLineLabel(toolCall({ name: "shell", args: { command } }));
-    expect(label.key).toBe("chat.toolLine.shell");
+    const label = toolLineLabel(toolCall({ name: "Bash", args: { command } }));
+    expect(label.key).toBe("chat.toolLine.Bash");
     expect(label.params?.command?.length).toBe(61);
     expect(label.params?.command?.endsWith("…")).toBe(true);
     expect(label.params?.command).not.toContain("\n");
   });
 
   it("search 查询截断到 40 字符", () => {
-    const label = toolLineLabel(toolCall({ name: "search", args: { query: "y".repeat(50) } }));
+    const label = toolLineLabel(toolCall({ name: "Grep", args: { pattern: "y".repeat(50) } }));
     expect(label.params?.query).toBe(`${"y".repeat(40)}…`);
   });
 
-  it("web_search 查询截断到 40 字符", () => {
-    const label = toolLineLabel(toolCall({ name: "web_search", args: { query: "z".repeat(50) } }));
-    expect(label.key).toBe("chat.toolLine.web_search");
+  it("WebSearch 查询截断到 40 字符", () => {
+    const label = toolLineLabel(toolCall({ name: "WebSearch", args: { query: "z".repeat(50) } }));
+    expect(label.key).toBe("chat.toolLine.WebSearch");
     expect(label.params?.query).toBe(`${"z".repeat(40)}…`);
   });
 
-  it("propose_plan 从 Markdown 标题提取摘要标题，并兼容旧 title", () => {
+  it("ExitPlanMode 从计划正文标题提取摘要标题", () => {
     const markdownLabel = toolLineLabel(
       toolCall({
-        name: "propose_plan",
-        args: { markdown: "# 登录页错误提示优化\n\n## Summary\n优化提示。" }
+        name: "ExitPlanMode",
+        args: { plan: "# 登录页错误提示优化\n\n## Summary\n优化提示。" }
       })
     );
     expect(markdownLabel.params).toEqual({ title: "登录页错误提示优化" });
-
-    const legacyLabel = toolLineLabel(
-      toolCall({ name: "propose_plan", args: { title: "旧计划", steps: [] } })
-    );
-    expect(legacyLabel.params).toEqual({ title: "旧计划" });
   });
 
   it("未知工具名落 fallback 并携带原名", () => {
@@ -174,18 +167,18 @@ describe("toolLineLabel", () => {
   });
 
   it("参数缺失时不抛错", () => {
-    expect(toolLineLabel(toolCall({ name: "read_file", args: {} })).params).toEqual({ path: "." });
-    expect(toolLineLabel(toolCall({ name: "shell", args: {} })).params).toEqual({ command: "" });
+    expect(toolLineLabel(toolCall({ name: "Read", args: {} })).params).toEqual({ path: "." });
+    expect(toolLineLabel(toolCall({ name: "Bash", args: {} })).params).toEqual({ command: "" });
   });
 });
 
 describe("toolGroupSummary", () => {
   it("按类别首次出现顺序聚合计数", () => {
     const summary = toolGroupSummary([
-      toolCall({ name: "read_file" }),
-      toolCall({ name: "search" }),
-      toolCall({ name: "read_file" }),
-      toolCall({ name: "shell" })
+      toolCall({ name: "Read" }),
+      toolCall({ name: "Grep" }),
+      toolCall({ name: "Read" }),
+      toolCall({ name: "Bash" })
     ]);
     expect(summary).toEqual([
       { category: "read", count: 2 },

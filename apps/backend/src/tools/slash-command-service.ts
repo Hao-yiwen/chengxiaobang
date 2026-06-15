@@ -154,7 +154,7 @@ export class SlashCommandService {
   }
 
   /**
-   * 模型可自主发现的技能清单（§5.3）：仅 name+description（正文经 use_skill 按需拉取），
+   * 模型可自主发现的技能清单（§5.3）：仅 name+description（正文经 Skill 按需拉取），
    * 过滤 disableModelInvocation，同名按 project > global > builtin 去重。
    */
   async listSkills(project?: Project): Promise<Array<{ name: string; description: string }>> {

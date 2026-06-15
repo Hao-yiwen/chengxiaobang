@@ -18,8 +18,8 @@ describe("SSE helpers", () => {
         runId: "run_1",
         activity: {
           contentIndex: 0,
-          name: "write_file",
-          argsPreview: { path: "src/app.ts" },
+          name: "Write",
+          argsPreview: { file_path: "src/app.ts" },
           updatedAt: "2026-06-11T00:00:00.000Z"
         }
       },

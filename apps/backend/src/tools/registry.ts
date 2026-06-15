@@ -13,36 +13,37 @@ import type { SkillMarketService } from "./skill-market-service";
 export type PlanPhase = "none" | "draft" | "execute";
 
 const MUTATING_TOOLS = new Set<string>([
-  "write_file",
-  "edit_file",
-  "make_directory",
-  "shell",
+  "Write",
+  "Edit",
+  "MakeDirectory",
+  "Bash",
   // 主动向外发消息也需要用户同意；审批门控也能保证飞书只读运行不会自行发消息。
-  "feishu_send_message",
+  "FeishuSendMessage",
   // 创建/取消定时任务会改变后台行为，需用户在审批卡上看到 cron 或执行时间后确认。
-  "schedule_create",
-  "schedule_cancel",
+  "ScheduleCreate",
+  "ScheduleCancel",
   // 安装技能会向全局技能目录写入文件、改变后续可用能力，需用户确认。
-  "create_skill"
+  "CreateSkill"
 ]);
 
 const READ_ONLY_TOOLS = new Set<string>([
-  "list_directory",
-  "read_file",
-  "glob",
-  "search",
-  "shell_status",
-  "shell_cancel",
-  "git_status",
-  "git_diff",
-  "fetch_url",
-  "web_search",
-  "schedule_list",
-  "ocr_extract_text"
+  "LS",
+  "Read",
+  "Glob",
+  "Grep",
+  "BashStatus",
+  "BashCancel",
+  "GitStatus",
+  "GitDiff",
+  "WebFetch",
+  "WebSearch",
+  "ScheduleList",
+  "OcrExtractText",
+  "TodoRead"
 ]);
 
 // memory 在起草阶段也可见：制定计划前先查记忆。
-const DRAFT_EXTRA_TOOLS = new Set<string>(["propose_plan", "ask_user", "use_skill", "memory"]);
+const DRAFT_EXTRA_TOOLS = new Set<string>(["ExitPlanMode", "AskUserQuestion", "Skill", "Memory"]);
 
 export function requiresApproval(name: string): boolean {
   return MUTATING_TOOLS.has(name);
@@ -58,28 +59,28 @@ export function selectAgentTools(
   options: { planPhase: PlanPhase; viaFeishu: boolean; headless?: boolean; enableOcr?: boolean }
 ): AgentTool<any>[] {
   return tools.filter((tool) => {
-    if (tool.name === "ocr_extract_text") {
+    if (tool.name === "OcrExtractText") {
       return Boolean(options.enableOcr);
     }
-    if (options.viaFeishu && (tool.name === "propose_plan" || tool.name === "ask_user")) {
+    if (options.viaFeishu && (tool.name === "ExitPlanMode" || tool.name === "AskUserQuestion")) {
       return false;
     }
-    // 定时任务的无人值守执行：ask_user 无条件进入 pending_approval 等待，
+    // 定时任务的无人值守执行：AskUserQuestion 无条件进入 pending_approval 等待，
     // 没有人会回答，必须在工具层面隐藏而不是依赖自动拒绝。
-    if (options.headless && tool.name === "ask_user") {
+    if (options.headless && tool.name === "AskUserQuestion") {
       return false;
     }
     // todo 是桌面端旁观进度，不在正式计划、飞书或无人值守场景里混用。
-    if (tool.name === "todo_create" || tool.name === "todo_update") {
+    if (tool.name === "TodoRead" || tool.name === "TodoWrite") {
       return options.planPhase === "none" && !options.viaFeishu && !options.headless;
     }
     if (options.planPhase === "draft") {
       return READ_ONLY_TOOLS.has(tool.name) || DRAFT_EXTRA_TOOLS.has(tool.name);
     }
     if (options.planPhase === "execute") {
-      return tool.name !== "propose_plan" && tool.name !== "update_plan";
+      return tool.name !== "ExitPlanMode";
     }
-    return tool.name !== "propose_plan" && tool.name !== "update_plan";
+    return tool.name !== "ExitPlanMode";
   });
 }
 
@@ -93,7 +94,7 @@ export function createAgentTools(
         webSearch?: WebSearchExecutor;
         /** 长期记忆的落盘目录；提供时注册 memory 工具。 */
         memoryDir?: string;
-        /** 技能市场服务；提供时注册 create_skill 工具（对话内创建/安装技能）。 */
+        /** 技能市场服务；提供时注册 CreateSkill 工具（对话内创建/安装技能）。 */
         skillMarketService?: SkillMarketService;
         /** OCR 工具运行时；提供后注册按需 OCR 只读工具。 */
         ocr?: OcrToolRuntime;

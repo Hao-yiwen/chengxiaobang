@@ -1,42 +1,35 @@
 import { createReadStream } from "node:fs";
-import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { dirname, extname } from "node:path";
+import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { Type } from "@earendil-works/pi-ai";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { globFiles, resolveToolPath, searchFiles, type ToolPathResolution } from "./workspace";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import { globFiles, resolveToolPath, type ToolPathResolution } from "./workspace";
 import { textResult } from "./tool-result";
 
-const listDirectoryParams = Type.Object({
+const lsParams = Type.Object({
   path: Type.Optional(
     Type.String({ description: "相对工作目录的路径，或显式绝对路径；默认当前目录 '.'" })
   )
 });
 
-const readFileParams = Type.Object({
-  path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径" }),
-  startLine: Type.Optional(Type.Number({ description: "可选，从第几行开始读取，1 表示第一行" })),
-  lineLimit: Type.Optional(Type.Number({ description: "可选，最多读取多少行；用于分段查看大文件" }))
+const readParams = Type.Object({
+  file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径" }),
+  offset: Type.Optional(Type.Number({ description: "可选，起始行号，1 表示第一行" })),
+  limit: Type.Optional(Type.Number({ description: "可选，最多读取多少行；默认和上限均为 2000" }))
 });
 
-const writeFileParams = Type.Object({
-  path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径" }),
-  content: Type.String({ description: "要写入的完整文本内容；传入 startLine 时作为行级插入/替换内容" }),
-  startLine: Type.Optional(Type.Number({ description: "可选，从第几行开始写入，1 表示第一行" })),
-  deleteLineCount: Type.Optional(
-    Type.Number({ description: "可选，行级写入时从 startLine 起删除多少行；0 表示插入" })
-  )
+const writeParams = Type.Object({
+  file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径" }),
+  content: Type.String({ description: "要写入的完整文本内容" })
 });
 
-const editFileParams = Type.Object({
-  path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径" }),
-  oldText: Type.Optional(Type.String({ description: "需要被替换的原文（未传 startLine 时必填）" })),
-  newText: Type.String({ description: "替换后的新文本；行级编辑时作为插入/替换内容" }),
-  startLine: Type.Optional(Type.Number({ description: "可选，从第几行开始编辑，1 表示第一行" })),
-  deleteLineCount: Type.Optional(
-    Type.Number({ description: "行级编辑时从 startLine 起删除多少行；0 表示插入" })
-  )
+const editParams = Type.Object({
+  file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径" }),
+  old_string: Type.String({ description: "需要被替换的原文，必须逐字精确匹配" }),
+  new_string: Type.String({ description: "替换后的新文本" }),
+  replace_all: Type.Optional(Type.Boolean({ description: "默认 false；true 时替换所有匹配" }))
 });
 
 const makeDirectoryParams = Type.Object({
@@ -50,26 +43,52 @@ const globParams = Type.Object({
   )
 });
 
-const searchParams = Type.Object({
-  query: Type.String({ description: "要搜索的文本" }),
+const grepParams = Type.Object({
+  pattern: Type.String({ description: "ripgrep 搜索表达式" }),
   path: Type.Optional(
-    Type.String({ description: "可选，限定搜索的子目录；可为相对工作目录路径或显式绝对路径" })
-  )
+    Type.String({ description: "可选，限定搜索根目录；可为相对工作目录路径或显式绝对路径" })
+  ),
+  glob: Type.Optional(Type.String({ description: "可选，rg --glob 过滤，例如 **/*.ts" })),
+  output_mode: Type.Optional(
+    Type.Union([Type.Literal("content"), Type.Literal("files_with_matches"), Type.Literal("count")], {
+      description: "输出模式：content 返回匹配行，files_with_matches 只列文件，count 返回每文件匹配数"
+    })
+  ),
+  "-A": Type.Optional(Type.Number({ description: "匹配行之后的上下文行数" })),
+  "-B": Type.Optional(Type.Number({ description: "匹配行之前的上下文行数" })),
+  "-C": Type.Optional(Type.Number({ description: "匹配行前后的上下文行数" })),
+  context: Type.Optional(Type.Number({ description: "等同 -C" })),
+  "-n": Type.Optional(Type.Boolean({ description: "是否显示行号；content 模式默认 true" })),
+  "-i": Type.Optional(Type.Boolean({ description: "是否忽略大小写" })),
+  type: Type.Optional(Type.String({ description: "rg --type 类型过滤，例如 ts、md、json" })),
+  head_limit: Type.Optional(Type.Number({ description: "最多返回多少行输出，默认 200" })),
+  offset: Type.Optional(Type.Number({ description: "跳过前多少行输出，默认 0" })),
+  multiline: Type.Optional(Type.Boolean({ description: "是否启用 rg --multiline" }))
 });
 
-const DEFAULT_READ_LINE_LIMIT = 200;
-const MAX_READ_LINE_LIMIT = 1000;
-const MAX_FULL_READ_BYTES = 256 * 1024;
+const DEFAULT_READ_LINE_LIMIT = 2000;
+const MAX_READ_LINE_LIMIT = 2000;
+const DEFAULT_GREP_HEAD_LIMIT = 200;
+const MAX_GREP_HEAD_LIMIT = 2000;
+const MAX_GREP_OUTPUT_BYTES = 512 * 1024;
+
+const IMAGE_MIME_BY_EXT: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp"
+};
 
 export function createFsTools(workspacePath: string): AgentTool<any>[] {
-  const listDirectory: AgentTool<typeof listDirectoryParams> = {
-    name: "list_directory",
+  const lsTool: AgentTool<typeof lsParams> = {
+    name: "LS",
     label: "浏览目录",
-    description: "列出工作目录或显式绝对路径中的某个目录的文件与子目录。用于了解项目结构或技能资源。",
-    parameters: listDirectoryParams,
+    description: "列出工作目录或显式绝对路径中的某个目录的文件与子目录。",
+    parameters: lsParams,
     execute: async (_id, params) => {
       const path = params.path || ".";
-      const target = resolveFsReadOnlyPath(workspacePath, "list_directory", path);
+      const target = resolveFsToolPath(workspacePath, "LS", path, false);
       const entries = await readdir(target, { withFileTypes: true });
       if (entries.length === 0) {
         return textResult("（空目录）");
@@ -82,173 +101,121 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
     }
   };
 
-  const readFileTool: AgentTool<typeof readFileParams> = {
-    name: "read_file",
+  const readTool: AgentTool<typeof readParams> = {
+    name: "Read",
     label: "读取文件",
-    description: "读取工作目录或显式绝对路径中的某个文本文件；可用 startLine/lineLimit 分段查看大文件。",
-    parameters: readFileParams,
+    description:
+      "读取工作目录或显式绝对路径中的文件。文本默认最多 2000 行并带行号；PNG/JPG/GIF/WEBP 图片会以 image content 返回。",
+    parameters: readParams,
     execute: async (_id, params) => {
-      const target = resolveFsReadOnlyPath(workspacePath, "read_file", params.path);
-      if (params.startLine === undefined && params.lineLimit === undefined) {
-        return textResult(await readFullFileOrHint(params.path, target));
+      const target = resolveFsToolPath(workspacePath, "Read", params.file_path, false);
+      const info = await stat(target);
+      if (info.isDirectory()) {
+        throw new Error(`Read 只能读取文件，收到目录：${params.file_path}`);
       }
-      return textResult(await readLineRange(params.path, target, params.startLine, params.lineLimit));
+      const mimeType = imageMimeForPath(target);
+      if (mimeType) {
+        return imageResult(await readFile(target), mimeType);
+      }
+      if (info.size === 0) {
+        return textResult(`${params.file_path} 文件为空`);
+      }
+      return textResult(await readLineRange(params.file_path, target, params.offset, params.limit));
     }
   };
 
-  const writeFileTool: AgentTool<typeof writeFileParams> = {
-    name: "write_file",
+  const writeTool: AgentTool<typeof writeParams> = {
+    name: "Write",
     label: "写入文件",
-    description: "创建或覆盖工作目录或显式绝对路径中的一个文本文件，会自动创建所需的父目录。",
-    parameters: writeFileParams,
+    description: "创建或完整覆盖工作目录或显式绝对路径中的一个文本文件，会自动创建父目录。",
+    parameters: writeParams,
     execute: async (_id, params) => {
-      const target = await resolveFsWritablePath(workspacePath, "write_file", params.path, true);
-      if (params.startLine !== undefined || params.deleteLineCount !== undefined) {
-        const startLine = requirePositiveInteger(params.startLine, "write_file", "startLine", {
-          path: params.path,
-          deleteLineCount: params.deleteLineCount
-        });
-        const deleteLineCount = requireNonNegativeInteger(
-          params.deleteLineCount ?? 0,
-          "write_file",
-          "deleteLineCount",
-          { path: params.path, startLine }
-        );
-        console.info("[fs-tools] write_file 执行行级写入", {
-          path: params.path,
-          startLine,
-          deleteLineCount,
-          contentLength: params.content.length
-        });
-        const result = await rewriteLineRange({
-          path: params.path,
-          target,
-          replacementText: params.content,
-          startLine,
-          deleteLineCount,
-          allowCreateWhenMissing: true
-        });
-        return textResult(
-          `已按行写入 ${target}（第 ${startLine} 行起，删除 ${deleteLineCount} 行，插入 ${result.insertedLineCount} 行）`
-        );
-      }
+      const target = await resolveFsWritablePath(workspacePath, "Write", params.file_path, true);
       await writeFile(target, params.content, "utf8");
       return textResult(`已写入 ${target}`);
     }
   };
 
-  const editFileTool: AgentTool<typeof editFileParams> = {
-    name: "edit_file",
+  const editTool: AgentTool<typeof editParams> = {
+    name: "Edit",
     label: "编辑文件",
-    description: "对已有文件做精确替换：把 oldText 第一次出现的位置替换为 newText；path 可为工作目录相对路径或显式绝对路径。",
-    parameters: editFileParams,
+    description:
+      "对已有文本文件做精确字符串替换。默认 old_string 必须唯一匹配；replace_all=true 时替换全部匹配。",
+    parameters: editParams,
     execute: async (_id, params) => {
-      const target = await resolveFsWritablePath(workspacePath, "edit_file", params.path, false);
-      if (params.startLine !== undefined || params.deleteLineCount !== undefined) {
-        const startLine = requirePositiveInteger(params.startLine, "edit_file", "startLine", {
-          path: params.path,
-          deleteLineCount: params.deleteLineCount
-        });
-        const deleteLineCount = requireNonNegativeInteger(
-          params.deleteLineCount,
-          "edit_file",
-          "deleteLineCount",
-          { path: params.path, startLine }
-        );
-        console.info("[fs-tools] edit_file 执行行级编辑", {
-          path: params.path,
-          startLine,
-          deleteLineCount,
-          newTextLength: params.newText.length
-        });
-        const result = await rewriteLineRange({
-          path: params.path,
-          target,
-          replacementText: params.newText,
-          startLine,
-          deleteLineCount,
-          allowCreateWhenMissing: false
-        });
-        return textResult(
-          `已按行编辑 ${target}（第 ${startLine} 行起，删除 ${deleteLineCount} 行，插入 ${result.insertedLineCount} 行）`
-        );
+      if (params.old_string.length === 0) {
+        throw new Error("Edit 的 old_string 不能为空");
       }
-      if (typeof params.oldText !== "string" || params.oldText.length === 0) {
-        console.warn("[fs-tools] edit_file 缺少 oldText", { path: params.path });
-        throw new Error("edit_file 需要 oldText/newText，或 startLine/deleteLineCount/newText");
-      }
+      const target = await resolveFsWritablePath(workspacePath, "Edit", params.file_path, false);
       const source = await readFile(target, "utf8");
-      if (!source.includes(params.oldText)) {
-        console.warn("[fs-tools] edit_file 未找到要替换的内容", {
-          path: params.path,
-          oldTextLength: params.oldText.length
+      const occurrences = countOccurrences(source, params.old_string);
+      if (occurrences === 0) {
+        console.warn("[fs-tools] Edit 未找到要替换的内容", {
+          path: params.file_path,
+          oldStringLength: params.old_string.length
         });
         throw new Error("没有找到要替换的内容");
       }
-      await writeFile(target, source.replace(params.oldText, params.newText), "utf8");
-      return textResult(`已编辑 ${target}`);
+      if (!params.replace_all && occurrences > 1) {
+        const lines = matchedLineNumbers(source, params.old_string);
+        throw new Error(
+          `old_string 出现了 ${occurrences} 次（行 ${lines.join(", ")}），默认必须唯一匹配；如需全部替换请设置 replace_all=true`
+        );
+      }
+      const next = params.replace_all
+        ? source.split(params.old_string).join(params.new_string)
+        : source.replace(params.old_string, params.new_string);
+      await writeFile(target, next, "utf8");
+      return textResult(
+        params.replace_all
+          ? `已编辑 ${target}，替换 ${occurrences} 处`
+          : `已编辑 ${target}`
+      );
     }
   };
 
   const makeDirectoryTool: AgentTool<typeof makeDirectoryParams> = {
-    name: "make_directory",
+    name: "MakeDirectory",
     label: "创建目录",
     description: "在工作目录或显式绝对路径中创建一个目录（含多级父目录）。",
     parameters: makeDirectoryParams,
     execute: async (_id, params) => {
-      const target = resolveFsToolPath(workspacePath, "make_directory", params.path, true);
+      const target = resolveFsToolPath(workspacePath, "MakeDirectory", params.path, true);
       await mkdir(target, { recursive: true });
       return textResult(`已创建目录 ${target}`);
     }
   };
 
   const globTool: AgentTool<typeof globParams> = {
-    name: "glob",
+    name: "Glob",
     label: "查找文件",
     description: "按通配符在工作目录或指定目录中递归查找文件，例如 '**/*.ts' 或 'src/**/*.md'。",
     parameters: globParams,
     execute: async (_id, params) => {
       const path = params.path || ".";
-      const target = resolveFsToolPath(workspacePath, "glob", path, false);
+      const target = resolveFsToolPath(workspacePath, "Glob", path, false);
       return textResult(await globFiles(target, params.pattern));
     }
   };
 
-  const searchTool: AgentTool<typeof searchParams> = {
-    name: "search",
+  const grepTool: AgentTool<typeof grepParams> = {
+    name: "Grep",
     label: "搜索内容",
-    description: "在工作目录或显式绝对路径目录的文本文件中搜索包含指定字符串的行（不区分大小写）。",
-    parameters: searchParams,
-    execute: async (_id, params) => {
+    description: "使用 ripgrep 在工作目录或显式绝对路径目录中搜索内容，支持输出模式、上下文和过滤参数。",
+    parameters: grepParams,
+    execute: async (_id, params, signal) => {
       const path = params.path || ".";
-      const resolved = resolveFsToolPathWithMeta(workspacePath, "search", path, false);
-      const resultRoot = resolved.outsideWorkspace ? resolved.target : workspacePath;
-      return textResult(await searchFiles(resultRoot, resolved.target, params.query));
+      const resolved = resolveFsToolPathWithMeta(workspacePath, "Grep", path, false);
+      return textResult(await runGrep(resolved.target, params, signal));
     }
   };
 
-  return [
-    listDirectory,
-    readFileTool,
-    writeFileTool,
-    editFileTool,
-    makeDirectoryTool,
-    globTool,
-    searchTool
-  ];
-}
-
-function resolveFsReadOnlyPath(
-  workspacePath: string,
-  toolName: "list_directory" | "read_file",
-  path: string
-): string {
-  return resolveFsToolPath(workspacePath, toolName, path, false);
+  return [lsTool, readTool, writeTool, editTool, makeDirectoryTool, globTool, grepTool];
 }
 
 async function resolveFsWritablePath(
   workspacePath: string,
-  toolName: "write_file" | "edit_file",
+  toolName: "Write" | "Edit",
   path: string,
   createParentDirs: boolean
 ): Promise<string> {
@@ -261,30 +228,18 @@ async function resolveFsWritablePath(
 
 function resolveFsToolPath(
   workspacePath: string,
-  toolName:
-    | "list_directory"
-    | "read_file"
-    | "write_file"
-    | "edit_file"
-    | "make_directory"
-    | "glob"
-    | "search",
+  toolName: FsToolName,
   path: string,
   mutating: boolean
 ): string {
   return resolveFsToolPathWithMeta(workspacePath, toolName, path, mutating).target;
 }
 
+type FsToolName = "LS" | "Read" | "Write" | "Edit" | "MakeDirectory" | "Glob" | "Grep";
+
 function resolveFsToolPathWithMeta(
   workspacePath: string,
-  toolName:
-    | "list_directory"
-    | "read_file"
-    | "write_file"
-    | "edit_file"
-    | "make_directory"
-    | "glob"
-    | "search",
+  toolName: FsToolName,
   path: string,
   mutating: boolean
 ): ToolPathResolution {
@@ -300,52 +255,42 @@ function resolveFsToolPathWithMeta(
   return resolved;
 }
 
-async function readFullFileOrHint(path: string, target: string): Promise<string> {
-  const info = await stat(target);
-  if (info.size > MAX_FULL_READ_BYTES) {
-    console.info("[fs-tools] read_file 完整读取文件过大，已提示分段读取", {
-      path,
-      sizeBytes: info.size,
-      maxFullReadBytes: MAX_FULL_READ_BYTES
-    });
-    return [
-      `${path} 大小为 ${formatBytes(info.size)}，超过完整读取上限 ${formatBytes(MAX_FULL_READ_BYTES)}。`,
-      "请使用 startLine/lineLimit 分段读取，例如：",
-      `{"path":"${path}","startLine":1,"lineLimit":${DEFAULT_READ_LINE_LIMIT}}`
-    ].join("\n");
-  }
-  return readFile(target, "utf8");
+function imageMimeForPath(path: string): string | undefined {
+  return IMAGE_MIME_BY_EXT[extname(path).toLowerCase()];
+}
+
+function imageResult(data: Buffer, mimeType: string): AgentToolResult<undefined> {
+  return {
+    content: [{ type: "image", data: data.toString("base64"), mimeType }],
+    details: undefined
+  };
 }
 
 async function readLineRange(
   path: string,
   target: string,
-  requestedStartLine: number | undefined,
-  requestedLineLimit: number | undefined
+  requestedOffset: number | undefined,
+  requestedLimit: number | undefined
 ): Promise<string> {
-  const startLine = requestedStartLine ?? 1;
-  const rawLineLimit = requestedLineLimit ?? DEFAULT_READ_LINE_LIMIT;
-  if (
-    !Number.isInteger(startLine) ||
-    !Number.isInteger(rawLineLimit) ||
-    startLine < 1 ||
-    rawLineLimit < 1
-  ) {
-    console.warn("[fs-tools] read_file 分段读取参数非法", {
+  const offset = requestedOffset ?? 1;
+  const rawLimit = requestedLimit ?? DEFAULT_READ_LINE_LIMIT;
+  if (!Number.isInteger(offset) || !Number.isInteger(rawLimit) || offset < 1 || rawLimit < 1) {
+    console.warn("[fs-tools] Read 分段读取参数非法", {
       path,
-      requestedStartLine,
-      requestedLineLimit
+      requestedOffset,
+      requestedLimit
     });
-    throw new Error("read_file 的 startLine 与 lineLimit 必须是正整数");
+    throw new Error("Read 的 offset 与 limit 必须是正整数");
   }
-  const lineLimit = Math.min(rawLineLimit, MAX_READ_LINE_LIMIT);
-  if (rawLineLimit > MAX_READ_LINE_LIMIT) {
-    console.info("[fs-tools] read_file 分段读取行数过大，已按上限裁剪", {
+  const limit = Math.min(rawLimit, MAX_READ_LINE_LIMIT);
+  if (rawLimit > MAX_READ_LINE_LIMIT) {
+    console.info("[fs-tools] Read 读取行数过大，已按上限裁剪", {
       path,
-      requestedLineLimit: rawLineLimit,
-      lineLimit
+      requestedLimit: rawLimit,
+      limit
     });
   }
+
   const selected: string[] = [];
   let totalLines = 0;
   const reader = createInterface({
@@ -354,31 +299,20 @@ async function readLineRange(
   });
   for await (const line of reader) {
     totalLines += 1;
-    if (totalLines >= startLine && selected.length < lineLimit) {
+    if (totalLines >= offset && selected.length < limit) {
       selected.push(line);
     }
   }
-  if (startLine > totalLines) {
-    console.debug("[fs-tools] read_file 分段读取超出文件行数", {
-      path,
-      startLine,
-      totalLines
-    });
-    return `${path} 的第 ${startLine} 行之后没有内容（共 ${totalLines} 行）`;
+
+  if (offset > totalLines) {
+    return `${path} 的第 ${offset} 行之后没有内容（共 ${totalLines} 行）`;
   }
-  const endLine = startLine + selected.length - 1;
+  const endLine = offset + selected.length - 1;
   const hasMore = endLine < totalLines;
-  console.debug("[fs-tools] read_file 分段读取完成", {
-    path,
-    startLine,
-    endLine,
-    lineLimit,
-    totalLines
-  });
   return [
-    `${path} 的第 ${startLine}-${endLine} 行（共 ${totalLines} 行）：`,
-    withLineNumbers(selected, startLine),
-    ...(hasMore ? [`（内容未读完；下一段可从 startLine=${endLine + 1} 继续读取）`] : [])
+    `${path} 的第 ${offset}-${endLine} 行（共 ${totalLines} 行）：`,
+    withLineNumbers(selected, offset),
+    ...(hasMore ? [`（内容未读完；下一段可从 offset=${endLine + 1} 继续读取）`] : [])
   ].join("\n");
 }
 
@@ -388,203 +322,167 @@ function withLineNumbers(lines: string[], startLine: number): string {
     .join("\n");
 }
 
-interface RewriteLineRangeOptions {
-  path: string;
-  target: string;
-  replacementText: string;
-  startLine: number;
-  deleteLineCount: number;
-  allowCreateWhenMissing: boolean;
-}
-
-interface RewriteLineRangeResult {
-  insertedLineCount: number;
-  totalLinesBefore: number;
-  totalLinesAfter: number;
-}
-
-async function rewriteLineRange(options: RewriteLineRangeOptions): Promise<RewriteLineRangeResult> {
-  const replacementLines = splitReplacementLines(options.replacementText);
-  const existingInfo = await stat(options.target).catch((error: unknown) => {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return undefined;
+function countOccurrences(source: string, needle: string): number {
+  let count = 0;
+  let index = 0;
+  while (true) {
+    const found = source.indexOf(needle, index);
+    if (found === -1) {
+      return count;
     }
-    throw error;
-  });
-  if (!existingInfo) {
-    if (!options.allowCreateWhenMissing || options.startLine !== 1 || options.deleteLineCount !== 0) {
-      console.warn("[fs-tools] 行级写入目标文件不存在或行参数非法", {
-        path: options.path,
-        startLine: options.startLine,
-        deleteLineCount: options.deleteLineCount,
-        allowCreateWhenMissing: options.allowCreateWhenMissing
-      });
-      throw new Error("目标文件不存在，只有 write_file 在 startLine=1 且 deleteLineCount=0 时可以创建文件");
-    }
-    await mkdir(dirname(options.target), { recursive: true });
-    await writeFile(options.target, replacementLines.join("\n"), "utf8");
-    console.info("[fs-tools] 行级写入创建新文件", {
-      path: options.path,
-      insertedLineCount: replacementLines.length
-    });
-    return {
-      insertedLineCount: replacementLines.length,
-      totalLinesBefore: 0,
-      totalLinesAfter: replacementLines.length
-    };
+    count += 1;
+    index = found + needle.length;
   }
+}
 
-  const tempPath = join(
-    dirname(options.target),
-    `.${basename(options.target)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`
+function matchedLineNumbers(source: string, needle: string): number[] {
+  return source
+    .split("\n")
+    .map((line, index) => (line.includes(needle) ? index + 1 : 0))
+    .filter((line) => line > 0);
+}
+
+async function runGrep(
+  cwd: string,
+  params: {
+    pattern: string;
+    path?: string;
+    glob?: string;
+    output_mode?: "content" | "files_with_matches" | "count";
+    "-A"?: number;
+    "-B"?: number;
+    "-C"?: number;
+    context?: number;
+    "-n"?: boolean;
+    "-i"?: boolean;
+    type?: string;
+    head_limit?: number;
+    offset?: number;
+    multiline?: boolean;
+  },
+  signal?: AbortSignal
+): Promise<string> {
+  const args = buildRgArgs(params);
+  const output = await spawnAndCollect(resolveRgCommand(), args, cwd, signal);
+  const lines = output.split(/\r?\n/).filter((line) => line.length > 0);
+  const offset = normalizeNonNegativeInteger(params.offset ?? 0, "offset");
+  const headLimit = Math.min(
+    normalizePositiveInteger(params.head_limit ?? DEFAULT_GREP_HEAD_LIMIT, "head_limit"),
+    MAX_GREP_HEAD_LIMIT
   );
-  let tempHandle: Awaited<ReturnType<typeof open>> | undefined;
-  let reader: ReturnType<typeof createInterface> | undefined;
-  let totalLinesBefore = 0;
-  let totalLinesAfter = 0;
-  let skippedLineCount = 0;
-  let inserted = false;
+  const selected = lines.slice(offset, offset + headLimit);
+  if (selected.length === 0) {
+    return "没有找到匹配内容";
+  }
+  const truncated = offset + selected.length < lines.length;
+  return [...selected, ...(truncated ? [`（输出已截断，共 ${lines.length} 行）`] : [])].join("\n");
+}
 
-  const writeOutputLine = async (line: string) => {
-    if (!tempHandle) {
-      throw new Error("临时文件尚未打开");
+function buildRgArgs(params: {
+  pattern: string;
+  glob?: string;
+  output_mode?: "content" | "files_with_matches" | "count";
+  "-A"?: number;
+  "-B"?: number;
+  "-C"?: number;
+  context?: number;
+  "-n"?: boolean;
+  "-i"?: boolean;
+  type?: string;
+  multiline?: boolean;
+}): string[] {
+  const args = ["--color=never"];
+  if (params.output_mode === "files_with_matches") {
+    args.push("--files-with-matches");
+  } else if (params.output_mode === "count") {
+    args.push("--count");
+  } else if (params["-n"] !== false) {
+    args.push("--line-number", "--with-filename");
+  }
+  if (params.context !== undefined) {
+    args.push("-C", String(normalizeNonNegativeInteger(params.context, "context")));
+  } else if (params["-C"] !== undefined) {
+    args.push("-C", String(normalizeNonNegativeInteger(params["-C"], "-C")));
+  } else {
+    if (params["-A"] !== undefined) {
+      args.push("-A", String(normalizeNonNegativeInteger(params["-A"], "-A")));
     }
-    if (totalLinesAfter > 0) {
-      await tempHandle.writeFile("\n", "utf8");
+    if (params["-B"] !== undefined) {
+      args.push("-B", String(normalizeNonNegativeInteger(params["-B"], "-B")));
     }
-    await tempHandle.writeFile(line, "utf8");
-    totalLinesAfter += 1;
-  };
-  const insertReplacement = async () => {
-    if (inserted) return;
-    for (const line of replacementLines) {
-      await writeOutputLine(line);
-    }
-    inserted = true;
-  };
+  }
+  if (params["-i"]) {
+    args.push("--ignore-case");
+  }
+  if (params.glob) {
+    args.push("--glob", params.glob);
+  }
+  if (params.type) {
+    args.push("--type", params.type);
+  }
+  if (params.multiline) {
+    args.push("--multiline");
+  }
+  args.push(params.pattern);
+  args.push(".");
+  return args;
+}
 
-  try {
-    tempHandle = await open(tempPath, "w");
-    reader = createInterface({
-      input: createReadStream(options.target, { encoding: "utf8" }),
-      crlfDelay: Infinity
-    });
-    for await (const line of reader) {
-      totalLinesBefore += 1;
-      if (totalLinesBefore === options.startLine) {
-        await insertReplacement();
+export function resolveRgCommand(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.CHENGXIAOBANG_RG_PATH?.trim();
+  return configured || "rg";
+}
+
+function spawnAndCollect(
+  command: string,
+  args: string[],
+  cwd: string,
+  signal?: AbortSignal
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd, signal, windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    let truncated = false;
+
+    const append = (chunk: Buffer) => {
+      if (stdout.length >= MAX_GREP_OUTPUT_BYTES) {
+        truncated = true;
+        return;
       }
-      if (
-        totalLinesBefore >= options.startLine &&
-        totalLinesBefore < options.startLine + options.deleteLineCount
-      ) {
-        skippedLineCount += 1;
-        continue;
-      }
-      await writeOutputLine(line);
-    }
-
-    if (options.startLine === totalLinesBefore + 1) {
-      await insertReplacement();
-    }
-    if (options.startLine > totalLinesBefore + 1) {
-      console.warn("[fs-tools] 行级写入 startLine 超出可编辑范围", {
-        path: options.path,
-        startLine: options.startLine,
-        totalLines: totalLinesBefore
-      });
-      throw new Error(`startLine 超出文件范围：${options.startLine}，当前文件共 ${totalLinesBefore} 行`);
-    }
-    if (skippedLineCount < options.deleteLineCount) {
-      console.warn("[fs-tools] 行级写入 deleteLineCount 超出文件范围", {
-        path: options.path,
-        startLine: options.startLine,
-        deleteLineCount: options.deleteLineCount,
-        skippedLineCount,
-        totalLines: totalLinesBefore
-      });
-      throw new Error(
-        `deleteLineCount 超出文件范围：从第 ${options.startLine} 行起只能删除 ${skippedLineCount} 行`
-      );
-    }
-
-    await tempHandle.close();
-    tempHandle = undefined;
-    await rename(tempPath, options.target);
-    console.info("[fs-tools] 行级写入完成", {
-      path: options.path,
-      startLine: options.startLine,
-      deleteLineCount: options.deleteLineCount,
-      insertedLineCount: replacementLines.length,
-      totalLinesBefore,
-      totalLinesAfter
-    });
-    return {
-      insertedLineCount: replacementLines.length,
-      totalLinesBefore,
-      totalLinesAfter
+      stdout += chunk.toString("utf8").slice(0, MAX_GREP_OUTPUT_BYTES - stdout.length);
     };
-  } catch (error) {
-    reader?.close();
-    if (tempHandle) {
-      await tempHandle.close().catch(() => undefined);
-    }
-    await rm(tempPath, { force: true }).catch(() => undefined);
-    throw error;
-  }
-}
-
-function splitReplacementLines(text: string): string[] {
-  if (text.length === 0) {
-    return [];
-  }
-  return text.replace(/\r?\n$/, "").split(/\r?\n/);
-}
-
-function requirePositiveInteger(
-  value: unknown,
-  toolName: string,
-  fieldName: string,
-  context: Record<string, unknown>
-): number {
-  if (!Number.isInteger(value) || typeof value !== "number" || value < 1) {
-    console.warn(`[fs-tools] ${toolName} 行参数非法`, {
-      ...context,
-      fieldName,
-      value
+    child.stdout.on("data", append);
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
     });
-    throw new Error(`${toolName} 的 ${fieldName} 必须是正整数`);
+    child.on("error", (error) => {
+      reject(
+        new Error(
+          `Grep 无法启动 ripgrep 运行时（${command}）：${error.message}。请确认打包资源中包含 rg，或设置 CHENGXIAOBANG_RG_PATH。`
+        )
+      );
+    });
+    child.on("close", (code) => {
+      if (code === 0 || code === 1) {
+        resolve(truncated ? `${stdout}\n（输出过长已截断）` : stdout);
+        return;
+      }
+      reject(new Error(stderr.trim() || `${command} 退出码 ${code}`));
+    });
+  });
+}
+
+function normalizePositiveInteger(value: number, field: string): number {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`Grep 的 ${field} 必须是正整数`);
   }
   return value;
 }
 
-function requireNonNegativeInteger(
-  value: unknown,
-  toolName: string,
-  fieldName: string,
-  context: Record<string, unknown>
-): number {
-  if (!Number.isInteger(value) || typeof value !== "number" || value < 0) {
-    console.warn(`[fs-tools] ${toolName} 行参数非法`, {
-      ...context,
-      fieldName,
-      value
-    });
-    throw new Error(`${toolName} 的 ${fieldName} 必须是非负整数`);
+function normalizeNonNegativeInteger(value: number, field: string): number {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`Grep 的 ${field} 必须是非负整数`);
   }
   return value;
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }

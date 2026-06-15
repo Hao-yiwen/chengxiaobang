@@ -2,7 +2,6 @@ import {
   CheckCircleIcon as CheckCircle,
   CircleIcon as Circle,
   CircleDashedIcon as CircleDashed,
-  MinusCircleIcon as MinusCircle,
   type Icon
 } from "@phosphor-icons/react";
 import { useEffect, useMemo } from "react";
@@ -20,8 +19,7 @@ import { useAppStore } from "@/store";
 const STATUS_ICON: Record<TodoStatus, Icon> = {
   pending: Circle,
   in_progress: CircleDashed,
-  completed: CheckCircle,
-  skipped: MinusCircle
+  completed: CheckCircle
 };
 
 type ProgressTodoSource = "active" | "history";
@@ -36,23 +34,18 @@ export function ProgressFloatingPanel() {
   const { t } = useTranslation();
   const toolHistory = useAppStore((state) => state.toolHistory);
   const activeRunId = useAppStore((state) => state.activeRunId);
+  const activeTodo = useMemo(
+    () => (activeRunId ? deriveTodoState(toolHistory, { runId: activeRunId }) : undefined),
+    [activeRunId, toolHistory]
+  );
+  const historyTodo = useMemo(() => deriveTodoState(toolHistory), [toolHistory]);
   const progressView = useMemo<ProgressTodoView | undefined>(() => {
-    const activeTodo = activeRunId
-      ? deriveTodoState(toolHistory, { runId: activeRunId })
-      : undefined;
     if (activeRunId) {
       return activeTodo ? { todo: activeTodo, source: "active" } : undefined;
     }
-    const historyTodo = deriveTodoState(toolHistory);
     return historyTodo ? { todo: historyTodo, source: "history" } : undefined;
-  }, [activeRunId, toolHistory]);
-  const hasTodoHistory = useMemo(
-    () =>
-      toolHistory.some(
-        (toolCall) => toolCall.name === "todo_create" || toolCall.name === "todo_update"
-      ),
-    [toolHistory]
-  );
+  }, [activeRunId, activeTodo, historyTodo]);
+  const hasTodoHistory = Boolean(historyTodo);
   const logKey = progressView
     ? [
         progressView.source,
@@ -88,9 +81,7 @@ export function ProgressFloatingPanel() {
 
   const { todo } = progressView;
   const showingActiveRun = progressView.source === "active";
-  const done = todo.items.filter(
-    (item) => item.status === "completed" || item.status === "skipped"
-  ).length;
+  const done = todo.items.filter((item) => item.status === "completed").length;
   const progress = todo.items.length > 0 ? Math.round((done / todo.items.length) * 100) : 0;
   const current = todoCurrentItem(todo);
 
@@ -134,17 +125,12 @@ export function ProgressFloatingPanel() {
               {t("rightPanel.progressCurrent", {
                 index: current.index,
                 total: current.total,
-                title: current.item.title
+                title: current.item.content
               })}
             </p>
           ) : null}
         </div>
         <TodoList todo={todo} />
-        {todo.latestNote ? (
-          <p className="mt-3 line-clamp-3 rounded-sm bg-canvas-soft-2 px-2.5 py-2 text-micro leading-relaxed text-body">
-            {todo.latestNote.note}
-          </p>
-        ) : null}
       </div>
     </aside>
   );
@@ -183,17 +169,12 @@ function TodoRow({ item, label }: { item: TodoItem; label: string }) {
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <p className="min-w-0 flex-1 truncate text-caption font-medium text-foreground">
-              {item.title}
+              {item.content}
             </p>
             <span className="flex-none font-mono text-micro text-muted-foreground">
               {label}
             </span>
           </div>
-          {item.detail ? (
-            <p className="mt-1 line-clamp-2 text-micro leading-relaxed text-muted-foreground">
-              {item.detail}
-            </p>
-          ) : null}
         </div>
       </div>
     </li>

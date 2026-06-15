@@ -20,7 +20,7 @@ function askToolCall(args: Record<string, unknown>): ToolCall {
   return {
     id: "tool_ask",
     runId: "run_1",
-    name: "ask_user",
+    name: "AskUserQuestion",
     args,
     status: "pending_approval",
     createdAt: "2026-06-08T00:00:00.000Z",
@@ -242,7 +242,7 @@ describe("AskUserCard", () => {
     render(<AskUserCard toolCall={askToolCall({ options: 42 })} onDecide={onDecide} />);
 
     expect(warn).toHaveBeenCalledWith(
-      "[AskUserCard] ask_user 参数解析失败",
+      "[AskUserCard] AskUserQuestion 参数解析失败",
       expect.objectContaining({ toolCallId: "tool_ask" })
     );
     expect(screen.getByText("问题内容解析失败")).toBeInTheDocument();

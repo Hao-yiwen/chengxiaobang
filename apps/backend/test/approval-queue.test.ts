@@ -61,30 +61,30 @@ describe("ApprovalQueue（泛化决议）", () => {
 });
 
 describe("normalizeDecision（按工具名裁决 payload）", () => {
-  it("ask_user approved 缺 answer 视为拒绝", () => {
-    expect(normalizeDecision("ask_user", { approved: true })).toEqual({ approved: false });
+  it("AskUserQuestion approved 缺 answer 视为拒绝", () => {
+    expect(normalizeDecision("AskUserQuestion", { approved: true })).toEqual({ approved: false });
   });
 
-  it("ask_user approved 带 answer 原样保留", () => {
+  it("AskUserQuestion approved 带 answer 原样保留", () => {
     expect(
-      normalizeDecision("ask_user", {
+      normalizeDecision("AskUserQuestion", {
         approved: true,
         answer: { answers: [{ text: "自由回答" }] }
       })
     ).toEqual({ approved: true, answer: { answers: [{ text: "自由回答" }] } });
   });
 
-  it("ask_user 拒绝时不要求 answer", () => {
-    expect(normalizeDecision("ask_user", { approved: false })).toEqual({
+  it("AskUserQuestion 拒绝时不要求 answer", () => {
+    expect(normalizeDecision("AskUserQuestion", { approved: false })).toEqual({
       approved: false,
       answer: undefined
     });
   });
 
-  it("propose_plan 保留调整意见与 legacy editedSteps", () => {
+  it("ExitPlanMode 保留调整意见与 legacy editedSteps", () => {
     const steps = [{ id: "s1", title: "第一步", status: "pending" as const }];
     expect(
-      normalizeDecision("propose_plan", {
+      normalizeDecision("ExitPlanMode", {
         approved: false,
         answer: { answers: [{ text: "请先补充测试计划" }] },
         editedSteps: steps
@@ -94,8 +94,8 @@ describe("normalizeDecision（按工具名裁决 payload）", () => {
       answer: { answers: [{ text: "请先补充测试计划" }] },
       editedSteps: steps
     });
-    // ask_user 决议中的 editedSteps 被裁掉。
-    const askResult = normalizeDecision("ask_user", {
+    // AskUserQuestion 决议中的 editedSteps 被裁掉。
+    const askResult = normalizeDecision("AskUserQuestion", {
       approved: true,
       answer: { answers: [{ text: "好" }] },
       editedSteps: steps
@@ -105,7 +105,7 @@ describe("normalizeDecision（按工具名裁决 payload）", () => {
 
   it("普通工具多余 payload 被剥除", () => {
     expect(
-      normalizeDecision("write_file", {
+      normalizeDecision("Write", {
         approved: true,
         answer: { answers: [{ text: "无关" }] },
         editedSteps: [{ id: "s1", title: "x", status: "pending" }]

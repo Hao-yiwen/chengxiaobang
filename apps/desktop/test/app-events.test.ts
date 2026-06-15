@@ -214,8 +214,8 @@ describe("app event handling", () => {
     const pendingTool: ToolCall = {
       id: "tool_pending",
       runId: "run_restored",
-      name: "write_file",
-      args: { path: "active.txt", content: "ok" },
+      name: "Write",
+      args: { file_path: "active.txt", content: "ok" },
       status: "pending_approval",
       createdAt: "2026-06-13T00:00:01.000Z",
       updatedAt: "2026-06-13T00:00:01.000Z"
@@ -248,7 +248,7 @@ describe("app event handling", () => {
     const toolCall: ToolCall = {
       id: "tool_running",
       runId: "run_active",
-      name: "shell",
+      name: "Bash",
       args: { command: "echo ok" },
       status: "running",
       createdAt: "2026-06-13T00:00:01.000Z",

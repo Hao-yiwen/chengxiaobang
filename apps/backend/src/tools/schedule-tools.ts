@@ -35,7 +35,7 @@ const createParams = Type.Object({
 });
 
 const cancelParams = Type.Object({
-  id: Type.String({ description: "要取消的定时任务 ID（可用 schedule_list 查询）" })
+  id: Type.String({ description: "要取消的定时任务 ID（可用 ScheduleList 查询）" })
 });
 
 const listParams = Type.Object({});
@@ -71,7 +71,7 @@ function previewRuns(cron: string, count: number): string[] {
 
 export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any>[] {
   const scheduleCreate: AgentTool<typeof createParams> = {
-    name: "schedule_create",
+    name: "ScheduleCreate",
     label: "创建定时任务",
     description:
       "创建定时任务：kind=once 用带时区 ISO 时间 run_at 创建一次性任务；kind=recurring 用 5 字段 cron 创建周期任务。具体某天某时执行一次不要用 cron 表达。",
@@ -168,7 +168,7 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
   };
 
   const scheduleList: AgentTool<typeof listParams> = {
-    name: "schedule_list",
+    name: "ScheduleList",
     label: "查看定时任务",
     description: "列出当前所有定时任务（含 ID、类型、启用状态、下次/上次执行时间）。",
     parameters: listParams,
@@ -195,7 +195,7 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
   };
 
   const scheduleCancel: AgentTool<typeof cancelParams> = {
-    name: "schedule_cancel",
+    name: "ScheduleCancel",
     label: "取消定时任务",
     description: "按 ID 删除一个定时任务（不可恢复）。",
     parameters: cancelParams,

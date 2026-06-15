@@ -80,7 +80,7 @@ describe("AgentRunner agentic loop (pi)", () => {
       {
         thinking: "先看看目录",
         text: "我先列一下目录。",
-        toolCalls: [{ id: "call_1", name: "list_directory", arguments: {} }]
+        toolCalls: [{ id: "call_1", name: "LS", arguments: {} }]
       },
       {
         text: "目录已经看完。",
@@ -131,7 +131,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const { runner, calls } = runnerWith([
       {
         toolCalls: [
-          { id: "call_1", name: "write_file", arguments: { path: "out.txt", content: "done" } }
+          { id: "call_1", name: "Write", arguments: { file_path: "out.txt", content: "done" } }
         ]
       },
       { text: "已经写好文件。", usage: { input: 10, output: 5, totalTokens: 15 } }
@@ -166,13 +166,13 @@ describe("AgentRunner agentic loop (pi)", () => {
     const { runner } = runnerWith([
       {
         toolCalls: [
-          { id: "list_directory_0", name: "list_directory", arguments: { path: "." } }
+          { id: "ls_0", name: "LS", arguments: { path: "." } }
         ]
       },
       { text: "第一轮完成。" },
       {
         toolCalls: [
-          { id: "list_directory_0", name: "list_directory", arguments: { path: "." } }
+          { id: "ls_0", name: "LS", arguments: { path: "." } }
         ]
       },
       { text: "第二轮完成。" }
@@ -199,7 +199,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     expect(firstEvents.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
     expect(secondEvents.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
     const calls = (await store.listToolCallsForSession(sessionId!)).filter(
-      (toolCall) => toolCall.name === "list_directory"
+      (toolCall) => toolCall.name === "LS"
     );
     expect(calls).toHaveLength(2);
     expect(new Set(calls.map((toolCall) => toolCall.id)).size).toBe(2);
@@ -211,14 +211,14 @@ describe("AgentRunner agentic loop (pi)", () => {
     );
   });
 
-  it("routes ask_user answers through app tool ids while preserving model ids", async () => {
+  it("routes AskUserQuestion answers through app tool ids while preserving model ids", async () => {
     const project = await store.createProject({ name: "proj", path: dir });
     const { runner, calls } = runnerWith([
       {
         toolCalls: [
           {
             id: "ask_0",
-            name: "ask_user",
+            name: "AskUserQuestion",
             arguments: { questions: [{ question: "要继续分析吗？" }] }
           }
         ]
@@ -249,16 +249,16 @@ describe("AgentRunner agentic loop (pi)", () => {
     expect(JSON.stringify(replayToolResult?.content)).toContain("继续分析");
   });
 
-  it("计划确认后同一 run 恢复普通工具且不暴露 update_plan", async () => {
+  it("计划确认后同一 run 恢复普通工具且不暴露 TodoWrite", async () => {
     const project = await store.createProject({ name: "proj", path: dir });
     const { runner, calls } = runnerWith([
       {
         toolCalls: [
           {
             id: "plan_0",
-            name: "propose_plan",
+            name: "ExitPlanMode",
             arguments: {
-              markdown:
+              plan:
                 "# 示例计划\n\n## Summary\n先确认计划。\n\n## Key Changes\n- 写入文件。\n\n## Test Plan\n- 读取文件。\n\n## Assumptions\n- 使用当前项目。"
             }
           }
@@ -268,8 +268,8 @@ describe("AgentRunner agentic loop (pi)", () => {
         toolCalls: [
           {
             id: "write_0",
-            name: "write_file",
-            arguments: { path: "plan.txt", content: "done" }
+            name: "Write",
+            arguments: { file_path: "plan.txt", content: "done" }
           }
         ]
       },
@@ -292,26 +292,25 @@ describe("AgentRunner agentic loop (pi)", () => {
     const secondCall = calls[1];
     expect(secondCall).toBeDefined();
     const secondTurnTools = secondCall.context.tools?.map((tool) => tool.name) ?? [];
-    expect(secondTurnTools).toContain("write_file");
-    expect(secondTurnTools).not.toContain("propose_plan");
-    expect(secondTurnTools).not.toContain("update_plan");
+    expect(secondTurnTools).toContain("Write");
+    expect(secondTurnTools).not.toContain("ExitPlanMode");
+    expect(secondTurnTools).not.toContain("ExitPlanMode");
     expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
     await expect(readFile(join(dir, "plan.txt"), "utf8")).resolves.toBe("done");
   });
 
-	  it("records todo progress as non-approval tool calls", async () => {
-	    const project = await store.createProject({ name: "proj", path: dir });
+  it("records todo progress as non-approval tool calls", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
     const { runner } = runnerWith([
       {
         toolCalls: [
           {
             id: "todo_1",
-            name: "todo_create",
+            name: "TodoWrite",
             arguments: {
-              title: "实现进度面板",
-              items: [
-                { id: "s1", title: "新增契约" },
-                { id: "s2", title: "接入 UI" }
+              todos: [
+                { content: "新增契约", status: "in_progress", priority: "high" },
+                { content: "接入 UI", status: "pending", priority: "medium" }
               ]
             }
           }
@@ -321,8 +320,13 @@ describe("AgentRunner agentic loop (pi)", () => {
         toolCalls: [
           {
             id: "todo_2",
-            name: "todo_update",
-            arguments: { itemId: "s1", status: "completed", note: "契约完成" }
+            name: "TodoWrite",
+            arguments: {
+              todos: [
+                { content: "新增契约", status: "completed", priority: "high" },
+                { content: "接入 UI", status: "pending", priority: "medium" }
+              ]
+            }
           }
         ]
       },
@@ -335,7 +339,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const todoEvents = events.filter(
       (event) =>
         event.type === "tool_call" &&
-        (event.toolCall.name === "todo_create" || event.toolCall.name === "todo_update")
+        event.toolCall.name === "TodoWrite"
     );
 
     expect(todoEvents.map((event) => (event.type === "tool_call" ? event.toolCall.status : ""))).toEqual([
@@ -352,9 +356,9 @@ describe("AgentRunner agentic loop (pi)", () => {
     const sessionId = events.find((event) => event.type === "run_started")?.sessionId;
     const state = deriveTodoState(await store.listToolCallsForSession(sessionId ?? ""));
     expect(state).toMatchObject({
-      title: "实现进度面板",
-      latestNote: { itemId: "s1", note: "契约完成" }
+      title: "执行清单"
     });
+    expect(state!.items.map((item) => item.content)).toEqual(["新增契约", "接入 UI"]);
     expect(state!.items.map((item) => item.status)).toEqual(["completed", "pending"]);
   });
 
@@ -363,7 +367,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const largeText = `START\n${"A".repeat(30_000)}\nMIDDLE_UNIQUE\n${"B".repeat(30_000)}\nEND`;
     await writeFile(join(dir, "large.txt"), largeText, "utf8");
     const { runner, calls } = runnerWith([
-      { toolCalls: [{ id: "call_1", name: "read_file", arguments: { path: "large.txt" } }] },
+      { toolCalls: [{ id: "call_1", name: "Read", arguments: { file_path: "large.txt" } }] },
       { text: "已经按需查看摘要。" }
     ]);
 
@@ -378,13 +382,15 @@ describe("AgentRunner agentic loop (pi)", () => {
     const runId = started?.type === "run_started" ? started.runId : "";
 
     expect(summary).toContain("结果过长，已写入文件");
-    expect(summary).toContain(`${TOOL_RESULT_SPILL_DIR}/${runId}/call_1-read_file.txt`);
+    expect(summary).toContain(`${TOOL_RESULT_SPILL_DIR}/${runId}/call_1-Read.txt`);
     expect(summary).toContain("START");
     expect(summary).toContain("END");
     expect(summary).not.toContain("MIDDLE_UNIQUE");
-    await expect(
-      readFile(join(dir, TOOL_RESULT_SPILL_DIR, runId, "call_1-read_file.txt"), "utf8")
-    ).resolves.toBe(largeText);
+    const spilled = await readFile(join(dir, TOOL_RESULT_SPILL_DIR, runId, "call_1-Read.txt"), "utf8");
+    expect(spilled).toContain("large.txt 的第 1-5 行");
+    expect(spilled).toContain("     1\tSTART");
+    expect(spilled).toContain("     3\tMIDDLE_UNIQUE");
+    expect(spilled).toContain("     5\tEND");
 
     const replayToolResult = calls[1].context.messages.find(
       (message) => message.role === "toolResult" && message.toolCallId === "call_1"
@@ -407,7 +413,7 @@ describe("AgentRunner agentic loop (pi)", () => {
         toolCalls: [
           {
             id: "call_shell",
-            name: "shell",
+            name: "Bash",
             arguments: { command: delayedEchoShellCommand("loop-background-done") }
           }
         ]
@@ -454,10 +460,10 @@ describe("AgentRunner agentic loop (pi)", () => {
         toolCalls: [
           {
             id: "call_shell_background",
-            name: "shell",
+            name: "Bash",
             arguments: {
               command: delayedEchoShellCommand("requested-background-done"),
-              mode: "background"
+              run_in_background: true
             }
           }
         ]
@@ -480,7 +486,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
     const outputPath = parseBackgroundOutputPath(summary);
 
-    expect(summary).toContain('mode="background"');
+    expect(summary).toContain("run_in_background=true");
     expect(summary).toContain("后台命令 ID");
     await waitForFileToContain(join(dir, outputPath), "requested-background-done");
   });
@@ -492,11 +498,10 @@ describe("AgentRunner agentic loop (pi)", () => {
         toolCalls: [
           {
             id: "call_shell_blocking",
-            name: "shell",
+            name: "Bash",
             arguments: {
               command: shortDelayedEchoShellCommand("blocking-loop-done"),
-              mode: "blocking",
-              waitMs: 1_000
+              timeout: 1_000
             }
           }
         ]
@@ -521,18 +526,17 @@ describe("AgentRunner agentic loop (pi)", () => {
     expect(summary).not.toContain("后台命令 ID");
   });
 
-  it("returns blocking shell commands as background output files when waitMs elapses", async () => {
+  it("returns Bash timeout commands as background output files when timeout elapses", async () => {
     const project = await store.createProject({ name: "proj", path: dir });
     const scripted = scriptedStreamFn([
       {
         toolCalls: [
           {
             id: "call_shell_blocking_background",
-            name: "shell",
+            name: "Bash",
             arguments: {
               command: delayedEchoShellCommand("blocking-background-done"),
-              mode: "blocking",
-              waitMs: 50
+              timeout: 50
             }
           }
         ]
@@ -553,7 +557,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
     const outputPath = parseBackgroundOutputPath(summary);
 
-    expect(summary).toContain('mode="blocking"');
+    expect(summary).toContain("timeout=50ms");
     expect(summary).toContain("后台命令 ID");
     await waitForFileToContain(join(dir, outputPath), "blocking-background-done");
   });
@@ -565,11 +569,11 @@ describe("AgentRunner agentic loop (pi)", () => {
         toolCalls: [
           {
             id: "call_1",
-            name: "write_file",
-            arguments: { path: "out.txt", content: "最终文件内容" },
+            name: "Write",
+            arguments: { file_path: "out.txt", content: "最终文件内容" },
             argumentDeltas: [
               { content: "正在生成的大段内容" },
-              { path: "out.txt", content: "正在生成的大段内容" }
+              { file_path: "out.txt", content: "正在生成的大段内容" }
             ]
           }
         ]
@@ -582,7 +586,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     );
     const activityIndex = events.findIndex(
       (event) =>
-        event.type === "tool_activity" && event.activity.argsPreview.path === "out.txt"
+        event.type === "tool_activity" && event.activity.argsPreview.file_path === "out.txt"
     );
     const runningIndex = events.findIndex(
       (event) => event.type === "tool_call" && event.toolCall.status === "running"
@@ -591,9 +595,9 @@ describe("AgentRunner agentic loop (pi)", () => {
 
     expect(activityIndex).toBeGreaterThanOrEqual(0);
     expect(runningIndex).toBeGreaterThan(activityIndex);
-    expect(activity?.type === "tool_activity" && activity.activity.name).toBe("write_file");
+    expect(activity?.type === "tool_activity" && activity.activity.name).toBe("Write");
     expect(activity?.type === "tool_activity" && activity.activity.argsPreview).toEqual({
-      path: "out.txt"
+      file_path: "out.txt"
     });
     expect(
       activity?.type === "tool_activity" &&
@@ -606,7 +610,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const { runner, calls } = runnerWith([
       {
         toolCalls: [
-          { id: "call_1", name: "write_file", arguments: { path: "out.txt", content: "done" } }
+          { id: "call_1", name: "Write", arguments: { file_path: "out.txt", content: "done" } }
         ]
       },
       { text: "第一轮完成。" },
@@ -645,7 +649,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const { runner } = runnerWith([
       {
         toolCalls: [
-          { id: "call_1", name: "write_file", arguments: { path: ".env", content: "TOKEN=x" } }
+          { id: "call_1", name: "Write", arguments: { file_path: ".env", content: "TOKEN=x" } }
         ]
       },
       { text: "好的。" }
@@ -682,7 +686,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const { runner, calls } = runnerWith([
       {
         toolCalls: [
-          { id: "call_1", name: "write_file", arguments: { path: ".env", content: "TOKEN=x" } }
+          { id: "call_1", name: "Write", arguments: { file_path: ".env", content: "TOKEN=x" } }
         ]
       },
       { text: "明白，那我先不写文件。" }
@@ -721,7 +725,7 @@ describe("AgentRunner agentic loop (pi)", () => {
   it("feeds tool failures back to the model instead of aborting", async () => {
     const project = await store.createProject({ name: "proj", path: dir });
     const { runner, calls } = runnerWith([
-      { toolCalls: [{ id: "call_1", name: "read_file", arguments: { path: "missing.txt" } }] },
+      { toolCalls: [{ id: "call_1", name: "Read", arguments: { file_path: "missing.txt" } }] },
       { text: "文件不存在，已说明。" }
     ]);
 
@@ -785,7 +789,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const { runner, calls } = runnerWith([
       {
         toolCalls: [
-          { id: "call_1", name: "write_file", arguments: { path: ".env", content: "TOKEN=x" } }
+          { id: "call_1", name: "Write", arguments: { file_path: ".env", content: "TOKEN=x" } }
         ]
       },
       { text: "不应该被调用" }
@@ -820,7 +824,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const { runner, calls } = runnerWith([
       {
         toolCalls: [
-          { id: "call_1", name: "shell", arguments: { command: longRunningShellCommand() } }
+          { id: "call_1", name: "Bash", arguments: { command: longRunningShellCommand() } }
         ]
       },
       { text: "不应该被调用" }
@@ -856,7 +860,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const project = await store.createProject({ name: "proj", path: dir });
     const turns: ScriptedTurn[] = [
       ...Array.from({ length: 30 }, (_, index) => ({
-        toolCalls: [{ id: `call_${index}`, name: "list_directory", arguments: {} }]
+        toolCalls: [{ id: `call_${index}`, name: "LS", arguments: {} }]
       })),
       { text: "已经列完目录。" }
     ];
@@ -880,7 +884,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     });
     const project = await store.createProject({ name: "proj", path: dir });
     const turns: ScriptedTurn[] = Array.from({ length: 5 }, (_, index) => ({
-      toolCalls: [{ id: `call_${index}`, name: "list_directory", arguments: {} }]
+      toolCalls: [{ id: `call_${index}`, name: "LS", arguments: {} }]
     }));
     const { runner, calls } = runnerWith(turns);
 

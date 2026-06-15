@@ -3,33 +3,33 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { selectAgentTools } from "../src/tools/registry";
 
 const toolNames = [
-  "list_directory",
-  "read_file",
-  "glob",
-  "search",
-  "shell_status",
-  "shell_cancel",
-  "git_status",
-  "git_diff",
-  "fetch_url",
-  "web_search",
-  "schedule_list",
-  "ocr_extract_text",
-  "write_file",
-  "edit_file",
-  "make_directory",
-  "shell",
-  "feishu_send_message",
-  "schedule_create",
-  "schedule_cancel",
-  "create_skill",
-  "propose_plan",
-  "update_plan",
-  "ask_user",
-  "use_skill",
-  "memory",
-  "todo_create",
-  "todo_update"
+  "LS",
+  "Read",
+  "Glob",
+  "Grep",
+  "BashStatus",
+  "BashCancel",
+  "GitStatus",
+  "GitDiff",
+  "WebFetch",
+  "WebSearch",
+  "ScheduleList",
+  "OcrExtractText",
+  "Write",
+  "Edit",
+  "MakeDirectory",
+  "Bash",
+  "FeishuSendMessage",
+  "ScheduleCreate",
+  "ScheduleCancel",
+  "CreateSkill",
+  "ExitPlanMode",
+  "ExitPlanMode",
+  "AskUserQuestion",
+  "Skill",
+  "Memory",
+  "TodoWrite",
+  "TodoWrite"
 ];
 
 function fakeTools(): AgentTool<any>[] {
@@ -50,47 +50,46 @@ describe("selectAgentTools", () => {
   it("none 阶段隐藏计划工具，保留普通工具和 todo 工具", () => {
     const visible = names({ planPhase: "none", viaFeishu: false });
 
-    expect(visible).not.toContain("propose_plan");
-    expect(visible).not.toContain("update_plan");
-    expect(visible).toContain("write_file");
-    expect(visible).toContain("shell");
-    expect(visible).toContain("ask_user");
-    expect(visible).toContain("use_skill");
-    expect(visible).toContain("todo_create");
-    expect(visible).toContain("todo_update");
+    expect(visible).not.toContain("ExitPlanMode");
+    expect(visible).not.toContain("ExitPlanMode");
+    expect(visible).toContain("Write");
+    expect(visible).toContain("Bash");
+    expect(visible).toContain("AskUserQuestion");
+    expect(visible).toContain("Skill");
+    expect(visible).toContain("TodoWrite");
+    expect(visible).toContain("TodoWrite");
   });
 
   it("draft 阶段只保留只读工具和计划起草辅助工具", () => {
     const visible = names({ planPhase: "draft", viaFeishu: false });
     const allowed = new Set([
-      "list_directory",
-      "read_file",
-      "glob",
-      "search",
-      "shell_status",
-      "shell_cancel",
-      "git_status",
-      "git_diff",
-      "fetch_url",
-      "web_search",
-      "schedule_list",
-      "propose_plan",
-      "ask_user",
-      "use_skill",
-      "memory"
+      "LS",
+      "Read",
+      "Glob",
+      "Grep",
+      "BashStatus",
+      "BashCancel",
+      "GitStatus",
+      "GitDiff",
+      "WebFetch",
+      "WebSearch",
+      "ScheduleList",
+      "ExitPlanMode",
+      "AskUserQuestion",
+      "Skill",
+      "Memory"
     ]);
 
     expect(visible.length).toBeGreaterThan(0);
     for (const name of visible) {
       expect(allowed.has(name)).toBe(true);
     }
-    expect(visible).toContain("propose_plan");
-    expect(visible).toContain("read_file");
-    expect(visible).not.toContain("write_file");
-    expect(visible).not.toContain("shell");
-    expect(visible).not.toContain("update_plan");
-    expect(visible).not.toContain("todo_create");
-    expect(visible).not.toContain("todo_update");
+    expect(visible).toContain("ExitPlanMode");
+    expect(visible).toContain("Read");
+    expect(visible).not.toContain("Write");
+    expect(visible).not.toContain("Bash");
+    expect(visible).not.toContain("TodoWrite");
+    expect(visible).not.toContain("TodoRead");
   });
 
   it("only exposes OCR when the current run has OCR-capable attachments", () => {
@@ -98,42 +97,42 @@ describe("selectAgentTools", () => {
     const visible = names({ planPhase: "none", viaFeishu: false, enableOcr: true });
     const draftVisible = names({ planPhase: "draft", viaFeishu: false, enableOcr: true });
 
-    expect(hidden).not.toContain("ocr_extract_text");
-    expect(visible).toContain("ocr_extract_text");
-    expect(draftVisible).toContain("ocr_extract_text");
+    expect(hidden).not.toContain("OcrExtractText");
+    expect(visible).toContain("OcrExtractText");
+    expect(draftVisible).toContain("OcrExtractText");
   });
 
   it("execute 阶段恢复普通工具，但不再暴露计划工具和 todo 工具", () => {
     const visible = names({ planPhase: "execute", viaFeishu: false });
 
-    expect(visible).not.toContain("update_plan");
-    expect(visible).not.toContain("propose_plan");
-    expect(visible).not.toContain("todo_create");
-    expect(visible).not.toContain("todo_update");
-    expect(visible).toContain("write_file");
-    expect(visible).toContain("schedule_create");
-    expect(visible).toContain("create_skill");
+    expect(visible).not.toContain("ExitPlanMode");
+    expect(visible).not.toContain("ExitPlanMode");
+    expect(visible).not.toContain("TodoWrite");
+    expect(visible).not.toContain("TodoWrite");
+    expect(visible).toContain("Write");
+    expect(visible).toContain("ScheduleCreate");
+    expect(visible).toContain("CreateSkill");
   });
 
   it("viaFeishu 任意阶段隐藏会阻塞或混淆飞书通道的工具", () => {
     for (const planPhase of ["none", "draft", "execute"] as const) {
       const visible = names({ planPhase, viaFeishu: true });
-      expect(visible).not.toContain("propose_plan");
-      expect(visible).not.toContain("ask_user");
-      expect(visible).not.toContain("todo_create");
-      expect(visible).not.toContain("todo_update");
+      expect(visible).not.toContain("ExitPlanMode");
+      expect(visible).not.toContain("AskUserQuestion");
+      expect(visible).not.toContain("TodoWrite");
+      expect(visible).not.toContain("TodoWrite");
     }
     const draft = names({ planPhase: "draft", viaFeishu: true });
-    expect(draft).toContain("use_skill");
+    expect(draft).toContain("Skill");
   });
 
-  it("headless 通道隐藏 ask_user 和 todo 工具，避免无人值守运行卡住", () => {
+  it("headless 通道隐藏 AskUserQuestion 和 todo 工具，避免无人值守运行卡住", () => {
     const visible = names({ planPhase: "none", viaFeishu: false, headless: true });
 
-    expect(visible).not.toContain("ask_user");
-    expect(visible).not.toContain("todo_create");
-    expect(visible).not.toContain("todo_update");
-    expect(visible).toContain("write_file");
-    expect(visible).toContain("schedule_list");
+    expect(visible).not.toContain("AskUserQuestion");
+    expect(visible).not.toContain("TodoWrite");
+    expect(visible).not.toContain("TodoWrite");
+    expect(visible).toContain("Write");
+    expect(visible).toContain("ScheduleList");
   });
 });

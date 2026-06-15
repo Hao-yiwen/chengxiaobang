@@ -1,34 +1,32 @@
 import { z } from "zod";
 
 export const toolNameSchema = z.enum([
-  "read_file",
-  "write_file",
-  "edit_file",
-  "list_directory",
-  "shell",
-  "shell_status",
-  "shell_cancel",
-  "git_status",
-  "git_diff",
-  "glob",
-  "search",
-  "make_directory",
-  "fetch_url",
-  "web_search",
-  "create_pptx",
-  "create_docx",
-  "create_xlsx",
-  "feishu_send_message",
-  "propose_plan",
-  "update_plan",
-  "ask_user",
-  "use_skill",
-  "schedule_create",
-  "schedule_list",
-  "schedule_cancel",
-  "todo_create",
-  "todo_update",
-  "memory"
+  "Read",
+  "Write",
+  "Edit",
+  "LS",
+  "MakeDirectory",
+  "Glob",
+  "Grep",
+  "Bash",
+  "BashStatus",
+  "BashCancel",
+  "GitStatus",
+  "GitDiff",
+  "WebFetch",
+  "WebSearch",
+  "ExitPlanMode",
+  "AskUserQuestion",
+  "Skill",
+  "TodoRead",
+  "TodoWrite",
+  "CreateSkill",
+  "ScheduleCreate",
+  "ScheduleList",
+  "ScheduleCancel",
+  "Memory",
+  "OcrExtractText",
+  "FeishuSendMessage"
 ]);
 export type ToolName = z.infer<typeof toolNameSchema>;
 
@@ -90,13 +88,14 @@ export type ToolCall = z.infer<typeof toolCallSchema>;
 export const toolActivityArgsPreviewSchema = z
   .object({
     path: z.string().optional(),
-    cwd: z.string().optional(),
+    file_path: z.string().optional(),
     command: z.string().optional(),
     query: z.string().optional(),
     pattern: z.string().optional(),
     url: z.string().optional(),
     title: z.string().optional(),
-    name: z.string().optional()
+    name: z.string().optional(),
+    skill: z.string().optional()
   })
   .strict();
 export type ToolActivityArgsPreview = z.infer<typeof toolActivityArgsPreviewSchema>;

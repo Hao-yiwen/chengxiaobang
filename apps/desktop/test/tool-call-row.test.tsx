@@ -20,7 +20,7 @@ function toolCall(partial: Partial<ToolCall>): ToolCall {
   return {
     id: "tool_1",
     runId: "run_1",
-    name: "shell",
+    name: "Bash",
     args: {},
     status: "completed",
     createdAt: "2026-06-08T00:00:00.000Z",
@@ -47,11 +47,11 @@ describe("ToolCallRow", () => {
   it("renders a human-readable description instead of the raw tool name", () => {
     render(
       <ToolCallRow
-        toolCall={toolCall({ name: "read_file", args: { path: "apps/desktop/src/index.ts" } })}
+        toolCall={toolCall({ name: "Read", args: { file_path: "apps/desktop/src/index.ts" } })}
       />
     );
     expect(screen.getByText("读取 …/src/index.ts")).toBeInTheDocument();
-    expect(screen.queryByText("read_file")).not.toBeInTheDocument();
+    expect(screen.queryByText("Read")).not.toBeInTheDocument();
   });
 
   it("shows localized status only for pending and error states", () => {
@@ -93,12 +93,12 @@ describe("ToolCallRow", () => {
     expect(screen.queryByText("智能审批：命令会删除文件")).not.toBeInTheDocument();
   });
 
-  it("renders an edit_file call as a +/- diff when expanded", () => {
+  it("renders an Edit call as a +/- diff when expanded", () => {
     render(
       <ToolCallRow
         toolCall={toolCall({
-          name: "edit_file",
-          args: { path: "a.ts", oldText: "x = 1", newText: "x = 2" },
+          name: "Edit",
+          args: { file_path: "a.ts", old_string: "x = 1", new_string: "x = 2" },
           result: "已替换 a.ts 中的文本"
         })}
       />
@@ -113,12 +113,12 @@ describe("ToolCallRow", () => {
     expect(diff).toHaveTextContent("+");
   });
 
-  it("renders a write_file call as all-added lines when expanded", () => {
+  it("renders a Write call as all-added lines when expanded", () => {
     render(
       <ToolCallRow
         toolCall={toolCall({
-          name: "write_file",
-          args: { path: "a.txt", content: "hello\nworld" },
+          name: "Write",
+          args: { file_path: "a.txt", content: "hello\nworld" },
           result: "已写入 a.txt"
         })}
       />
@@ -135,8 +135,8 @@ describe("ToolCallRow", () => {
     render(
       <ToolCallRow
         toolCall={toolCall({
-          name: "write_file",
-          args: { path: "page.html", content: "<!doctype html>" },
+          name: "Write",
+          args: { file_path: "page.html", content: "<!doctype html>" },
           result: "已写入 page.html"
         })}
       />
@@ -149,7 +149,7 @@ describe("ToolCallRow", () => {
   it("keeps the raw result for non-file tools", () => {
     render(
       <ToolCallRow
-        toolCall={toolCall({ name: "shell", args: { command: "ls -la" }, result: "total 0" })}
+        toolCall={toolCall({ name: "Bash", args: { command: "ls -la" }, result: "total 0" })}
       />
     );
 
@@ -166,7 +166,7 @@ describe("ToolCallRow", () => {
     render(
       <ToolCallRow
         toolCall={toolCall({
-          name: "shell",
+          name: "Bash",
           args: { command },
           result: "已生成 /tmp/report.xlsx"
         })}
@@ -181,11 +181,11 @@ describe("ToolCallRow", () => {
     expect(screen.getByText("已生成 /tmp/report.xlsx")).toBeInTheDocument();
   });
 
-  it("renders a completed ask_user as an expandable question and answer receipt", () => {
+  it("renders a completed AskUserQuestion as an expandable question and answer receipt", () => {
     render(
       <ToolCallRow
         toolCall={toolCall({
-          name: "ask_user",
+          name: "AskUserQuestion",
           args: {
             questions: [{ question: "用哪种方式处理旧的 API 兼容层？" }],
             answer: {
@@ -210,11 +210,11 @@ describe("ToolCallRow", () => {
     expect(screen.getByText(/答：保留并标记 deprecated/)).toBeInTheDocument();
   });
 
-  it("renders rejected and residual ask_user rows as historical receipts", () => {
+  it("renders rejected and residual AskUserQuestion rows as historical receipts", () => {
     const { rerender } = render(
       <ToolCallRow
         toolCall={toolCall({
-          name: "ask_user",
+          name: "AskUserQuestion",
           status: "rejected",
           args: { questions: [{ question: "继续吗？" }] }
         })}
@@ -229,7 +229,7 @@ describe("ToolCallRow", () => {
     rerender(
       <ToolCallRow
         toolCall={toolCall({
-          name: "ask_user",
+          name: "AskUserQuestion",
           status: "pending_approval",
           args: { questions: [{ question: "继续吗？" }] }
         })}
@@ -241,11 +241,11 @@ describe("ToolCallRow", () => {
     expect(screen.getByText("答：问题未回答（运行已结束）")).toBeInTheDocument();
   });
 
-  it("renders structured ask_user answers after expanding", () => {
+  it("renders structured AskUserQuestion answers after expanding", () => {
     render(
       <ToolCallRow
         toolCall={toolCall({
-          name: "ask_user",
+          name: "AskUserQuestion",
           args: {
             questions: [
               { id: "q1", question: "脚本类型？", options: ["GPT", "BERT"], allowFreeText: false },
@@ -271,12 +271,12 @@ describe("ToolCallRow", () => {
     expect(screen.getByText("答：保持 demo")).toBeInTheDocument();
   });
 
-  it("renders use_skill as a compact chip without exposing the loaded skill body", () => {
+  it("renders Skill as a compact chip without exposing the loaded skill body", () => {
     render(
       <ToolCallRow
         toolCall={toolCall({
-          name: "use_skill",
-          args: { name: "excel" },
+          name: "Skill",
+          args: { skill: "excel" },
           result: "# excel 技能\n这里是最长 32KB 的技能正文"
         })}
       />
@@ -286,9 +286,9 @@ describe("ToolCallRow", () => {
     expect(screen.queryByText(/技能正文/)).not.toBeInTheDocument();
   });
 
-  it("shows use_skill loading and failure details without expanding the skill body", () => {
+  it("shows Skill loading and failure details without expanding the skill body", () => {
     const { rerender } = render(
-      <ToolCallRow toolCall={toolCall({ name: "use_skill", args: { name: "ppt" }, status: "running" })} />
+      <ToolCallRow toolCall={toolCall({ name: "Skill", args: { skill: "ppt" }, status: "running" })} />
     );
 
     expect(screen.getByText("正在加载技能 ppt")).toBeInTheDocument();
@@ -296,8 +296,8 @@ describe("ToolCallRow", () => {
     rerender(
       <ToolCallRow
         toolCall={toolCall({
-          name: "use_skill",
-          args: { name: "excel" },
+          name: "Skill",
+          args: { skill: "excel" },
           status: "failed",
           result: "读取技能文件失败"
         })}
@@ -312,7 +312,7 @@ describe("ToolCallRow", () => {
     const onOpenFile = vi.fn();
     render(
       <ToolCallRow
-        toolCall={toolCall({ name: "read_file", args: { path: "src/index.ts" }, result: "x" })}
+        toolCall={toolCall({ name: "Read", args: { file_path: "src/index.ts" }, result: "x" })}
         onOpenFile={onOpenFile}
       />
     );
@@ -323,7 +323,7 @@ describe("ToolCallRow", () => {
 
   it("hides the file preview button when no callback is wired", () => {
     render(
-      <ToolCallRow toolCall={toolCall({ name: "read_file", args: { path: "src/index.ts" }, result: "x" })} />
+      <ToolCallRow toolCall={toolCall({ name: "Read", args: { file_path: "src/index.ts" }, result: "x" })} />
     );
 
     expect(screen.queryByTitle("预览文件")).not.toBeInTheDocument();

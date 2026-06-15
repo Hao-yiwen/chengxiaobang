@@ -18,8 +18,8 @@ function toolCall(partial: Partial<ToolCall>): ToolCall {
   return {
     id: `tool_${counter}`,
     runId: "run_1",
-    name: "read_file",
-    args: { path: "a.ts" },
+    name: "Read",
+    args: { file_path: "a.ts" },
     status: "completed",
     createdAt: "2026-06-13T00:00:00.000Z",
     updatedAt: "2026-06-13T00:00:01.000Z",
@@ -32,9 +32,9 @@ describe("ToolCallGroup", () => {
     render(
       <ToolCallGroup
         toolCalls={[
-          toolCall({ name: "read_file" }),
-          toolCall({ name: "read_file", args: { path: "b.ts" } }),
-          toolCall({ name: "shell", args: { command: "pnpm test" } })
+          toolCall({ name: "Read" }),
+          toolCall({ name: "Read", args: { file_path: "b.ts" } }),
+          toolCall({ name: "Bash", args: { command: "pnpm test" } })
         ]}
       />
     );
@@ -47,8 +47,8 @@ describe("ToolCallGroup", () => {
     render(
       <ToolCallGroup
         toolCalls={[
-          toolCall({ name: "read_file", result: "file body" }),
-          toolCall({ name: "search", args: { query: "foo" }, result: "3 matches" })
+          toolCall({ name: "Read", result: "file body" }),
+          toolCall({ name: "Grep", args: { pattern: "foo" }, result: "3 matches" })
         ]}
       />
     );
@@ -66,8 +66,8 @@ describe("ToolCallGroup", () => {
     render(
       <ToolCallGroup
         toolCalls={[
-          toolCall({ name: "read_file" }),
-          toolCall({ name: "shell", args: { command: "pnpm dev" }, status: "running" })
+          toolCall({ name: "Read" }),
+          toolCall({ name: "Bash", args: { command: "pnpm dev" }, status: "running" })
         ]}
       />
     );
@@ -81,8 +81,8 @@ describe("ToolCallGroup", () => {
     render(
       <ToolCallGroup
         toolCalls={[
-          toolCall({ name: "read_file" }),
-          toolCall({ name: "shell", args: { command: "x" }, status: "failed", result: "boom" })
+          toolCall({ name: "Read" }),
+          toolCall({ name: "Bash", args: { command: "x" }, status: "failed", result: "boom" })
         ]}
       />
     );
@@ -92,8 +92,8 @@ describe("ToolCallGroup", () => {
   });
 
   it("keeps the expanded state when a new call streams into the group", () => {
-    const first = toolCall({ name: "read_file" });
-    const second = toolCall({ name: "read_file", args: { path: "b.ts" } });
+    const first = toolCall({ name: "Read" });
+    const second = toolCall({ name: "Read", args: { file_path: "b.ts" } });
     const { rerender } = render(<ToolCallGroup toolCalls={[first, second]} />);
 
     fireEvent.click(screen.getByText("读取 2 个文件"));
@@ -101,7 +101,7 @@ describe("ToolCallGroup", () => {
 
     rerender(
       <ToolCallGroup
-        toolCalls={[first, second, toolCall({ name: "shell", args: { command: "pnpm test" } })]}
+        toolCalls={[first, second, toolCall({ name: "Bash", args: { command: "pnpm test" } })]}
       />
     );
     expect(screen.getByText("读取 a.ts")).toBeInTheDocument();
@@ -113,8 +113,8 @@ describe("ToolCallGroup", () => {
     render(
       <ToolCallGroup
         toolCalls={[
-          toolCall({ name: "read_file", args: { path: "src/index.ts" } }),
-          toolCall({ name: "shell", args: { command: "ls" } })
+          toolCall({ name: "Read", args: { file_path: "src/index.ts" } }),
+          toolCall({ name: "Bash", args: { command: "ls" } })
         ]}
         onOpenFile={onOpenFile}
       />

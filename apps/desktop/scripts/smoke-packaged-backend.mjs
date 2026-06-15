@@ -15,8 +15,9 @@ const smokeTimeoutMs = Number(process.env.CHENGXIAOBANG_SMOKE_TIMEOUT_MS ?? 20_0
 async function main() {
   const resourcesPath = await resolveResourcesPath();
   const bunPath = join(resourcesPath, process.platform === "win32" ? "bun.exe" : "bun");
+  const rgPath = join(resourcesPath, process.platform === "win32" ? "rg.exe" : "rg");
   const backendEntry = join(resourcesPath, "backend", "main.js");
-  await verifyPackagedResources(resourcesPath, bunPath, backendEntry);
+  await verifyPackagedResources(resourcesPath, bunPath, rgPath, backendEntry);
   await verifyPackagedMainRuntimeLoads(resourcesPath);
 
   const dataDir = await mkdtemp(join(tmpdir(), "cxb-packaged-backend-"));
@@ -102,7 +103,7 @@ async function resolveResourcesPath() {
   );
 }
 
-async function verifyPackagedResources(resourcesPath, bunPath, backendEntry) {
+async function verifyPackagedResources(resourcesPath, bunPath, rgPath, backendEntry) {
   const canvasPackage = join(
     resourcesPath,
     "app.asar.unpacked",
@@ -113,6 +114,7 @@ async function verifyPackagedResources(resourcesPath, bunPath, backendEntry) {
   const requiredPaths = [
     resourcesPath,
     bunPath,
+    rgPath,
     backendEntry,
     join(resourcesPath, "ocr", "pp-ocrv6-small", "det.onnx"),
     join(resourcesPath, "ocr", "pp-ocrv6-small", "rec.onnx"),

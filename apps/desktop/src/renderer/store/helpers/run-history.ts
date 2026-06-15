@@ -1,10 +1,11 @@
-import type {
-  ActiveRunSnapshot,
-  Message,
-  ReasoningMode,
-  RunRecord,
-  StreamEvent,
-  ToolCall
+import {
+  todoWriteArgsSchema,
+  type ActiveRunSnapshot,
+  type Message,
+  type ReasoningMode,
+  type RunRecord,
+  type StreamEvent,
+  type ToolCall
 } from "@chengxiaobang/shared";
 import type { AppState, SessionRunHistory, View } from "../types";
 import {
@@ -214,8 +215,23 @@ export function shouldHandleRunEvent(
 }
 
 export function autoOpenProgressPanelPatch(state: AppState, toolCall: ToolCall): Partial<AppState> {
+  const todoArgs =
+    toolCall.name === "TodoWrite" ? todoWriteArgsSchema.safeParse(toolCall.args) : undefined;
   if (
-    toolCall.name !== "todo_create" ||
+    toolCall.name === "TodoWrite" &&
+    todoArgs?.success &&
+    todoArgs.data.todos.length === 0 &&
+    state.activeRunId === toolCall.runId
+  ) {
+    return {
+      progressPanelOpen: false,
+      progressPanelAutoOpenedRunId: undefined
+    };
+  }
+  if (
+    toolCall.name !== "TodoWrite" ||
+    !todoArgs?.success ||
+    todoArgs.data.todos.length === 0 ||
     state.view !== "chat" ||
     state.activeRunId !== toolCall.runId ||
     state.progressPanelAutoOpenedRunId === toolCall.runId

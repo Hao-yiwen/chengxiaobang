@@ -5,7 +5,7 @@
 - **普通排队**：用户在当前 run 运行中继续输入并发送，消息先留在桌面端本地队列里。只有当前 run `completed` 后，才按顺序启动下一条 run。
 - **运行中引导**：用户在队列面板里点击「引导」，消息会立即发给当前 active run。后端不会中止正在进行的模型请求或工具调用，而是在 pi agent 的下一次安全边界注入为新的用户消息。
 
-`ask_user` 快捷回答优先级保持最高：如果当前 run 正在等待 `ask_user`，Composer 提交会继续作为 ask-user 回答，不进入普通队列。
+`AskUserQuestion` 快捷回答优先级保持最高：如果当前 run 正在等待 `AskUserQuestion`，Composer 提交会继续作为 ask-user 回答，不进入普通队列。
 
 ## 目标与边界
 
@@ -137,7 +137,7 @@ run 启动后登记到 `activeRuns`；run 完成、失败或中止后调用 `for
 
 `submit()` 的优先级如下：
 
-1. 如果当前在等待 `ask_user`，Composer 内容作为 ask-user 回答提交。
+1. 如果当前在等待 `AskUserQuestion`，Composer 内容作为 ask-user 回答提交。
 2. 如果当前不是首页、存在运行中的 active run，且输入或附件非空，则创建 `QueuedRunItem`。
 3. 否则按普通新 run 调用 `runPrompt()`。
 

@@ -42,7 +42,7 @@ function toolResultPayload(toolCallId: string, text: string): string {
   const message: ToolResultMessage = {
     role: "toolResult",
     toolCallId,
-    toolName: "read_file",
+    toolName: "Read",
     content: [{ type: "text", text }],
     isError: false,
     timestamp: 1700000000000
@@ -58,7 +58,7 @@ describe("buildAgentMessages", () => {
         role: "assistant",
         content: "",
         payload: assistantPayload(
-          [{ type: "toolCall", id: "call_1", name: "read_file", arguments: { path: "a.txt" } }],
+          [{ type: "toolCall", id: "call_1", name: "Read", arguments: { file_path: "a.txt" } }],
           "toolUse"
         )
       }),
@@ -109,7 +109,7 @@ describe("buildAgentMessages", () => {
         role: "assistant",
         content: "",
         payload: assistantPayload(
-          [{ type: "toolCall", id: "call_lost", name: "shell", arguments: { command: "ls" } }],
+          [{ type: "toolCall", id: "call_lost", name: "Bash", arguments: { command: "ls" } }],
           "toolUse"
         )
       })

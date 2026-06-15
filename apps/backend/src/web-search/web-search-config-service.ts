@@ -15,6 +15,8 @@ const SECRET_ACCOUNT = "web-search:tavily";
 export interface WebSearchRequest {
   query: string;
   maxResults?: number;
+  allowedDomains?: string[];
+  blockedDomains?: string[];
   signal?: AbortSignal;
 }
 

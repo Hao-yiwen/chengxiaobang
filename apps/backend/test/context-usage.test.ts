@@ -31,7 +31,7 @@ describe("context usage", () => {
       messages: [{ role: "user", content: "你好", timestamp: 0 }],
       tools: [
         {
-          name: "read_file",
+          name: "Read",
           label: "读取文件",
           description: "读取文件",
           parameters: { type: "object" },

@@ -53,7 +53,7 @@ export function App(props: { client?: ApiClient }) {
   const showRightPanel = view === "chat" || (view === "home" && rightPanelOpen);
   const hideComposerForDecisionDock =
     pendingDecisionTool?.status === "pending_approval" &&
-    (pendingDecisionTool.name === "ask_user" || pendingDecisionTool.name === "propose_plan");
+    (pendingDecisionTool.name === "AskUserQuestion" || pendingDecisionTool.name === "ExitPlanMode");
 
   useThemeController();
   useI18nController();

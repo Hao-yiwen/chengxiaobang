@@ -1,7 +1,7 @@
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const TAVILY_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RESULTS = 5;
-const MAX_RESULTS = 10;
+const MAX_RESULTS = 8;
 const MAX_RESULT_TEXT_CHARS = 900;
 
 interface TavilyResult {
@@ -21,6 +21,8 @@ export interface TavilySearchInput {
   apiKey: string;
   query: string;
   maxResults?: number;
+  allowedDomains?: string[];
+  blockedDomains?: string[];
   signal?: AbortSignal;
 }
 
@@ -30,6 +32,11 @@ export async function searchTavily(input: TavilySearchInput): Promise<string> {
     throw new Error("请提供搜索关键词");
   }
   const maxResults = normalizeMaxResults(input.maxResults);
+  const allowedDomains = normalizeDomains(input.allowedDomains);
+  const blockedDomains = normalizeDomains(input.blockedDomains);
+  if (allowedDomains.length > 0 && blockedDomains.length > 0) {
+    throw new Error("WebSearch 的 allowed_domains 和 blocked_domains 不能同时传入");
+  }
   const startedAt = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TAVILY_TIMEOUT_MS);
@@ -37,7 +44,9 @@ export async function searchTavily(input: TavilySearchInput): Promise<string> {
   input.signal?.addEventListener("abort", abort, { once: true });
   console.info("[web-search] 发起 Tavily 搜索", {
     query,
-    maxResults
+    maxResults,
+    allowedDomainCount: allowedDomains.length,
+    blockedDomainCount: blockedDomains.length
   });
 
   try {
@@ -55,7 +64,9 @@ export async function searchTavily(input: TavilySearchInput): Promise<string> {
         topic: "general",
         max_results: maxResults,
         include_answer: false,
-        include_raw_content: false
+        include_raw_content: false,
+        ...(allowedDomains.length > 0 ? { include_domains: allowedDomains } : {}),
+        ...(blockedDomains.length > 0 ? { exclude_domains: blockedDomains } : {})
       })
     });
     const durationMs = Date.now() - startedAt;
@@ -85,6 +96,13 @@ export async function searchTavily(input: TavilySearchInput): Promise<string> {
     input.signal?.removeEventListener("abort", abort);
     clearTimeout(timeout);
   }
+}
+
+function normalizeDomains(value: string[] | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+  return [...new Set(value.map((domain) => domain.trim()).filter(Boolean))].slice(0, 20);
 }
 
 export function formatTavilyResponse(

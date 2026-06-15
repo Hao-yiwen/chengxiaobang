@@ -225,7 +225,7 @@ describe("TaskScheduler", () => {
     const { scheduler } = schedulerWith([
       {
         toolCalls: [
-          { id: "tc1", name: "write_file", arguments: { path: "a.txt", content: "x" } }
+          { id: "tc1", name: "Write", arguments: { file_path: "a.txt", content: "x" } }
         ]
       },
       { text: "好的，已跳过写文件。" }
@@ -237,7 +237,7 @@ describe("TaskScheduler", () => {
     expect(updated?.lastStatus).toBe("completed");
     const toolCalls = await store.listToolCallsForSession(session.id);
     expect(toolCalls).toHaveLength(1);
-    expect(toolCalls[0]).toMatchObject({ name: "write_file", status: "rejected" });
+    expect(toolCalls[0]).toMatchObject({ name: "Write", status: "rejected" });
   });
 
   it("does not touch the origin session's settings (headless run)", async () => {

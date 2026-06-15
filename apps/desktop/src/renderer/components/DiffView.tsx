@@ -9,7 +9,7 @@ const LINE_STYLES: Record<DiffLine["type"], string> = {
   context: "text-muted-foreground"
 };
 
-/** edit_file / write_file 工具结果的逐行 diff 渲染。 */
+/** Edit / Write 工具结果的逐行 diff 渲染。 */
 export function DiffView({ lines }: { lines: DiffLine[] }) {
   const { t } = useTranslation();
   return (

@@ -10,7 +10,7 @@ import { toolIcon, toolLineLabel } from "@/lib/tool-display";
 import { useAppStore } from "@/store";
 
 /**
- * 输入框上方的待审批工具 dock：ask_user 使用选项卡片，propose_plan 使用计划确认卡，
+ * 输入框上方的待审批工具 dock：AskUserQuestion 使用选项卡片，ExitPlanMode 使用计划确认卡，
  * 其他工具使用通用审批卡。提交决议后立即隐藏，避免和时间线回执重复展示。
  */
 export function ApprovalDock() {
@@ -29,7 +29,7 @@ export function ApprovalDock() {
       name: pendingTool.name,
       approved: decision.approved
     });
-    if (pendingTool.name === "propose_plan" && decision.approved) {
+    if (pendingTool.name === "ExitPlanMode" && decision.approved) {
       console.info("[ApprovalDock] 用户确认计划，退出前端计划模式", {
         toolCallId: pendingTool.id
       });
@@ -39,7 +39,7 @@ export function ApprovalDock() {
     approve(pendingTool.id, decision);
   };
 
-  if (pendingTool.name === "ask_user") {
+  if (pendingTool.name === "AskUserQuestion") {
     return (
       <div data-testid="approval-dock" className="mb-3">
         <AskUserCard toolCall={pendingTool} onDecide={decide} />
@@ -47,7 +47,7 @@ export function ApprovalDock() {
     );
   }
 
-  if (pendingTool.name === "propose_plan") {
+  if (pendingTool.name === "ExitPlanMode") {
     return <PlanApprovalCard toolCall={pendingTool} onDecide={decide} />;
   }
 
@@ -169,9 +169,9 @@ function ApprovalCard({
   );
 }
 
-/** shell → 近黑命令块；edit/write → 路径 + diff；其余 → 原始 JSON 参数。 */
+/** Bash → 近黑命令块；Edit/Write → 路径 + diff；其余 → 原始 JSON 参数。 */
 function ApprovalPreview({ toolCall }: { toolCall: ToolCall }) {
-  if (toolCall.name === "shell" && typeof toolCall.args.command === "string") {
+  if (toolCall.name === "Bash" && typeof toolCall.args.command === "string") {
     return (
       <pre className="max-h-[180px] overflow-auto whitespace-pre-wrap break-words border-t bg-primary px-4 py-3 font-mono text-xs leading-relaxed text-primary-foreground">
         {toolCall.args.command}
@@ -179,11 +179,11 @@ function ApprovalPreview({ toolCall }: { toolCall: ToolCall }) {
     );
   }
   const diff = buildToolCallDiff(toolCall);
-  if (diff && typeof toolCall.args.path === "string") {
+  if (diff && typeof toolCall.args.file_path === "string") {
     return (
       <div className="border-t">
         <div className="border-b px-4 py-2 font-mono text-micro text-muted-foreground">
-          {toolCall.args.path}
+          {toolCall.args.file_path}
         </div>
         <div className="max-h-[220px] overflow-auto">
           <DiffView lines={diff} />

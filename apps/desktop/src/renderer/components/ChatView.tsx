@@ -84,15 +84,13 @@ function chatViewTimelineItems(
     }
     if (
       item.kind === "tool" &&
-      (item.toolCall.name === "todo_create" ||
-        item.toolCall.name === "todo_update" ||
-        item.toolCall.name === "update_plan")
+      (item.toolCall.name === "TodoRead" || item.toolCall.name === "TodoWrite")
     ) {
       continue;
     }
-    if (item.kind === "tool" && item.toolCall.name === "propose_plan") {
+    if (item.kind === "tool" && item.toolCall.name === "ExitPlanMode") {
       const plan = derivePlanView(
-        toolCalls.filter((toolCall) => toolCall.name === "propose_plan"),
+        toolCalls.filter((toolCall) => toolCall.name === "ExitPlanMode"),
         { activeRunId }
       );
       const visiblePlan =
@@ -111,7 +109,7 @@ function chatViewTimelineItems(
 }
 
 function toolCallsWithPendingPlan(toolCalls: ToolCall[], pendingTool?: ToolCall): ToolCall[] {
-  if (!pendingTool || pendingTool.name !== "propose_plan") {
+  if (!pendingTool || pendingTool.name !== "ExitPlanMode") {
     return toolCalls;
   }
   if (toolCalls.some((toolCall) => toolCall.id === pendingTool.id)) {
