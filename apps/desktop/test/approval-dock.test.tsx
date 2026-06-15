@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ToolCall } from "@chengxiaobang/shared";
+import type { Project, ToolCall } from "@chengxiaobang/shared";
 import { ApprovalDock } from "../src/renderer/components/ApprovalDock";
 import { setupI18n } from "../src/renderer/i18n";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
@@ -29,6 +29,16 @@ function pendingTool(partial: Partial<ToolCall> = {}): ToolCall {
   };
 }
 
+function project(): Project {
+  return {
+    id: "project_1",
+    name: "demo",
+    path: "/tmp/demo",
+    createdAt: "2026-06-13T00:00:00.000Z",
+    updatedAt: "2026-06-13T00:00:00.000Z"
+  };
+}
+
 describe("ApprovalDock", () => {
   it("renders nothing without a pending tool", () => {
     const { container } = render(<ApprovalDock />);
@@ -49,11 +59,13 @@ describe("ApprovalDock", () => {
     useAppStore.setState({ pendingTool: pendingTool(), approve });
     render(<ApprovalDock />);
 
-    expect(screen.getByText("等待批准")).toBeInTheDocument();
+    expect(screen.getByText("需要权限")).toBeInTheDocument();
     expect(screen.getByText("运行 rm -rf dist")).toBeInTheDocument();
-    expect(screen.getByText("rm -rf dist")).toBeInTheDocument();
+    expect(screen.getByText("等待确认")).toBeInTheDocument();
+    expect(screen.getAllByText(/rm -rf dist/).length).toBeGreaterThan(0);
+    expect(screen.queryByText("始终允许本项目")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /允许/ }));
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
     expect(approve).toHaveBeenCalledWith("tool_1", { approved: true });
   });
 
@@ -62,9 +74,50 @@ describe("ApprovalDock", () => {
     useAppStore.setState({ pendingTool: pendingTool(), approve });
     render(<ApprovalDock />);
 
-    fireEvent.click(screen.getByRole("button", { name: /拒绝/ }));
+    fireEvent.click(screen.getByText("拒绝"));
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
     expect(approve).toHaveBeenCalledWith("tool_1", { approved: false });
     expect(screen.queryByTestId("approval-dock")).not.toBeInTheDocument();
+  });
+
+  it("submits a project-scoped approval when a project is active", () => {
+    const approve = vi.fn();
+    const activeProject = project();
+    useAppStore.setState({
+      projects: [activeProject],
+      activeProjectId: activeProject.id,
+      pendingTool: pendingTool(),
+      approve
+    });
+    render(<ApprovalDock />);
+
+    fireEvent.click(screen.getByText("始终允许本项目"));
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+
+    expect(approve).toHaveBeenCalledWith("tool_1", {
+      approved: true,
+      approvalScope: "project"
+    });
+  });
+
+  it("supports arrow key selection and Enter confirmation", () => {
+    const approve = vi.fn();
+    const activeProject = project();
+    useAppStore.setState({
+      projects: [activeProject],
+      activeProjectId: activeProject.id,
+      pendingTool: pendingTool(),
+      approve
+    });
+    render(<ApprovalDock />);
+
+    fireEvent.keyDown(screen.getByTestId("approval-dock"), { key: "ArrowDown" });
+    fireEvent.keyDown(screen.getByTestId("approval-dock"), { key: "Enter" });
+
+    expect(approve).toHaveBeenCalledWith("tool_1", {
+      approved: true,
+      approvalScope: "project"
+    });
   });
 
   it("previews Edit approvals as a path plus diff", () => {
@@ -88,18 +141,19 @@ describe("ApprovalDock", () => {
     useAppStore.setState({
       pendingTool: pendingTool({
         name: "AskUserQuestion",
-        args: { questions: [{ question: "继续吗？", options: ["继续", "停止"], allowFreeText: false }] }
+        args: { questions: [{ question: "继续吗？", options: ["同意", "停止"] }] }
       }),
       approve
     });
     render(<ApprovalDock />);
 
     expect(screen.getByText("继续吗？")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("继续"));
+    fireEvent.click(screen.getByText("同意"));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
     await waitFor(() =>
       expect(approve).toHaveBeenCalledWith("tool_1", {
         approved: true,
-        answer: { answers: [{ question: "继续吗？", optionLabel: "继续" }] }
+        answer: { answers: [{ question: "继续吗？", optionLabel: "同意" }] }
       })
     );
     expect(screen.queryByTestId("approval-dock")).not.toBeInTheDocument();

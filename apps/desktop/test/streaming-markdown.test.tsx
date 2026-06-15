@@ -70,6 +70,18 @@ describe("StreamingMarkdown", () => {
     });
   });
 
+  it("renders an unclosed unlabeled code fence with the text code block while streaming", async () => {
+    const codeText = "feature/* -> MR\npreview_train -> main";
+    const { container } = render(<StreamingMarkdown text={`\`\`\`\n${codeText}`} />);
+
+    expect(container.querySelector(".cxb-code-block-shell")).not.toBeNull();
+    expect(screen.getByText("text")).toBeInTheDocument();
+    expect(container.querySelector('[data-streamdown="code-block"][data-language=""]')).toBeNull();
+    await waitFor(() => {
+      expect(container.querySelector(".cxb-code-block-shell pre")?.textContent).toBe(codeText);
+    });
+  });
+
   it("enables Streamdown caret and word animation while output is streaming", () => {
     const { container } = render(<StreamingMarkdown text="正在输出内容" />);
     const root = container.querySelector(".markdown-streamdown") as HTMLElement | null;
@@ -83,7 +95,8 @@ describe("StreamingMarkdown", () => {
     render(<StreamingMarkdown text={"| 名称 | 值 |\n| --- | --- |\n| 端口 | 8080 |"} />);
 
     expect(screen.getByRole("table")).toBeInTheDocument();
-    expect(screen.getByTitle("复制表格")).toBeInTheDocument();
-    expect(screen.getByTitle("下载表格")).toBeInTheDocument();
+    expect(screen.queryByTitle("复制表格")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("下载表格")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("全屏查看")).not.toBeInTheDocument();
   });
 });

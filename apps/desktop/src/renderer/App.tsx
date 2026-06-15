@@ -8,6 +8,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { ConnectPhoneView } from "./components/ConnectPhoneView";
 import { ConfirmDialogProvider } from "./components/ConfirmDialog";
+import { DevToolsFloatingButton } from "./components/DevToolsFloatingButton";
 import { HomeMascot } from "./components/HomeMascot";
 import { HomeStarters } from "./components/HomeStarters";
 import { NotificationToasts } from "./components/NotificationToasts";
@@ -52,8 +53,7 @@ export function App(props: { client?: ApiClient }) {
   const dropActive = acceptsDroppedContext && dragDepth > 0;
   const showRightPanel = view === "chat" || (view === "home" && rightPanelOpen);
   const hideComposerForDecisionDock =
-    pendingDecisionTool?.status === "pending_approval" &&
-    (pendingDecisionTool.name === "AskUserQuestion" || pendingDecisionTool.name === "ExitPlanMode");
+    pendingDecisionTool?.status === "pending_approval";
 
   useThemeController();
   useI18nController();
@@ -149,6 +149,7 @@ export function App(props: { client?: ApiClient }) {
           <SetupDialog />
           <NotificationToasts />
           <UpdateCenter />
+          <DevToolsFloatingButton />
           {view === "settings" ? (
             <SettingsView />
           ) : (

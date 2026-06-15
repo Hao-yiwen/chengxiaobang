@@ -219,7 +219,7 @@ describe("AgentRunner agentic loop (pi)", () => {
           {
             id: "ask_0",
             name: "AskUserQuestion",
-            arguments: { questions: [{ question: "要继续分析吗？" }] }
+            arguments: { questions: [{ question: "要继续分析吗？", options: ["继续分析", "停止"] }] }
           }
         ]
       },
@@ -236,7 +236,7 @@ describe("AgentRunner agentic loop (pi)", () => {
       if (event.type === "tool_call" && event.toolCall.status === "pending_approval") {
         runner.approvals.decide(event.toolCall.id, {
           approved: true,
-          answer: { answers: [{ question: "要继续分析吗？", text: "继续分析" }] }
+          answer: { answers: [{ question: "要继续分析吗？", optionLabel: "继续分析" }] }
         });
       }
     }

@@ -69,9 +69,9 @@ describe("normalizeDecision（按工具名裁决 payload）", () => {
     expect(
       normalizeDecision("AskUserQuestion", {
         approved: true,
-        answer: { answers: [{ text: "自由回答" }] }
+        answer: { answers: [{ optionLabel: "方案 A" }] }
       })
-    ).toEqual({ approved: true, answer: { answers: [{ text: "自由回答" }] } });
+    ).toEqual({ approved: true, answer: { answers: [{ optionLabel: "方案 A" }] } });
   });
 
   it("AskUserQuestion 拒绝时不要求 answer", () => {
@@ -97,7 +97,7 @@ describe("normalizeDecision（按工具名裁决 payload）", () => {
     // AskUserQuestion 决议中的 editedSteps 被裁掉。
     const askResult = normalizeDecision("AskUserQuestion", {
       approved: true,
-      answer: { answers: [{ text: "好" }] },
+      answer: { answers: [{ optionLabel: "好" }] },
       editedSteps: steps
     });
     expect(askResult.editedSteps).toBeUndefined();

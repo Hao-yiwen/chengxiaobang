@@ -217,6 +217,10 @@ const projectOpenerIconCache = new Map<string, string | undefined>();
 let terminalManager: TerminalSessionManager | undefined;
 let updateService: DesktopUpdateService | undefined;
 
+function isDevDesktopRuntime(): boolean {
+  return !app.isPackaged;
+}
+
 function stopBackend(reason: string): void {
   if (!backend) {
     return;
@@ -263,6 +267,25 @@ function requestNewChatFromMenu(): void {
   mainWindow.show();
   mainWindow.focus();
   mainWindow.webContents.send("app-menu:new-chat");
+}
+
+function openMainWindowDevTools(reason: string): { ok: boolean; error?: string } {
+  if (!isDevDesktopRuntime()) {
+    return { ok: false, error: "DevTools 入口仅在开发环境可用" };
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.warn(`[main] 打开 DevTools 失败 reason=${reason}: 主窗口不可用`);
+    return { ok: false, error: "主窗口不可用" };
+  }
+  try {
+    mainWindow.webContents.openDevTools({ mode: "detach", activate: true });
+    console.info(`[main] 已打开 DevTools reason=${reason}`);
+    return { ok: true };
+  } catch (error) {
+    const message = messageFromError(error);
+    console.error(`[main] 打开 DevTools 失败 reason=${reason}: ${message}`);
+    return { ok: false, error: message };
+  }
 }
 
 function messageFromError(error: unknown): string {
@@ -726,6 +749,8 @@ async function createWindow(): Promise<void> {
   registerOcrIpc(trustedIpc, ocrOptions);
   registerUpdateIpc(trustedIpc, updateService);
 
+  trustedIpc.handle("open-devtools", () => openMainWindowDevTools("renderer-floating-button"));
+
   trustedIpc.handle("open-skills-dir", async () => {
     const dir = join(homedir(), ".chengxiaobang", "skills");
     await mkdir(dir, { recursive: true });
@@ -1018,11 +1043,20 @@ async function createWindow(): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      devTools: isDevDesktopRuntime(),
       // 右侧浏览器面板使用 webview，后续 attach 时会继续收紧权限。
       webviewTag: true
     }
   };
   mainWindow = new BrowserWindow(windowOptions);
+  if (isDevDesktopRuntime()) {
+    openMainWindowDevTools("window-created");
+    mainWindow.webContents.once("did-finish-load", () => {
+      if (!mainWindow?.webContents.isDevToolsOpened()) {
+        openMainWindowDevTools("did-finish-load");
+      }
+    });
+  }
 
   mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
     // webview 会打开任意网页，不能给它 preload 或 Node 权限。

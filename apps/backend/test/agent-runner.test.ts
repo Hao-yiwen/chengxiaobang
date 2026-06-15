@@ -102,6 +102,44 @@ describe("AgentRunner", () => {
     expect(events.at(-1)).toMatchObject({ type: "run_end", status: "aborted" });
   });
 
+  it("skips direct tool approval after trusting the same command for the project", async () => {
+    const project = await store.createProject({ name: "tmp", path: dir });
+    const command = `node -e "console.log('trusted direct')"`;
+    const { runner } = runnerWith(store, secrets, [{ text: "完成" }, { text: "完成" }]);
+    const firstTransitions: string[] = [];
+
+    for await (const event of runner.stream({
+      prompt: `/shell ${command}`,
+      projectId: project.id,
+      accessMode: "approval"
+    })) {
+      if (event.type === "tool_call") {
+        firstTransitions.push(event.toolCall.status);
+        if (event.toolCall.status === "pending_approval") {
+          runner.approvals.decide(event.toolCall.id, {
+            approved: true,
+            approvalScope: "project"
+          });
+        }
+      }
+    }
+
+    expect(firstTransitions).toEqual(["pending_approval", "running", "completed"]);
+
+    const secondTransitions: string[] = [];
+    for await (const event of runner.stream({
+      prompt: `/shell ${command}`,
+      projectId: project.id,
+      accessMode: "approval"
+    })) {
+      if (event.type === "tool_call") {
+        secondTransitions.push(event.toolCall.status);
+      }
+    }
+
+    expect(secondTransitions).toEqual(["running", "completed"]);
+  });
+
   it("runs ordinary direct file writes without manual approval", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
     const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
@@ -119,6 +157,57 @@ describe("AgentRunner", () => {
 
     expect(transitions).toEqual(["running", "completed"]);
     await expect(readFile(join(dir, "ordinary.txt"), "utf8")).resolves.toBe("hello");
+  });
+
+  it("skips model tool approval after trusting the same command for the project", async () => {
+    const project = await store.createProject({ name: "tmp", path: dir });
+    const command = `node -e "console.log('trusted model')"`;
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          { id: "model_tool_1", name: "Bash", arguments: { command } }
+        ]
+      },
+      { text: "第一次完成" },
+      {
+        toolCalls: [
+          { id: "model_tool_2", name: "Bash", arguments: { command } }
+        ]
+      },
+      { text: "第二次完成" }
+    ]);
+    const firstTransitions: string[] = [];
+
+    for await (const event of runner.stream({
+      prompt: "跑一次",
+      projectId: project.id,
+      accessMode: "approval"
+    })) {
+      if (event.type === "tool_call") {
+        firstTransitions.push(event.toolCall.status);
+        if (event.toolCall.status === "pending_approval") {
+          runner.approvals.decide(event.toolCall.id, {
+            approved: true,
+            approvalScope: "project"
+          });
+        }
+      }
+    }
+
+    expect(firstTransitions).toEqual(["pending_approval", "running", "completed"]);
+
+    const secondTransitions: string[] = [];
+    for await (const event of runner.stream({
+      prompt: "再跑一次",
+      projectId: project.id,
+      accessMode: "approval"
+    })) {
+      if (event.type === "tool_call") {
+        secondTransitions.push(event.toolCall.status);
+      }
+    }
+
+    expect(secondTransitions).toEqual(["running", "completed"]);
   });
 
   it("records a finalized usage ledger entry for a model attempt", async () => {

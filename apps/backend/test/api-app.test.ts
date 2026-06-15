@@ -1132,6 +1132,7 @@ describe("createApp", () => {
     const response = await localApp(
       jsonRequest("/api/approvals/tool_plan", "POST", {
         approved: true,
+        approvalScope: "project",
         editedSteps: [{ id: "s1", title: "确认后的步骤" }]
       })
     );
@@ -1139,6 +1140,7 @@ describe("createApp", () => {
     expect(response.status).toBe(200);
     expect(decideSpy).toHaveBeenCalledWith("tool_plan", {
       approved: true,
+      approvalScope: "project",
       editedSteps: [{ id: "s1", title: "确认后的步骤", status: "pending" }]
     });
   });

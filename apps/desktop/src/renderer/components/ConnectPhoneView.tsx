@@ -1,12 +1,15 @@
 import {
   ArrowClockwiseIcon as RefreshCw,
+  ChatCenteredTextIcon as MessageSquareText,
   CheckCircleIcon as CheckCircle,
   CircleNotchIcon as Loader2,
+  PlusIcon as Plus,
   QrCodeIcon as QrCode,
   WarningCircleIcon as WarningCircle
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import type { Session } from "@chengxiaobang/shared";
 import { QRCodeSVG } from "qrcode.react";
 import feishuLogoUrl from "../../../assets/feishu-logo.png";
 import connectPhoneIllustrationUrl from "../../../assets/connect-phone-illustration.png";
@@ -16,6 +19,8 @@ import { useAppStore } from "@/store";
 
 const MIN_INSTALL_POLL_MS = 3000;
 const QR_VISIBLE_TTL_SECONDS = 10 * 60;
+
+type ConnectPhoneTab = "bindings" | "scan";
 
 type InstallState = {
   status: "idle" | "loading" | "showing" | "success" | "expired" | "error";
@@ -31,25 +36,67 @@ const INITIAL_INSTALL_STATE: InstallState = {
   error: ""
 };
 
-/** 手机连接页：进入后自动生成飞书二维码，右侧直接展示手机聊天图。 */
+/** 手机连接页：未连接时扫码，已连接后管理飞书绑定会话。 */
 export function ConnectPhoneView() {
   const { t } = useTranslation();
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
+  const sessions = useAppStore((state) => state.sessions);
+  const feishuConfig = useAppStore((state) => state.feishuConfig);
+  const loadData = useAppStore((state) => state.loadData);
+  const loadFeishuConfig = useAppStore((state) => state.loadFeishuConfig);
+  const selectSession = useAppStore((state) => state.selectSession);
   const startFeishuInstall = useAppStore((state) => state.startFeishuInstall);
   const pollFeishuInstall = useAppStore((state) => state.pollFeishuInstall);
 
+  const [activeTab, setActiveTab] = useState<ConnectPhoneTab>("bindings");
+  const [configLoaded, setConfigLoaded] = useState(false);
   const [install, setInstall] = useState<InstallState>(INITIAL_INSTALL_STATE);
   const installPollTimerRef = useRef<number | undefined>(undefined);
   const installExpiryTimerRef = useRef<number | undefined>(undefined);
   const installAttemptRef = useRef(0);
+  const autoInstallStartedRef = useRef(false);
+  const configuredLogRef = useRef(false);
   const headerInset = !sidebarOpen && window.chengxiaobang?.platform === "darwin";
+  const isConfigured = Boolean(feishuConfig?.enabled && feishuConfig.appId.trim());
+  const boundSessions = sessions.filter((session) => session.feishuChatId);
 
   useEffect(() => {
-    console.debug("[connect-phone] 进入连接飞书页，自动生成二维码");
-    void startInstall();
-    return () => cancelInstallAttempt();
+    let disposed = false;
+    console.debug("[connect-phone] 进入连接飞书页，加载飞书连接状态");
+    void loadFeishuConfig().finally(() => {
+      if (!disposed) {
+        setConfigLoaded(true);
+      }
+    });
+    return () => {
+      disposed = true;
+      cancelInstallAttempt();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!configLoaded) {
+      return;
+    }
+    if (isConfigured) {
+      if (!configuredLogRef.current) {
+        configuredLogRef.current = true;
+        console.info("[connect-phone] 已有飞书连接，默认展示绑定列表", {
+          boundCount: boundSessions.length
+        });
+        setActiveTab("bindings");
+      }
+      return;
+    }
+    if (autoInstallStartedRef.current) {
+      return;
+    }
+    autoInstallStartedRef.current = true;
+    console.debug("[connect-phone] 未发现飞书连接，自动生成二维码");
+    void startInstall();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configLoaded, isConfigured]);
 
   function clearInstallTimers(): void {
     if (installPollTimerRef.current !== undefined) {
@@ -65,6 +112,22 @@ export function ConnectPhoneView() {
   function cancelInstallAttempt(): void {
     installAttemptRef.current += 1;
     clearInstallTimers();
+  }
+
+  function addConnection(): void {
+    console.info("[connect-phone] 点击新增飞书连接", { activeTab });
+    setActiveTab("scan");
+    void startInstall();
+  }
+
+  function refreshBindings(): void {
+    console.debug("[connect-phone] 刷新飞书绑定列表");
+    void loadData();
+  }
+
+  function openBoundSession(sessionId: string): void {
+    console.info("[connect-phone] 打开飞书绑定会话", { sessionId });
+    void selectSession(sessionId);
   }
 
   async function startInstall(): Promise<void> {
@@ -148,6 +211,8 @@ export function ConnectPhoneView() {
             status: "success",
             error: ""
           }));
+          setActiveTab("bindings");
+          void loadData();
           return;
         }
         if (result.error) {
@@ -179,6 +244,9 @@ export function ConnectPhoneView() {
     );
   }
 
+  const showTabbedManagement = configLoaded && isConfigured;
+  const showScanPanel = !showTabbedManagement || activeTab === "scan";
+
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-background">
       <header
@@ -200,11 +268,22 @@ export function ConnectPhoneView() {
       <div className="min-h-0 flex-1 overflow-y-auto px-12 py-8">
         <div className="mx-auto grid max-w-[1040px] items-center gap-12 lg:grid-cols-[320px_minmax(0,1fr)]">
           <div className="rounded-sm border bg-background p-5" data-testid="connect-phone-feishu-panel">
-            <h2 className="mb-5 flex items-center justify-center gap-2 text-center text-body-sm font-medium text-foreground">
-              <img src={feishuLogoUrl} alt="" aria-hidden="true" className="size-[20px] flex-none object-contain" />
-              {t("connectPhone.qrTitle")}
-            </h2>
-            <QrSurface install={install} onRefresh={() => void startInstall()} />
+            {showTabbedManagement ? (
+              <ConnectPhoneTabs
+                activeTab={activeTab}
+                onSelect={setActiveTab}
+                onAddConnection={addConnection}
+              />
+            ) : null}
+            {showScanPanel ? (
+              <ScanPanel install={install} onRefresh={() => void startInstall()} />
+            ) : (
+              <BoundSessionsPanel
+                sessions={boundSessions}
+                onRefresh={refreshBindings}
+                onOpenSession={openBoundSession}
+              />
+            )}
           </div>
 
           <img
@@ -216,6 +295,147 @@ export function ConnectPhoneView() {
         </div>
       </div>
     </section>
+  );
+}
+
+function ConnectPhoneTabs(props: {
+  activeTab: ConnectPhoneTab;
+  onSelect: (tab: ConnectPhoneTab) => void;
+  onAddConnection: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="mb-5 flex items-center justify-between gap-3 border-b pb-3">
+      <div className="flex min-w-0 rounded-sm bg-canvas-soft-2 p-0.5" role="tablist">
+        <TabButton
+          active={props.activeTab === "bindings"}
+          label={t("connectPhone.bindingsTab")}
+          onClick={() => props.onSelect("bindings")}
+        />
+        <TabButton
+          active={props.activeTab === "scan"}
+          label={t("connectPhone.scanTab")}
+          onClick={() => props.onSelect("scan")}
+        />
+      </div>
+      <button
+        type="button"
+        aria-label={t("connectPhone.addConnection")}
+        title={t("connectPhone.addConnection")}
+        onClick={props.onAddConnection}
+        className="flex size-8 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Plus className="size-4" />
+      </button>
+    </div>
+  );
+}
+
+function TabButton(props: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={props.active}
+      onClick={props.onClick}
+      className={cn(
+        "h-7 rounded-xs px-3 text-caption transition-colors",
+        props.active
+          ? "bg-background font-medium text-foreground shadow-hairline"
+          : "text-muted-foreground hover:text-foreground"
+      )}
+    >
+      {props.label}
+    </button>
+  );
+}
+
+function ScanPanel({ install, onRefresh }: { install: InstallState; onRefresh: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <h2 className="mb-5 flex items-center justify-center gap-2 text-center text-body-sm font-medium text-foreground">
+        <img
+          src={feishuLogoUrl}
+          alt=""
+          aria-hidden="true"
+          className="size-[20px] flex-none object-contain"
+        />
+        {t("connectPhone.qrTitle")}
+      </h2>
+      <QrSurface install={install} onRefresh={onRefresh} />
+    </>
+  );
+}
+
+function BoundSessionsPanel(props: {
+  sessions: Session[];
+  onRefresh: () => void;
+  onOpenSession: (sessionId: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div data-testid="feishu-binding-panel">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="flex min-w-0 items-center gap-2 text-body-sm font-medium text-foreground">
+          <img
+            src={feishuLogoUrl}
+            alt=""
+            aria-hidden="true"
+            className="size-[20px] flex-none object-contain"
+          />
+          <span className="truncate">{t("connectPhone.bindingsTitle")}</span>
+        </h2>
+        <Button type="button" variant="ghost" size="sm" onClick={props.onRefresh}>
+          <RefreshCw className="size-4" />
+          {t("connectPhone.refreshBindings")}
+        </Button>
+      </div>
+      {props.sessions.length === 0 ? (
+        <div
+          className="flex min-h-[246px] flex-col items-center justify-center gap-3 rounded-sm border border-dashed bg-canvas-soft-2 px-4 text-center"
+          data-testid="feishu-binding-empty"
+        >
+          <span className="flex size-10 items-center justify-center rounded-full border bg-background text-muted-foreground">
+            <MessageSquareText className="size-5" />
+          </span>
+          <div>
+            <div className="text-caption font-medium text-foreground">
+              {t("connectPhone.bindingsEmptyTitle")}
+            </div>
+            <p className="mt-1 max-w-[240px] text-caption leading-relaxed text-muted-foreground">
+              {t("connectPhone.bindingsEmptyHint")}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2" data-testid="feishu-binding-list">
+          {props.sessions.map((session) => (
+            <button
+              key={session.id}
+              type="button"
+              onClick={() => props.onOpenSession(session.id)}
+              className="flex w-full min-w-0 items-center gap-3 rounded-sm border bg-background px-3 py-2.5 text-left transition-colors hover:bg-canvas-soft-2"
+            >
+              <span className="flex size-8 flex-none items-center justify-center rounded-xs bg-canvas-soft-2 text-muted-foreground">
+                <MessageSquareText className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-caption font-medium text-foreground">
+                  {session.title}
+                </span>
+                <span className="mt-0.5 block truncate text-micro text-muted-foreground">
+                  {t("connectPhone.boundSessionHint")}
+                </span>
+              </span>
+              <span className="flex-none text-micro font-medium text-link">
+                {t("connectPhone.openSession")}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

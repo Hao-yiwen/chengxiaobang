@@ -29,6 +29,7 @@ import { assessToolApprovalRisk } from "../tools/approval-policy";
 import { requiresApproval } from "../tools/registry";
 import { normalizeDecision, type ApprovalQueue } from "./approval-queue";
 import type { AsyncEventQueue } from "./async-queue";
+import type { ProjectApprovalTrustService } from "./project-approval-trust";
 
 const REJECTED_RESULT = "用户拒绝执行该操作";
 const REJECTED_MODEL_HINT = "用户拒绝执行该操作。请考虑其他方式或向用户说明。";
@@ -93,8 +94,10 @@ export class RunEventTranslator {
       approvals: ApprovalQueue;
       runId: string;
       sessionId: string;
+      projectId: string | null;
       workspacePath: string;
       accessMode: AccessMode;
+      projectApprovalTrustService: ProjectApprovalTrustService;
       strictApproval?: boolean;
       signal: AbortSignal;
       model: string;
@@ -259,6 +262,14 @@ export class RunEventTranslator {
       });
     }
 
+    if (decision.approvalScope === "project") {
+      await this.options.projectApprovalTrustService.trust({
+        projectId: this.options.projectId,
+        toolName: entity.name,
+        args
+      });
+    }
+
     const running = await this.saveToolCall(context.toolCall.id, {
       ...entity,
       args,
@@ -353,10 +364,14 @@ export class RunEventTranslator {
     });
     const requiresGate =
       risk.requiresGate || Boolean(this.options.strictApproval && requiresApproval(toolName));
+    const projectTrusted =
+      requiresGate &&
+      this.options.accessMode === "approval" &&
+      (await this.isProjectTrusted(toolName, normalizedArgs));
     const needsManualApproval =
       toolName === "ExitPlanMode" ||
       toolName === "AskUserQuestion" ||
-      (requiresGate && this.options.accessMode === "approval");
+      (requiresGate && this.options.accessMode === "approval" && !projectTrusted);
     const needsSmartApproval =
       requiresGate && this.options.accessMode === "smart_approval";
     const pendingStatus = needsManualApproval
@@ -406,6 +421,7 @@ export class RunEventTranslator {
       status: toolCall.status,
       risk: risk.risk,
       requiresGate,
+      projectTrusted,
       reason: risk.reason
     });
     this.push({ type: "tool_call", runId: this.options.runId, toolCall });
@@ -449,22 +465,46 @@ export class RunEventTranslator {
       score: decision.score
     });
 
+    const trustedAfterSmart =
+      decision.verdict === "ask_user" && (await this.isProjectTrusted(entity.name, entity.args));
+    const effectiveDecision = trustedAfterSmart
+      ? {
+          ...decision,
+          verdict: "allow" as const,
+          reason: `${decision.reason} 项目级信任规则已允许。`
+        }
+      : decision;
+
     const status =
-      decision.verdict === "allow"
+      effectiveDecision.verdict === "allow"
         ? "running"
-        : decision.verdict === "deny"
+        : effectiveDecision.verdict === "deny"
           ? "rejected"
           : "pending_approval";
     const updated = await this.saveToolCall(modelToolCallId, {
       ...entity,
       status,
-      approval: decision,
+      approval: effectiveDecision,
       ...(status === "running" ? { startedAt: nowIso() } : {}),
       ...(status === "rejected" ? { result: "智能审批不同意执行该操作" } : {}),
       updatedAt: nowIso()
     });
     this.push({ type: "tool_call", runId: this.options.runId, toolCall: updated });
-    return decision;
+    return effectiveDecision;
+  }
+
+  private async isProjectTrusted(
+    toolName: string,
+    args: Record<string, unknown>
+  ): Promise<boolean> {
+    if (!isProjectTrustEligible(toolName)) {
+      return false;
+    }
+    return this.options.projectApprovalTrustService.isTrusted({
+      projectId: this.options.projectId,
+      toolName,
+      args
+    });
   }
 
   private onToolActivity(update: AssistantMessageEvent): void {
@@ -673,6 +713,10 @@ function joinBlocks(
 
 function isTerminalToolStatus(status: ToolCall["status"]): boolean {
   return status === "completed" || status === "failed" || status === "rejected";
+}
+
+function isProjectTrustEligible(toolName: string): boolean {
+  return toolName !== "AskUserQuestion" && toolName !== "ExitPlanMode";
 }
 
 function markUserDecision(

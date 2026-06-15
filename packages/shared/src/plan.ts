@@ -67,9 +67,8 @@ export const askUserQuestionSchema = z.object({
   id: z.string().min(1).optional(),
   header: z.string().min(1).optional(),
   question: z.string().min(1),
-  options: z.array(askUserQuestionOptionSchema).max(ASK_USER_MAX_OPTIONS).optional(),
-  multiSelect: z.boolean().optional(),
-  allowFreeText: z.boolean().optional()
+  options: z.array(askUserQuestionOptionSchema).min(2).max(ASK_USER_MAX_OPTIONS),
+  multiSelect: z.boolean().optional()
 });
 export type AskUserQuestion = z.infer<typeof askUserQuestionSchema>;
 

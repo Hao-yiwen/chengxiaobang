@@ -1168,7 +1168,7 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
       id: "tool_q1",
       runId: "run_1",
       name: "AskUserQuestion",
-      args: { questions: [{ question: "选哪个方案？" }] },
+      args: { questions: [{ question: "选哪个方案？", options: ["A 方案", "B 方案"] }] },
       status: "pending_approval",
       createdAt: "2026-06-11T00:00:01.000Z",
       updatedAt: "2026-06-11T00:00:01.000Z"
@@ -1193,14 +1193,13 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
     const dock = await screen.findByTestId("approval-dock");
     await waitFor(() => expect(screen.queryByLabelText("输入消息")).not.toBeInTheDocument());
 
-    const customInput = within(dock).getByPlaceholderText("输入你的回答");
-    fireEvent.change(customInput, { target: { value: "都不要，用 C 方案" } });
-    fireEvent.keyDown(customInput, { key: "Enter" });
+    fireEvent.click(within(dock).getByText("A 方案"));
+    fireEvent.click(within(dock).getByRole("button", { name: "继续" }));
 
     await waitFor(() =>
       expect(approve).toHaveBeenCalledWith("tool_q1", {
         approved: true,
-        answer: { answers: [{ question: "选哪个方案？", text: "都不要，用 C 方案" }] }
+        answer: { answers: [{ question: "选哪个方案？", optionLabel: "A 方案" }] }
       })
     );
     expect(streamRun).toHaveBeenCalledTimes(1);

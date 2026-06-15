@@ -85,10 +85,25 @@ export const activeRunSnapshotSchema = z.object({
 });
 export type ActiveRunSnapshot = z.infer<typeof activeRunSnapshotSchema>;
 
-export const approvalDecisionSchema = z.object({
-  approved: z.boolean(),
-  /** 旧版步骤计划编辑字段；新版计划调整通过 answer.answers 传递。 */
-  editedSteps: z.array(planStepSchema).optional(),
-  answer: askUserAnswerSchema.optional()
-});
+export const approvalScopeSchema = z.enum(["project"]);
+export type ApprovalScope = z.infer<typeof approvalScopeSchema>;
+
+export const approvalDecisionSchema = z
+  .object({
+    approved: z.boolean(),
+    /** 旧版步骤计划编辑字段；新版计划调整通过 answer.answers 传递。 */
+    editedSteps: z.array(planStepSchema).optional(),
+    answer: askUserAnswerSchema.optional(),
+    /** approved=true 时可选择把同项目内同签名工具调用记为可信。 */
+    approvalScope: approvalScopeSchema.optional()
+  })
+  .superRefine((decision, ctx) => {
+    if (!decision.approved && decision.approvalScope) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["approvalScope"],
+        message: "approvalScope 只能用于 approved=true 的审批决议"
+      });
+    }
+  });
 export type ApprovalDecision = z.infer<typeof approvalDecisionSchema>;

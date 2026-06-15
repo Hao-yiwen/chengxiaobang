@@ -17,6 +17,7 @@ import {
   markSmartApprovalUserDecision,
   toolResultText
 } from "./agent-runner-messages";
+import type { ProjectApprovalTrustService } from "./project-approval-trust";
 import { protectAgentToolResult } from "./tool-result-spill";
 
 export interface DirectToolSmartApprovalInput {
@@ -33,10 +34,12 @@ interface RunDirectToolOptions {
   approvals: ApprovalQueue;
   runId: string;
   sessionId: string;
+  projectId: string | null;
   request: ToolRequest;
   tools: AgentTool<any>[];
   workspacePath: string;
   accessMode: RunRequest["accessMode"];
+  projectApprovalTrustService?: ProjectApprovalTrustService;
   provider: ProviderConfig;
   apiKey: string;
   signal: AbortSignal;
@@ -60,7 +63,12 @@ export async function* runDirectTool(
   const strictApproval = options.strictApproval ?? false;
   const requiresGate =
     risk.requiresGate || (strictApproval && requiresApproval(options.request.name));
-  const needsManualApproval = requiresGate && options.accessMode === "approval";
+  const projectTrusted =
+    requiresGate &&
+    options.accessMode === "approval" &&
+    (await isProjectTrusted(options, options.request.name, options.request.args));
+  const needsManualApproval =
+    requiresGate && options.accessMode === "approval" && !projectTrusted;
   const needsSmartApproval = requiresGate && options.accessMode === "smart_approval";
   const initialStatus = needsManualApproval
     ? "pending_approval"
@@ -86,6 +94,7 @@ export async function* runDirectTool(
     accessMode: options.accessMode,
     risk: risk.risk,
     requiresGate,
+    projectTrusted,
     reason: risk.reason
   });
   yield { type: "tool_call", runId: options.runId, toolCall: initial };
@@ -113,11 +122,21 @@ export async function* runDirectTool(
       yield { type: "run_end", runId: options.runId, status: "aborted" };
       return "aborted";
     }
+    const trustedAfterSmart =
+      decision.verdict === "ask_user" &&
+      (await isProjectTrusted(options, options.request.name, options.request.args));
+    const effectiveDecision = trustedAfterSmart
+      ? {
+          ...decision,
+          verdict: "allow" as const,
+          reason: `${decision.reason} 项目级信任规则已允许。`
+        }
+      : decision;
     runnable = await options.store.updateToolCall({
       ...initial,
-      status: decision.verdict === "allow" ? "running" : "pending_approval",
-      approval: decision,
-      ...(decision.verdict === "allow" ? { startedAt: nowIso() } : {}),
+      status: effectiveDecision.verdict === "allow" ? "running" : "pending_approval",
+      approval: effectiveDecision,
+      ...(effectiveDecision.verdict === "allow" ? { startedAt: nowIso() } : {}),
       updatedAt: nowIso()
     });
     yield { type: "tool_call", runId: options.runId, toolCall: runnable };
@@ -142,6 +161,13 @@ export async function* runDirectTool(
       await options.store.updateRunStatus(options.runId, "aborted");
       yield { type: "run_end", runId: options.runId, status: "aborted" };
       return "aborted";
+    }
+    if (decision.approvalScope === "project") {
+      await options.projectApprovalTrustService?.trust({
+        projectId: options.projectId,
+        toolName: options.request.name,
+        args: options.request.args
+      });
     }
     runnable = await options.store.updateToolCall({
       ...runnable,
@@ -220,4 +246,23 @@ export async function* runDirectTool(
     content: completed.result ?? ""
   });
   return "ok";
+}
+
+async function isProjectTrusted(
+  options: RunDirectToolOptions,
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<boolean> {
+  if (!options.projectApprovalTrustService || !isProjectTrustEligible(toolName)) {
+    return false;
+  }
+  return options.projectApprovalTrustService.isTrusted({
+    projectId: options.projectId,
+    toolName,
+    args
+  });
+}
+
+function isProjectTrustEligible(toolName: string): boolean {
+  return toolName !== "AskUserQuestion" && toolName !== "ExitPlanMode";
 }

@@ -102,7 +102,7 @@ describe("Markdown", () => {
     expect(container).toHaveTextContent(/第一行\s*第二行/);
   });
 
-  it("renders Streamdown code block controls and copies code", async () => {
+  it("renders the rewritten code block controls and copies code", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       value: { writeText },
@@ -113,6 +113,17 @@ describe("Markdown", () => {
 
     expect(container.querySelector('[data-streamdown="code-block"]')).not.toBeNull();
     expect(screen.getByText("ts")).toBeInTheDocument();
+    const shell = container.querySelector(".cxb-code-block-shell");
+    expect(shell).toHaveAttribute("data-code-wrap", "false");
+    expect(shell?.getAttribute("style")).toContain("data:image/svg+xml");
+    expect(screen.queryByTitle("下载文件")).not.toBeInTheDocument();
+
+    const code = container.querySelector('[data-streamdown="code-block-body"] code');
+    expect(code?.getAttribute("class") ?? "").not.toContain("counter");
+
+    fireEvent.click(screen.getByTitle("自动换行"));
+    expect(screen.getByTitle("关闭自动换行")).toHaveAttribute("aria-pressed", "true");
+    expect(shell).toHaveAttribute("data-code-wrap", "true");
 
     fireEvent.click(screen.getByTitle("复制代码"));
 
@@ -120,33 +131,29 @@ describe("Markdown", () => {
     expect(await screen.findByTitle("复制代码")).toBeInTheDocument();
   });
 
-  it("downloads a code block with Streamdown language-mapped extension", () => {
-    const createObjectURL = vi.fn(() => "blob:mock");
-    const revokeObjectURL = vi.fn();
-    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL }));
-    const click = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => undefined);
-    let downloadName = "";
-    const setter = vi
-      .spyOn(HTMLAnchorElement.prototype, "download", "set")
-      .mockImplementation(function (this: HTMLAnchorElement, value: string) {
-        downloadName = value;
-      });
+  it("renders bash fences with the rewritten code block chrome", () => {
+    const { container } = render(<Markdown text={"```bash\npnpm test\n```"} />);
 
-    render(<Markdown text={"```ts\nconst x = 1;\n```"} />);
-    fireEvent.click(screen.getByTitle("下载文件"));
-
-    expect(createObjectURL).toHaveBeenCalledTimes(1);
-    expect(click).toHaveBeenCalledTimes(1);
-    expect(downloadName).toMatch(/\.ts$/);
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock");
-
-    click.mockRestore();
-    setter.mockRestore();
+    expect(container.querySelector(".cxb-code-block-shell")).not.toBeNull();
+    expect(screen.getByText("bash")).toBeInTheDocument();
+    expect(screen.getByTitle("自动换行")).toBeInTheDocument();
+    expect(screen.getByTitle("复制代码")).toBeInTheDocument();
+    expect(screen.queryByTitle("下载文件")).not.toBeInTheDocument();
   });
 
-  it("renders GFM tables with Streamdown controls and numeric column markers", () => {
+  it("renders unlabeled fences with the rewritten text code block chrome", () => {
+    const codeText = "feature/* -> MR -> dev\npreview_train -> main";
+    const { container } = render(<Markdown text={`\`\`\`\n${codeText}\n\`\`\``} />);
+
+    expect(container.querySelector(".cxb-code-block-shell")).not.toBeNull();
+    expect(screen.getByText("text")).toBeInTheDocument();
+    expect(screen.getByTitle("自动换行")).toBeInTheDocument();
+    expect(screen.getByTitle("复制代码")).toBeInTheDocument();
+    expect(container.querySelector(".cxb-code-block-shell pre")?.textContent).toBe(codeText);
+    expect(container.querySelector('[data-streamdown="code-block"][data-language=""]')).toBeNull();
+  });
+
+  it("renders GFM tables without Streamdown controls and keeps numeric column markers", () => {
     render(
       <Markdown
         text={"| 名称 | 值 |\n| --- | --- |\n| 端口 | 8080 |\n| 线程 | 12 |\n| 备注 | x |"}
@@ -156,20 +163,10 @@ describe("Markdown", () => {
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "名称" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "8080" })).toHaveAttribute("data-numeric-col");
-    expect(screen.getByTitle("复制表格")).toBeInTheDocument();
-    expect(screen.getByTitle("下载表格")).toBeInTheDocument();
-    expect(screen.getByTitle("全屏查看")).toBeInTheDocument();
-  });
-
-  it("opens Streamdown table fullscreen as a modal portal", () => {
-    render(<Markdown text={"| 名称 | 值 |\n| --- | --- |\n| 端口 | 8080 |"} />);
-
-    fireEvent.click(screen.getByTitle("全屏查看"));
-
-    const dialog = screen.getByRole("dialog", { name: "全屏查看" });
-    expect(dialog).toHaveAttribute("aria-modal", "true");
-    expect(dialog).toHaveAttribute("data-streamdown", "table-fullscreen");
-    expect(screen.getByTitle("退出全屏")).toBeInTheDocument();
+    expect(screen.queryByTitle("复制表格")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("下载表格")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("全屏查看")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "全屏查看" })).not.toBeInTheDocument();
   });
 
   it("renders strikethrough, task lists, nested lists and headings", () => {

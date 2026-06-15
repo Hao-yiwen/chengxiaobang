@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
+const devOnlyBridge = process.env.VITE_DEV_SERVER_URL
+  ? {
+      openDevTools: () => ipcRenderer.invoke("open-devtools")
+    }
+  : {};
+
 contextBridge.exposeInMainWorld("chengxiaobang", {
   platform: process.platform,
   getBackendInfo: () => ipcRenderer.invoke("backend-info"),
@@ -35,6 +41,7 @@ contextBridge.exposeInMainWorld("chengxiaobang", {
   openLogDir: () => ipcRenderer.invoke("open-log-dir"),
   openProviderConfig: () => ipcRenderer.invoke("open-provider-config"),
   saveProfile: (profile: unknown) => ipcRenderer.invoke("profile:save", profile),
+  ...devOnlyBridge,
   getUpdateState: () => ipcRenderer.invoke("update:get-state"),
   checkForUpdates: (input?: { manual?: boolean }) => ipcRenderer.invoke("update:check", input),
   downloadUpdate: () => ipcRenderer.invoke("update:download"),

@@ -158,6 +158,19 @@ describe("App", () => {
     expect(screen.queryByText("DeepSeek · deepseek-v4-flash")).not.toBeInTheDocument();
   });
 
+  it("opens DevTools from the global floating button when the desktop bridge is available", async () => {
+    const openDevTools = vi.fn(async () => ({ ok: true as const }));
+    window.chengxiaobang = {
+      openDevTools
+    } as unknown as NonNullable<Window["chengxiaobang"]>;
+
+    render(<App client={createClient()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开 DevTools" }));
+
+    await waitFor(() => expect(openDevTools).toHaveBeenCalledTimes(1));
+  });
+
   it("uses rule-driven settings panels instead of nested cards", async () => {
     const client = createClient();
 
@@ -674,7 +687,8 @@ describe("App", () => {
     render(<App client={client} />);
 
     const dock = await screen.findByTestId("approval-dock");
-    expect(within(dock).getByText("等待批准")).toBeInTheDocument();
+    expect(within(dock).getByText("需要权限")).toBeInTheDocument();
+    expect(screen.queryByLabelText("输入消息")).not.toBeInTheDocument();
     expect(within(dock).getByText("active.txt")).toBeInTheDocument();
     expect(useAppStore.getState().activeRunId).toBe(activeRun.id);
     expect(useAppStore.getState().pendingTool?.id).toBe(pendingTool.id);
@@ -682,7 +696,7 @@ describe("App", () => {
       false
     );
 
-    fireEvent.click(within(dock).getByRole("button", { name: /允许/ }));
+    fireEvent.click(within(dock).getByRole("button", { name: "确认" }));
 
     await waitFor(() =>
       expect(approve).toHaveBeenCalledWith(pendingTool.id, { approved: true })
@@ -1084,11 +1098,12 @@ describe("App", () => {
     fireEvent.click(screen.getByTitle("发送"));
 
     const dock = await screen.findByTestId("approval-dock");
-    expect(within(dock).getByText("等待批准")).toBeInTheDocument();
+    expect(within(dock).getByText("需要权限")).toBeInTheDocument();
     expect(within(dock).getByText("运行 rm -rf dist")).toBeInTheDocument();
+    expect(screen.queryByLabelText("输入消息")).not.toBeInTheDocument();
     // 审批卡不再出现在消息流里，待审批工具也不进时间线。
     const stream = screen.getByTestId("chat-scroll");
-    expect(within(stream).queryByText("等待批准")).not.toBeInTheDocument();
+    expect(within(stream).queryByText("需要权限")).not.toBeInTheDocument();
     expect(within(stream).queryByText("运行 rm -rf dist")).not.toBeInTheDocument();
     resolveStream?.();
   });

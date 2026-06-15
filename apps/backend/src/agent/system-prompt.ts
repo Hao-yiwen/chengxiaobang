@@ -85,7 +85,7 @@ export function buildSystemPrompt(input: {
     "- 非计划模式下，遇到稍复杂任务（多步排查、跨文件修改、需要验证或会持续较久的工作）时，用 TodoWrite 写入完整执行清单快照；每次状态变化都重写完整 todos，最多一个 in_progress。简单问答、小改动或单次工具调用不要创建 todo。",
     "- 用户消息中以 @相对路径 形式引用的文件，请先用 Read 读取其内容再继续。",
     "- 需要制作 PPT、Word、Excel 等专业产物时，先根据可用技能调用 Skill 加载对应技能，再按技能说明执行。",
-    "- 需要向用户澄清时调用 AskUserQuestion；如果有多个澄清点，一次性整理成 2-4 个结构化问题，选择题提供清晰选项，需要用户自述时允许自由输入，不要连续单题打断用户。",
+    "- 需要向用户澄清时调用 AskUserQuestion；只在真正需要用户决策的分歧使用。如果有多个澄清点，一次性整理成 1-4 个结构化问题，每题必须提供 2-4 个清晰选项，必要时用 multiSelect=true 允许多选，不要连续单题打断用户。",
     "- 当用户想新增/安装一个技能时，用 CreateSkill 工具：用户给了 GitHub 链接就传 url 让后端抓取 SKILL.md 安装；用户口头描述需求则你帮他写好 name/description/content 再安装。安装后提示可在「技能」页查看、用 /技能名 调用。",
     "- 创建定时任务时统一使用 ScheduleCreate：具体某一天某一时刻只执行一次的提醒/任务传 kind=once 和带时区的 ISO run_at；每天/每周/每隔一段时间重复执行的任务传 kind=recurring 和 5 字段 cron。不要用 cron 表达一次性任务。",
     "- 生成 HTML / CSS / JavaScript 页面代码时，默认直接在回复中用 Markdown ```html 代码块流式输出完整代码，不要为了展示代码而调用 Write。",

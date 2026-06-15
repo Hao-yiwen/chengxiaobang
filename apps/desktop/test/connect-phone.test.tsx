@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FeishuConfig, FeishuStatus, ProviderConfig } from "@chengxiaobang/shared";
+import type { FeishuConfig, FeishuStatus, ProviderConfig, Session } from "@chengxiaobang/shared";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
@@ -18,6 +18,27 @@ const provider: ProviderConfig = {
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString()
 };
+
+const connectedFeishuConfig: FeishuConfig = {
+  enabled: true,
+  appId: "cli_connected",
+  appSecretRef: "memory:feishu",
+  domain: "feishu",
+  fullAccess: false
+};
+
+function session(overrides: Partial<Session>): Session {
+  return {
+    id: "session_1",
+    projectId: null,
+    title: "测试会话",
+    providerId: provider.id,
+    accessMode: "approval",
+    createdAt: "2026-06-15T09:00:00.000Z",
+    updatedAt: "2026-06-15T09:00:00.000Z",
+    ...overrides
+  };
+}
 
 function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
@@ -91,7 +112,7 @@ async function openConnectPhone(client: ApiClient): Promise<void> {
 }
 
 describe("ConnectPhoneView", () => {
-  it("opens from the sidebar, auto-generates a Feishu QR code, and stays scan-only", async () => {
+  it("auto-generates a Feishu QR code when no connection is configured", async () => {
     const startFeishuInstall = vi.fn(async () => ({
       ok: true,
       url: "https://open.feishu.cn/page/cli?user_code=QR-CODE",
@@ -108,6 +129,7 @@ describe("ConnectPhoneView", () => {
     await waitFor(() => expect(startFeishuInstall).toHaveBeenCalledWith({ domain: "feishu" }));
     expect(screen.getByText("用飞书扫码授权后，程小帮会自动完成绑定，并在桌面端接收来自手机的消息。")).toBeInTheDocument();
     expect(screen.getByText("扫码快连")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "绑定列表" })).not.toBeInTheDocument();
     expect(screen.getByTestId("feishu-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
     expect(screen.getByTestId("feishu-qr-frame")).toBeInTheDocument();
     expect(screen.getByAltText("手机飞书聊天页插画")).toBeInTheDocument();
@@ -119,8 +141,107 @@ describe("ConnectPhoneView", () => {
     expect(screen.queryByText("Lark（国际版）")).not.toBeInTheDocument();
   });
 
-  it("starts polling after showing a QR code and reflects a successful install", async () => {
+  it("shows the binding list by default when a connection and bound sessions exist", async () => {
+    const startFeishuInstall = vi.fn();
+    const bound = session({
+      id: "session_feishu",
+      title: "飞书 · 张三",
+      feishuChatId: "oc_chat1"
+    });
+    const plain = session({
+      id: "session_plain",
+      title: "普通会话"
+    });
+    const client = createClient({
+      listSessions: vi.fn(async () => [bound, plain]),
+      getFeishuConfig: vi.fn(async () => connectedFeishuConfig),
+      getFeishuStatus: vi.fn(async () => ({ status: "connected" }) satisfies FeishuStatus),
+      startFeishuInstall: startFeishuInstall as never
+    });
+
+    await openConnectPhone(client);
+
+    const bindingList = await screen.findByTestId("feishu-binding-list");
+    expect(bindingList).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "绑定列表" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "扫码连接" })).toHaveAttribute("aria-selected", "false");
+    expect(within(bindingList).getByText("飞书 · 张三")).toBeInTheDocument();
+    expect(within(bindingList).queryByText("普通会话")).not.toBeInTheDocument();
+    expect(startFeishuInstall).not.toHaveBeenCalled();
+
+    fireEvent.click(within(bindingList).getByText("飞书 · 张三"));
+    await waitFor(() => expect(client.listMessages).toHaveBeenCalledWith("session_feishu"));
+  });
+
+  it("shows an empty binding list for an existing connection without bound sessions", async () => {
+    const startFeishuInstall = vi.fn();
+    const client = createClient({
+      getFeishuConfig: vi.fn(async () => connectedFeishuConfig),
+      getFeishuStatus: vi.fn(async () => ({ status: "connected" }) satisfies FeishuStatus),
+      startFeishuInstall: startFeishuInstall as never
+    });
+
+    await openConnectPhone(client);
+
+    expect(await screen.findByTestId("feishu-binding-empty")).toBeInTheDocument();
+    expect(screen.getByText("暂无绑定会话")).toBeInTheDocument();
+    expect(screen.getByText("在飞书里私聊机器人，或在群聊里 @ 机器人，绑定会话会自动出现在这里。")).toBeInTheDocument();
+    expect(startFeishuInstall).not.toHaveBeenCalled();
+  });
+
+  it("uses the plus button to add a new connection from the binding tab", async () => {
+    const startFeishuInstall = vi.fn(async () => ({
+      ok: true,
+      url: "https://open.feishu.cn/page/cli?user_code=PLUS",
+      deviceCode: "device-plus",
+      userCode: "PLUS",
+      interval: 3,
+      expiresIn: 120
+    }));
+    const client = createClient({
+      getFeishuConfig: vi.fn(async () => connectedFeishuConfig),
+      getFeishuStatus: vi.fn(async () => ({ status: "connected" }) satisfies FeishuStatus),
+      startFeishuInstall: startFeishuInstall as never
+    });
+
+    await openConnectPhone(client);
+    await screen.findByTestId("feishu-binding-empty");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增连接" }));
+
+    await waitFor(() => expect(startFeishuInstall).toHaveBeenCalledWith({ domain: "feishu" }));
+    expect(screen.getByRole("tab", { name: "扫码连接" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("feishu-qr-frame")).toBeInTheDocument();
+  });
+
+  it("refreshes the QR code when the plus button is clicked on the scan tab", async () => {
+    const startFeishuInstall = vi.fn(async () => ({
+      ok: true,
+      url: "https://open.feishu.cn/page/cli?user_code=PLUS",
+      deviceCode: "device-plus",
+      userCode: "PLUS",
+      interval: 3,
+      expiresIn: 120
+    }));
+    const client = createClient({
+      getFeishuConfig: vi.fn(async () => connectedFeishuConfig),
+      getFeishuStatus: vi.fn(async () => ({ status: "connected" }) satisfies FeishuStatus),
+      startFeishuInstall: startFeishuInstall as never
+    });
+
+    await openConnectPhone(client);
+    await screen.findByTestId("feishu-binding-empty");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增连接" }));
+    await waitFor(() => expect(startFeishuInstall).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "新增连接" }));
+
+    await waitFor(() => expect(startFeishuInstall).toHaveBeenCalledTimes(2));
+  });
+
+  it("returns to the binding list after a successful install", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    const listSessions = vi.fn(async () => []);
     const startFeishuInstall = vi.fn(async () => ({
       ok: true,
       url: "https://open.feishu.cn/page/cli?user_code=QR-CODE",
@@ -141,6 +262,7 @@ describe("ConnectPhoneView", () => {
       status: { status: "connected" } satisfies FeishuStatus
     }));
     const client = createClient({
+      listSessions,
       startFeishuInstall: startFeishuInstall as never,
       pollFeishuInstall: pollFeishuInstall as never
     });
@@ -158,7 +280,9 @@ describe("ConnectPhoneView", () => {
     });
 
     expect(pollFeishuInstall).toHaveBeenCalledWith({ deviceCode: "device-success" });
-    expect(screen.getByText("已连接")).toBeInTheDocument();
+    expect(await screen.findByTestId("feishu-binding-empty")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "绑定列表" })).toHaveAttribute("aria-selected", "true");
+    expect(listSessions).toHaveBeenCalledTimes(2);
   });
 
   it("marks the QR code as expired and allows retry", async () => {

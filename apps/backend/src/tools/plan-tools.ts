@@ -28,26 +28,23 @@ const askUserQuestionParams = Type.Object({
   id: Type.Optional(Type.String({ description: "可选稳定问题 ID，例如 q1、q2" })),
   header: Type.Optional(Type.String({ description: "短标题，例如 路径、范围、确认" })),
   question: Type.String({ description: "需要用户确认的问题正文" }),
-  options: Type.Optional(
-    Type.Array(
-      Type.Union([
-        Type.String({ description: "选项标签" }),
-        Type.Object({
-          label: Type.String({ description: "选项标签" }),
-          description: Type.Optional(Type.String({ description: "选项影响或取舍" }))
-        })
-      ]),
-      { description: "选择题选项，最多 4 个" }
-    )
+  options: Type.Array(
+    Type.Union([
+      Type.String({ description: "选项标签" }),
+      Type.Object({
+        label: Type.String({ description: "选项标签" }),
+        description: Type.Optional(Type.String({ description: "选项影响或取舍" }))
+      })
+    ]),
+    { minItems: 2, maxItems: 4, description: "单选或多选的候选项，必须 2 到 4 个" }
   ),
-  multiSelect: Type.Optional(Type.Boolean({ description: "是否允许多选，默认 false" })),
-  allowFreeText: Type.Optional(
-    Type.Boolean({ description: "是否允许用户自由输入，默认 true；纯选择题可设为 false" })
-  )
+  multiSelect: Type.Optional(Type.Boolean({ description: "是否允许多选，默认 false" }))
 });
 
 const askUserParams = Type.Object({
   questions: Type.Array(askUserQuestionParams, {
+    minItems: 1,
+    maxItems: 4,
     description: "一次性提出 1 到 4 个结构化问题；有多个澄清点时合并到这里。"
   }),
   answers: Type.Optional(
@@ -96,7 +93,7 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
   const askUser: AgentTool<typeof askUserParams> = {
     name: "AskUserQuestion",
     label: "询问用户",
-    description: "向用户提出 1 到 4 个结构化问题，支持选择题和自由文本回答。",
+    description: "向用户提出 1 到 4 个真正需要决策的结构化问题。每题必须提供 2 到 4 个选项；multiSelect=true 时允许多选。",
     parameters: askUserParams,
     execute: async (toolCallId) => {
       const answer = runtime.getAskUserAnswer(toolCallId);

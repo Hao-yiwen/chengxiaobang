@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { type ComponentPropsWithoutRef, memo } from "react";
 import { code } from "@streamdown/code";
 import { cjk } from "@streamdown/cjk";
 import { createMathPlugin } from "@streamdown/math";
@@ -10,29 +10,51 @@ import {
   defaultUrlTransform,
   Streamdown,
   type ControlsConfig,
+  type CustomRendererProps,
   type MermaidOptions,
   type PluginConfig,
   type StreamdownProps,
   type StreamdownTranslations,
   type UrlTransform
 } from "streamdown";
+import { CodeBlockPanel } from "@/components/CodeBlockPanel";
 import { ExternalUrlAnchor } from "@/components/ExternalUrlMenu";
-import { rehypeNumericTables } from "@/lib/markdown-utils";
 import { cn } from "@/lib/utils";
+
+type MarkdownAstNode = {
+  type?: string;
+  lang?: string | null;
+  children?: MarkdownAstNode[];
+};
+
+function remarkDefaultCodeLanguage() {
+  return (tree: MarkdownAstNode) => {
+    visitMarkdownAst(tree, (node) => {
+      if (node.type === "code" && (!node.lang || node.lang.trim().length === 0)) {
+        node.lang = "text";
+      }
+    });
+  };
+}
+
+function visitMarkdownAst(node: MarkdownAstNode, visitor: (node: MarkdownAstNode) => void) {
+  visitor(node);
+  node.children?.forEach((child) => visitMarkdownAst(child, visitor));
+}
 
 const REMARK_PLUGINS: StreamdownProps["remarkPlugins"] = [
   ...Object.values(defaultRemarkPlugins),
+  remarkDefaultCodeLanguage,
   remarkBreaks
 ];
 
 const REHYPE_PLUGINS: StreamdownProps["rehypePlugins"] = [
-  ...Object.values(defaultRehypePlugins),
-  rehypeNumericTables
+  ...Object.values(defaultRehypePlugins)
 ];
 
 const STREAMDOWN_CONTROLS: ControlsConfig = {
-  code: { copy: true, download: true },
-  table: { copy: true, download: true, fullscreen: true },
+  code: false,
+  table: false,
   mermaid: { copy: true, download: true, fullscreen: true, panZoom: true }
 };
 
@@ -41,27 +63,16 @@ const STREAMDOWN_TRANSLATIONS: Partial<StreamdownTranslations> = {
   copied: "已复制",
   copyCode: "复制代码",
   copyLink: "复制链接",
-  copyTable: "复制表格",
-  copyTableAsCsv: "复制为 CSV",
-  copyTableAsMarkdown: "复制为 Markdown",
-  copyTableAsTsv: "复制为 TSV",
   downloadDiagram: "下载图表",
   downloadDiagramAsMmd: "下载为 MMD",
   downloadDiagramAsPng: "下载为 PNG",
   downloadDiagramAsSvg: "下载为 SVG",
-  downloadFile: "下载文件",
   downloadImage: "下载图片",
-  downloadTable: "下载表格",
-  downloadTableAsCsv: "下载为 CSV",
-  downloadTableAsMarkdown: "下载为 Markdown",
   exitFullscreen: "退出全屏",
   imageNotAvailable: "图片不可用",
   mermaidFormatMmd: "MMD",
   mermaidFormatPng: "PNG",
   mermaidFormatSvg: "SVG",
-  tableFormatCsv: "CSV",
-  tableFormatMarkdown: "Markdown",
-  tableFormatTsv: "TSV",
   viewFullscreen: "全屏查看"
 };
 
@@ -84,13 +95,6 @@ const STREAMDOWN_MERMAID: MermaidOptions = {
   }
 };
 
-const STREAMDOWN_PLUGINS: PluginConfig = {
-  code,
-  mermaid,
-  math: createMathPlugin(),
-  cjk
-};
-
 const STREAMDOWN_SHIKI_THEME: StreamdownProps["shikiTheme"] = ["github-light", "github-dark"];
 
 const STREAMDOWN_ANIMATION: StreamdownProps["animated"] = {
@@ -99,6 +103,53 @@ const STREAMDOWN_ANIMATION: StreamdownProps["animated"] = {
   easing: "ease-out",
   sep: "word",
   stagger: 12
+};
+
+type MarkdownCodeProps = ComponentPropsWithoutRef<"code"> & {
+  node?: unknown;
+};
+
+const STREAMDOWN_CODE_RENDERER_LANGUAGES: string[] = [
+  ...code.getSupportedLanguages().filter((language) => language !== "mermaid"),
+  "text"
+];
+
+function MarkdownCodeRenderer({
+  code: codeText,
+  isIncomplete,
+  language
+}: CustomRendererProps) {
+  return <CodeBlockPanel code={codeText} isIncomplete={isIncomplete} language={language} />;
+}
+
+function MarkdownInlineCode({
+  children,
+  className,
+  node: _node,
+  ...props
+}: MarkdownCodeProps) {
+  return (
+    <code
+      className={cn("rounded bg-muted px-1 py-px font-mono text-[0.85em]", className)}
+      data-streamdown="inline-code"
+      {...props}
+    >
+      {children}
+    </code>
+  );
+}
+
+const STREAMDOWN_PLUGINS: PluginConfig = {
+  code,
+  mermaid,
+  math: createMathPlugin(),
+  cjk,
+  renderers: [
+    {
+      component: MarkdownCodeRenderer,
+      language: STREAMDOWN_CODE_RENDERER_LANGUAGES
+    }
+  ]
 };
 
 const STREAMDOWN_COMPONENTS: StreamdownProps["components"] = {
@@ -113,7 +164,8 @@ const STREAMDOWN_COMPONENTS: StreamdownProps["components"] = {
         {children}
       </ExternalUrlAnchor>
     );
-  }
+  },
+  inlineCode: MarkdownInlineCode
 };
 
 const HTTP_URL_TRANSFORM: UrlTransform = (url, key, node) => {
@@ -155,7 +207,7 @@ function MarkdownStream({
       plugins={STREAMDOWN_PLUGINS}
       mermaid={STREAMDOWN_MERMAID}
       shikiTheme={STREAMDOWN_SHIKI_THEME}
-      lineNumbers
+      lineNumbers={false}
       isAnimating={isAnimating}
       animated={mode === "streaming" ? STREAMDOWN_ANIMATION : false}
       caret={mode === "streaming" ? "circle" : undefined}

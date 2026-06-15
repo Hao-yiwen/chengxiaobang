@@ -11,7 +11,6 @@ import {
   askUserAnswerSchema,
   askUserArgsSchema,
   type AskUserAnswerItem,
-  type AskUserQuestion,
   type ToolCall
 } from "@chengxiaobang/shared";
 import { ToolCallLine } from "@/components/ToolCallLine";
@@ -22,6 +21,11 @@ interface ToolCallRowProps {
   toolCall: ToolCall;
   onOpenFile?: (path: string, kind: ArtifactKind) => void;
 }
+
+type AskUserReceiptQuestion = {
+  id?: string;
+  question: string;
+};
 
 /** 时间线中的单个工具调用：AskUserQuestion、Skill 各自用专属轻量形态。 */
 export function ToolCallRow({ toolCall, onOpenFile }: ToolCallRowProps) {
@@ -112,7 +116,7 @@ function AskUserReceipt({ toolCall }: { toolCall: ToolCall }) {
   );
 }
 
-function parseAskUserQuestions(toolCall: ToolCall): AskUserQuestion[] {
+function parseAskUserQuestions(toolCall: ToolCall): AskUserReceiptQuestion[] {
   const parsed = askUserArgsSchema.safeParse(toolCall.args);
   if (parsed.success) {
     return parsed.data.questions;
@@ -121,7 +125,7 @@ function parseAskUserQuestions(toolCall: ToolCall): AskUserQuestion[] {
     toolCallId: toolCall.id,
     issues: parsed.error.issues
   });
-  return [{ question: "问题参数解析失败", allowFreeText: true }];
+  return [{ question: "问题参数解析失败" }];
 }
 
 function parseAskUserAnswers(toolCall: ToolCall): AskUserAnswerItem[] {
@@ -134,7 +138,7 @@ function parseAskUserAnswers(toolCall: ToolCall): AskUserAnswerItem[] {
 
 function askUserSummary(
   toolCall: ToolCall,
-  questions: AskUserQuestion[],
+  questions: AskUserReceiptQuestion[],
   answers: AskUserAnswerItem[]
 ): string {
   if (toolCall.status === "rejected") {

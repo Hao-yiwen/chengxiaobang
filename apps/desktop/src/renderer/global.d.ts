@@ -97,6 +97,8 @@ export type SaveProfileResult =
   | { ok: true; path: string; profile: UserProfileJson }
   | { ok: false; path: string; error: string };
 
+export type DevToolsOpenResult = { ok: true } | { ok: false; error?: string };
+
 export interface InstalledProjectOpener {
   id: string;
   name: string;
@@ -175,6 +177,7 @@ declare global {
       openLogDir?(): Promise<{ ok: boolean; path?: string; error?: string }>;
       openProviderConfig?(): Promise<{ ok: boolean; path?: string; error?: string }>;
       saveProfile?(profile: OnboardingProfile): Promise<SaveProfileResult>;
+      openDevTools?(): Promise<DevToolsOpenResult>;
       getUpdateState?(): Promise<DesktopUpdateState>;
       checkForUpdates?(input?: { manual?: boolean }): Promise<DesktopUpdateState>;
       downloadUpdate?(): Promise<DesktopUpdateState>;

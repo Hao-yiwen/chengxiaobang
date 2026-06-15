@@ -57,6 +57,9 @@ export class ApprovalQueue {
 /** 按工具名裁决 payload 有效性，杜绝误发/恶意 payload 静默通过。 */
 export function normalizeDecision(name: string, decision: ApprovalDecision): ApprovalDecision {
   if (name === "AskUserQuestion") {
+    if (decision.approvalScope) {
+      console.warn(`[approval-queue] AskUserQuestion 决议携带 approvalScope，已忽略`);
+    }
     if (decision.approved && !decision.answer) {
       console.warn(`[approval-queue] AskUserQuestion 决议缺少 answer，按拒绝处理`);
       return { approved: false };
@@ -64,6 +67,9 @@ export function normalizeDecision(name: string, decision: ApprovalDecision): App
     return { approved: decision.approved, answer: decision.answer };
   }
   if (name === "ExitPlanMode") {
+    if (decision.approvalScope) {
+      console.warn(`[approval-queue] ExitPlanMode 决议携带 approvalScope，已忽略`);
+    }
     // editedSteps 只为旧客户端保留；新版计划调整通过 answer 反馈给模型。
     return {
       approved: decision.approved,
@@ -74,5 +80,8 @@ export function normalizeDecision(name: string, decision: ApprovalDecision): App
   if (decision.answer || decision.editedSteps) {
     console.warn(`[approval-queue] 工具 ${name} 的决议携带无关 payload，已忽略`);
   }
-  return { approved: decision.approved };
+  return {
+    approved: decision.approved,
+    ...(decision.approvalScope ? { approvalScope: decision.approvalScope } : {})
+  };
 }

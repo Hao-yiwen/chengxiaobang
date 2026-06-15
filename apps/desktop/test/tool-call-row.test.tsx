@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolCall } from "@chengxiaobang/shared";
 import { ToolCallRow } from "../src/renderer/components/ToolCallRow";
@@ -146,8 +146,14 @@ describe("ToolCallRow", () => {
     expect(screen.queryByText("点击在右侧预览")).not.toBeInTheDocument();
   });
 
-  it("keeps the raw result for non-file tools", () => {
-    render(
+  it("renders Bash command and result with the rewritten code block chrome", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true
+    });
+
+    const { container } = render(
       <ToolCallRow
         toolCall={toolCall({ name: "Bash", args: { command: "ls -la" }, result: "total 0" })}
       />
@@ -156,14 +162,37 @@ describe("ToolCallRow", () => {
     fireEvent.click(screen.getByText("运行 ls -la"));
 
     expect(screen.queryByLabelText("变更对比")).not.toBeInTheDocument();
-    expect(screen.getByText("total 0")).toBeInTheDocument();
+    expect(screen.getByText("执行命令")).toBeInTheDocument();
+    expect(screen.getByText("执行产物")).toBeInTheDocument();
+    expect(container).toHaveTextContent("ls -la");
+    expect(container).toHaveTextContent("total 0");
+
+    const codeBlocks = container.querySelectorAll(".tool-call-code-block");
+    expect(codeBlocks).toHaveLength(2);
+    expect(container.querySelectorAll(".tool-call-code-block [data-streamdown='code-block']")).toHaveLength(2);
+    expect(screen.getAllByText("bash")).toHaveLength(2);
+    expect(screen.getAllByTitle("自动换行")).toHaveLength(2);
+    expect(screen.getAllByTitle("复制代码")).toHaveLength(2);
+
+    expect(codeBlocks[0]).toHaveAttribute("data-code-wrap", "false");
+    fireEvent.click(screen.getAllByTitle("自动换行")[0]);
+    expect(codeBlocks[0]).toHaveAttribute("data-code-wrap", "true");
+
+    expect(container.querySelector("pre.rounded-sm.bg-canvas-soft-2")).toBeNull();
+
+    const copyButtons = screen.getAllByTitle("复制代码");
+    fireEvent.click(copyButtons[0]);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("ls -la"));
+
+    fireEvent.click(copyButtons[1]);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("total 0"));
   });
 
   it("shows the full shell command before the command artifact when expanded", () => {
     const command =
       "lsof -ti:3000 | xargs kill -9 2>/dev/null; lsof -ti:4000 | xargs kill -9 2>/dev/null";
 
-    render(
+    const { container } = render(
       <ToolCallRow
         toolCall={toolCall({
           name: "Bash",
@@ -176,9 +205,9 @@ describe("ToolCallRow", () => {
     fireEvent.click(screen.getByText(/^运行 lsof/));
 
     expect(screen.getByText("执行命令")).toBeInTheDocument();
-    expect(screen.getByText(command)).toBeInTheDocument();
     expect(screen.getByText("执行产物")).toBeInTheDocument();
-    expect(screen.getByText("已生成 /tmp/report.xlsx")).toBeInTheDocument();
+    expect(container).toHaveTextContent(command);
+    expect(container).toHaveTextContent("已生成 /tmp/report.xlsx");
   });
 
   it("renders a completed AskUserQuestion as an expandable question and answer receipt", () => {
@@ -187,12 +216,17 @@ describe("ToolCallRow", () => {
         toolCall={toolCall({
           name: "AskUserQuestion",
           args: {
-            questions: [{ question: "用哪种方式处理旧的 API 兼容层？" }],
+            questions: [
+              {
+                question: "用哪种方式处理旧的 API 兼容层？",
+                options: ["保留并标记 deprecated", "直接移除，major 版本升级"]
+              }
+            ],
             answer: {
               answers: [
                 {
                   question: "用哪种方式处理旧的 API 兼容层？",
-                  text: "保留并标记 deprecated"
+                  optionLabel: "保留并标记 deprecated"
                 }
               ]
             }
@@ -216,7 +250,7 @@ describe("ToolCallRow", () => {
         toolCall={toolCall({
           name: "AskUserQuestion",
           status: "rejected",
-          args: { questions: [{ question: "继续吗？" }] }
+          args: { questions: [{ question: "继续吗？", options: ["继续", "停止"] }] }
         })}
       />
     );
@@ -231,7 +265,7 @@ describe("ToolCallRow", () => {
         toolCall={toolCall({
           name: "AskUserQuestion",
           status: "pending_approval",
-          args: { questions: [{ question: "继续吗？" }] }
+          args: { questions: [{ question: "继续吗？", options: ["继续", "停止"] }] }
         })}
       />
     );
@@ -248,13 +282,13 @@ describe("ToolCallRow", () => {
           name: "AskUserQuestion",
           args: {
             questions: [
-              { id: "q1", question: "脚本类型？", options: ["GPT", "BERT"], allowFreeText: false },
-              { id: "q2", question: "补充说明？" }
+              { id: "q1", question: "脚本类型？", options: ["GPT", "BERT"] },
+              { id: "q2", question: "补充说明？", options: ["保持 demo", "补充完整"] }
             ],
             answer: {
               answers: [
                 { id: "q1", question: "脚本类型？", optionLabel: "GPT" },
-                { id: "q2", question: "补充说明？", text: "保持 demo" }
+                { id: "q2", question: "补充说明？", optionLabel: "保持 demo" }
               ]
             }
           }

@@ -6,6 +6,7 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ToolCall } from "@chengxiaobang/shared";
+import { CodeBlockPanel } from "@/components/CodeBlockPanel";
 import { DiffView } from "@/components/DiffView";
 import { artifactKind } from "@/lib/artifact";
 import {
@@ -134,7 +135,6 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
             <ToolDetailBlock
               label={t("chat.toolDetail.result")}
               content={result}
-              muted
             />
           ) : null}
         </div>
@@ -161,24 +161,20 @@ function shellCommandDetail(toolCall: ToolCall): string | undefined {
 
 function ToolDetailBlock({
   label,
-  content,
-  muted
+  content
 }: {
   label: string;
   content: string;
-  muted?: boolean;
 }) {
   return (
     <section className="min-w-0 space-y-1">
       <div className="text-micro font-medium text-muted-slate">{label}</div>
-      <pre
-        className={cn(
-          "max-h-[220px] overflow-auto whitespace-pre-wrap break-words rounded-sm border border-hairline bg-canvas-soft-2 px-3 py-2 font-mono text-micro leading-relaxed",
-          muted ? "text-muted-foreground" : "text-foreground"
-        )}
-      >
-        {content}
-      </pre>
+      <CodeBlockPanel
+        ariaLabel={label}
+        className="tool-call-code-block"
+        code={content}
+        language="bash"
+      />
     </section>
   );
 }

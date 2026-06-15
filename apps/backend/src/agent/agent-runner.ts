@@ -67,6 +67,7 @@ import { AsyncEventQueue } from "./async-queue";
 import { runDirectTool } from "./direct-tool-runner";
 import { buildAgentMessages } from "./history";
 import { RunEventTranslator } from "./pi-events";
+import { ProjectApprovalTrustService } from "./project-approval-trust";
 import { buildSystemPrompt } from "./system-prompt";
 import {
   compactableMessages,
@@ -120,6 +121,8 @@ export interface AgentRunnerOptions {
   usageCostLedgerService?: UsageCostLedgerService;
   /** 供应商配置仓库；生产环境使用 ~/.chengxiaobang/config.yaml。 */
   providerRepository?: ProviderRepository;
+  /** 项目级工具审批信任服务；默认使用 StateStore settings KV。 */
+  projectApprovalTrustService?: ProjectApprovalTrustService;
 }
 
 export class AgentRunner {
@@ -137,6 +140,7 @@ export class AgentRunner {
   private readonly smartApprovalJudge: SmartApprovalJudge;
   private readonly usageCostLedgerService: UsageCostLedgerService;
   private readonly providerRepository: ProviderRepository;
+  private readonly projectApprovalTrustService: ProjectApprovalTrustService;
   private readonly memoryDir?: string;
 
   constructor(
@@ -160,6 +164,8 @@ export class AgentRunner {
     this.usageCostLedgerService =
       options.usageCostLedgerService ?? new UsageCostLedgerService(store);
     this.providerRepository = options.providerRepository ?? store;
+    this.projectApprovalTrustService =
+      options.projectApprovalTrustService ?? new ProjectApprovalTrustService(store);
   }
 
   abort(runId: string): boolean {
@@ -683,10 +689,12 @@ export class AgentRunner {
           approvals: this.approvals,
           runId,
           sessionId: activeSession.id,
+          projectId: activeSession.projectId,
           request: directRequest,
           tools,
           workspacePath,
           accessMode: input.accessMode,
+          projectApprovalTrustService: this.projectApprovalTrustService,
           provider,
           apiKey,
           signal: controller.signal,
@@ -720,6 +728,7 @@ export class AgentRunner {
       yield* this.runPiLoop({
         runId,
         sessionId: activeSession.id,
+        projectId: activeSession.projectId,
         workspacePath,
         queue,
         tools,
@@ -967,6 +976,7 @@ export class AgentRunner {
   private async *runPiLoop(options: {
     runId: string;
     sessionId: string;
+    projectId: string | null;
     workspacePath: string;
     queue: AsyncEventQueue<StreamEvent>;
     tools: AgentTool<any>[];
@@ -1021,8 +1031,10 @@ export class AgentRunner {
       approvals: this.approvals,
       runId: options.runId,
       sessionId: options.sessionId,
+      projectId: options.projectId,
       workspacePath: options.workspacePath,
       accessMode: options.accessMode,
+      projectApprovalTrustService: this.projectApprovalTrustService,
       strictApproval: options.headless || options.viaFeishu,
       signal: options.controller.signal,
       model: options.provider.model,

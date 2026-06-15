@@ -133,6 +133,19 @@ describe("approvalDecisionSchema", () => {
     expect(decision.answer).toEqual({ answers: [{ optionLabel: "方案 A" }] });
   });
 
+  it("允许 approved 决议携带项目级审批作用域", () => {
+    expect(approvalDecisionSchema.parse({ approved: true, approvalScope: "project" })).toEqual({
+      approved: true,
+      approvalScope: "project"
+    });
+  });
+
+  it("拒绝 approvalScope 出现在拒绝决议上", () => {
+    expect(
+      approvalDecisionSchema.safeParse({ approved: false, approvalScope: "project" }).success
+    ).toBe(false);
+  });
+
   it("editedSteps 含非法步骤时报错", () => {
     expect(
       approvalDecisionSchema.safeParse({ approved: true, editedSteps: [{ id: "", title: "" }] })
@@ -214,7 +227,7 @@ describe("askUserAnswerSchema", () => {
 
   it("只接受结构化 answers 数组", () => {
     expect(askUserAnswerSchema.safeParse({ optionLabel: "方案 A" }).success).toBe(false);
-    expect(askUserAnswerSchema.safeParse({ text: "自由回答" }).success).toBe(false);
+    expect(askUserAnswerSchema.safeParse({ text: "文字回答" }).success).toBe(false);
     expect(askUserAnswerSchema.safeParse({ answers: [{ optionLabel: "方案 A" }] }).success).toBe(
       true
     );
@@ -247,7 +260,7 @@ describe("askUserAnswerSchema", () => {
     ).toBe(false);
   });
 
-  it("结构化回答仍保留旧版非空校验", () => {
+  it("文字型 answer payload 仍需非空", () => {
     expect(
       askUserAnswerSchema.safeParse({
         answers: [{ id: "q1", question: "请说明原因", text: "   " }]
@@ -276,40 +289,62 @@ describe("新工具参数 schema", () => {
 
   it("askUserArgs 拒绝旧版单题，只接受 questions 数组", () => {
     expect(askUserArgsSchema.safeParse({ question: "选哪个？" }).success).toBe(false);
+    expect(askUserArgsSchema.safeParse({ questions: [] }).success).toBe(false);
     expect(
       askUserArgsSchema.safeParse({
         questions: [{ question: "q", options: ["a", "b", "c", "d", "e"] }]
       }).success
     ).toBe(false);
+    expect(
+      askUserArgsSchema.safeParse({
+        questions: [{ question: "q" }]
+      }).success
+    ).toBe(false);
+    expect(
+      askUserArgsSchema.safeParse({
+        questions: [{ question: "q", options: ["a"] }]
+      }).success
+    ).toBe(false);
   });
 
-  it("askUserArgs 支持最多 4 个结构化问题", () => {
+  it("askUserArgs 支持 1 到 4 个结构化选择题", () => {
     expect(
       askUserArgsSchema.parse({
         questions: [
-          { id: "q1", question: "类型？", options: ["A", "B"], allowFreeText: false },
-          { id: "q2", header: "补充", question: "补充说明？", options: [{ label: "继续", description: "保持当前方向" }] }
+          { id: "q1", question: "类型？", options: ["A", "B"], multiSelect: true },
+          {
+            id: "q2",
+            header: "补充",
+            question: "补充说明？",
+            options: [
+              { label: "继续", description: "保持当前方向" },
+              { label: "暂停", description: "等用户补充信息" }
+            ]
+          }
         ]
       })
     ).toEqual({
       questions: [
-        { id: "q1", question: "类型？", options: ["A", "B"], allowFreeText: false },
+        { id: "q1", question: "类型？", options: ["A", "B"], multiSelect: true },
         {
           id: "q2",
           header: "补充",
           question: "补充说明？",
-          options: [{ label: "继续", description: "保持当前方向" }]
+          options: [
+            { label: "继续", description: "保持当前方向" },
+            { label: "暂停", description: "等用户补充信息" }
+          ]
         }
       ]
     });
     expect(
       askUserArgsSchema.safeParse({
         questions: [
-          { question: "1" },
-          { question: "2" },
-          { question: "3" },
-          { question: "4" },
-          { question: "5" }
+          { question: "1", options: ["a", "b"] },
+          { question: "2", options: ["a", "b"] },
+          { question: "3", options: ["a", "b"] },
+          { question: "4", options: ["a", "b"] },
+          { question: "5", options: ["a", "b"] }
         ]
       }).success
     ).toBe(false);
