@@ -1,7 +1,7 @@
 ---
 version: beta
 name: Vercel-developer-platform-theme
-description: A stark developer-platform interface built from near-white canvases, ink-near-black text, deliberate gray steps, subtle stacked elevation, Geist-like typography, and a hero-scale blue / teal / violet / pink / amber mesh gradient reserved for atmospheric moments.
+description: A stark developer-platform interface built from near-white canvases, ink-near-black text, deliberate gray steps, subtle stacked elevation, system sans typography, and a hero-scale blue / teal / violet / pink / amber mesh gradient reserved for atmospheric moments.
 
 colors:
   primary: "#171717"
@@ -43,55 +43,55 @@ colors:
 
 typography:
   display-xl:
-    fontFamily: Geist
+    fontFamily: system sans
     fontSize: 48px
     fontWeight: 600
     lineHeight: 48px
     letterSpacing: -2.4px
   display-lg:
-    fontFamily: Geist
+    fontFamily: system sans
     fontSize: 32px
     fontWeight: 600
     lineHeight: 40px
     letterSpacing: -1.28px
   display-md:
-    fontFamily: Geist
+    fontFamily: system sans
     fontSize: 24px
     fontWeight: 600
     lineHeight: 32px
     letterSpacing: -0.96px
   display-sm:
-    fontFamily: Geist
+    fontFamily: system sans
     fontSize: 20px
     fontWeight: 600
     lineHeight: 28px
     letterSpacing: -0.6px
   body-lg:
-    fontFamily: Geist
+    fontFamily: system sans
     fontSize: 18px
     fontWeight: 400
     lineHeight: 28px
     letterSpacing: 0
   body-md:
-    fontFamily: Geist
+    fontFamily: system sans
     fontSize: 16px
     fontWeight: 400
     lineHeight: 24px
     letterSpacing: 0
   body-sm:
-    fontFamily: Geist
+    fontFamily: system sans
     fontSize: 14px
     fontWeight: 400
     lineHeight: 20px
     letterSpacing: -0.28px
   body-xs:
-    fontFamily: Geist
+    fontFamily: system sans
     fontSize: 13px
     fontWeight: 400
     lineHeight: 18px
     letterSpacing: -0.26px
   caption:
-    fontFamily: Geist
+    fontFamily: system sans
     fontSize: 12px
     fontWeight: 400
     lineHeight: 16px
@@ -109,13 +109,13 @@ typography:
     lineHeight: 20px
     letterSpacing: 0
   button-md:
-    fontFamily: Geist
+    fontFamily: system sans
     fontSize: 14px
     fontWeight: 500
     lineHeight: 20px
     letterSpacing: 0
   button-lg:
-    fontFamily: Geist
+    fontFamily: system sans
     fontSize: 16px
     fontWeight: 500
     lineHeight: 24px
@@ -197,7 +197,7 @@ components:
 - 近白页面背景与纯白卡片，边界靠 `#ebebeb` hairline 和极弱 stacked shadow。
 - 近黑 `#171717` 是文字和主 CTA，而不是绿色、黄色或大面积彩色。
 - Vercel mesh gradient 是唯一装饰性视觉资产，只用于 hero 级或大背景级氛围。
-- 字体以 Geist 为目标；本项目用 Inter 400 / 500 / 600 作为开源替代，技术层使用 JetBrains Mono / SF Mono。
+- 字体使用系统 sans 字体栈；macOS 上实际主要落到 San Francisco / SF Pro，技术层使用 JetBrains Mono / SF Mono。
 - 标题使用 sentence-case、600 字重、明显负字距；不要 all-caps 标题，只有 mono 小标签可以 uppercase。
 - 卡片半径克制：6px 用于应用控件，8px 用于常规卡片，12px 到 16px 用于更大展示容器，100px 用于 CTA 胶囊。
 
@@ -251,7 +251,7 @@ components:
 
 ### Font Family
 
-- **Display / Body / Button**：目标是 Geist；本项目使用 Inter 作为替代。
+- **Display / Body / Button**：使用系统 sans 字体栈：`ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"`。
 - **Technical labels / Code**：目标是 Geist Mono；本项目使用 JetBrains Mono、SF Mono、Menlo 作为替代。
 
 ### Hierarchy

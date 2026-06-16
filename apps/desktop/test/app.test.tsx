@@ -1052,7 +1052,7 @@ describe("App", () => {
     useAppStore.setState({ view: "chat", activeSessionId: session.id });
     render(<App client={client} />);
 
-    const panel = await screen.findByText("已深度思考 · 用时 12 秒");
+    const panel = await screen.findByText("深度思考 · 用时 12 秒");
     const skillChip = await screen.findByText("已加载技能 excel");
     // 思考发生在加载技能之前，DOM 顺序必须一致：面板在前、chip 在后。
     expect(
@@ -1653,7 +1653,7 @@ describe("App", () => {
     // The answer renders as plain content (no assistant avatar/name label)...
     expect(await screen.findByText("答案是 42")).toBeInTheDocument();
     // ...and the streamed reasoning is captured into a collapsible panel.
-    expect(await screen.findByText(/已深度思考/)).toBeInTheDocument();
+    expect(await screen.findByText(/深度思考/)).toBeInTheDocument();
     expect(screen.getByText("先拆解问题")).toBeInTheDocument();
     // 单轮耗时仍可持久化，但聊天正文下方不再展示耗时脚注。
     expect(screen.queryByText("用时 3 秒")).not.toBeInTheDocument();

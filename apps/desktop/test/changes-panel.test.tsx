@@ -2,9 +2,16 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { GitChangesResult, Project, ProviderConfig, Session } from "@chengxiaobang/shared";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  GitChangesResult,
+  Project,
+  ProjectFileEntry,
+  ProviderConfig,
+  Session
+} from "@chengxiaobang/shared";
 import { App } from "../src/renderer/App";
+import { setupI18n } from "../src/renderer/i18n";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
 
@@ -44,6 +51,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     deleteProject: vi.fn(async () => true),
     listSessions: vi.fn(async () => [session]),
     listProjectFiles: vi.fn(async () => []),
+    listProjectDirectory: vi.fn(async () => []),
     getGitInfo: vi.fn(async () => ({ isRepo: true })),
     getGitChanges: vi.fn(async () => ({ isRepo: false, files: [] })),
     updateSession: vi.fn() as never,
@@ -77,8 +85,12 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
 
 async function openChangesPane(): Promise<void> {
   fireEvent.click(screen.getByTitle("打开侧边面板"));
-  fireEvent.click(await screen.findByRole("button", { name: "变更" }));
+  fireEvent.click(await screen.findByRole("button", { name: "审查" }));
 }
+
+beforeAll(() => {
+  setupI18n("zh");
+});
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -98,19 +110,36 @@ describe("changes panel", () => {
       ]
     };
     const getGitChanges = vi.fn(async () => changes);
-    const client = createClient({ getGitChanges });
+    const listProjectDirectory = vi.fn(async (_projectId: string, directory = ".") => {
+      if (directory === ".") {
+        return [
+          { name: "src", path: "src", type: "directory" },
+          { name: "fresh.txt", path: "fresh.txt", type: "file" },
+          { name: "blob.bin", path: "blob.bin", type: "file" }
+        ] satisfies ProjectFileEntry[];
+      }
+      if (directory === "src") {
+        return [
+          { name: "a.ts", path: "src/a.ts", type: "file" }
+        ] satisfies ProjectFileEntry[];
+      }
+      return [] satisfies ProjectFileEntry[];
+    });
+    const client = createClient({ getGitChanges, listProjectDirectory });
 
     render(<App client={client} />);
     await screen.findByText("项目对话");
     await openChangesPane();
 
     expect(await screen.findByText("3 个文件有变更")).toBeInTheDocument();
-    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
-    expect(screen.getAllByText("未跟踪")).toHaveLength(2);
+    const modifiedFile = await screen.findByText("src/a.ts");
+    expect(modifiedFile).toBeInTheDocument();
     expect(screen.getByText("修改")).toBeInTheDocument();
+    expect(await screen.findByText("fresh.txt")).toBeInTheDocument();
+    expect(await screen.findByText("blob.bin")).toBeInTheDocument();
     expect(getGitChanges).toHaveBeenCalledWith(project.id);
 
-    fireEvent.click(screen.getByText("src/a.ts"));
+    fireEvent.click(modifiedFile);
     expect(await screen.findByText("new line")).toBeInTheDocument();
     expect(screen.getByText("old line")).toBeInTheDocument();
 
@@ -148,7 +177,7 @@ describe("changes panel", () => {
     await waitFor(() => expect(getGitInfo).toHaveBeenCalledWith(project.id));
     fireEvent.click(screen.getByTitle("打开侧边面板"));
 
-    expect(screen.queryByRole("button", { name: "变更" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "审查" })).not.toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "终端" })).toBeInTheDocument();
   });
 });

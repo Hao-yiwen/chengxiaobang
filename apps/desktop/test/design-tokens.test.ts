@@ -93,11 +93,18 @@ describe("design tokens (DESIGN.md)", () => {
     expect(fontSize.hero[0]).toBe("48px");
   });
 
-  it("uses Inter as the Geist substitute for display and body", () => {
+  it("uses the system sans stack for display and body", () => {
     const fontFamily = theme.extend.fontFamily as Record<string, string[]>;
-    expect(fontFamily.display[0]).toBe("Inter");
-    expect(fontFamily.sans[0]).toBe("Inter");
-    expect(fontFamily.display).toContain("PingFang SC");
-    expect(fontFamily.sans).toContain("PingFang SC");
+    const systemSansStack = [
+      "ui-sans-serif",
+      "system-ui",
+      "sans-serif",
+      "Apple Color Emoji",
+      "Segoe UI Emoji",
+      "Segoe UI Symbol",
+      "Noto Color Emoji"
+    ];
+    expect(fontFamily.display).toEqual(systemSansStack);
+    expect(fontFamily.sans).toEqual(systemSansStack);
   });
 });

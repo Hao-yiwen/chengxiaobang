@@ -18,7 +18,13 @@ beforeEach(() => {
       return [];
     }
   }
+  class MockResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
   vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+  vi.stubGlobal("ResizeObserver", MockResizeObserver);
 });
 
 afterEach(() => {
@@ -78,7 +84,10 @@ describe("StreamingMarkdown", () => {
     expect(screen.getByText("text")).toBeInTheDocument();
     expect(container.querySelector('[data-streamdown="code-block"][data-language=""]')).toBeNull();
     await waitFor(() => {
-      expect(container.querySelector(".cxb-code-block-shell pre")?.textContent).toBe(codeText);
+      const lineTexts = Array.from(
+        container.querySelectorAll(".cxb-code-block-shell pre code > span")
+      ).map((line) => line.textContent);
+      expect(lineTexts).toEqual(codeText.split("\n"));
     });
   });
 

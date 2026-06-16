@@ -143,26 +143,24 @@ export default {
         }
       },
       fontFamily: {
-        // Geist 的开源替代使用 Inter，技术层使用 JetBrains Mono / SF Mono。
+        // 界面正文使用系统 sans 字体栈；技术层使用 JetBrains Mono / SF Mono。
         display: [
-          "Inter",
-          "-apple-system",
-          "PingFang SC",
-          "Hiragino Sans GB",
-          "Microsoft YaHei",
           "ui-sans-serif",
           "system-ui",
-          "sans-serif"
+          "sans-serif",
+          "Apple Color Emoji",
+          "Segoe UI Emoji",
+          "Segoe UI Symbol",
+          "Noto Color Emoji"
         ],
         sans: [
-          "Inter",
-          "-apple-system",
-          "BlinkMacSystemFont",
-          "PingFang SC",
-          "Hiragino Sans GB",
-          "Microsoft YaHei",
           "ui-sans-serif",
-          "sans-serif"
+          "system-ui",
+          "sans-serif",
+          "Apple Color Emoji",
+          "Segoe UI Emoji",
+          "Segoe UI Symbol",
+          "Noto Color Emoji"
         ],
         mono: ["JetBrains Mono", "SF Mono", "ui-monospace", "Menlo", "Consolas", "monospace"]
       },

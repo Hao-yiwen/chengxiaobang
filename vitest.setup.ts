@@ -51,3 +51,21 @@ if (typeof window !== "undefined" && !hasUsableLocalStorage()) {
     });
   }
 }
+
+// jsdom 没有 ResizeObserver；设置页和代码块横向滚动会依赖它做尺寸监听。
+if (typeof window !== "undefined" && !("ResizeObserver" in window)) {
+  class MockResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+
+  Object.defineProperty(window, "ResizeObserver", {
+    configurable: true,
+    value: MockResizeObserver
+  });
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    configurable: true,
+    value: MockResizeObserver
+  });
+}

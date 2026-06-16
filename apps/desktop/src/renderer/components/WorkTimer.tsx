@@ -58,15 +58,15 @@ export function WorkTimer({
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="flex cursor-pointer items-center gap-2 text-body-xs font-medium text-muted-foreground"
+          className="flex cursor-pointer items-center gap-2 text-body-xs text-muted-foreground"
         >
+          <span>{header}</span>
           <ChevronIcon
             className={cn("size-4 transition-transform duration-200", open ? "" : "-rotate-90")}
           />
-          <span>{header}</span>
         </button>
       ) : (
-        <div className="flex items-center gap-2 text-body-xs font-medium text-muted-foreground">
+        <div className="flex items-center gap-2 text-body-xs text-muted-foreground">
           <span>{header}</span>
         </div>
       )}

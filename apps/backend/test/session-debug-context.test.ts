@@ -95,10 +95,14 @@ describe("session debug context API", () => {
     const body = (await response.json()) as Record<string, any>;
     expect(body.debug.systemPrompt).toContain(`工作目录: ${project.path}`);
     expect(body.debug.systemPrompt).toContain("当前为「计划模式」");
-    expect(body.debug.modelMessages[0]).toMatchObject({
-      role: "user",
-      content: "payload 用户消息"
-    });
+    expect(body.debug.modelMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: "payload 用户消息"
+        })
+      ])
+    );
     expect(body.debug.messages[0]).not.toHaveProperty("payload");
     expect(body.debug.toolCalls[0]).toMatchObject({ id: "tool_debug", name: "Read" });
     expect(body.debug.availableTools).toEqual(

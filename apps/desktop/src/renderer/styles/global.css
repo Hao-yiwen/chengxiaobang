@@ -189,8 +189,6 @@
 
   body {
     @apply bg-background text-foreground;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     font-synthesis: none;
     font-feature-settings: "ss01" 1, "ss02" 1, "rlig" 1, "calt" 1;
@@ -602,6 +600,11 @@
 
   .markdown-streamdown p {
     margin-block: 0;
+  }
+
+  .markdown-streamdown strong,
+  .markdown-streamdown b {
+    font-weight: 500;
   }
 
   .markdown-streamdown [data-streamdown^="heading"] {

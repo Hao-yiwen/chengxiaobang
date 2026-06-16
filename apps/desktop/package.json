@@ -22,7 +22,6 @@
     "@aiden0z/pptx-renderer": "1.1.0",
     "@ant-design/icons": "6.2.5",
     "@chengxiaobang/shared": "workspace:*",
-    "@fontsource/inter": "^5.2.8",
     "@napi-rs/canvas": "^1.0.0",
     "@pinojs/redact": "0.4.0",
     "@radix-ui/react-accessible-icon": "^1.1.9",

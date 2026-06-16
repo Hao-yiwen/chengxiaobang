@@ -86,7 +86,7 @@ const STREAMDOWN_MERMAID: MermaidOptions = {
     securityLevel: "strict",
     theme: "base",
     fontFamily:
-      "Inter, -apple-system, BlinkMacSystemFont, PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif",
+      'ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"',
     themeVariables: {
       background: "#ffffff",
       mainBkg: "#ffffff",
