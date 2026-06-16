@@ -748,7 +748,7 @@ export function Composer() {
   return (
     <div
       data-testid="composer-shell"
-      className="relative w-full rounded-xl border border-border bg-card transition-colors focus-within:border-hairline-strong/40"
+      className="relative w-full rounded-lg border border-border bg-card shadow-subtle transition-colors focus-within:border-hairline-strong/40 overflow-hidden"
     >
       {queuedRuns.length > 0 ? (
         <QueuedRunStack
@@ -786,7 +786,7 @@ export function Composer() {
               <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
                 <div
                   ref={highlightInnerRef}
-                  className="whitespace-pre-wrap break-words px-4 pb-3 pt-3.5 text-body text-transparent"
+                  className="whitespace-pre-wrap break-words px-4 pb-3 pt-3.5 text-body-sm text-transparent"
                 >
                   {renderHighlightNodes(value, highlightRanges)}
                 </div>
@@ -819,7 +819,7 @@ export function Composer() {
                   highlightInnerRef.current.style.transform = `translateY(-${event.currentTarget.scrollTop}px)`;
                 }
               }}
-              className="relative z-[1] max-h-[220px] min-h-[68px] resize-none overflow-y-auto rounded-none border-0 bg-transparent px-4 pb-3 pt-3.5 text-body focus-visible:border-transparent focus-visible:ring-0"
+              className="relative z-[1] max-h-[220px] min-h-[68px] resize-none overflow-y-auto rounded-none border-0 bg-transparent px-4 pb-3 pt-3.5 text-body-sm font-normal placeholder:font-normal placeholder:text-muted-slate/75 focus-visible:border-transparent focus-visible:ring-0"
             />
 
             {rotatingActive ? (
@@ -839,7 +839,7 @@ export function Composer() {
                   {[...placeholderRotation, placeholderRotation[0]].map((line, index) => (
                     <span
                       key={index}
-                      className="flex items-center truncate text-body text-muted-slate"
+                      className="flex items-center truncate text-body-sm font-normal text-muted-slate/75"
                       style={{ height: ROTATION_LINE_HEIGHT_PX }}
                     >
                       {line}

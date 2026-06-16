@@ -602,6 +602,18 @@
     margin-block: 0;
   }
 
+  .markdown-streamdown-block {
+    min-width: 0;
+  }
+
+  .markdown-streamdown-block:first-child > :first-child {
+    margin-top: 0;
+  }
+
+  .markdown-streamdown-block:last-child > :last-child {
+    margin-bottom: 0;
+  }
+
   .markdown-streamdown strong,
   .markdown-streamdown b {
     font-weight: 500;

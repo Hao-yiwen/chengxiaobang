@@ -41,6 +41,23 @@ describe("StreamingMarkdown", () => {
     expect(root).not.toHaveClass("text-body");
   });
 
+  it("renders streamed paragraphs as direct blocks so root spacing applies", () => {
+    const { container } = render(
+      <StreamingMarkdown text={"## 《海与碗》\n\n第一段内容。\n\n第二段内容。"} />
+    );
+    const root = container.querySelector(".markdown-streamdown");
+    const directBlocks = Array.from(root?.children ?? []);
+
+    expect(root).toHaveClass("space-y-4");
+    expect(directBlocks).toHaveLength(3);
+    expect(directBlocks.every((block) => block.hasAttribute("data-cxb-streaming-markdown-block"))).toBe(true);
+    expect(directBlocks.map((block) => block.textContent)).toEqual([
+      "《海与碗》",
+      "第一段内容。",
+      "第二段内容。"
+    ]);
+  });
+
   it("renders an unclosed bold tail as formatted text immediately", () => {
     const { container } = render(<StreamingMarkdown text={"第一段\n\n**第二"} />);
 

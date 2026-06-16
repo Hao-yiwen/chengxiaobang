@@ -1,5 +1,5 @@
 import { ChevronRightIcon } from "@/assets/file-type-icons";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TurnTiming } from "@/lib/timeline";
 import { workedParts } from "@/lib/work-timer";
@@ -10,8 +10,7 @@ import { cn } from "@/lib/utils";
  * 默认展开承载中间过程；完成/历史态定格耗时、默认折叠、可点击展开；中间过程为空时退化为
  * 不可展开的纯标签。折叠头外的内容（上方 user 消息、下方最终答复）由 ChatView 渲染。
  *
- * 「运行结束自动折叠」由 ChatView 在 active 翻转时换 key 重挂实现（复刻 ReasoningPanel 的
- * streaming/settled 不同实例机制）：本组件只按挂载时的 timing 初始化 open，不监听 mode 切换。
+ * 「运行结束自动折叠」由 running -> settled 的状态切换触发，保持同一个实例才能让收起动画生效。
  */
 export function WorkTimer({
   timing,
@@ -25,11 +24,19 @@ export function WorkTimer({
   const { t } = useTranslation();
   const running = timing.mode === "running";
   const startedAt = timing.mode === "running" ? timing.startedAt : undefined;
-  // 活跃轮（running）默认展开，历史/完成轮默认折叠——与 ReasoningPanel 的 useState(streaming) 同理。
+  // 活跃轮（running）默认展开，历史/完成轮默认折叠。
   const [open, setOpen] = useState(running);
+  const wasRunningRef = useRef(running);
   const [elapsed, setElapsed] = useState(() =>
     startedAt !== undefined ? Math.max(0, Date.now() - startedAt) : 0
   );
+
+  useEffect(() => {
+    if (wasRunningRef.current && !running) {
+      setOpen(false);
+    }
+    wasRunningRef.current = running;
+  }, [running]);
 
   useEffect(() => {
     if (startedAt === undefined) {
@@ -75,7 +82,7 @@ export function WorkTimer({
       {collapsible ? (
         <div
           className={cn(
-            "grid",
+            "grid transition-[grid-template-rows] duration-300 ease-out",
             open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
           )}
         >

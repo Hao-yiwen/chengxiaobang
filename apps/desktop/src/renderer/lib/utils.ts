@@ -18,6 +18,7 @@ const twMerge = extendTailwindMerge({
             "feature",
             "body-lg",
             "body",
+            "body-sm",
             "button",
             "caption",
             "mono-label",

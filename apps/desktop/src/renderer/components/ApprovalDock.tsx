@@ -258,7 +258,7 @@ function ApprovalCard({
             <InfoCircleIcon className="size-4 flex-none text-foreground" />
             <span className="min-w-0 break-words">{t("chat.approvalDialog.keyboardHint")}</span>
           </div>
-          <Button className="h-9 flex-none rounded-md px-4 text-button-md" onClick={confirm}>
+          <Button className="h-9 flex-none rounded-md px-4 text-button-md text-primary-foreground" onClick={confirm}>
             {t("chat.approvalDialog.confirm")}
           </Button>
         </div>

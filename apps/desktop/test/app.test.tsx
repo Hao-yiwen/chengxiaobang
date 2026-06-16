@@ -86,6 +86,20 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
   };
 }
 
+function closestFoldGrid(element: HTMLElement): HTMLElement {
+  let current: HTMLElement | null = element;
+  while (current) {
+    if (
+      typeof current.className === "string" &&
+      current.className.includes("transition-[grid-template-rows]")
+    ) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  throw new Error("未找到折叠容器");
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   delete window.chengxiaobang;
@@ -1815,6 +1829,13 @@ describe("App", () => {
   });
 
   it("captures streamed reasoning and renders the answer as plain content", async () => {
+    type StreamRunEvent = Parameters<ApiClient["streamRun"]>[1] extends (
+      event: infer E
+    ) => void
+      ? E
+      : never;
+    let emit: ((event: StreamRunEvent) => void) | undefined;
+    let resolveStream: (() => void) | undefined;
     const userMessage: Message = {
       id: "u1",
       sessionId: "session_1",
@@ -1836,13 +1857,15 @@ describe("App", () => {
       // Returned by the post-run reload so the captured reasoning stays attached.
       listMessages: vi.fn(async () => [userMessage, assistantMessage]),
       streamRun: vi.fn(async (_input, onEvent) => {
+        emit = onEvent;
         onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
         onEvent({ type: "message", runId: "run_1", message: userMessage });
         onEvent({ type: "delta", channel: "thinking", runId: "run_1", delta: "先拆解" });
         onEvent({ type: "delta", channel: "thinking", runId: "run_1", delta: "问题" });
         onEvent({ type: "delta", channel: "text", runId: "run_1", delta: "答案是 42" });
-        onEvent({ type: "message", runId: "run_1", message: assistantMessage });
-        onEvent({ type: "run_end", runId: "run_1", status: "completed" });
+        return new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        });
       }) as never
     });
 
@@ -1851,11 +1874,22 @@ describe("App", () => {
     fireEvent.change(await screen.findByLabelText("输入消息"), { target: { value: "你好" } });
     fireEvent.click(screen.getByTitle("发送"));
 
+    const streamedReasoning = await screen.findByText("先拆解问题");
+    expect(closestFoldGrid(streamedReasoning)).toHaveClass("grid-rows-[1fr]");
+
+    act(() => {
+      emit?.({ type: "message", runId: "run_1", message: assistantMessage });
+      emit?.({ type: "run_end", runId: "run_1", status: "completed" });
+      resolveStream?.();
+    });
+
     // The answer renders as plain content (no assistant avatar/name label)...
     expect(await screen.findByText("答案是 42")).toBeInTheDocument();
     // ...and the streamed reasoning is captured into a collapsible panel.
     expect(await screen.findByText(/深度思考/)).toBeInTheDocument();
-    expect(screen.getByText("先拆解问题")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(closestFoldGrid(screen.getByText("先拆解问题"))).toHaveClass("grid-rows-[0fr]")
+    );
     // 单轮耗时仍可持久化，但聊天正文下方不再展示耗时脚注。
     expect(screen.queryByText("用时 3 秒")).not.toBeInTheDocument();
   });

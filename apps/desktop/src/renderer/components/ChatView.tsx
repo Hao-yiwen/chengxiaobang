@@ -535,7 +535,7 @@ export function ChatView() {
 
 /**
  * 一个 AI 轮次的渲染：user 消息在折叠头外、上方；中间过程 + 运行中临时块进 WorkTimer 折叠体；
- * 最终答复在折叠头外、下方。WorkTimer 的 key 随 active 翻转重挂，实现「运行结束自动折叠」。
+ * 最终答复在折叠头外、下方。WorkTimer 保持同一实例，在 running -> settled 时自行平滑收起。
  */
 function TurnView({
   block,
@@ -562,7 +562,7 @@ function TurnView({
     <>
       {block.user ? renderItem(block.user.item, block.user.index) : null}
       <WorkTimer
-        key={block.active ? `${block.key}-live` : `${block.key}-settled`}
+        key={block.key}
         timing={block.timing}
         collapsible={collapsible}
       >

@@ -20,6 +20,7 @@ export default defineConfig({
     "@larksuiteoapi/node-sdk",
     "@tencent-weixin/openclaw-weixin",
     "hono",
+    "adm-zip",
     "js-yaml",
     "js-tiktoken"
   ],

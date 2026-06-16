@@ -2,8 +2,8 @@ import type { AccessMode } from "@chengxiaobang/shared";
 import type { QueuedRunItem } from "@/store";
 
 export const TEXTAREA_MAX_HEIGHT_PX = 220;
-// 占位文案轮播：单行高度需与 text-body 行高（24px）一致，便于 translateY 对齐。
-export const ROTATION_LINE_HEIGHT_PX = 24;
+// 占位文案轮播：单行高度需与 text-body-sm 行高（20px）一致，便于 translateY 对齐。
+export const ROTATION_LINE_HEIGHT_PX = 20;
 export const ROTATION_INTERVAL_MS = 2800;
 
 export const ACCESS_MODE_TONES: Record<

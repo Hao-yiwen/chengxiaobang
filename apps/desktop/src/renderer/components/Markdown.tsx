@@ -5,10 +5,12 @@ import { createMathPlugin } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import remarkBreaks from "remark-breaks";
 import {
+  Block,
   defaultRehypePlugins,
   defaultRemarkPlugins,
   defaultUrlTransform,
   Streamdown,
+  type BlockProps,
   type ControlsConfig,
   type CustomRendererProps,
   type MermaidOptions,
@@ -267,6 +269,18 @@ function useScrollOverflowDetection(containerRef: React.RefObject<HTMLDivElement
   }, [containerRef]);
 }
 
+function StreamingMarkdownBlock({ content, dir, ...props }: BlockProps) {
+  if (!content.trim()) {
+    return null;
+  }
+
+  return (
+    <div className="markdown-streamdown-block" data-cxb-streaming-markdown-block="" dir={dir}>
+      <Block content={content} {...props} />
+    </div>
+  );
+}
+
 function MarkdownStream({
   text,
   className,
@@ -288,26 +302,27 @@ function MarkdownStream({
 
   return (
     <div ref={containerRef} style={{ display: "contents" }}>
-    <Streamdown
-      mode={mode}
-      dir="auto"
-      className={cn("markdown-streamdown text-foreground", className)}
-      controls={STREAMDOWN_CONTROLS}
-      translations={STREAMDOWN_TRANSLATIONS}
-      components={STREAMDOWN_COMPONENTS}
-      urlTransform={HTTP_URL_TRANSFORM}
-      remarkPlugins={REMARK_PLUGINS}
-      rehypePlugins={REHYPE_PLUGINS}
-      plugins={STREAMDOWN_PLUGINS}
-      mermaid={STREAMDOWN_MERMAID}
-      shikiTheme={shikiTheme}
-      lineNumbers={false}
-      isAnimating={isAnimating}
-      animated={mode === "streaming" ? STREAMDOWN_ANIMATION : false}
-      caret={mode === "streaming" ? "circle" : undefined}
-    >
-      {text}
-    </Streamdown>
+      <Streamdown
+        mode={mode}
+        dir="auto"
+        className={cn("markdown-streamdown text-foreground", className)}
+        controls={STREAMDOWN_CONTROLS}
+        translations={STREAMDOWN_TRANSLATIONS}
+        components={STREAMDOWN_COMPONENTS}
+        urlTransform={HTTP_URL_TRANSFORM}
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={REHYPE_PLUGINS}
+        plugins={STREAMDOWN_PLUGINS}
+        mermaid={STREAMDOWN_MERMAID}
+        shikiTheme={shikiTheme}
+        lineNumbers={false}
+        isAnimating={isAnimating}
+        animated={mode === "streaming" ? STREAMDOWN_ANIMATION : false}
+        caret={mode === "streaming" ? "circle" : undefined}
+        BlockComponent={mode === "streaming" ? StreamingMarkdownBlock : undefined}
+      >
+        {text}
+      </Streamdown>
     </div>
   );
 }
