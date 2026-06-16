@@ -80,6 +80,17 @@ import { getApiClient, selectActiveProject, useAppStore } from "@/store";
 export { getAtToken } from "@/components/composer/text-utils";
 
 type ComposerT = (key: string) => unknown;
+type SlashCommandSectionTitleKey =
+  | "composer.slashCommandGroupCommands"
+  | "composer.slashCommandGroupSkills";
+
+interface SlashCommandSection {
+  id: "commands" | "skills";
+  titleKey: SlashCommandSectionTitleKey;
+  commands: SlashCommand[];
+  startIndex: number;
+}
+
 const REASONING_MODE_LABEL_KEYS: Record<ReasoningMode, string> = {
   off: "settings.providers.reasoningModes.off",
   auto: "settings.providers.reasoningModes.auto",
@@ -305,22 +316,23 @@ export function Composer() {
   const slashCommandSections = useMemo(() => {
     const commandItems = filteredSlashCommands.filter((command) => command.kind !== "skill");
     const skillItems = filteredSlashCommands.filter((command) => command.kind === "skill");
+    const groups: SlashCommandSection[] = [
+      {
+        id: "commands",
+        titleKey: "composer.slashCommandGroupCommands",
+        commands: commandItems,
+        startIndex: 0
+      },
+      {
+        id: "skills",
+        titleKey: "composer.slashCommandGroupSkills",
+        commands: skillItems,
+        startIndex: commandItems.length
+      }
+    ];
     return {
       ordered: [...commandItems, ...skillItems],
-      groups: [
-        {
-          id: "commands",
-          titleKey: "composer.slashCommandGroupCommands",
-          commands: commandItems,
-          startIndex: 0
-        },
-        {
-          id: "skills",
-          titleKey: "composer.slashCommandGroupSkills",
-          commands: skillItems,
-          startIndex: commandItems.length
-        }
-      ].filter((group) => group.commands.length > 0)
+      groups: groups.filter((group) => group.commands.length > 0)
     };
   }, [filteredSlashCommands]);
   const showSlashMenu = slashQuery !== undefined && slashCommandSections.ordered.length > 0;
@@ -343,7 +355,7 @@ export function Composer() {
     !currentAtDismissed &&
     (fileSuggestionsLoading || searchedAtQuery === atToken.query || fileSuggestions.length > 0);
   const activeSuggestionMenu = showSlashMenu ? "slash" : showFileMenu ? "file" : undefined;
-  // 已插入的斜杠命令 / @ 文件引用打灰底标记，与普通输入区分。
+  // 已插入的斜杠命令 / @ 文件引用渲染成 token，与普通输入区分。
   const highlightRanges = useMemo(
     () => getComposerHighlightRanges(value, slashCommands, allowAtFileSuggestions),
     [value, slashCommands, allowAtFileSuggestions]
@@ -721,7 +733,7 @@ export function Composer() {
       setPlanMode(!planMode);
       return;
     }
-    // 退格删除：光标贴着某个灰底片段（斜杠命令 / @ 文件引用）末尾时，整块一次删掉。
+    // 退格删除：光标贴着某个 token（斜杠命令 / @ 文件引用）末尾时，整块一次删掉。
     if (event.key === "Backspace" && !event.metaKey && !event.ctrlKey && !event.altKey) {
       const target = event.currentTarget;
       if (target.selectionStart === target.selectionEnd) {

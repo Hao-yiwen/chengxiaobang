@@ -16,6 +16,7 @@ import {
   proposePlanArgsSchema,
   type AccessMode,
   type AskUserAnswer,
+  type FileChange,
   type ProposePlanArgs,
   type StreamEvent,
   type TokenUsage,
@@ -26,6 +27,11 @@ import {
 import type { StateStore } from "../repository/state-store";
 import { toTokenUsage } from "../model/pi-model";
 import { assessToolApprovalRisk } from "../tools/approval-policy";
+import {
+  buildAggregatedFileChange,
+  mergeFileChangeOperation,
+  type ToolFileChangeDetails
+} from "../tools/file-change";
 import { requiresApproval } from "../tools/registry";
 import { normalizeDecision, type ApprovalQueue } from "./approval-queue";
 import type { AsyncEventQueue } from "./async-queue";
@@ -90,6 +96,7 @@ export class RunEventTranslator {
 
   // key 是 pi/模型原始 toolCall.id，value 是应用层持久化的全局唯一 ToolCall。
   private readonly toolCalls = new Map<string, ToolCall>();
+  private readonly fileChangeAggregates = new Map<string, RunFileChangeAggregate>();
   private readonly toolCallOccurrences = new Map<string, number>();
   private readonly toolActivitySignatures = new Map<number, string>();
   private aborted = false;
@@ -642,7 +649,7 @@ export class RunEventTranslator {
 
   private async onToolExecutionEnd(
     toolCallId: string,
-    result: { content?: Array<{ type: string; text?: string }> },
+    result: { content?: Array<{ type: string; text?: string }>; details?: unknown },
     isError: boolean
   ): Promise<void> {
     const entity = this.toolCalls.get(toolCallId);
@@ -658,6 +665,9 @@ export class RunEventTranslator {
       // error result must not clobber it.
       return;
     }
+    const fileChange = !isError
+      ? this.fileChangeFromToolResult(entity, result.details)
+      : undefined;
     const completed = await this.saveToolCall(toolCallId, {
       ...entity,
       status: isError ? "failed" : "completed",
@@ -665,9 +675,64 @@ export class RunEventTranslator {
         .filter((block) => block.type === "text" && typeof block.text === "string")
         .map((block) => block.text)
         .join("\n"),
+      ...(fileChange ? { fileChange } : {}),
       updatedAt: nowIso()
     });
     this.push({ type: "tool_call", runId: this.options.runId, toolCall: completed });
+  }
+
+  private fileChangeFromToolResult(
+    entity: ToolCall,
+    details: unknown
+  ): FileChange | undefined {
+    if (!isToolFileChangeDetails(details)) {
+      if (details !== undefined && (entity.name === "Write" || entity.name === "Edit")) {
+        console.warn("[pi-events] 文件工具结果缺少可用 diff details", {
+          runId: this.options.runId,
+          toolCallId: entity.id,
+          toolName: entity.name
+        });
+      }
+      return undefined;
+    }
+    const fileChange: FileChange = {
+      path: details.path,
+      operation: details.operation,
+      patch: details.patch,
+      additions: details.additions,
+      deletions: details.deletions,
+      toolCallIds: [entity.id],
+      ...(details.truncated ? { truncated: true } : {})
+    };
+    this.trackRunFileChange(entity.id, details);
+    console.info("[pi-events] 已记录工具文件 diff", {
+      runId: this.options.runId,
+      toolCallId: entity.id,
+      toolName: entity.name,
+      path: fileChange.path,
+      operation: fileChange.operation,
+      additions: fileChange.additions,
+      deletions: fileChange.deletions,
+      truncated: Boolean(fileChange.truncated)
+    });
+    return fileChange;
+  }
+
+  private trackRunFileChange(toolCallId: string, details: ToolFileChangeDetails): void {
+    const existing = this.fileChangeAggregates.get(details.path);
+    if (!existing) {
+      this.fileChangeAggregates.set(details.path, {
+        path: details.path,
+        operation: details.operation,
+        beforeText: details.beforeText,
+        afterText: details.afterText,
+        toolCallIds: [toolCallId]
+      });
+      return;
+    }
+    existing.operation = mergeFileChangeOperation(existing.operation, details.operation);
+    existing.afterText = details.afterText;
+    existing.toolCallIds.push(toolCallId);
   }
 
   private async onAgentEnd(): Promise<void> {
@@ -705,11 +770,13 @@ export class RunEventTranslator {
             this.usage ? toTokenUsage(this.usage) : undefined
           )
         : undefined;
+    const fileChanges = this.finalizeFileChanges();
     await this.options.store.updateRunStatus(
       this.options.runId,
       outcome.status,
       usage,
-      outcome.error
+      outcome.error,
+      fileChanges.length > 0 ? fileChanges : undefined
     );
     if (usage?.costUsd !== undefined) {
       console.info("[agent-runner] 已记录 run 用量费用", {
@@ -723,8 +790,31 @@ export class RunEventTranslator {
       runId: this.options.runId,
       status: outcome.status,
       ...(outcome.error !== undefined ? { error: outcome.error } : {}),
-      ...(usage ? { usage } : {})
+      ...(usage ? { usage } : {}),
+      ...(fileChanges.length > 0 ? { fileChanges } : {})
     });
+  }
+
+  private finalizeFileChanges(): FileChange[] {
+    const fileChanges = [...this.fileChangeAggregates.values()]
+      .map((change) =>
+        buildAggregatedFileChange({
+          path: change.path,
+          operation: change.operation,
+          before: change.beforeText,
+          after: change.afterText,
+          toolCallIds: change.toolCallIds
+        })
+      )
+      .filter((change): change is FileChange => Boolean(change));
+    if (fileChanges.length > 0) {
+      console.info("[pi-events] 已聚合本轮文件 diff", {
+        runId: this.options.runId,
+        fileCount: fileChanges.length,
+        paths: fileChanges.map((change) => change.path)
+      });
+    }
+    return fileChanges;
   }
 
   private sinceReasoningStart(): number {
@@ -765,6 +855,14 @@ export class RunEventTranslator {
       this.toolCallOccurrences.get(modelToolCallId) ?? 0
     );
   }
+}
+
+interface RunFileChangeAggregate {
+  path: string;
+  operation: FileChange["operation"];
+  beforeText: string;
+  afterText: string;
+  toolCallIds: string[];
 }
 
 function mergeTokenUsage(
@@ -844,6 +942,27 @@ function encodeToolCallIdPart(value: string): string {
 
 function normalizeArgs(args: unknown): Record<string, unknown> {
   return typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+}
+
+function isToolFileChangeDetails(value: unknown): value is ToolFileChangeDetails {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const details = value as Partial<ToolFileChangeDetails>;
+  return (
+    typeof details.path === "string" &&
+    (details.operation === "write" || details.operation === "edit") &&
+    typeof details.patch === "string" &&
+    typeof details.additions === "number" &&
+    Number.isInteger(details.additions) &&
+    details.additions >= 0 &&
+    typeof details.deletions === "number" &&
+    Number.isInteger(details.deletions) &&
+    details.deletions >= 0 &&
+    typeof details.beforeText === "string" &&
+    typeof details.afterText === "string" &&
+    (details.truncated === undefined || typeof details.truncated === "boolean")
+  );
 }
 
 /** TodoWrite 的 args.todos 中是否还有未完成项，用于决定是否需要 todo 空闲提醒。 */

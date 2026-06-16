@@ -1296,8 +1296,25 @@ describe("Composer slash 菜单分组（ARCH-SPEC §5.5）", () => {
     expect(menuText.indexOf("/compact")).toBeLessThan(menuText.indexOf("技能"));
     expect(menuText.indexOf("技能")).toBeLessThan(menuText.indexOf("excel"));
 
-    fireEvent.click(within(menu).getByText("excel"));
+    fireEvent.change(input, { target: { value: "/compact" } });
+    const commandToken = await screen.findByTestId("composer-token-command");
+    expect(commandToken).toHaveTextContent("/compact");
+    expect(commandToken).toHaveClass("bg-canvas-soft-2");
+    expect(commandToken.querySelector("svg")).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "/" } });
+    const nextMenu = await screen.findByLabelText("斜杠命令建议");
+
+    fireEvent.click(within(nextMenu).getByText("excel"));
     expect(input).toHaveValue("/excel ");
+    const skillToken = await screen.findByTestId("composer-token-skill");
+    expect(skillToken).toHaveTextContent("/excel");
+    expect(skillToken).toHaveClass("bg-canvas-soft-2");
+    expect(skillToken.querySelector("svg")).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "/excel 写一个报表" } });
+    expect(input).toHaveValue("/excel 写一个报表");
+    expect(await screen.findByText("写一个报表")).toBeInTheDocument();
   });
 });
 

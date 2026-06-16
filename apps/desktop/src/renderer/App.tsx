@@ -83,7 +83,9 @@ export function App(props: { client?: ApiClient }) {
   const [rightPanelTriggerHiding, setRightPanelTriggerHiding] = useState(false);
   const rightPanelPhase = effectiveRightPanelPhase(rightPanelOpen, rightPanelVisualPhase);
   const rightPanelLayoutActive = rightPanelPhase !== "closed";
-  const showRightPanel = view === "chat" || (view === "home" && rightPanelLayoutActive);
+  // 聊天页保留 closing 槽位完成右栏收起动画；首页只在右栏真实打开时占位，
+  // 避免从会话回首页时内容先按「扣掉右栏宽度」居中再跳回全宽居中。
+  const showRightPanel = view === "chat" || (view === "home" && rightPanelOpen);
   const rightPanelControlsHidden = rightPanelLayoutActive || rightPanelTriggerHiding;
 
   useThemeController();
@@ -152,6 +154,16 @@ export function App(props: { client?: ApiClient }) {
       setRightPanelTriggerHiding(false);
     }
   }, [rightPanelOpen, rightPanelTriggerHiding]);
+
+  useEffect(() => {
+    if (view !== "home" || rightPanelOpen || !rightPanelLayoutActive) {
+      return;
+    }
+    console.debug("[App] 首页切换期间跳过右侧工作区收起占位", {
+      phase: rightPanelPhase,
+      mode: rightPanelMode
+    });
+  }, [rightPanelLayoutActive, rightPanelMode, rightPanelOpen, rightPanelPhase, view]);
 
   useEffect(
     () => () => {

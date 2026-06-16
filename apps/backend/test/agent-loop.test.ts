@@ -92,17 +92,19 @@ describe("AgentRunner agentic loop (pi)", () => {
       runner.stream({ prompt: "看看目录", projectId: project.id, accessMode: "full_access" })
     );
 
-    const compact = events.map((event) =>
-      event.type === "delta"
-        ? `delta:${event.channel}`
-        : event.type === "tool_call"
-          ? `tool_call:${event.toolCall.status}`
-          : event.type === "message"
-            ? `message:${event.message.role}`
-            : event.type === "run_end"
-              ? `run_end:${event.status}`
-              : event.type
-    );
+    const compact = events
+      .filter((event) => event.type !== "session_updated")
+      .map((event) =>
+        event.type === "delta"
+          ? `delta:${event.channel}`
+          : event.type === "tool_call"
+            ? `tool_call:${event.toolCall.status}`
+            : event.type === "message"
+              ? `message:${event.message.role}`
+              : event.type === "run_end"
+                ? `run_end:${event.status}`
+                : event.type
+      );
     expect(compact).toEqual([
       "run_started",
       "message:user",
@@ -144,7 +146,31 @@ describe("AgentRunner agentic loop (pi)", () => {
     expect(
       events.filter((event) => event.type === "tool_call").map((event) => event.toolCall.status)
     ).toEqual(["running", "completed"]);
+    const completedTool = events.find(
+      (event) => event.type === "tool_call" && event.toolCall.status === "completed"
+    );
+    if (completedTool?.type !== "tool_call") {
+      throw new Error("expected completed tool_call event");
+    }
+    expect(completedTool.toolCall.fileChange).toMatchObject({
+      path: "out.txt",
+      operation: "write",
+      additions: 1,
+      deletions: 0
+    });
     expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
+    const end = events.at(-1);
+    if (end?.type !== "run_end") {
+      throw new Error("expected run_end event");
+    }
+    expect(end.fileChanges).toMatchObject([
+      {
+        path: "out.txt",
+        operation: "write",
+        additions: 1,
+        deletions: 0
+      }
+    ]);
     await expect(readFile(join(dir, "out.txt"), "utf8")).resolves.toBe("done");
 
     // 第二次模型调用应看到无损的 toolCall/toolResult 配对。
@@ -159,6 +185,61 @@ describe("AgentRunner agentic loop (pi)", () => {
     );
     expect(assistant).toBeDefined();
     expect(toolResult).toMatchObject({ isError: false });
+  });
+
+  it("aggregates repeated file changes in one run from first before to final after", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    const { runner } = runnerWith([
+      {
+        toolCalls: [
+          {
+            id: "write_1",
+            name: "Write",
+            arguments: { file_path: "out.txt", content: "alpha\n" }
+          }
+        ]
+      },
+      {
+        toolCalls: [
+          {
+            id: "edit_1",
+            name: "Edit",
+            arguments: { file_path: "out.txt", old_string: "alpha", new_string: "beta" }
+          }
+        ]
+      },
+      { text: "已经完成。", usage: { input: 10, output: 5, totalTokens: 15 } }
+    ]);
+
+    const events = await drain(
+      runner.stream({
+        prompt: "先写入再修改 out.txt",
+        projectId: project.id,
+        accessMode: "full_access"
+      })
+    );
+
+    const end = events.at(-1);
+    if (end?.type !== "run_end") {
+      throw new Error("expected run_end event");
+    }
+    expect(end.fileChanges).toMatchObject([
+      {
+        path: "out.txt",
+        operation: "mixed",
+        additions: 1,
+        deletions: 0
+      }
+    ]);
+    expect(end.fileChanges?.[0]?.toolCallIds).toHaveLength(2);
+    expect(end.fileChanges?.[0]?.patch).toContain("+beta");
+    expect(end.fileChanges?.[0]?.patch).not.toContain("+alpha");
+
+    await expect(readFile(join(dir, "out.txt"), "utf8")).resolves.toBe("beta\n");
+    const sessionId = events.find((event) => event.type === "run_started")?.sessionId;
+    expect(sessionId).toBeDefined();
+    const [run] = await store.listRuns(sessionId!);
+    expect(run.fileChanges).toMatchObject(end.fileChanges ?? []);
   });
 
   it("keeps repeated provider tool ids unique across runs", async () => {

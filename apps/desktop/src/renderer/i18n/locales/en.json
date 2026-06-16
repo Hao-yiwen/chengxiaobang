@@ -281,6 +281,10 @@
     "waiting": "Thinking…",
     "copy": "Copy",
     "copied": "Copied",
+    "feedbackLike": "Like",
+    "feedbackLikeSelected": "Remove like",
+    "feedbackDislike": "Dislike",
+    "feedbackDislikeSelected": "Remove dislike",
     "run": "Run",
     "reject": "Reject",
     "approvalTitle": "Waiting for approval",
@@ -418,6 +422,12 @@
       "other_one": "1 tool call",
       "other_other": "{{count}} tool calls",
       "failed": "{{count}} failed"
+    },
+    "runFileChanges": {
+      "title": "{{count}} files changed",
+      "showDiff": "View This Run Diff",
+      "hideDiff": "Collapse",
+      "truncated": "Truncated"
     },
     "artifactPreview": "Click to preview on the right",
     "artifactOpenExternal": "Click to open in the system app",
@@ -999,6 +1009,7 @@
     "skipFile": "Skipped {{name}}: {{error}}",
     "attachmentBlock": "Here is the content of file {{name}}:\n```\n{{text}}\n```\n",
     "exportFailed": "Export failed, please try again",
+    "messageFeedbackFailed": "Failed to save feedback. Please try again",
     "openArtifactDesktopOnly": "Opening this file requires the desktop app",
     "createBlankProjectFailed": "Failed to create a blank project. Please try again"
   },

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import {
+  messageFeedbackUpdateSchema,
   rewindRequestSchema,
   reasoningModeSchema,
   sessionForkInputSchema,
@@ -71,6 +72,36 @@ export function sessionRoutes(context: AppContext): Hono {
   app.get("/:sessionId/messages", async (c) => {
     const messages = await context.store.listMessages(c.req.param("sessionId"));
     return c.json({ messages: messages.map(toClientMessage) });
+  });
+
+  app.patch("/:sessionId/messages/:messageId/feedback", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const messageId = c.req.param("messageId");
+    const input = messageFeedbackUpdateSchema.parse(await c.req.json());
+    try {
+      const message = await context.store.setMessageFeedback(sessionId, messageId, input.feedback);
+      console.info("[sessions-route] 已更新消息反馈", {
+        sessionId,
+        messageId,
+        feedback: input.feedback
+      });
+      return c.json({ message: toClientMessage(message) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[sessions-route] 更新消息反馈失败", {
+        sessionId,
+        messageId,
+        feedback: input.feedback,
+        error: message
+      });
+      if (message === "消息不存在") {
+        return c.json({ error: "消息不存在" }, 404);
+      }
+      if (message === "只能评价助手消息") {
+        return c.json({ error: "只能评价助手消息" }, 400);
+      }
+      throw error;
+    }
   });
 
   app.get("/:sessionId/context-usage", async (c) => {

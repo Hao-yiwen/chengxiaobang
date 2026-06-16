@@ -3,6 +3,8 @@ import { dirname, normalize } from "node:path";
 import initSqlJs, { type Database } from "sql.js";
 import {
   createId,
+  type FileChange,
+  type MessageFeedback,
   nowIso,
   type Project,
   type ProviderConfig,
@@ -349,8 +351,9 @@ export class SqliteStateStore implements StateStore {
       idMap.set(message.id, newId);
       this.run(
         `insert into messages
-         (id, session_id, role, kind, content, attachments, reasoning, reasoning_ms, duration_ms, payload, created_at)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, session_id, role, kind, content, attachments, reasoning, reasoning_ms, duration_ms,
+          payload, feedback, created_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newId,
           fork.id,
@@ -362,6 +365,7 @@ export class SqliteStateStore implements StateStore {
           message.reasoningMs ?? null,
           message.durationMs ?? null,
           message.payload ?? null,
+          message.feedback ?? null,
           message.createdAt
         ]
       );
@@ -530,6 +534,60 @@ export class SqliteStateStore implements StateStore {
     ]).map(mapMessage);
   }
 
+  async setMessageFeedback(
+    sessionId: string,
+    messageId: string,
+    feedback: MessageFeedback | null
+  ): Promise<StoredMessage> {
+    const row = this.query("select * from messages where session_id = ? and id = ?", [
+      sessionId,
+      messageId
+    ])[0];
+    if (!row) {
+      console.warn("[sqlite-state-store] 更新消息反馈失败：消息不存在", {
+        sessionId,
+        messageId,
+        feedback
+      });
+      throw new Error("消息不存在");
+    }
+    const current = mapMessage(row);
+    if (current.role !== "assistant") {
+      console.warn("[sqlite-state-store] 更新消息反馈失败：仅支持助手消息", {
+        sessionId,
+        messageId,
+        role: current.role,
+        feedback
+      });
+      throw new Error("只能评价助手消息");
+    }
+    this.run("update messages set feedback = ? where session_id = ? and id = ?", [
+      feedback,
+      sessionId,
+      messageId
+    ]);
+    await this.flush();
+    const updatedRow = this.query("select * from messages where session_id = ? and id = ?", [
+      sessionId,
+      messageId
+    ])[0];
+    if (!updatedRow) {
+      console.error("[sqlite-state-store] 消息反馈写入后重读失败", {
+        sessionId,
+        messageId,
+        feedback
+      });
+      throw new Error("消息不存在");
+    }
+    console.info("[sqlite-state-store] 已更新消息反馈", {
+      sessionId,
+      messageId,
+      previousFeedback: current.feedback,
+      feedback
+    });
+    return mapMessage(updatedRow);
+  }
+
   async deleteMessagesFrom(sessionId: string, messageId: string): Promise<number> {
     // 使用和 listMessages 相同的顺序定位后缀，避免 created_at 并列时删错消息。
     const messages = await this.listMessages(sessionId);
@@ -596,7 +654,8 @@ export class SqliteStateStore implements StateStore {
     id: string,
     status: CreateRunInput["status"],
     usage?: TokenUsage,
-    error?: string
+    error?: string,
+    fileChanges?: FileChange[]
   ): Promise<void> {
     const runRows = this.query("select session_id from runs where id = ?", [id]);
     if (runRows.length === 0) {
@@ -604,21 +663,25 @@ export class SqliteStateStore implements StateStore {
     }
     const sessionId = String(runRows[0].session_id);
     const errorText = status === "failed" && error ? error : undefined;
+    const fileChangesJson =
+      fileChanges && fileChanges.length > 0 ? JSON.stringify(fileChanges) : null;
     if (usage) {
-      this.run("update runs set status = ?, usage = ?, error = ?, updated_at = ? where id = ?", [
-        status,
-        JSON.stringify(usage),
-        errorText ?? null,
-        nowIso(),
-        id
-      ]);
+      this.run(
+        "update runs set status = ?, usage = ?, error = ?, file_changes_json = ?, updated_at = ? where id = ?",
+        [
+          status,
+          JSON.stringify(usage),
+          errorText ?? null,
+          fileChangesJson,
+          nowIso(),
+          id
+        ]
+      );
     } else {
-      this.run("update runs set status = ?, error = ?, updated_at = ? where id = ?", [
-        status,
-        errorText ?? null,
-        nowIso(),
-        id
-      ]);
+      this.run(
+        "update runs set status = ?, error = ?, file_changes_json = ?, updated_at = ? where id = ?",
+        [status, errorText ?? null, fileChangesJson, nowIso(), id]
+      );
     }
     if (errorText) {
       console.warn("[state-store] 运行失败原因已持久化", {
@@ -828,8 +891,8 @@ export class SqliteStateStore implements StateStore {
     await this.assertRunExists(toolCall.runId);
     this.run(
       `insert into tool_calls
-       (id, run_id, name, args_json, status, result, approval_json, started_at, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, run_id, name, args_json, status, result, file_change_json, approval_json, started_at, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         toolCall.id,
         toolCall.runId,
@@ -837,6 +900,7 @@ export class SqliteStateStore implements StateStore {
         JSON.stringify(toolCall.args),
         toolCall.status,
         toolCall.result ?? null,
+        toolCall.fileChange ? JSON.stringify(toolCall.fileChange) : null,
         toolCall.approval ? JSON.stringify(toolCall.approval) : null,
         toolCall.startedAt ?? null,
         toolCall.createdAt,
@@ -852,12 +916,13 @@ export class SqliteStateStore implements StateStore {
     // args 一并更新：ExitPlanMode 的确认后参数会写回，跨 run 展示依赖最终参数。
     this.run(
       `update tool_calls
-       set args_json = ?, status = ?, result = ?, approval_json = ?, started_at = ?, updated_at = ?
+       set args_json = ?, status = ?, result = ?, file_change_json = ?, approval_json = ?, started_at = ?, updated_at = ?
        where id = ?`,
       [
         JSON.stringify(toolCall.args),
         toolCall.status,
         toolCall.result ?? null,
+        toolCall.fileChange ? JSON.stringify(toolCall.fileChange) : null,
         toolCall.approval ? JSON.stringify(toolCall.approval) : null,
         toolCall.startedAt ?? null,
         toolCall.updatedAt,

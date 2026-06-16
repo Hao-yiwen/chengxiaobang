@@ -16,6 +16,7 @@ import type {
   FeishuStatus,
   Message,
   MessageAttachment,
+  MessageFeedback,
   PluginConfigValues,
   PluginDetail,
   PluginInstallInput,
@@ -325,6 +326,8 @@ export interface AppState {
   exportSession(id: string): Promise<void>;
   /** 从当前会话的某条消息处分叉，并切换到新分支。 */
   forkSession(messageId: string): Promise<void>;
+  /** 更新当前会话内某条助手消息的本地赞踩反馈。 */
+  setMessageFeedback(messageId: string, feedback: MessageFeedback | null): Promise<void>;
   /** 重命名项目（不修改磁盘上的文件夹）。 */
   renameProject(id: string, name: string): Promise<void>;
   /** 置顶/取消置顶项目（侧边栏置顶区）。 */

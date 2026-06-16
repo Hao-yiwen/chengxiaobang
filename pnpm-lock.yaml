@@ -86,6 +86,9 @@ importers:
       croner:
         specifier: ^10.0.1
         version: 10.0.1
+      diff:
+        specifier: 8.0.3
+        version: 8.0.3
       docx:
         specifier: ^9.7.1
         version: 9.7.1

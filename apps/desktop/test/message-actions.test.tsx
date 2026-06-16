@@ -202,6 +202,64 @@ describe("MessageActions", () => {
     expect(screen.getByRole("textbox", { name: "编辑" })).toHaveValue("再问一个");
   });
 
+  it("shows feedback only on the latest assistant answer and toggles it", async () => {
+    const secondUserMessage: Message = {
+      ...userMessage,
+      id: "u2",
+      content: "再问一个",
+      createdAt: "2026-06-08T00:00:02.000Z"
+    };
+    const secondAssistantMessage: Message = {
+      ...assistantMessage,
+      id: "a2",
+      content: "第二个答案",
+      createdAt: "2026-06-08T00:00:03.000Z"
+    };
+    const setMessageFeedback = vi.fn(
+      async (_sessionId: string, _messageId: string, feedback: Message["feedback"] | null) =>
+        feedback ? { ...secondAssistantMessage, feedback } : secondAssistantMessage
+    );
+    const client = createClient({
+      listMessages: vi.fn(async () => [
+        userMessage,
+        assistantMessage,
+        secondUserMessage,
+        secondAssistantMessage
+      ]),
+      setMessageFeedback
+    });
+
+    render(<App client={client} />);
+    await screen.findByText("第二个答案");
+
+    expect(screen.getAllByRole("button", { name: "赞" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "踩" })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "赞" }));
+    await waitFor(() =>
+      expect(setMessageFeedback).toHaveBeenLastCalledWith("session_1", "a2", "up")
+    );
+    expect(screen.getByRole("button", { name: "取消赞" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "踩" }));
+    await waitFor(() =>
+      expect(setMessageFeedback).toHaveBeenLastCalledWith("session_1", "a2", "down")
+    );
+    expect(screen.getByRole("button", { name: "取消踩" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "取消踩" }));
+    await waitFor(() =>
+      expect(setMessageFeedback).toHaveBeenLastCalledWith("session_1", "a2", null)
+    );
+    expect(screen.getByRole("button", { name: "踩" })).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("edits a user message and resends the edited content", async () => {
     const rewindSession = vi.fn(async () => [] as Message[]);
     const streamRun = vi.fn(async () => {});

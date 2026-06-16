@@ -5,6 +5,7 @@ import {
   appEventSchema,
   askUserAnswerSchema,
   askUserArgsSchema,
+  messageFeedbackUpdateSchema,
   messageSchema,
   proposePlanArgsSchema,
   runRecordSchema,
@@ -39,6 +40,14 @@ describe("messageSchema", () => {
     const parsed = messageSchema.parse(message);
     expect(parsed.attachments).toEqual([]);
   });
+
+  it("解析助手回复反馈与反馈更新输入", () => {
+    expect(messageSchema.parse({ ...message, feedback: "up" }).feedback).toBe("up");
+    expect(messageSchema.safeParse({ ...message, feedback: "maybe" }).success).toBe(false);
+    expect(messageFeedbackUpdateSchema.parse({ feedback: "down" })).toEqual({ feedback: "down" });
+    expect(messageFeedbackUpdateSchema.parse({ feedback: null })).toEqual({ feedback: null });
+    expect(messageFeedbackUpdateSchema.safeParse({ feedback: "maybe" }).success).toBe(false);
+  });
 });
 
 const session: Session = {
@@ -69,6 +78,15 @@ const toolCall: ToolCall = {
   status: "pending_approval",
   createdAt: "2026-06-11T00:00:00.000Z",
   updatedAt: "2026-06-11T00:00:00.000Z"
+};
+
+const fileChange = {
+  path: "src/app.ts",
+  operation: "write" as const,
+  patch: "diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -0,0 +1 @@\n+hello\n",
+  additions: 1,
+  deletions: 0,
+  toolCallIds: ["tc_1"]
 };
 
 describe("toolNameSchema", () => {
@@ -202,6 +220,23 @@ describe("toolCallSchema", () => {
     expect(parsed.status).toBe("pending_smart_approval");
     expect(parsed.approval?.verdict).toBe("ask_user");
   });
+
+  it("解析工具产生的文本文件 diff 元数据", () => {
+    const parsed = toolCallSchema.parse({
+      ...toolCall,
+      name: "Write",
+      status: "completed",
+      fileChange
+    });
+
+    expect(parsed.fileChange).toMatchObject({
+      path: "src/app.ts",
+      operation: "write",
+      additions: 1,
+      deletions: 0,
+      toolCallIds: ["tc_1"]
+    });
+  });
 });
 
 describe("runRecordSchema", () => {
@@ -218,6 +253,7 @@ describe("runRecordSchema", () => {
         completionTokens: 5,
         totalTokens: 15
       },
+      fileChanges: [fileChange],
       createdAt: "2026-06-13T00:00:00.000Z",
       updatedAt: "2026-06-13T00:00:01.000Z"
     });
@@ -227,6 +263,7 @@ describe("runRecordSchema", () => {
       providerKind: "deepseek",
       model: "deepseek-v4-flash"
     });
+    expect(run.fileChanges?.[0]?.path).toBe("src/app.ts");
   });
 });
 
@@ -500,7 +537,8 @@ describe("streamEventSchema", () => {
         type: "run_end",
         runId: "run_1",
         status: "completed",
-        usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 }
+        usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
+        fileChanges: [fileChange]
       }
     ];
     expect(events).toHaveLength(8);

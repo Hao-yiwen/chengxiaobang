@@ -12,6 +12,7 @@ export function runRecordFromEndEvent(
     status: event.status,
     ...(event.usage ? { usage: event.usage } : {}),
     ...(event.status === "failed" && event.error ? { error: event.error } : {}),
+    ...(event.fileChanges && event.fileChanges.length > 0 ? { fileChanges: event.fileChanges } : {}),
     createdAt: existing?.createdAt ?? timestamp,
     updatedAt: timestamp
   };

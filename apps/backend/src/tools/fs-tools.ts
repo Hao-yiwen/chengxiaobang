@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { globFiles, resolveToolPath, type ToolPathResolution } from "./workspace";
+import { buildToolFileChangeDetails, type ToolFileChangeDetails } from "./file-change";
 import { textResult } from "./tool-result";
 
 const lsParams = Type.Object({
@@ -132,8 +133,21 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
     parameters: writeParams,
     execute: async (_id, params) => {
       const target = await resolveFsWritablePath(workspacePath, "Write", params.file_path, true);
+      const before = await readTextBeforeWrite(target);
       await writeFile(target, params.content, "utf8");
-      return textResult(`已写入 ${target}`);
+      const fileChange = buildToolFileChangeDetails({
+        path: params.file_path,
+        operation: "write",
+        before,
+        after: params.content
+      });
+      console.info("[fs-tools] Write 写入完成", {
+        path: params.file_path,
+        target,
+        contentLength: params.content.length,
+        hasFileChange: Boolean(fileChange)
+      });
+      return fileChangeResult(`已写入 ${target}`, fileChange);
     }
   };
 
@@ -167,10 +181,24 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
         ? source.split(params.old_string).join(params.new_string)
         : source.replace(params.old_string, params.new_string);
       await writeFile(target, next, "utf8");
-      return textResult(
+      const fileChange = buildToolFileChangeDetails({
+        path: params.file_path,
+        operation: "edit",
+        before: source,
+        after: next
+      });
+      console.info("[fs-tools] Edit 编辑完成", {
+        path: params.file_path,
+        target,
+        occurrences,
+        replaceAll: Boolean(params.replace_all),
+        hasFileChange: Boolean(fileChange)
+      });
+      return fileChangeResult(
         params.replace_all
           ? `已编辑 ${target}，替换 ${occurrences} 处`
-          : `已编辑 ${target}`
+          : `已编辑 ${target}`,
+        fileChange
       );
     }
   };
@@ -225,6 +253,35 @@ async function resolveFsWritablePath(
     await mkdir(dirname(target), { recursive: true });
   }
   return target;
+}
+
+async function readTextBeforeWrite(target: string): Promise<string> {
+  try {
+    return await readFile(target, "utf8");
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return "";
+    }
+    console.warn("[fs-tools] Write 读取写入前内容失败", {
+      target,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
+  }
+}
+
+function fileChangeResult(
+  text: string,
+  fileChange: ToolFileChangeDetails | undefined
+): AgentToolResult<ToolFileChangeDetails | undefined> {
+  return {
+    content: [{ type: "text", text }],
+    details: fileChange
+  };
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT";
 }
 
 function resolveFsToolPath(

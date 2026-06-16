@@ -4,7 +4,14 @@ import { messageSchema, type Message } from "./message";
 import { reasoningModeSchema, type ReasoningMode } from "./model";
 import { tokenUsageSchema, type TokenUsage } from "./model";
 import { sessionSchema, type Session } from "./session";
-import { toolActivitySchema, toolCallSchema, type ToolActivity, type ToolCall } from "./tool";
+import {
+  fileChangeSchema,
+  toolActivitySchema,
+  toolCallSchema,
+  type FileChange,
+  type ToolActivity,
+  type ToolCall
+} from "./tool";
 import { scheduledTaskStatusSchema, type ScheduledTaskStatus } from "./scheduled-task";
 
 export type RunEndStatus = "completed" | "failed" | "aborted";
@@ -42,6 +49,7 @@ export type StreamEvent =
       status: RunEndStatus;
       usage?: TokenUsage;
       error?: string;
+      fileChanges?: FileChange[];
     };
 
 export type StreamEventType = StreamEvent["type"];
@@ -115,7 +123,8 @@ export const streamEventSchema = z.discriminatedUnion("type", [
     runId: z.string().min(1),
     status: z.enum(["completed", "failed", "aborted"]),
     usage: tokenUsageSchema.optional(),
-    error: z.string().optional()
+    error: z.string().optional(),
+    fileChanges: z.array(fileChangeSchema).optional()
   })
 ]);
 

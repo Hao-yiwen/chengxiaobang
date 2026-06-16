@@ -1205,6 +1205,39 @@ describe("right panel", () => {
     expect(screen.queryByTestId("right-panel")).not.toBeInTheDocument();
   });
 
+  it("drops the right-panel slot immediately when returning from chat to home", async () => {
+    const client = createClient();
+    useAppStore.setState({
+      view: "chat",
+      activeProjectId: project.id,
+      activeSessionId: session.id,
+      projects: [project],
+      sessions: [session],
+      providers: [provider],
+      rightPanelOpen: true,
+      rightPanelMode: "chat"
+    });
+
+    render(<App client={client} />);
+
+    expect(screen.getByTestId("right-panel")).toHaveAttribute("data-right-panel-phase", "open");
+
+    act(() => {
+      useAppStore.getState().newChat();
+    });
+
+    expect(useAppStore.getState()).toMatchObject({
+      view: "home",
+      activeProjectId: undefined,
+      activeSessionId: undefined,
+      rightPanelOpen: false,
+      rightPanelMode: null
+    });
+    expect(screen.getByTestId("home-hero-phrase")).toBeInTheDocument();
+    expect(screen.queryByTestId("chat-layout-scope")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("right-panel")).not.toBeInTheDocument();
+  });
+
   it("keeps the floating progress panel open without exposing a close control", async () => {
     const client = createClient();
     render(<App client={client} />);

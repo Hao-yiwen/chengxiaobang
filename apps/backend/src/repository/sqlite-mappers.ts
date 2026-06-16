@@ -1,8 +1,10 @@
 import {
   messageAttachmentSchema,
+  fileChangeSchema,
   providerModelOverridesSchema,
   tokenUsageSchema,
   toolCallApprovalSchema,
+  type FileChange,
   type Message,
   type MessageAttachment,
   type Project,
@@ -137,6 +139,7 @@ export function mapMessage(row: Row): StoredMessage {
     row.duration_ms === null || row.duration_ms === undefined
       ? undefined
       : Number(row.duration_ms);
+  const feedback = row.feedback === "up" || row.feedback === "down" ? row.feedback : undefined;
   const payload =
     row.payload === null || row.payload === undefined ? undefined : String(row.payload);
   return {
@@ -149,6 +152,7 @@ export function mapMessage(row: Row): StoredMessage {
     ...(reasoning !== undefined ? { reasoning } : {}),
     ...(reasoningMs !== undefined ? { reasoningMs } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(feedback !== undefined ? { feedback } : {}),
     ...(payload !== undefined ? { payload } : {}),
     createdAt: String(row.created_at)
   };
@@ -168,6 +172,7 @@ export function mapRun(row: Row): RunRecord {
     ...(row.model === null || row.model === undefined ? {} : { model: String(row.model) }),
     ...(row.usage ? { usage: parseRunUsage(row.usage) } : {}),
     ...(row.error ? { error: String(row.error) } : {}),
+    ...(row.file_changes_json ? { fileChanges: parseFileChanges(row.file_changes_json) } : {}),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -242,6 +247,9 @@ export function mapToolCall(row: Row): ToolCall {
     args: JSON.parse(String(row.args_json)) as Record<string, unknown>,
     status: row.status as ToolCall["status"],
     result: row.result === null ? undefined : String(row.result),
+    ...(row.file_change_json === null || row.file_change_json === undefined
+      ? {}
+      : { fileChange: parseFileChange(row.file_change_json) }),
     ...(row.approval_json === null || row.approval_json === undefined
       ? {}
       : { approval: parseToolCallApproval(row.approval_json) }),
@@ -332,6 +340,28 @@ function parseRunUsage(value: unknown): TokenUsage | undefined {
     return tokenUsageSchema.parse(JSON.parse(String(value)));
   } catch (error) {
     console.warn("[state-store] 解析 run usage 失败", { error });
+    return undefined;
+  }
+}
+
+function parseFileChange(value: unknown): FileChange | undefined {
+  try {
+    return fileChangeSchema.parse(JSON.parse(String(value)));
+  } catch (error) {
+    console.warn("[state-store] 解析 tool_call fileChange 失败", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return undefined;
+  }
+}
+
+function parseFileChanges(value: unknown): FileChange[] | undefined {
+  try {
+    return fileChangeSchema.array().parse(JSON.parse(String(value)));
+  } catch (error) {
+    console.warn("[state-store] 解析 run fileChanges 失败", {
+      error: error instanceof Error ? error.message : String(error)
+    });
     return undefined;
   }
 }

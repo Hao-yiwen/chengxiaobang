@@ -2,6 +2,7 @@ import {
   derivePlanState,
   proposePlanArgsSchema,
   proposedPlanTitle,
+  type FileChange,
   type Message,
   type PlanState,
   type RunRecord,
@@ -227,7 +228,16 @@ function appendPlanItem(
 // 统一上移到本文件导出，避免 ChatView ↔ timeline 的循环依赖。
 
 export type PlanTimelineItem = { kind: "plan"; at: string; plan: PlanView };
-export type ChatViewTimelineItem = GroupedTimelineItem | PlanTimelineItem;
+export type RunFileChangesTimelineItem = {
+  kind: "run-file-changes";
+  at: string;
+  runId: string;
+  fileChanges: FileChange[];
+};
+export type ChatViewTimelineItem =
+  | GroupedTimelineItem
+  | PlanTimelineItem
+  | RunFileChangesTimelineItem;
 
 /** 失败 run 的提示卡数据：持久化失败记录 + 本次会话内的实时失败事件。 */
 export interface FailedRunNotice {
@@ -253,11 +263,21 @@ export function chatViewTimelineItems(
   messages: Message[],
   toolCalls: ToolCall[],
   failedNotices: FailedRunNotice[],
-  activeRunId?: string
+  activeRunId?: string,
+  runs: RunRecord[] = []
 ): ChatViewTimelineRenderItem[] {
   const groupedItems = groupTimelineItems(timelineItems(messages, toolCalls));
+  const fileChangeItems = runs
+    .filter((run) => run.fileChanges && run.fileChanges.length > 0)
+    .map((run) => ({
+      kind: "run-file-changes" as const,
+      at: run.updatedAt,
+      runId: run.id,
+      fileChanges: run.fileChanges ?? []
+    }));
   const chronologicalItems: ChatViewTimelineRenderItem[] = [
     ...groupedItems,
+    ...fileChangeItems,
     ...failedNotices.map((notice) => ({
       kind: "run-error" as const,
       at: notice.at,
@@ -352,6 +372,8 @@ export interface TurnBlock {
   intermediate: TurnMember[];
   /** 折叠头外的最终答复：本轮最后一条有内容 assistant 消息；失败/中止/仍在流式时为 undefined。 */
   answer?: MessageMember;
+  /** 最终答复后的本轮附属信息，例如文件 diff 汇总卡。 */
+  afterAnswer: TurnMember[];
   /** 是否当前活跃 run：决定折叠头展开 + 实时计时，并承载运行中临时块。 */
   active: boolean;
   timing: TurnTiming;
@@ -484,8 +506,8 @@ function buildTurnBlock(turn: RawTurn, isLastTurn: boolean, ctx: GroupTurnsConte
       }
     }
   }
-  const intermediate =
-    answerListIndex >= 0 ? members.filter((_, idx) => idx !== answerListIndex) : members;
+  const intermediate = answerListIndex >= 0 ? members.slice(0, answerListIndex) : members;
+  const afterAnswer = answerListIndex >= 0 ? members.slice(answerListIndex + 1) : [];
 
   return {
     kind: "turn",
@@ -493,6 +515,7 @@ function buildTurnBlock(turn: RawTurn, isLastTurn: boolean, ctx: GroupTurnsConte
     user,
     intermediate,
     answer,
+    afterAnswer,
     active,
     timing: computeTurnTiming(user, answer, members, active, ctx, terminalAt)
   };
@@ -584,6 +607,8 @@ function renderItemId(item: ChatViewTimelineRenderItem): string {
       return item.toolCalls[0]?.id ?? "group";
     case "plan":
       return item.plan.anchor.id;
+    case "run-file-changes":
+      return `file-changes-${item.runId}`;
     case "run-error":
       return item.notice.id;
   }

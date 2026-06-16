@@ -219,6 +219,55 @@ describe("createApp", () => {
     expect(missing.status).toBe(404);
   });
 
+  it("updates assistant message feedback over HTTP", async () => {
+    const session = await store.createSession({
+      projectId: null,
+      title: "反馈",
+      accessMode: "approval"
+    });
+    const user = await store.addMessage({ sessionId: session.id, role: "user", content: "一" });
+    const assistant = await store.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "二"
+    });
+
+    const liked = await app(
+      jsonRequest(`/api/sessions/${session.id}/messages/${assistant.id}/feedback`, "PATCH", {
+        feedback: "up"
+      })
+    );
+    expect(liked.status).toBe(200);
+    await expect(liked.json()).resolves.toMatchObject({
+      message: { id: assistant.id, feedback: "up" }
+    });
+
+    const cleared = await app(
+      jsonRequest(`/api/sessions/${session.id}/messages/${assistant.id}/feedback`, "PATCH", {
+        feedback: null
+      })
+    );
+    expect(cleared.status).toBe(200);
+    const clearedBody = (await cleared.json()) as { message: { feedback?: string } };
+    expect(clearedBody.message).not.toHaveProperty("feedback");
+
+    const rejectedUser = await app(
+      jsonRequest(`/api/sessions/${session.id}/messages/${user.id}/feedback`, "PATCH", {
+        feedback: "down"
+      })
+    );
+    expect(rejectedUser.status).toBe(400);
+    await expect(rejectedUser.json()).resolves.toEqual({ error: "只能评价助手消息" });
+
+    const missing = await app(
+      jsonRequest(`/api/sessions/${session.id}/messages/msg_nope/feedback`, "PATCH", {
+        feedback: "down"
+      })
+    );
+    expect(missing.status).toBe(404);
+    await expect(missing.json()).resolves.toEqual({ error: "消息不存在" });
+  });
+
   it("clears failed run history and tool calls when retry rewinds the user message", async () => {
     const session = await store.createSession({
       projectId: null,

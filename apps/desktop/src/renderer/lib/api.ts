@@ -17,6 +17,7 @@ import type {
   GitChangesResult,
   GitInfo,
   Message,
+  MessageFeedback,
   PluginConfigValues,
   PluginDetail,
   PluginInstallInput,
@@ -82,6 +83,11 @@ export interface ApiClient {
   deleteSession(id: string): Promise<boolean>;
   searchSessions?(query: string): Promise<SessionSearchResult[]>;
   listMessages(sessionId: string): Promise<Message[]>;
+  setMessageFeedback?(
+    sessionId: string,
+    messageId: string,
+    feedback: MessageFeedback | null
+  ): Promise<Message>;
   rewindSession(sessionId: string, messageId: string): Promise<Message[]>;
   forkSession(sessionId: string, messageId: string): Promise<Session>;
   listSessionRuns(sessionId: string): Promise<{ runs: RunRecord[]; toolCalls: ToolCall[] }>;
@@ -398,6 +404,17 @@ export async function createApiClient(): Promise<ApiClient> {
       return (
         await request<{ messages: Message[] }>(`/api/sessions/${sessionId}/messages`)
       ).messages;
+    },
+    async setMessageFeedback(sessionId, messageId, feedback) {
+      return (
+        await request<{ message: Message }>(
+          `/api/sessions/${sessionId}/messages/${messageId}/feedback`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ feedback })
+          }
+        )
+      ).message;
     },
     async rewindSession(sessionId, messageId) {
       return (

@@ -3,6 +3,9 @@ import { z } from "zod";
 export const messageRoleSchema = z.enum(["user", "assistant", "system", "tool"]);
 export type MessageRole = z.infer<typeof messageRoleSchema>;
 
+export const messageFeedbackSchema = z.enum(["up", "down"]);
+export type MessageFeedback = z.infer<typeof messageFeedbackSchema>;
+
 export const messageAttachmentSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -28,8 +31,15 @@ export const messageSchema = z.object({
   reasoningMs: z.number().int().nonnegative().optional(),
   /** Model start -> answer complete for this turn, in milliseconds. */
   durationMs: z.number().int().nonnegative().optional(),
+  /** 用户对助手回复的本地反馈，后续可作为上传服务端的数据源。 */
+  feedback: messageFeedbackSchema.optional(),
   createdAt: z.string()
 });
 export type Message = Omit<z.infer<typeof messageSchema>, "attachments"> & {
   attachments?: MessageAttachment[];
 };
+
+export const messageFeedbackUpdateSchema = z.object({
+  feedback: messageFeedbackSchema.nullable()
+});
+export type MessageFeedbackUpdate = z.infer<typeof messageFeedbackUpdateSchema>;

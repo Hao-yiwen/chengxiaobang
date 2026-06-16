@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
 import type { SlashCommand } from "@chengxiaobang/shared";
 
+export type ComposerHighlightRange = {
+  start: number;
+  end: number;
+  kind: "command" | "skill" | "file";
+};
+
 /**
  * 光标前正在输入的 @ token：`@src/uti` -> { query, start of "@" }。
  * token 必须位于输入开头或空白字符之后，且内部不能包含空白或另一个 @。
@@ -18,28 +24,32 @@ export function getAtToken(
   return { query: match[2], start: cursor - match[2].length - 1 };
 }
 
-// 计算输入框中需要打灰底标记的特殊片段：开头的斜杠命令、以及 @ 文件引用。
+// 计算输入框中需要渲染成 token 的特殊片段：开头的斜杠命令、以及 @ 文件引用。
 // 返回按位置升序、互不重叠的区间，供 highlight overlay 渲染。
 export function getComposerHighlightRanges(
   value: string,
   commands: SlashCommand[],
   allowAtTokens: boolean
-): Array<{ start: number; end: number }> {
-  const ranges: Array<{ start: number; end: number }> = [];
+): ComposerHighlightRange[] {
+  const ranges: ComposerHighlightRange[] = [];
   if (value.startsWith("/")) {
     const firstLine = value.split("\n", 1)[0] ?? "";
     // 取最长的、与输入开头完整匹配的已知命令名，避免已插入命令只高亮前缀。
-    let matched = "";
+    let matchedCommand: SlashCommand | undefined;
     for (const command of commands) {
       const name = command.name;
       const isFullMatch =
         firstLine === name || (firstLine.startsWith(name) && firstLine[name.length] === " ");
-      if (isFullMatch && name.length > matched.length) {
-        matched = name;
+      if (isFullMatch && name.length > (matchedCommand?.name.length ?? 0)) {
+        matchedCommand = command;
       }
     }
-    if (matched) {
-      ranges.push({ start: 0, end: matched.length });
+    if (matchedCommand) {
+      ranges.push({
+        start: 0,
+        end: matchedCommand.name.length,
+        kind: matchedCommand.kind === "skill" ? "skill" : "command"
+      });
     }
   }
   if (allowAtTokens) {
@@ -47,16 +57,16 @@ export function getComposerHighlightRanges(
     let match: RegExpExecArray | null;
     while ((match = atPattern.exec(value)) !== null) {
       const start = match.index + match[1].length;
-      ranges.push({ start, end: start + match[2].length });
+      ranges.push({ start, end: start + match[2].length, kind: "file" });
     }
   }
   return ranges;
 }
 
-// 把输入文本按高亮区间切片渲染：高亮片段套灰底 span，其余为透明文本（仅占位对齐，真正文字由 textarea 显示）。
+// 把输入文本按高亮区间切片渲染：overlay 完整承载可见文本，textarea 只保留真实输入和光标。
 export function renderHighlightNodes(
   value: string,
-  ranges: Array<{ start: number; end: number }>
+  ranges: ComposerHighlightRange[]
 ): ReactNode[] {
   const nodes: ReactNode[] = [];
   let cursor = 0;
@@ -65,12 +75,11 @@ export function renderHighlightNodes(
       nodes.push(<span key={`plain-${index}`}>{value.slice(cursor, range.start)}</span>);
     }
     nodes.push(
-      <span
+      <ComposerToken
         key={`mark-${index}`}
-        className="box-decoration-clone -mx-[4px] rounded-md bg-canvas-soft-2 px-[4px] py-[2px]"
-      >
-        {value.slice(range.start, range.end)}
-      </span>
+        range={range}
+        text={value.slice(range.start, range.end)}
+      />
     );
     cursor = range.end;
   });
@@ -78,6 +87,24 @@ export function renderHighlightNodes(
     nodes.push(<span key="tail">{value.slice(cursor)}</span>);
   }
   return nodes;
+}
+
+function ComposerToken({ range, text }: { range: ComposerHighlightRange; text: string }) {
+  if (range.kind === "file") {
+    return (
+      <span data-testid="composer-token-file" className="font-medium text-link-deep">
+        {text}
+      </span>
+    );
+  }
+  return (
+    <span
+      data-testid={`composer-token-${range.kind}`}
+      className="box-decoration-clone -mx-[4px] rounded-md bg-canvas-soft-2 px-[4px] py-[2px]"
+    >
+      {text}
+    </span>
+  );
 }
 
 export function getSlashQuery(value: string, selectionStart: number): string | undefined {

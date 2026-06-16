@@ -33,6 +33,7 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       attachments text,
       reasoning text,
       reasoning_ms integer,
+      feedback text,
       created_at text not null,
       foreign key (session_id) references sessions(id) on delete cascade
     );
@@ -45,6 +46,7 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       model text,
       usage text,
       error text,
+      file_changes_json text,
       created_at text not null,
       updated_at text not null,
       foreign key (session_id) references sessions(id) on delete cascade
@@ -83,6 +85,7 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       args_json text not null,
       status text not null,
       result text,
+      file_change_json text,
       approval_json text,
       started_at text,
       created_at text not null,
@@ -152,13 +155,16 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
   ensureColumn(connection, "messages", "kind", "text");
   ensureColumn(connection, "messages", "payload", "text");
   ensureColumn(connection, "messages", "attachments", "text");
+  ensureColumn(connection, "messages", "feedback", "text");
   ensureColumn(connection, "tool_calls", "approval_json", "text");
   ensureColumn(connection, "tool_calls", "started_at", "text");
+  ensureColumn(connection, "tool_calls", "file_change_json", "text");
   ensureColumn(connection, "runs", "provider_id", "text");
   ensureColumn(connection, "runs", "provider_kind", "text");
   ensureColumn(connection, "runs", "model", "text");
   ensureColumn(connection, "runs", "usage", "text");
   ensureColumn(connection, "runs", "error", "text");
+  ensureColumn(connection, "runs", "file_changes_json", "text");
   ensureColumn(connection, "usage_cost_entries", "status_code", "integer");
   ensureColumn(connection, "usage_cost_entries", "error_code", "text");
   ensureColumn(connection, "usage_cost_entries", "error_message", "text");

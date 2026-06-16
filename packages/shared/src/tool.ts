@@ -61,6 +61,20 @@ export const toolCallApprovalSchema = z.object({
 });
 export type ToolCallApproval = z.infer<typeof toolCallApprovalSchema>;
 
+export const fileChangeOperationSchema = z.enum(["write", "edit", "mixed"]);
+export type FileChangeOperation = z.infer<typeof fileChangeOperationSchema>;
+
+export const fileChangeSchema = z.object({
+  path: z.string().min(1),
+  operation: fileChangeOperationSchema,
+  patch: z.string(),
+  additions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+  toolCallIds: z.array(z.string().min(1)).min(1),
+  truncated: z.boolean().optional()
+});
+export type FileChange = z.infer<typeof fileChangeSchema>;
+
 export const toolCallSchema = z.object({
   id: z.string().min(1),
   runId: z.string().min(1),
@@ -77,6 +91,7 @@ export const toolCallSchema = z.object({
     "failed"
   ]),
   result: z.string().optional(),
+  fileChange: fileChangeSchema.optional(),
   approval: toolCallApprovalSchema.optional(),
   /** When execution actually began (post-approval), ISO timestamp. */
   startedAt: z.string().optional(),

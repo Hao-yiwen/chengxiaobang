@@ -1935,6 +1935,11 @@ describe("App", () => {
 
     fireEvent.click(screen.getByText("src/index.ts"));
     expect(input).toHaveValue("看看 @src/index.ts ");
+    const fileToken = await screen.findByTestId("composer-token-file");
+    expect(fileToken).toHaveTextContent("@src/index.ts");
+    expect(fileToken).toHaveClass("text-link-deep");
+    expect(fileToken).not.toHaveClass("bg-link-bg-soft");
+    expect(fileToken).not.toHaveClass("bg-canvas-soft-2");
   });
 
   it("does not repeat the relative path label for root project files", async () => {

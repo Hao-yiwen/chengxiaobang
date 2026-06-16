@@ -14,20 +14,30 @@ import {
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
+type DiffViewCommonProps = {
+  height?: DiffViewHeight;
+  hideScrollbar?: boolean;
+  compactBlockGap?: boolean;
+};
+
 type DiffViewProps =
-  | {
+  | ({
       source: TextDiffSource;
       blocks?: never;
-      height?: DiffViewHeight;
-    }
-  | {
+    } & DiffViewCommonProps)
+  | ({
       blocks: PatchDiffBlock[];
       source?: never;
-      height?: DiffViewHeight;
-    };
+    } & DiffViewCommonProps);
 
 /** @pierre/diffs 的统一包装层，外层 UI 负责文件标题和状态展示。 */
-export function DiffView({ source, blocks, height = "inline" }: DiffViewProps) {
+export function DiffView({
+  source,
+  blocks,
+  height = "inline",
+  hideScrollbar = false,
+  compactBlockGap = false
+}: DiffViewProps) {
   const { t } = useTranslation();
   const settings = useAppStore((state) => state.codePreviewSettings);
   const options = useMemo(
@@ -47,7 +57,10 @@ export function DiffView({ source, blocks, height = "inline" }: DiffViewProps) {
       }) satisfies FileDiffOptions<undefined>,
     [settings.darkTheme, settings.lightTheme, settings.wrapLongLines]
   );
-  const style = useMemo(() => pierreDiffStyle(settings.fontSize), [settings.fontSize]);
+  const style = useMemo(
+    () => pierreDiffStyle(settings.fontSize, compactBlockGap),
+    [compactBlockGap, settings.fontSize]
+  );
   const textFiles = useMemo(
     () => (source ? textDiffFiles(source) : undefined),
     [source]
@@ -58,7 +71,8 @@ export function DiffView({ source, blocks, height = "inline" }: DiffViewProps) {
       aria-label={t("chat.diffView")}
       data-testid="pierre-diff-view"
       className={cn(
-        "min-w-0 overflow-auto bg-background font-mono text-micro [scrollbar-gutter:stable]",
+        "min-w-0 overflow-auto bg-background font-mono text-micro",
+        hideScrollbar ? "scrollbar-hidden [scrollbar-gutter:auto]" : "[scrollbar-gutter:stable]",
         height === "fill" ? "h-full" : "max-h-[420px]"
       )}
       style={style}
@@ -101,11 +115,12 @@ function RawPatchFallback({ block }: { block: Extract<PatchDiffBlock, { kind: "r
   );
 }
 
-function pierreDiffStyle(fontSize: number): CSSProperties {
+function pierreDiffStyle(fontSize: number, compactBlockGap: boolean): CSSProperties {
   const lineHeight = fontSize + 8;
   return {
     "--diffs-font-size": `${fontSize}px`,
     "--diffs-line-height": `${lineHeight}px`,
+    ...(compactBlockGap ? { "--diffs-gap-block": "0px" } : {}),
     "--diffs-font-family": "\"JetBrains Mono\", \"SF Mono\", Menlo, monospace",
     "--diffs-header-font-family": "ui-sans-serif, system-ui, sans-serif",
     "--diffs-light-bg": "rgb(var(--background))",

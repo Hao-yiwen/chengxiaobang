@@ -30,6 +30,7 @@ import { Markdown } from "@/components/Markdown";
 import { MessageActions, MessageEditor } from "@/components/MessageActions";
 import { PlanCard } from "@/components/PlanCard";
 import { ReasoningPanel } from "@/components/ReasoningPanel";
+import { RunFileChangesCard } from "@/components/RunFileChangesCard";
 import { ScrollToBottomButton } from "@/components/ScrollToBottomButton";
 import { ToolCallGroup } from "@/components/ToolCallGroup";
 import { ToolCallRow } from "@/components/ToolCallRow";
@@ -191,8 +192,13 @@ function blockContainsMessageId(block: ChatBlock, messageId: string): boolean {
   if (block.user?.item.message.id === messageId || block.answer?.item.message.id === messageId) {
     return true;
   }
-  return block.intermediate.some(
-    (member) => member.item.kind === "message" && member.item.message.id === messageId
+  return (
+    block.intermediate.some(
+      (member) => member.item.kind === "message" && member.item.message.id === messageId
+    ) ||
+    block.afterAnswer.some(
+      (member) => member.item.kind === "message" && member.item.message.id === messageId
+    )
   );
 }
 
@@ -310,8 +316,8 @@ export function ChatView() {
     [toolHistory, pendingTool]
   );
   const items = useMemo(
-    () => chatViewTimelineItems(messages, timelineToolCalls, failedNotices, activeRunId),
-    [messages, timelineToolCalls, failedNotices, activeRunId]
+    () => chatViewTimelineItems(messages, timelineToolCalls, failedNotices, activeRunId, runHistory),
+    [messages, timelineToolCalls, failedNotices, activeRunId, runHistory]
   );
   const activeRunAssistantIds = useMemo(
     () =>
@@ -515,7 +521,7 @@ export function ChatView() {
   const renderTimelineItem = (
     item: ChatViewTimelineRenderItem,
     index: number,
-    options?: { hideReasoning?: boolean }
+    options?: { hideReasoning?: boolean; afterContent?: ReactNode }
   ): ReactNode => {
     if (item.kind === "message") {
       const hideActions = shouldHideMessageActions(item, index, items, activeRunAssistantIds);
@@ -528,6 +534,7 @@ export function ChatView() {
           hideActions={hideActions}
           showActionsByDefault={item.message.id === lastActionMessageId}
           hideReasoning={options?.hideReasoning}
+          afterContent={options?.afterContent}
         />
       );
     }
@@ -553,6 +560,15 @@ export function ChatView() {
           key={`plan-${item.plan.anchor.id}`}
           markdown={item.plan.state.markdown}
           status={item.plan.status}
+        />
+      );
+    }
+    if (item.kind === "run-file-changes") {
+      return (
+        <RunFileChangesCard
+          key={`run-file-changes-${item.runId}`}
+          runId={item.runId}
+          fileChanges={item.fileChanges}
         />
       );
     }
@@ -796,7 +812,7 @@ function TurnView({
   renderItem: (
     item: ChatViewTimelineRenderItem,
     index: number,
-    options?: { hideReasoning?: boolean }
+    options?: { hideReasoning?: boolean; afterContent?: ReactNode }
   ) => ReactNode;
   runtimeTail: ReactNode;
 }) {
@@ -806,6 +822,10 @@ function TurnView({
   const answerReasoning = answerMessage?.reasoning ? (
     <ReasoningPanel text={answerMessage.reasoning} durationMs={answerMessage.reasoningMs} />
   ) : null;
+  const afterAnswerContent =
+    block.afterAnswer.length > 0 ? (
+      <>{block.afterAnswer.map((member) => renderItem(member.item, member.index))}</>
+    ) : null;
   const collapsible =
     block.intermediate.length > 0 || Boolean(answerReasoning) || Boolean(runtimeTail);
   return (
@@ -821,8 +841,11 @@ function TurnView({
         {runtimeTail}
       </WorkTimer>
       {block.answer
-        ? renderItem(block.answer.item, block.answer.index, { hideReasoning: true })
-        : null}
+        ? renderItem(block.answer.item, block.answer.index, {
+            hideReasoning: true,
+            afterContent: afterAnswerContent
+          })
+        : afterAnswerContent}
     </>
   );
 }
@@ -867,7 +890,8 @@ const MessageBubble = memo(function MessageBubble({
   canEditUserMessage = false,
   hideActions = false,
   showActionsByDefault = false,
-  hideReasoning = false
+  hideReasoning = false,
+  afterContent
 }: {
   message: Message;
   isLastAssistant?: boolean;
@@ -876,6 +900,8 @@ const MessageBubble = memo(function MessageBubble({
   showActionsByDefault?: boolean;
   /** 折叠头外的最终答复传 true：它的思考过程改由 TurnView 收进折叠体，正文这里只渲染内容。 */
   hideReasoning?: boolean;
+  /** 最终答复正文之后、消息操作按钮之前的本轮尾部内容。 */
+  afterContent?: ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const editAndResend = useAppStore((state) => state.editAndResend);
@@ -946,6 +972,7 @@ const MessageBubble = memo(function MessageBubble({
         <ReasoningPanel text={message.reasoning} durationMs={message.reasoningMs} />
       ) : null}
       <AssistantMarkdownWithArtifacts text={message.content} messageId={message.id} />
+      {afterContent}
       {hideActions ? null : (
         <MessageActions
           message={message}
@@ -970,7 +997,7 @@ function shouldHideMessageActions(
     item.message.role === "assistant" &&
     (activeRunAssistantIds.has(item.message.id) ||
       hasLaterAssistantAnswerInTurn(items, currentIndex) ||
-      Boolean(nextItem && nextItem.kind !== "message"))
+      Boolean(nextItem && nextItem.kind !== "message" && nextItem.kind !== "run-file-changes"))
   );
 }
 

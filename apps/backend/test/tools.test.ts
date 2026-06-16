@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { createAgentTools, findTool, requiresApproval } from "../src/tools/registry";
 import { assessToolApprovalRisk } from "../src/tools/approval-policy";
+import { buildToolFileChangeDetails } from "../src/tools/file-change";
 import { createShellTools } from "../src/tools/shell-tools";
 import { resolveRgCommand } from "../src/tools/fs-tools";
 
@@ -13,15 +14,23 @@ async function run(
   name: string,
   args: Record<string, unknown>
 ): Promise<string> {
-  const tool = findTool(tools, name);
-  if (!tool) {
-    throw new Error(`tool not registered: ${name}`);
-  }
-  const result = await tool.execute("tool_1", args);
+  const result = await executeTool(tools, name, args);
   return result.content
     .filter((block): block is { type: "text"; text: string } => block.type === "text")
     .map((block) => block.text)
     .join("\n");
+}
+
+async function executeTool(
+  tools: AgentTool<any>[],
+  name: string,
+  args: Record<string, unknown>
+): Promise<Awaited<ReturnType<AgentTool<any>["execute"]>>> {
+  const tool = findTool(tools, name);
+  if (!tool) {
+    throw new Error(`tool not registered: ${name}`);
+  }
+  return tool.execute("tool_1", args);
 }
 
 describe("builtin agent tools", () => {
@@ -170,6 +179,43 @@ describe("builtin agent tools", () => {
     await expect(readFile(join(dir, "new-lines.txt"), "utf8")).resolves.toBe("first\nsecond");
   });
 
+  it("Write returns diff details for newly created text files", async () => {
+    const result = await executeTool(tools, "Write", {
+      file_path: "notes/new.txt",
+      content: "hello\n"
+    });
+
+    expect(result.details).toMatchObject({
+      path: "notes/new.txt",
+      operation: "write",
+      additions: 1,
+      deletions: 0,
+      beforeText: "",
+      afterText: "hello\n"
+    });
+    expect(result.details?.patch).toContain("+hello");
+  });
+
+  it("Write returns diff details when replacing an existing text file", async () => {
+    await writeFile(join(dir, "replace.txt"), "old\n", "utf8");
+
+    const result = await executeTool(tools, "Write", {
+      file_path: "replace.txt",
+      content: "new\n"
+    });
+
+    expect(result.details).toMatchObject({
+      path: "replace.txt",
+      operation: "write",
+      additions: 1,
+      deletions: 1,
+      beforeText: "old\n",
+      afterText: "new\n"
+    });
+    expect(result.details?.patch).toContain("-old");
+    expect(result.details?.patch).toContain("+new");
+  });
+
   it("Edit requires a unique exact match unless replace_all is true", async () => {
     await writeFile(join(dir, "edit-all.txt"), "one\ntwo\none", "utf8");
 
@@ -189,6 +235,55 @@ describe("builtin agent tools", () => {
     });
     expect(result).toContain("替换 2 处");
     await expect(readFile(join(dir, "edit-all.txt"), "utf8")).resolves.toBe("ONE\ntwo\nONE");
+  });
+
+  it("Edit returns diff details for replace_all edits", async () => {
+    await writeFile(join(dir, "edit-details.txt"), "one\ntwo\none\n", "utf8");
+
+    const result = await executeTool(tools, "Edit", {
+      file_path: "edit-details.txt",
+      old_string: "one",
+      new_string: "ONE",
+      replace_all: true
+    });
+
+    expect(result.details).toMatchObject({
+      path: "edit-details.txt",
+      operation: "edit",
+      additions: 2,
+      deletions: 2,
+      beforeText: "one\ntwo\none\n",
+      afterText: "ONE\ntwo\nONE\n"
+    });
+    expect(result.details?.patch).toContain("-one");
+    expect(result.details?.patch).toContain("+ONE");
+  });
+
+  it("does not return diff details when Edit makes no content change", async () => {
+    await writeFile(join(dir, "edit-noop.txt"), "same\n", "utf8");
+
+    const result = await executeTool(tools, "Edit", {
+      file_path: "edit-noop.txt",
+      old_string: "same",
+      new_string: "same"
+    });
+
+    expect(result.details).toBeUndefined();
+  });
+
+  it("marks oversized file diffs as truncated", () => {
+    const details = buildToolFileChangeDetails({
+      path: "large.txt",
+      operation: "write",
+      before: "",
+      after: Array.from({ length: 80_000 }, (_, index) => `line-${index}`).join("\n")
+    });
+
+    expect(details).toMatchObject({
+      path: "large.txt",
+      truncated: true
+    });
+    expect(details?.patch).toContain("diff 内容过大，已截断");
   });
 
   it("requires exact replacement args for Edit", async () => {

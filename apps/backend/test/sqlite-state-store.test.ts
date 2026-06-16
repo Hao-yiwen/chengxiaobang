@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   nowIso,
   resolveProviderModelMaxToolIterations,
+  type FileChange,
   type ProviderConfig,
   type ToolCall
 } from "@chengxiaobang/shared";
@@ -301,6 +302,47 @@ describe("SqliteStateStore", () => {
     expect(messages[1].payload).toBe(payload);
   });
 
+  it("persists assistant message feedback and rejects non-assistant messages", async () => {
+    const dbPath = join(dir, "state.sqlite");
+    const first = new SqliteStateStore(dbPath);
+    await first.initialize();
+    const session = await first.createSession({
+      projectId: null,
+      title: "反馈",
+      accessMode: "approval"
+    });
+    const user = await first.addMessage({ sessionId: session.id, role: "user", content: "你好" });
+    const assistant = await first.addMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "答案"
+    });
+
+    await expect(first.setMessageFeedback(session.id, user.id, "down")).rejects.toThrow(
+      "只能评价助手消息"
+    );
+    expect(await first.setMessageFeedback(session.id, assistant.id, "up")).toMatchObject({
+      id: assistant.id,
+      feedback: "up"
+    });
+    expect(await first.setMessageFeedback(session.id, assistant.id, "down")).toMatchObject({
+      id: assistant.id,
+      feedback: "down"
+    });
+    const cleared = await first.setMessageFeedback(session.id, assistant.id, null);
+    expect(cleared).not.toHaveProperty("feedback");
+    await first.setMessageFeedback(session.id, assistant.id, "up");
+    await first.close();
+
+    const second = new SqliteStateStore(dbPath);
+    await second.initialize();
+    const messages = await second.listMessages(session.id);
+    await second.close();
+
+    expect(messages[0]).not.toHaveProperty("feedback");
+    expect(messages[1]).toMatchObject({ id: assistant.id, feedback: "up" });
+  });
+
   it("round-trips visible message attachments across restarts", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);
@@ -367,6 +409,30 @@ describe("SqliteStateStore", () => {
 
     expect(cloned[0]).not.toHaveProperty("payload");
     expect(cloned[1].payload).toBe(payload);
+    await store.close();
+  });
+
+  it("clones assistant feedback when forking a session", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const source = await store.createSession({
+      projectId: null,
+      title: "原会话",
+      accessMode: "approval"
+    });
+    await store.addMessage({ sessionId: source.id, role: "user", content: "一" });
+    await tick();
+    const assistant = await store.addMessage({
+      sessionId: source.id,
+      role: "assistant",
+      content: "二"
+    });
+    await store.setMessageFeedback(source.id, assistant.id, "down");
+
+    const fork = await store.forkSession(source.id, assistant.id);
+    const cloned = await store.listMessages(fork.id);
+
+    expect(cloned[1]).toMatchObject({ content: "二", feedback: "down" });
     await store.close();
   });
 
@@ -455,13 +521,22 @@ describe("SqliteStateStore", () => {
       status: "running"
     });
     const timestamp = nowIso();
+    const fileChange: FileChange = {
+      path: "notes/todo.md",
+      operation: "write",
+      patch: "diff --git a/notes/todo.md b/notes/todo.md\n--- a/notes/todo.md\n+++ b/notes/todo.md\n@@ -0,0 +1 @@\n+hello\n",
+      additions: 1,
+      deletions: 0,
+      toolCallIds: ["tool_1"]
+    };
     const toolCall: ToolCall = {
       id: "tool_1",
       runId: "run_1",
-      name: "LS",
-      args: { path: "." },
+      name: "Write",
+      args: { file_path: "notes/todo.md", content: "hello" },
       status: "completed",
-      result: "file package.json",
+      result: "已写入 notes/todo.md",
+      fileChange,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -472,7 +547,7 @@ describe("SqliteStateStore", () => {
       completionTokens: 5,
       totalTokens: 15,
       costUsd: 0.00042
-    });
+    }, undefined, [fileChange]);
     await first.updateRunStatus("run_2", "failed", undefined, "模型 token 超限");
     await first.close();
 
@@ -492,7 +567,8 @@ describe("SqliteStateStore", () => {
           completionTokens: 5,
           totalTokens: 15,
           costUsd: 0.00042
-        }
+        },
+        fileChanges: [fileChange]
       },
       {
         id: "run_2",
@@ -505,10 +581,11 @@ describe("SqliteStateStore", () => {
       {
         id: "tool_1",
         runId: "run_1",
-        name: "LS",
-        args: { path: "." },
+        name: "Write",
+        args: { file_path: "notes/todo.md", content: "hello" },
         status: "completed",
-        result: "file package.json"
+        result: "已写入 notes/todo.md",
+        fileChange
       }
     ]);
     await second.close();

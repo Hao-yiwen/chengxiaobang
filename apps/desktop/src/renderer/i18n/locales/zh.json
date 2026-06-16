@@ -281,6 +281,10 @@
     "waiting": "正在思考…",
     "copy": "复制",
     "copied": "已复制",
+    "feedbackLike": "赞",
+    "feedbackLikeSelected": "取消赞",
+    "feedbackDislike": "踩",
+    "feedbackDislikeSelected": "取消踩",
     "run": "执行",
     "reject": "拒绝",
     "approvalTitle": "等待批准",
@@ -407,6 +411,12 @@
       "memory": "{{count}} 次记忆操作",
       "other": "调用 {{count}} 个工具",
       "failed": "{{count}} 失败"
+    },
+    "runFileChanges": {
+      "title": "{{count}} 个文件已更改",
+      "showDiff": "查看本轮 Diff",
+      "hideDiff": "收起",
+      "truncated": "已截断"
     },
     "artifactPreview": "点击在右侧预览",
     "artifactOpenExternal": "点击用系统应用打开",
@@ -989,6 +999,7 @@
     "skipFile": "跳过 {{name}}：{{error}}",
     "attachmentBlock": "以下是文件 {{name}} 的内容：\n```\n{{text}}\n```\n",
     "exportFailed": "导出失败，请重试",
+    "messageFeedbackFailed": "反馈保存失败，请重试",
     "openArtifactDesktopOnly": "需要在桌面端打开该文件",
     "createBlankProjectFailed": "新建空白项目失败，请重试"
   },

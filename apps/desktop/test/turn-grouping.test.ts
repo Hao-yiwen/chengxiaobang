@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Message, ToolCall } from "@chengxiaobang/shared";
+import type { Message, RunRecord, ToolCall } from "@chengxiaobang/shared";
 import {
   chatViewTimelineItems,
   groupTurns,
@@ -287,6 +287,34 @@ describe("groupTurns", () => {
     const turn = blocks[0] as TurnBlock;
     expect(turn.intermediate.some((m) => m.item.kind === "plan")).toBe(true);
     expect(turn.answer?.item.message.id).toBe(a.id);
+  });
+
+  it("本轮文件 diff 汇总卡排在最终答复之后", () => {
+    const u = msg("user", "2026-06-11T00:00:00.000Z", "改文件");
+    const a = msg("assistant", "2026-06-11T00:00:03.000Z", "已经改好");
+    const run: RunRecord = {
+      id: "run_1",
+      sessionId: "s1",
+      status: "completed",
+      createdAt: "2026-06-11T00:00:00.000Z",
+      updatedAt: "2026-06-11T00:00:04.000Z",
+      fileChanges: [
+        {
+          path: "src/app.ts",
+          operation: "write",
+          patch: "diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -0,0 +1 @@\n+hello\n",
+          additions: 1,
+          deletions: 0,
+          toolCallIds: ["tool_1"]
+        }
+      ]
+    };
+    const blocks = groupTurns(chatViewTimelineItems([u, a], [], [], undefined, [run]), ctx());
+
+    const turn = blocks[0] as TurnBlock;
+    expect(turn.answer?.item.message.id).toBe(a.id);
+    expect(turn.intermediate).toHaveLength(0);
+    expect(turn.afterAnswer.map((member) => member.item.kind)).toEqual(["run-file-changes"]);
   });
 
   it("transfers the global index onto每个 intermediate 成员", () => {

@@ -5,7 +5,7 @@ import { messageAttachmentSchema } from "./message";
 import { reasoningModeSchema, tokenUsageSchema } from "./model";
 import { askUserAnswerSchema, planStepSchema } from "./plan";
 import { providerKindSchema } from "./provider";
-import { toolCallSchema } from "./tool";
+import { fileChangeSchema, toolCallSchema } from "./tool";
 
 export const runStatusSchema = z.enum(["running", "completed", "aborted", "failed"]);
 export type RunStatus = z.infer<typeof runStatusSchema>;
@@ -28,6 +28,7 @@ export const runRecordSchema = z.object({
   model: z.string().min(1).optional(),
   usage: tokenUsageSchema.optional(),
   error: z.string().optional(),
+  fileChanges: z.array(fileChangeSchema).optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });

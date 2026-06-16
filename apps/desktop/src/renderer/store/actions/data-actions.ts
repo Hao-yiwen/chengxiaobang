@@ -1,4 +1,5 @@
 import { basenameOf } from "../../../common/file-preview";
+import type { MessageFeedback } from "@chengxiaobang/shared";
 import { createApiClient } from "../../lib/api";
 import { downloadTextFile } from "../../lib/download";
 import { buildSessionMarkdown, exportFilename } from "../../lib/session-export";
@@ -41,6 +42,23 @@ import {
 import { selectActiveProject } from "../selectors";
 
 let fileSuggestionsRequestSeq = 0;
+
+function applyMessageFeedback(
+  messages: AppState["messages"],
+  messageId: string,
+  feedback: MessageFeedback | null
+): AppState["messages"] {
+  return messages.map((message) => {
+    if (message.id !== messageId) {
+      return message;
+    }
+    if (feedback === null) {
+      const { feedback: _feedback, ...withoutFeedback } = message;
+      return withoutFeedback;
+    }
+    return { ...message, feedback };
+  });
+}
 
 export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {
   return {
@@ -677,6 +695,72 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         const session = await apiClientRef.current.forkSession(state.activeSessionId, messageId);
         set((current) => ({ sessions: [session, ...current.sessions] }));
         await get().selectSession(session.id);
+      },
+
+      async setMessageFeedback(messageId, feedback) {
+        const state = get();
+        if (!apiClientRef.current?.setMessageFeedback || !state.activeSessionId) {
+          console.warn("[store] 更新消息反馈失败：ApiClient 或会话未就绪", {
+            messageId,
+            feedback,
+            hasClient: Boolean(apiClientRef.current),
+            hasFeedbackApi: Boolean(apiClientRef.current?.setMessageFeedback),
+            activeSessionId: state.activeSessionId
+          });
+          return;
+        }
+        const setFeedback = apiClientRef.current.setMessageFeedback;
+        const sessionId = state.activeSessionId;
+        const previousMessage = state.messages.find((message) => message.id === messageId);
+        if (!previousMessage || previousMessage.role !== "assistant") {
+          console.warn("[store] 更新消息反馈失败：目标不是助手消息", {
+            sessionId,
+            messageId,
+            role: previousMessage?.role,
+            feedback
+          });
+          return;
+        }
+        console.info("[store] 更新消息反馈", {
+          sessionId,
+          messageId,
+          previousFeedback: previousMessage.feedback,
+          feedback
+        });
+        set((current) =>
+          current.activeSessionId === sessionId
+            ? { messages: applyMessageFeedback(current.messages, messageId, feedback) }
+            : {}
+        );
+        try {
+          const updated = await setFeedback(sessionId, messageId, feedback);
+          set((current) =>
+            current.activeSessionId === sessionId
+              ? {
+                  messages: current.messages.map((message) =>
+                    message.id === updated.id ? updated : message
+                  )
+                }
+              : {}
+          );
+        } catch (error) {
+          console.warn("[store] 更新消息反馈失败，已回滚", {
+            sessionId,
+            messageId,
+            feedback,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          set((current) =>
+            current.activeSessionId === sessionId
+              ? {
+                  messages: current.messages.map((message) =>
+                    message.id === messageId ? previousMessage : message
+                  ),
+                  notice: i18n.t("notice.messageFeedbackFailed")
+                }
+              : {}
+          );
+        }
       },
 
       newChat() {

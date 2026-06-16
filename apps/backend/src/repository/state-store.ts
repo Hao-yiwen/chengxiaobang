@@ -1,6 +1,8 @@
 import type {
   AccessMode,
+  FileChange,
   Message,
+  MessageFeedback,
   Project,
   ProviderConfig,
   ProviderKind,
@@ -201,6 +203,12 @@ export interface StateStore {
   touchSession(id: string, title?: string): Promise<void>;
   addMessage(input: CreateMessageInput): Promise<StoredMessage>;
   listMessages(sessionId: string): Promise<StoredMessage[]>;
+  /** 更新助手消息的本地反馈；null 表示清空反馈，不触碰会话 updated_at。 */
+  setMessageFeedback(
+    sessionId: string,
+    messageId: string,
+    feedback: MessageFeedback | null
+  ): Promise<StoredMessage>;
   /**
    * Deletes the given message and every later one in the session (plus runs
    * and tool calls from that span). Returns how many messages were removed;
@@ -212,7 +220,8 @@ export interface StateStore {
     id: string,
     status: CreateRunInput["status"],
     usage?: TokenUsage,
-    error?: string
+    error?: string,
+    fileChanges?: FileChange[]
   ): Promise<void>;
   listRuns(sessionId: string): Promise<RunRecord[]>;
   listUsageStatsRuns(): Promise<UsageStatsSourceRun[]>;

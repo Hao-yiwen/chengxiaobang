@@ -3,11 +3,15 @@ import {
   CopyIcon,
   PencilOutlineIcon,
   PullRequestOpenIcon,
-  RefreshIcon
+  RefreshIcon,
+  ThumbsDownFilledIcon,
+  ThumbsDownOutlineIcon,
+  ThumbsUpFilledIcon,
+  ThumbsUpOutlineIcon
 } from "@/assets/file-type-icons";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Message } from "@chengxiaobang/shared";
+import type { Message, MessageFeedback } from "@chengxiaobang/shared";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -35,8 +39,10 @@ export function MessageActions({
   const isRunning = useAppStore((state) => state.isRunning);
   const regenerateLast = useAppStore((state) => state.regenerateLast);
   const forkSession = useAppStore((state) => state.forkSession);
+  const setMessageFeedback = useAppStore((state) => state.setMessageFeedback);
   const { copied, copy } = useCopy();
   const isUser = message.role === "user";
+  const showAssistantFeedback = !isUser && isLastAssistant && !isRunning;
 
   return (
     <div
@@ -54,6 +60,24 @@ export function MessageActions({
       >
         {copied ? <CheckMediumIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
       </ActionButton>
+      {showAssistantFeedback ? (
+        <>
+          <FeedbackButton
+            value="up"
+            current={message.feedback}
+            label={t("chat.feedbackLike")}
+            selectedLabel={t("chat.feedbackLikeSelected")}
+            onChange={(feedback) => void setMessageFeedback(message.id, feedback)}
+          />
+          <FeedbackButton
+            value="down"
+            current={message.feedback}
+            label={t("chat.feedbackDislike")}
+            selectedLabel={t("chat.feedbackDislikeSelected")}
+            onChange={(feedback) => void setMessageFeedback(message.id, feedback)}
+          />
+        </>
+      ) : null}
       {!isUser && isLastAssistant && !isRunning ? (
         <ActionButton label={t("chat.regenerate")} onClick={() => void regenerateLast()}>
           <RefreshIcon className="size-3.5" />
@@ -78,13 +102,48 @@ export function MessageActions({
 
 const ActionButton = MetaActionButton;
 
+function FeedbackButton({
+  value,
+  current,
+  label,
+  selectedLabel,
+  onChange
+}: {
+  value: MessageFeedback;
+  current?: MessageFeedback;
+  label: string;
+  selectedLabel: string;
+  onChange: (feedback: MessageFeedback | null) => void;
+}) {
+  const selected = current === value;
+  const Icon =
+    value === "up"
+      ? selected
+        ? ThumbsUpFilledIcon
+        : ThumbsUpOutlineIcon
+      : selected
+        ? ThumbsDownFilledIcon
+        : ThumbsDownOutlineIcon;
+  return (
+    <ActionButton
+      label={selected ? selectedLabel : label}
+      selected={selected}
+      onClick={() => onChange(selected ? null : value)}
+    >
+      <Icon className="size-3.5" />
+    </ActionButton>
+  );
+}
+
 export function MetaActionButton({
   label,
   onClick,
+  selected,
   children
 }: {
   label: string;
   onClick: () => void;
+  selected?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -93,8 +152,12 @@ export function MetaActionButton({
         <button
           type="button"
           aria-label={label}
+          aria-pressed={selected ?? undefined}
           onClick={onClick}
-          className="rounded-xs p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className={cn(
+            "rounded-xs p-1 transition-colors hover:bg-muted hover:text-foreground",
+            selected ? "bg-muted text-foreground" : "text-muted-foreground"
+          )}
         >
           {children}
         </button>
