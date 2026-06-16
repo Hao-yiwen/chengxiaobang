@@ -784,7 +784,7 @@ describe("AgentRunner", () => {
     expect(calls[0].context.tools?.map((tool) => tool.name)).toContain("OcrExtractText");
   });
 
-  it("titles new sessions with the AI summary and streams session_updated mid-run", async () => {
+  it("titles new sessions with the user prompt first, then streams the AI summary", async () => {
     const titleScripted = scriptedStreamFn([{ text: "「修复登录报错」" }]);
     const { runner } = runnerWith(
       store,
@@ -796,7 +796,7 @@ describe("AgentRunner", () => {
     let sessionId: string | undefined;
 
     for await (const event of runner.stream({
-      prompt: "帮我修复一下登录页面报错的问题，控制台提示 401",
+      prompt: "登录页面报错了，帮我看看",
       projectId: null,
       accessMode: "approval"
     })) {
@@ -806,19 +806,22 @@ describe("AgentRunner", () => {
       }
     }
 
-    // The title is pushed into the run's stream so the sidebar can update
-    // without waiting for the post-run session refetch.
-    const titleEvent = events.find((event) => event.type === "session_updated");
-    expect(titleEvent).toMatchObject({
-      type: "session_updated",
-      session: { id: sessionId, title: "修复登录报错" }
-    });
+    // 先把用户首句作为临时标题推给侧边栏，再用 AI 标题覆盖。
+    const titleEvents = events.filter(
+      (event): event is Extract<StreamEvent, { type: "session_updated" }> =>
+        event.type === "session_updated"
+    );
+    expect(titleEvents.map((event) => event.session.title)).toEqual([
+      "登录页面报错了，帮我看看",
+      "修复登录报错"
+    ]);
+    expect(titleEvents.map((event) => event.session.id)).toEqual([sessionId, sessionId]);
     await expect(store.getSession(sessionId!)).resolves.toMatchObject({
       title: "修复登录报错"
     });
     expect(titleScripted.calls).toHaveLength(1);
 
-    // Follow-up runs on an already-titled session must not retitle it.
+    // 已有标题的后续运行不应再次临时命名或调用标题模型。
     for await (const event of runner.stream({
       prompt: "继续",
       sessionId,

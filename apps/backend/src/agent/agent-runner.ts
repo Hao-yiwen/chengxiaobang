@@ -576,6 +576,29 @@ export class AgentRunner {
       .prompt;
     const displayContent = input.displayContent ?? expandedPrompt;
     const titleDisplayPrompt = displayPromptForTitle(displayContent, displayAttachments);
+    const shouldTitleSession = activeSession.title === DEFAULT_SESSION_TITLE;
+    let immediateTitleSession: Session | undefined;
+    if (shouldTitleSession) {
+      const immediateTitle = normalizeTitle(titleDisplayPrompt);
+      if (immediateTitle && immediateTitle !== activeSession.title) {
+        try {
+          immediateTitleSession = await this.store.updateSession(activeSession.id, {
+            title: immediateTitle
+          });
+          console.info("[agent-runner] 已写入临时会话标题", {
+            sessionId: activeSession.id,
+            title: immediateTitle,
+            promptChars: titleDisplayPrompt.length
+          });
+        } catch (error) {
+          console.warn("[agent-runner] 临时会话标题写入失败，继续运行", {
+            sessionId: activeSession.id,
+            title: immediateTitle,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+    }
 
     const runId = createId("run");
     // 在这里创建而不是放进 runPiLoop，便于并发标题任务把 session_updated 推入同一条事件流。
@@ -584,7 +607,7 @@ export class AgentRunner {
     // 占位标题会话的 AI 标题任务与 agent loop 并发运行；标题保存后立即推送
     // session_updated，事件流结束前也会等待它，确保渲染层 run 后刷新能读到标题。
     let titleTask: Promise<void> | undefined;
-    if (this.titleStreamFn && activeSession.title === DEFAULT_SESSION_TITLE) {
+    if (this.titleStreamFn && shouldTitleSession) {
       const titlePrompt = input.sessionId
         ? ((await this.firstUserMessageContent(activeSession.id)) ?? titleDisplayPrompt)
         : titleDisplayPrompt;
@@ -663,6 +686,9 @@ export class AgentRunner {
         model: effectiveModel,
         ...(effectiveReasoningMode ? { reasoningMode: effectiveReasoningMode } : {})
       };
+      if (immediateTitleSession) {
+        yield { type: "session_updated", runId, session: immediateTitleSession };
+      }
       yield { type: "message", runId, message: toClientMessage(userMessage) };
 
       if (!project) {

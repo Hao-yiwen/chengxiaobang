@@ -905,6 +905,7 @@ describe("createApp", () => {
     const events = parseSseChunk(await response.text());
     expect(events.map((event) => event.type)).toEqual([
       "run_started",
+      "session_updated",
       "message",
       "delta",
       "delta",
@@ -945,6 +946,7 @@ describe("createApp", () => {
     const events = await eventsPromise;
     expect(events.map((event) => event.type)).toEqual([
       "run_started",
+      "session_updated",
       "message",
       "delta",
       "delta",
@@ -1003,6 +1005,7 @@ describe("createApp", () => {
     );
 
     expect(replayEvents.events.map((event) => event.type)).toEqual([
+      "session_updated",
       "message",
       "delta",
       "delta",

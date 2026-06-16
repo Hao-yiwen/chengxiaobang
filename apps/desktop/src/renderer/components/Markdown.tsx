@@ -422,18 +422,31 @@ function StreamingMarkdownBlock({ content, dir, ...props }: BlockProps) {
   );
 }
 
+function streamCaretJsonForLog(payload: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(payload);
+  } catch (error) {
+    return JSON.stringify({
+      serializeError: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
 function MarkdownStream({
   text,
   className,
   mode,
-  isAnimating = false
+  isAnimating = false,
+  showCaret = true
 }: {
   text: string;
   className?: string;
   mode: "static" | "streaming";
   isAnimating?: boolean;
+  showCaret?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const hiddenCaretLogKeyRef = useRef<string | undefined>(undefined);
   const codePreviewSettings = useAppStore((state) => state.codePreviewSettings);
   const shikiTheme = useMemo<StreamdownProps["shikiTheme"]>(
     () => [codePreviewSettings.lightTheme, codePreviewSettings.darkTheme],
@@ -441,6 +454,28 @@ function MarkdownStream({
   );
   useScrollOverflowDetection(containerRef);
   useMermaidAutoFit(containerRef);
+
+  useEffect(() => {
+    if (mode !== "streaming" || showCaret) {
+      hiddenCaretLogKeyRef.current = undefined;
+      return;
+    }
+    const logKey = `${mode}:${isAnimating ? "animating" : "still"}:${className ?? ""}`;
+    if (hiddenCaretLogKeyRef.current === logKey) {
+      return;
+    }
+    hiddenCaretLogKeyRef.current = logKey;
+    console.info(
+      "[stream-caret-debug] markdown-caret-disabled " +
+        streamCaretJsonForLog({
+          mode,
+          textChars: text.length,
+          isAnimating,
+          className: className ?? null,
+          caret: "disabled"
+        })
+    );
+  }, [className, isAnimating, mode, showCaret, text.length]);
 
   return (
     <div ref={containerRef} style={{ display: "contents" }}>
@@ -461,7 +496,7 @@ function MarkdownStream({
         lineNumbers={false}
         isAnimating={isAnimating}
         animated={mode === "streaming" ? STREAMDOWN_ANIMATION : false}
-        caret={mode === "streaming" ? "circle" : undefined}
+        caret={mode === "streaming" && showCaret ? "circle" : undefined}
         BlockComponent={mode === "streaming" ? StreamingMarkdownBlock : undefined}
       >
         {text}

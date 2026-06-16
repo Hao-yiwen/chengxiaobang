@@ -117,6 +117,14 @@ describe("StreamingMarkdown", () => {
     expect(container.querySelector("[data-sd-animate]")).not.toBeNull();
   });
 
+  it("can hide the Streamdown caret when another loading surface is visible", () => {
+    const { container } = render(<StreamingMarkdown text="正在输出内容" showCaret={false} />);
+    const root = container.querySelector(".markdown-streamdown") as HTMLElement | null;
+
+    expect(root?.getAttribute("style") ?? "").not.toContain("--streamdown-caret");
+    expect(container.querySelector("[data-sd-animate]")).not.toBeNull();
+  });
+
   it("keeps GFM tables usable while still in streaming mode", () => {
     render(<StreamingMarkdown text={"| 名称 | 值 |\n| --- | --- |\n| 端口 | 8080 |"} />);
 

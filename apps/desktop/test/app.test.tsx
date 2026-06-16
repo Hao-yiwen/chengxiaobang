@@ -1492,6 +1492,180 @@ describe("App", () => {
     resolveStream?.();
   });
 
+  it("uses todo progress loading without adding a chat cursor", async () => {
+    type StreamRunEvent = Parameters<ApiClient["streamRun"]>[1] extends (
+      event: infer E
+    ) => void
+      ? E
+      : never;
+    let emit: ((event: StreamRunEvent) => void) | undefined;
+    let resolveStream: (() => void) | undefined;
+    const client = createClient({
+      streamRun: vi.fn(async (_input, onEvent) => {
+        emit = onEvent;
+        onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+        onEvent({ type: "delta", channel: "text", runId: "run_1", delta: "先更新计划" });
+        return new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        });
+      })
+    });
+
+    render(<App client={client} />);
+    await selectDeepSeekForHome();
+
+    fireEvent.change(await screen.findByLabelText("输入消息"), {
+      target: { value: "写 document-spec" }
+    });
+    fireEvent.click(screen.getByTitle("发送"));
+
+    await waitFor(() => expect(emit).toBeDefined());
+    act(() => {
+      emit?.({
+        type: "tool_call",
+        runId: "run_1",
+        toolCall: {
+          id: "todo_1",
+          runId: "run_1",
+          name: "TodoWrite",
+          args: {
+            todos: [
+              { content: "写入规格文件", status: "in_progress", priority: "high" },
+              { content: "生成 PPT", status: "pending", priority: "medium" }
+            ]
+          },
+          status: "running",
+          createdAt: "2026-06-13T00:00:00.800Z",
+          updatedAt: "2026-06-13T00:00:00.800Z"
+        } satisfies ToolCall
+      });
+    });
+
+    const chatScroll = await screen.findByTestId("chat-scroll");
+    expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
+    expect(screen.getByText("运行中")).toBeInTheDocument();
+    expect(screen.getByText("写入规格文件")).toBeInTheDocument();
+    const streamRoot = within(chatScroll).getByText("先更新计划").closest(".markdown-streamdown");
+    expect(streamRoot?.getAttribute("style") ?? "").not.toContain("--streamdown-caret");
+    expect(within(chatScroll).queryByTestId("chat-stream-tail-cursor")).not.toBeInTheDocument();
+    expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
+    expect(within(chatScroll).queryByText("更新 Todo 中")).not.toBeInTheDocument();
+    resolveStream?.();
+  });
+
+  it("keeps the chat caret for pure text streaming without thinking", async () => {
+    let resolveStream: (() => void) | undefined;
+    const client = createClient({
+      streamRun: vi.fn(async (_input, onEvent) => {
+        onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+        onEvent({ type: "delta", channel: "text", runId: "run_1", delta: "纯文本输出" });
+        return new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        });
+      })
+    });
+
+    render(<App client={client} />);
+    await selectDeepSeekForHome();
+
+    fireEvent.change(await screen.findByLabelText("输入消息"), {
+      target: { value: "直接回答" }
+    });
+    fireEvent.click(screen.getByTitle("发送"));
+
+    const chatScroll = await screen.findByTestId("chat-scroll");
+    const streamText = await within(chatScroll).findByText("纯文本输出");
+    const streamRoot = streamText.closest(".markdown-streamdown");
+    expect(streamRoot?.getAttribute("style") ?? "").toContain("--streamdown-caret");
+    resolveStream?.();
+  });
+
+  it("hides the chat caret while thinking and text stream together", async () => {
+    let resolveStream: (() => void) | undefined;
+    const client = createClient({
+      streamRun: vi.fn(async (_input, onEvent) => {
+        onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+        onEvent({ type: "delta", channel: "thinking", runId: "run_1", delta: "先拆解问题" });
+        onEvent({ type: "delta", channel: "text", runId: "run_1", delta: "开始输出答案" });
+        return new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        });
+      })
+    });
+
+    render(<App client={client} />);
+    await selectDeepSeekForHome();
+
+    fireEvent.change(await screen.findByLabelText("输入消息"), {
+      target: { value: "边思考边回答" }
+    });
+    fireEvent.click(screen.getByTitle("发送"));
+
+    const chatScroll = await screen.findByTestId("chat-scroll");
+    await waitFor(() => {
+      expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
+      expect(within(chatScroll).getByText("开始输出答案")).toBeInTheDocument();
+    });
+    const streamRoot = within(chatScroll)
+      .getByText("开始输出答案")
+      .closest(".markdown-streamdown");
+    expect(streamRoot?.getAttribute("style") ?? "").not.toContain("--streamdown-caret");
+    expect(within(chatScroll).queryByTestId("chat-stream-tail-cursor")).not.toBeInTheDocument();
+    resolveStream?.();
+  });
+
+  it("does not add a detached cursor for text followed by tool activity", async () => {
+    type StreamRunEvent = Parameters<ApiClient["streamRun"]>[1] extends (
+      event: infer E
+    ) => void
+      ? E
+      : never;
+    let emit: ((event: StreamRunEvent) => void) | undefined;
+    let resolveStream: (() => void) | undefined;
+    const client = createClient({
+      streamRun: vi.fn(async (_input, onEvent) => {
+        emit = onEvent;
+        onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+        onEvent({ type: "delta", channel: "text", runId: "run_1", delta: "准备写入：" });
+        return new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        });
+      })
+    });
+
+    render(<App client={client} />);
+    await selectDeepSeekForHome();
+
+    fireEvent.change(await screen.findByLabelText("输入消息"), {
+      target: { value: "写 document-spec" }
+    });
+    fireEvent.click(screen.getByTitle("发送"));
+
+    await waitFor(() => expect(emit).toBeDefined());
+    act(() => {
+      emit?.({
+        type: "tool_activity",
+        runId: "run_1",
+        activity: {
+          contentIndex: 0,
+          toolCallId: "tool_1",
+          name: "Write",
+          argsPreview: { file_path: "document-spec.json" },
+          updatedAt: "2026-06-13T00:00:00.800Z"
+        }
+      });
+    });
+
+    const chatScroll = await screen.findByTestId("chat-scroll");
+    await waitFor(() => {
+      expect(within(chatScroll).getByText("写入 document-spec.json 中")).toBeInTheDocument();
+    });
+    const streamRoot = within(chatScroll).getByText("准备写入：").closest(".markdown-streamdown");
+    expect(streamRoot?.getAttribute("style") ?? "").not.toContain("--streamdown-caret");
+    expect(within(chatScroll).queryByTestId("chat-stream-tail-cursor")).not.toBeInTheDocument();
+    resolveStream?.();
+  });
+
   it("can abort a running stream from the composer", async () => {
     let emit: ((event: Parameters<ApiClient["streamRun"]>[1] extends (event: infer E) => void ? E : never) => void) | undefined;
     let resolveStream: (() => void) | undefined;
@@ -1523,7 +1697,7 @@ describe("App", () => {
   });
 
   it("updates the sidebar title as soon as session_updated arrives mid-run", async () => {
-    let resolveStream: (() => void) | undefined;
+    let emitAiTitle: (() => void) | undefined;
     const client = createClient({
       streamRun: vi.fn(async (_input, onEvent) => {
         onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
@@ -1533,15 +1707,30 @@ describe("App", () => {
           session: {
             id: "session_1",
             projectId: null,
-            title: "修复登录报错",
+            title: "登录页面报错了，帮我看看",
             providerId: "deepseek",
             accessMode: "approval",
             createdAt: "2026-06-12T00:00:00.000Z",
             updatedAt: "2026-06-12T00:00:00.000Z"
           }
         });
-        return new Promise<void>((resolve) => {
-          resolveStream = resolve;
+        await new Promise<void>((resolve) => {
+          emitAiTitle = () => {
+            onEvent({
+              type: "session_updated",
+              runId: "run_1",
+              session: {
+                id: "session_1",
+                projectId: null,
+                title: "修复登录报错",
+                providerId: "deepseek",
+                accessMode: "approval",
+                createdAt: "2026-06-12T00:00:00.000Z",
+                updatedAt: "2026-06-12T00:00:01.000Z"
+              }
+            });
+            resolve();
+          };
         });
       })
     });
@@ -1554,11 +1743,17 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByTitle("发送"));
 
-    // run_end 尚未到达，AI 标题已经出现在侧边栏（不等收尾后的整表刷新）。
-    expect(
-      await within(screen.getByTestId("app-sidebar")).findByText("修复登录报错")
-    ).toBeInTheDocument();
-    resolveStream?.();
+    const sidebar = within(screen.getByTestId("app-sidebar"));
+    // run_end 尚未到达，用户输入已经先作为临时标题出现在侧边栏。
+    expect(await sidebar.findByText("登录页面报错了，帮我看看")).toBeInTheDocument();
+
+    await waitFor(() => expect(emitAiTitle).toBeDefined());
+    act(() => {
+      emitAiTitle?.();
+    });
+
+    expect(await sidebar.findByText("修复登录报错")).toBeInTheDocument();
+    expect(sidebar.queryByText("登录页面报错了，帮我看看")).not.toBeInTheDocument();
   });
 
   it("shows a loading marker on the running sidebar session", async () => {

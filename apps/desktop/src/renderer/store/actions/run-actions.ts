@@ -69,6 +69,24 @@ function missingRunProviderPatch(state: AppState, source: string): Partial<AppSt
 
 const STREAM_DELTA_FLUSH_MS = 32;
 
+function jsonForLog(payload: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(payload);
+  } catch (error) {
+    return JSON.stringify({
+      serializeError: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+function previewFilePath(args: unknown): string | undefined {
+  if (!args || typeof args !== "object" || !("file_path" in args)) {
+    return undefined;
+  }
+  const value = (args as { file_path?: unknown }).file_path;
+  return typeof value === "string" ? value : undefined;
+}
+
 function closeLiveThinkingPatch(state: AppState): Partial<AppState> {
   if (!state.thinking || state.thinkingDurationMs !== undefined) {
     return {};
@@ -927,6 +945,20 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             break;
           case "tool_activity":
             flushBufferedDeltas();
+            console.info(
+              "[stream-caret-debug] store-event " +
+                jsonForLog({
+                  eventType: "tool_activity",
+                  runId: event.runId,
+                  activeRunId: get().activeRunId,
+                  toolName: event.activity.name,
+                  toolCallId: event.activity.toolCallId,
+                  status: "running",
+                  filePath: previewFilePath(event.activity.argsPreview),
+                  streamTextChars: get().streamText.length,
+                  thinkingChars: get().thinking.length
+                })
+            );
             set((current) => ({
               toolActivity: event.activity,
               ...closeLiveThinkingPatch(current)
@@ -951,6 +983,20 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             break;
           case "tool_call":
             flushBufferedDeltas();
+            console.info(
+              "[stream-caret-debug] store-event " +
+                jsonForLog({
+                  eventType: "tool_call",
+                  runId: event.runId,
+                  activeRunId: get().activeRunId,
+                  toolName: event.toolCall.name,
+                  toolCallId: event.toolCall.id,
+                  status: event.toolCall.status,
+                  filePath: previewFilePath(event.toolCall.args),
+                  streamTextChars: get().streamText.length,
+                  thinkingChars: get().thinking.length
+                })
+            );
             // tool_call.status 是状态机：pending_approval 独立进底部 dock，
             // 智能审批等待态不需要用户点击，进入历史/活动区展示即可。
             if (event.toolCall.status === "pending_approval") {

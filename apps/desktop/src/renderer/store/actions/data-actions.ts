@@ -390,6 +390,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           return {
             rightPanelBySession,
             ...switchComposerDraftScope(state, sessionComposerDraftScope(id), "selectSession"),
+            view: "chat",
             activeSessionId: id,
             activeProjectId: session?.projectId ?? undefined,
             providerId: sessionProvider?.id,

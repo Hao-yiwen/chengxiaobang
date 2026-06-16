@@ -4,6 +4,7 @@ import {
   ChevronIcon,
   ChevronRightIcon,
   CircleOutlineIcon,
+  SpinnerRingIcon,
   type FileIconSvgProps
 } from "@/assets/file-type-icons";
 import { useEffect, useMemo, useState } from "react";
@@ -21,7 +22,7 @@ type Icon = ComponentType<FileIconSvgProps>;
 
 const STATUS_ICON: Record<TodoStatus, Icon> = {
   pending: CircleOutlineIcon,
-  in_progress: ChevronRightIcon,
+  in_progress: SpinnerRingIcon,
   completed: CheckCircleIcon
 };
 
@@ -202,17 +203,19 @@ function TodoRow({ item, label }: { item: TodoItem; label: string }) {
           aria-label={label}
           className={cn(
             "mt-0.5 size-4 flex-none",
-            completed ? "text-link" : inProgress ? "text-foreground" : "text-muted-foreground"
+            completed
+              ? "text-link"
+              : inProgress
+                ? "animate-spin text-link"
+                : "text-muted-foreground"
           )}
         />
         <p
           className={cn(
-            "min-w-0 flex-1 text-caption",
+            "min-w-0 flex-1 text-body-xs",
             inProgress
-              ? "font-medium text-foreground"
-              : completed
-                ? "text-muted-foreground"
-                : "text-body"
+              ? "font-medium [color:rgb(var(--foreground))]"
+              : "[color:rgb(var(--muted-foreground))]"
           )}
         >
           {item.content}

@@ -404,26 +404,93 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         const project = selectActiveProject(state);
         const session = selectActiveSession(state);
         const sessionId = session?.id ?? state.activeSessionId;
-        set((state) => {
-          const patch: RightPanelPatch = {
-            previewFile: {
+        const previewContext = {
+          ...(project?.path ? { projectPath: project.path } : {}),
+          ...(sessionId ? { sessionId } : {}),
+          allowCwdFallback: false
+        };
+        const openFilePreviewFallback = () =>
+          set((state) => {
+            const patch: RightPanelPatch = {
+              previewFile: {
+                path,
+                ...previewContext
+              },
+              rightPanelOpen: true,
+              rightPanelMode: "files",
+              rightPanelWidth: rightPanelWidthForOpen(
+                state.rightPanelWidth,
+                state.rightPanelOpen,
+                RIGHT_PANEL_FILE_WIDTH
+              )
+            };
+            return {
+              ...patch,
+              rightPanelBySession: rememberRightPanel(state, undefined, patch)
+            };
+          });
+        if (kind !== "html") {
+          openFilePreviewFallback();
+          return;
+        }
+
+        const bridge = window.chengxiaobang;
+        const getFilePreviewInfo = bridge?.getFilePreviewInfo;
+        const createFileUrl = bridge?.createFileUrl;
+        if (!getFilePreviewInfo || !createFileUrl) {
+          console.warn("[store] HTML 生成物缺少本地浏览器预览能力，回退文件预览", {
+            path,
+            hasInfoBridge: Boolean(getFilePreviewInfo),
+            hasFileUrlBridge: Boolean(createFileUrl)
+          });
+          openFilePreviewFallback();
+          return;
+        }
+
+        void (async () => {
+          const info = await getFilePreviewInfo(path, previewContext);
+          if (!info.ok) {
+            console.warn("[store] HTML 生成物路径解析失败，回退文件预览", {
               path,
-              ...(project?.path ? { projectPath: project.path } : {}),
-              ...(sessionId ? { sessionId } : {}),
-              allowCwdFallback: false
-            },
-            rightPanelOpen: true,
-            rightPanelMode: "files",
-            rightPanelWidth: rightPanelWidthForOpen(
-              state.rightPanelWidth,
-              state.rightPanelOpen,
-              RIGHT_PANEL_FILE_WIDTH
-            )
-          };
-          return {
-            ...patch,
-            rightPanelBySession: rememberRightPanel(state, undefined, patch)
-          };
+              error: info.error
+            });
+            openFilePreviewFallback();
+            return;
+          }
+          const result = await createFileUrl(info.path);
+          if (!result.ok) {
+            console.warn("[store] HTML 生成物本地 URL 创建失败，回退文件预览", {
+              path,
+              resolvedPath: info.path,
+              error: result.error
+            });
+            openFilePreviewFallback();
+            return;
+          }
+          console.info("[store] HTML 生成物进入内置浏览器", {
+            path,
+            resolvedPath: info.path,
+            url: result.url
+          });
+          set((state) => {
+            const patch: RightPanelPatch = {
+              previewFile: undefined,
+              browserUrl: result.url,
+              rightPanelOpen: true,
+              rightPanelMode: "browser",
+              rightPanelWidth: rightPanelWidthForOpen(state.rightPanelWidth, state.rightPanelOpen)
+            };
+            return {
+              ...patch,
+              rightPanelBySession: rememberRightPanel(state, undefined, patch)
+            };
+          });
+        })().catch((error) => {
+          console.warn("[store] HTML 生成物打开内置浏览器异常，回退文件预览", {
+            path,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          openFilePreviewFallback();
         });
       },
 

@@ -1,14 +1,11 @@
 import {
   ArrowLeftIcon,
   ArrowTopRightIcon,
-  CheckMediumIcon,
-  CopyIcon,
   MinusIcon,
   PanelRightOutlineIcon,
   PlusIcon,
   RefreshIcon,
   TextDocumentGrayIcon,
-  UndoIcon,
   WarningCircleIcon
 } from "@/assets/file-type-icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -22,12 +19,6 @@ import {
   splitCodePreviewLines,
   useShikiHighlight
 } from "@/lib/code-highlight";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger
-} from "@/components/ui/tooltip";
 import { useTranslation } from "react-i18next";
 import pdfjsModuleUrl from "pdfjs-dist/build/pdf.min.mjs?url";
 import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -436,36 +427,11 @@ function PreviewFailure(props: {
 
 function CodePreview({ text, extension }: { text: string; extension: string }) {
   const settings = useAppStore((state) => state.codePreviewSettings);
-  const [wrapOverride, setWrapOverride] = useState<boolean | undefined>();
-  const [copied, setCopied] = useState(false);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const displayText = useMemo(() => normalizeCodePreviewText(text), [text]);
   const plainLines = useMemo(() => splitCodePreviewLines(displayText), [displayText]);
   const highlight = useShikiHighlight(displayText, extension, settings, "FilePreviewPanel");
   const language = highlight.language;
-  const wrap = wrapOverride ?? settings.wrapLongLines;
-
-  useEffect(
-    () => () => {
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    },
-    []
-  );
-
-  useEffect(() => {
-    setWrapOverride(undefined);
-  }, [settings.wrapLongLines]);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-      copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("[FilePreviewPanel] 复制文件内容失败", { err });
-    }
-  };
+  const wrap = settings.wrapLongLines;
 
   return (
     <div
@@ -476,41 +442,6 @@ function CodePreview({ text, extension }: { text: string; extension: string }) {
       data-testid="file-code-preview"
       style={codePreviewInlineStyle(settings)}
     >
-      <div className="absolute right-3 top-2 z-10 flex items-center gap-1 rounded-sm bg-canvas/85 p-0.5 backdrop-blur">
-        <TooltipProvider delayDuration={300}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={ICON_BUTTON}
-                aria-label={wrap ? "关闭自动换行" : "自动换行"}
-                aria-pressed={wrap}
-                onClick={() => setWrapOverride((value) => !(value ?? settings.wrapLongLines))}
-              >
-                <UndoIcon className="size-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{wrap ? "关闭自动换行" : "自动换行"}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={ICON_BUTTON}
-                aria-label="复制文件内容"
-                onClick={() => void handleCopy()}
-              >
-                {copied ? (
-                  <CheckMediumIcon className="size-3.5" />
-                ) : (
-                  <CopyIcon className="size-3.5" />
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{copied ? "已复制" : "复制文件内容"}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
       <div
         className={cn("h-full overflow-auto py-3 pl-4 pr-20 font-mono text-[var(--cxb-code-font-size,12px)] leading-[var(--cxb-code-line-height,20px)]", wrap && "overflow-x-hidden")}
         data-code-wrap={wrap ? "true" : "false"}

@@ -415,6 +415,27 @@ function installPreviewBridge(options: {
   return bridge;
 }
 
+async function expectHtmlArtifactInBrowser(
+  bridge: ReturnType<typeof installPreviewBridge>,
+  artifactPath = "page.html",
+  resolvedPath = "/tmp/demo/page.html",
+  fileUrl = "file:///tmp/demo/page.html"
+): Promise<void> {
+  await waitFor(() => expect(useAppStore.getState().rightPanelMode).toBe("browser"));
+  expect(useAppStore.getState().browserUrl).toBe(fileUrl);
+  expect(useAppStore.getState().previewFile).toBeUndefined();
+  expect(await screen.findByText("浏览器")).toBeInTheDocument();
+  await waitFor(() =>
+    expect(document.querySelector("webview")?.getAttribute("src")).toBe(fileUrl)
+  );
+  expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith(artifactPath, {
+    projectPath: project.path,
+    sessionId: session.id,
+    allowCwdFallback: false
+  });
+  expect(bridge.createFileUrl).toHaveBeenCalledWith(resolvedPath);
+}
+
 /** Opens the panel via the toggle and enters a tool page from the menu. */
 async function openPane(name: string): Promise<void> {
   const toggle = await screen.findByTitle("打开侧边面板");
@@ -952,7 +973,10 @@ describe("right panel", () => {
           toolCall: todoToolCall(
             "todo_1",
             "TodoWrite",
-            todoArgs([{ content: "预留滚动条空间并约束长文本", status: "in_progress" }])
+            todoArgs([
+              { content: "预留滚动条空间并约束长文本", status: "in_progress" },
+              { content: "等待下一步执行", status: "pending" }
+            ])
           )
         },
         { force: true }
@@ -968,6 +992,12 @@ describe("right panel", () => {
     expect(panel).toHaveClass("chat-progress-floating", "bg-card");
     expect(panel).not.toHaveClass("shadow-stack", "shadow-overlay", "backdrop-blur-sm", "bg-card/95");
     expect(scrollRegion).toHaveClass("overflow-x-hidden", "[scrollbar-gutter:stable]");
+    expect(screen.getByLabelText("进行中")).toHaveClass("animate-spin", "text-link");
+    expect(screen.getByText("等待下一步执行")).toHaveClass(
+      "text-body-xs",
+      "[color:rgb(var(--muted-foreground))]"
+    );
+    expect(screen.getByText("等待下一步执行")).not.toHaveClass("text-body");
 
     act(() => {
       const store = useAppStore.getState();
@@ -1290,7 +1320,7 @@ describe("right panel", () => {
     expect(screen.queryByRole("heading", { name: "标题" })).not.toBeInTheDocument();
   });
 
-  it("lists final XML artifacts in the floating artifact panel and opens preview", async () => {
+  it("lists final XML artifacts in the floating artifact panel and opens HTML in the browser", async () => {
     const bridge = installPreviewBridge({
       kind: "html",
       fileUrl: "file:///tmp/demo/page.html"
@@ -1324,13 +1354,7 @@ describe("right panel", () => {
 
     fireEvent.click(within(panel).getByRole("button", { name: /page\.html/u }));
 
-    expect(await screen.findByText("HTML / SVG · 17 B")).toBeInTheDocument();
-    expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("page.html", {
-      projectPath: project.path,
-      sessionId: session.id,
-      allowCwdFallback: false
-    });
-    expect(bridge.createFileUrl).toHaveBeenCalledWith("/tmp/demo/page.html");
+    await expectHtmlArtifactInBrowser(bridge);
   });
 
   it("lists declared markdown artifacts in the floating artifact panel", async () => {
@@ -1423,12 +1447,7 @@ describe("right panel", () => {
 
     fireEvent.click(within(panel).getByRole("button", { name: /page\.html/u }));
 
-    expect(await screen.findByText("HTML / SVG · 17 B")).toBeInTheDocument();
-    expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("page.html", {
-      projectPath: project.path,
-      sessionId: session.id,
-      allowCwdFallback: false
-    });
+    await expectHtmlArtifactInBrowser(bridge);
   });
 
   it("shows artifact floating panel above the progress floating panel", async () => {
@@ -1617,7 +1636,7 @@ describe("right panel", () => {
     });
   });
 
-  it("previews an HTML artifact in the right file panel", async () => {
+  it("opens an HTML artifact in the right browser panel", async () => {
     const bridge = installPreviewBridge({
       kind: "html",
       fileUrl: "file:///tmp/demo/page.html"
@@ -1626,13 +1645,11 @@ describe("right panel", () => {
       listMessages: vi.fn(async () => [artifactMessage("page.html")])
     });
 
-    const { container } = render(<App client={client} />);
+    render(<App client={client} />);
     await selectSession("项目对话");
     await clickArtifactButton("page.html");
 
-    expect(await screen.findByText("HTML / SVG · 17 B")).toBeInTheDocument();
-    expect(container.querySelector("webview")?.getAttribute("src")).toBe("file:///tmp/demo/page.html");
-    expect(bridge.createFileUrl).toHaveBeenCalledWith("/tmp/demo/page.html");
+    await expectHtmlArtifactInBrowser(bridge);
   });
 
   it("renders PPTX artifacts in the embedded multi-page preview", async () => {

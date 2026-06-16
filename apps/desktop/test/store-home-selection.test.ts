@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
-import type { Project, ProviderConfig, Session } from "@chengxiaobang/shared";
+import type { Message, Project, ProviderConfig, Session } from "@chengxiaobang/shared";
 
 const provider: ProviderConfig = {
   id: "deepseek",
@@ -270,6 +270,39 @@ describe("store home selection restore", () => {
     await useAppStore.getState().openFolder();
 
     expect(createProject).toHaveBeenCalledWith({ path: winPath, name: "repo" });
+  });
+
+  it("switches to chat before selected session messages finish loading", async () => {
+    let resolveMessages!: (messages: Message[]) => void;
+    const listMessages = vi.fn(
+      () =>
+        new Promise<Message[]>((resolve) => {
+          resolveMessages = resolve;
+        })
+    );
+    const client = {
+      ...createClient(),
+      listMessages
+    } as unknown as ApiClient;
+
+    await useAppStore.getState().initClient(client);
+    useAppStore.getState().setInput("首页草稿");
+
+    const selectPromise = useAppStore.getState().selectSession(session.id);
+
+    expect(useAppStore.getState().view).toBe("chat");
+    expect(useAppStore.getState().activeSessionId).toBe(session.id);
+    expect(useAppStore.getState().input).toBe("");
+    expect(useAppStore.getState().composerDraftsByScope.home?.input).toBe("首页草稿");
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(listMessages).toHaveBeenCalledWith(session.id);
+    expect(useAppStore.getState().view).toBe("chat");
+
+    resolveMessages([]);
+    await selectPromise;
   });
 
   it("keeps composer text drafts isolated between home and sessions", async () => {

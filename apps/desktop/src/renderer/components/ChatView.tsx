@@ -80,6 +80,37 @@ function toolActivityToTimelineTool(
   };
 }
 
+function streamCaretFilePath(args: unknown): string | undefined {
+  if (!args || typeof args !== "object" || !("file_path" in args)) {
+    return undefined;
+  }
+  const value = (args as { file_path?: unknown }).file_path;
+  return typeof value === "string" ? value : undefined;
+}
+
+function streamCaretToolSummary(tool: ToolCall | undefined) {
+  if (!tool) {
+    return undefined;
+  }
+  return {
+    id: tool.id,
+    runId: tool.runId,
+    name: tool.name,
+    status: tool.status,
+    filePath: streamCaretFilePath(tool.args)
+  };
+}
+
+function streamCaretJsonForLog(payload: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(payload);
+  } catch (error) {
+    return JSON.stringify({
+      serializeError: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
 function canRetryFailedNotice(
   notice: FailedRunNotice,
   messages: Message[],
@@ -224,6 +255,7 @@ export function ChatView() {
   const prevTailRef = useRef<
     { sessionId?: string; lastId?: string; length: number } | undefined
   >(undefined);
+  const streamCaretDecisionLogKeyRef = useRef<string | undefined>(undefined);
   const [nearBottom, setNearBottom] = useState(true);
   const [scrollProgress, setScrollProgress] = useState({
     visible: false,
@@ -542,6 +574,83 @@ export function ChatView() {
     );
   };
 
+  // 只有纯文本流式输出才保留 Markdown 内置 caret；thinking/工具/Todo 已经有更具体的运行态提示。
+  const hasSpecificRuntimeIndicator =
+    hasLiveThinking || Boolean(liveToolActivityCall) || Boolean(runningTool) || Boolean(pendingTool);
+  const showStreamingMarkdownCaret = Boolean(streamText) && !hasSpecificRuntimeIndicator;
+  const streamCaretDecisionPayload = useMemo(
+    () => ({
+      activeRunId,
+      isRunning,
+      streamTextChars: streamText.length,
+      hasStreamText: Boolean(streamText),
+      liveToolActivity: streamCaretToolSummary(liveToolActivityCall),
+      runningTool: streamCaretToolSummary(runningTool),
+      pendingTool: streamCaretToolSummary(pendingTool),
+      showWaiting,
+      hasLiveThinking,
+      showCaret: showStreamingMarkdownCaret
+    }),
+    [
+      activeRunId,
+      hasLiveThinking,
+      isRunning,
+      liveToolActivityCall,
+      pendingTool,
+      runningTool,
+      showStreamingMarkdownCaret,
+      showWaiting,
+      streamText.length
+    ]
+  );
+  const streamCaretDecisionLogKey = useMemo(
+    () =>
+      streamCaretJsonForLog({
+        activeRunId,
+        isRunning,
+        hasStreamText: Boolean(streamText),
+        liveToolActivity: streamCaretToolSummary(liveToolActivityCall),
+        runningTool: streamCaretToolSummary(runningTool),
+        pendingTool: streamCaretToolSummary(pendingTool),
+        showWaiting,
+        hasLiveThinking,
+        showCaret: showStreamingMarkdownCaret
+      }),
+    [
+      activeRunId,
+      hasLiveThinking,
+      isRunning,
+      liveToolActivityCall,
+      pendingTool,
+      runningTool,
+      showStreamingMarkdownCaret,
+      showWaiting,
+      streamText
+    ]
+  );
+
+  useEffect(() => {
+    if (!isRunning && !streamText && !liveToolActivityCall && !runningTool && !pendingTool) {
+      streamCaretDecisionLogKeyRef.current = undefined;
+      return;
+    }
+    if (streamCaretDecisionLogKeyRef.current === streamCaretDecisionLogKey) {
+      return;
+    }
+    streamCaretDecisionLogKeyRef.current = streamCaretDecisionLogKey;
+    console.info(
+      "[stream-caret-debug] chat-view-decision " + streamCaretJsonForLog(streamCaretDecisionPayload)
+    );
+  }, [
+    isRunning,
+    liveToolActivityCall,
+    pendingTool,
+    runningTool,
+    streamCaretDecisionPayload,
+    streamCaretDecisionLogKey,
+    streamText
+  ]);
+
   // 运行中的临时块（思考流 / 流式文本 / 工具活动 / 等待），只挂到活跃轮折叠体尾部。
   const runtimeTail =
     hasLiveThinking || streamText || liveToolActivityCall || showWaiting ? (
@@ -556,7 +665,11 @@ export function ChatView() {
         ) : null}
         {streamText ? (
           <div className="mb-4 animate-msg-in self-stretch">
-            <AssistantMarkdownWithArtifacts text={streamText} streaming />
+            <AssistantMarkdownWithArtifacts
+              text={streamText}
+              streaming
+              showCaret={showStreamingMarkdownCaret}
+            />
           </div>
         ) : null}
         {liveToolActivityCall ? (
