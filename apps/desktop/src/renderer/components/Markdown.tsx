@@ -1,4 +1,4 @@
-import { type ComponentPropsWithoutRef, memo } from "react";
+import { type ComponentPropsWithoutRef, memo, useEffect, useRef } from "react";
 import { code } from "@streamdown/code";
 import { cjk } from "@streamdown/cjk";
 import { createMathPlugin } from "@streamdown/math";
@@ -197,6 +197,75 @@ const HTTP_URL_TRANSFORM: UrlTransform = (url, key, node) => {
   return defaultUrlTransform(url, key, node);
 };
 
+function useScrollOverflowDetection(containerRef: React.RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const roMap = new Map<Element, ResizeObserver>();
+    const scrollListeners = new Map<HTMLElement, () => void>();
+
+    function applyScrollClasses(wrapper: Element, scrollable: HTMLElement) {
+      const maxScroll = scrollable.scrollWidth - scrollable.clientWidth;
+      wrapper.classList.toggle("has-scroll-right", maxScroll > 1 && scrollable.scrollLeft < maxScroll - 1);
+      wrapper.classList.toggle("has-scroll-left", scrollable.scrollLeft > 1);
+    }
+
+    function observeElement(wrapper: Element, scrollable: HTMLElement) {
+      if (roMap.has(wrapper)) return;
+
+      const onScroll = () => applyScrollClasses(wrapper, scrollable);
+      scrollable.addEventListener("scroll", onScroll, { passive: true });
+      scrollListeners.set(scrollable, onScroll);
+
+      const ro = new ResizeObserver(() => applyScrollClasses(wrapper, scrollable));
+      ro.observe(scrollable);
+      ro.observe(wrapper);
+      roMap.set(wrapper, ro);
+
+      applyScrollClasses(wrapper, scrollable);
+    }
+
+    // 表格：wrapper = [data-streamdown="table-wrapper"]，scrollable = 其最后一个子 div
+    function observeTable(wrapper: Element) {
+      const scrollable = wrapper.querySelector(":scope > div:last-child") as HTMLElement | null;
+      if (scrollable) observeElement(wrapper, scrollable);
+    }
+
+    // 代码块：wrapper = .cxb-code-block-shell 内的 [data-streamdown="code-block"]，
+    //         scrollable = [data-streamdown="code-block-body"]（两种实现共用此结构）
+    function observeCodeBlock(wrapper: Element) {
+      const scrollable = wrapper.querySelector('[data-streamdown="code-block-body"]') as HTMLElement | null;
+      if (scrollable) observeElement(wrapper, scrollable);
+    }
+
+    container.querySelectorAll('[data-streamdown="table-wrapper"]').forEach(observeTable);
+    container.querySelectorAll('.cxb-code-block-shell > [data-streamdown="code-block"]').forEach(observeCodeBlock);
+
+    const mo = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          if (node.matches('[data-streamdown="table-wrapper"]')) observeTable(node);
+          node.querySelectorAll('[data-streamdown="table-wrapper"]').forEach(observeTable);
+          if (node.matches('[data-streamdown="code-block"]') && node.closest('.cxb-code-block-shell')) {
+            observeCodeBlock(node);
+          }
+          node.querySelectorAll('.cxb-code-block-shell > [data-streamdown="code-block"]').forEach(observeCodeBlock);
+        }
+      }
+    });
+
+    mo.observe(container, { childList: true, subtree: true });
+
+    return () => {
+      mo.disconnect();
+      roMap.forEach((ro) => ro.disconnect());
+      scrollListeners.forEach((fn, el) => el.removeEventListener("scroll", fn));
+    };
+  }, [containerRef]);
+}
+
 function MarkdownStream({
   text,
   className,
@@ -208,7 +277,11 @@ function MarkdownStream({
   mode: "static" | "streaming";
   isAnimating?: boolean;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useScrollOverflowDetection(containerRef);
+
   return (
+    <div ref={containerRef} style={{ display: "contents" }}>
     <Streamdown
       mode={mode}
       dir="auto"
@@ -229,6 +302,7 @@ function MarkdownStream({
     >
       {text}
     </Streamdown>
+    </div>
   );
 }
 

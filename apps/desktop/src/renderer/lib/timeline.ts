@@ -348,7 +348,7 @@ export interface TurnBlock {
   key: string;
   /** 本轮起点 user 消息（历史首条/孤立响应时为 undefined）；渲染在折叠头外、上方。 */
   user?: MessageMember;
-  /** 折叠体内的中间过程（思考、工具、计划、失败提示、早于最终答复的叙述），附全局 index。 */
+  /** 折叠体内的中间过程（思考、工具、计划、早于最终答复的叙述），附全局 index。 */
   intermediate: TurnMember[];
   /** 折叠头外的最终答复：本轮最后一条有内容 assistant 消息；失败/中止/仍在流式时为 undefined。 */
   answer?: MessageMember;
@@ -381,6 +381,7 @@ export interface GroupTurnsContext {
 interface RawTurn {
   user?: MessageMember;
   members: TurnMember[];
+  terminalAt?: string;
 }
 
 type RawBlock =
@@ -389,7 +390,7 @@ type RawBlock =
 
 /**
  * 把扁平的渲染时间线按「user 消息」边界切成轮次块：每个 AI 轮次的中间过程进折叠体、
- * 最终答复留在折叠头外；compaction/system 独立成块。纯函数，便于单测。
+ * 最终答复和失败提示留在折叠头外；compaction/system 独立成块。纯函数，便于单测。
  */
 export function groupTurns(
   items: ChatViewTimelineRenderItem[],
@@ -417,6 +418,14 @@ export function groupTurns(
     }
     if (item.kind === "message" && item.message.role === "system") {
       flush();
+      raw.push({ kind: "standalone", item, index });
+      return;
+    }
+    if (item.kind === "run-error") {
+      if (cur) {
+        cur.terminalAt = item.at;
+        flush();
+      }
       raw.push({ kind: "standalone", item, index });
       return;
     }
@@ -449,7 +458,7 @@ export function groupTurns(
 }
 
 function buildTurnBlock(turn: RawTurn, isLastTurn: boolean, ctx: GroupTurnsContext): TurnBlock {
-  const { user, members } = turn;
+  const { user, members, terminalAt } = turn;
   if (!user) {
     console.debug("[timeline] 轮次缺起点用户消息，按孤立轮处理", {
       firstKind: members[0]?.item.kind,
@@ -485,7 +494,7 @@ function buildTurnBlock(turn: RawTurn, isLastTurn: boolean, ctx: GroupTurnsConte
     intermediate,
     answer,
     active,
-    timing: computeTurnTiming(user, answer, members, active, ctx)
+    timing: computeTurnTiming(user, answer, members, active, ctx, terminalAt)
   };
 }
 
@@ -510,7 +519,8 @@ function computeTurnTiming(
   answer: MessageMember | undefined,
   members: TurnMember[],
   active: boolean,
-  ctx: GroupTurnsContext
+  ctx: GroupTurnsContext,
+  terminalAt?: string
 ): TurnTiming {
   if (active) {
     const startedAt =
@@ -524,7 +534,9 @@ function computeTurnTiming(
     return { mode: "unknown" };
   }
   // 完成/历史：最终答复 createdAt − user createdAt；无答复（失败/中止）用成员最大时间戳兜底。
-  const endMs = answer ? parseIsoMs(answer.item.message.createdAt) : maxMemberMs(members);
+  const endMs = answer
+    ? parseIsoMs(answer.item.message.createdAt)
+    : maxMemberMs(members, terminalAt);
   if (endMs === undefined) {
     return { mode: "unknown" };
   }
@@ -545,8 +557,11 @@ function parseIsoMs(iso: string): number | undefined {
   return Number.isFinite(ms) ? ms : undefined;
 }
 
-function maxMemberMs(members: TurnMember[]): number | undefined {
+function maxMemberMs(members: TurnMember[], terminalAt?: string): number | undefined {
   let max: number | undefined;
+  if (terminalAt) {
+    max = parseIsoMs(terminalAt);
+  }
   for (const member of members) {
     const ms = parseIsoMs(member.item.at);
     if (ms === undefined) {

@@ -281,6 +281,7 @@ export function Composer() {
   const currentComposerRunning =
     view !== "home" && isRunning && (Boolean(activeRunId) || Boolean(activeRunClientRequestId));
   const awaitingAskUser = currentComposerRunning && pendingTool?.name === "AskUserQuestion";
+  const showProjectSelector = view === "home";
   const slashQuery = getSlashQuery(value, selectionStart);
   const filteredSlashCommands = useMemo(
     () => filterSlashCommands(slashCommands, slashQuery ?? ""),
@@ -979,13 +980,14 @@ export function Composer() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <DropdownMenu
-          onOpenChange={(open) => {
-            if (!open) {
-              setProjectQuery("");
-            }
-          }}
-        >
+        {showProjectSelector ? (
+          <DropdownMenu
+            onOpenChange={(open) => {
+              if (!open) {
+                setProjectQuery("");
+              }
+            }}
+          >
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
@@ -1068,7 +1070,8 @@ export function Composer() {
               <Check className={cn("size-4", activeProject ? "opacity-0" : "opacity-100")} />
             </DropdownMenuItem>
           </DropdownMenuContent>
-        </DropdownMenu>
+          </DropdownMenu>
+        ) : null}
 
         {planMode ? (
           <button

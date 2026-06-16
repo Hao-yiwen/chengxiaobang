@@ -3,9 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FilePlusIcon as FilePlus } from "@phosphor-icons/react";
 import { ApprovalDock } from "./components/ApprovalDock";
+import { ArtifactFloatingPanel } from "./components/ArtifactFloatingPanel";
 import { ChatView } from "./components/ChatView";
 import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
+import { ProgressFloatingPanel } from "./components/ProgressFloatingPanel";
 import { ConnectPhoneView } from "./components/ConnectPhoneView";
 import { ConfirmDialogProvider } from "./components/ConfirmDialog";
 import { DevToolsFloatingButton } from "./components/DevToolsFloatingButton";
@@ -240,13 +242,22 @@ export function App(props: { client?: ApiClient }) {
                           {activeSession?.title ?? ""}
                         </span>
                       </header>
-                      <ChatView />
-                      <div className="chat-layout-scope flex-none bg-background pb-3 pt-2">
-                        <div className="px-12">
-                          <div data-testid="chat-composer-column" className="chat-primary-column">
-                            <ApprovalDock />
-                            {hideComposerForDecisionDock ? null : <Composer />}
+                      {/* chat-layout-scope 提供 @container 查询基准，relative 为浮动面板提供定位参照。
+                          内层 px-12 包裹 ChatView 与 Composer，两列共用同一横向内距，从源头消除宽度差异。 */}
+                      <div className="chat-layout-scope relative flex min-h-0 flex-1 flex-col">
+                        <div className="flex min-h-0 flex-1 flex-col px-12">
+                          <ChatView />
+                          <div className="chat-composer-dock flex-none pb-3 pt-0">
+                            <div data-testid="chat-composer-column" className="chat-primary-column">
+                              <ApprovalDock />
+                              {hideComposerForDecisionDock ? null : <Composer />}
+                            </div>
                           </div>
+                        </div>
+                        {/* 浮动面板：绝对定位于 chat-layout-scope 右侧，@container 控制显隐 */}
+                        <div data-testid="chat-floating-stack" className="chat-floating-stack">
+                          <ArtifactFloatingPanel />
+                          <ProgressFloatingPanel />
                         </div>
                       </div>
                     </>

@@ -1,61 +1,241 @@
-const iconModules = import.meta.glob<string>("../assets/file-type-icons/*.svg", {
-  eager: true,
-  import: "default",
-  query: "?url"
-});
+import type { ComponentType } from "react";
+import {
+  AstroIcon,
+  BabelIcon,
+  BashIcon,
+  BiomeIcon,
+  BrowserslistIcon,
+  BunIcon,
+  CIcon,
+  CppIcon,
+  CssIcon,
+  DatabaseIcon,
+  DefaultIcon,
+  DockerIcon,
+  EslintIcon,
+  ExcelDocumentIcon,
+  GitIcon,
+  GoIcon,
+  GraphqlIcon,
+  HtmlIcon,
+  ImageIcon,
+  JavaIcon,
+  JavascriptIcon,
+  JsonIcon,
+  MarkdownIcon,
+  McpIcon,
+  NextjsIcon,
+  NotebookIcon,
+  NpmIcon,
+  PdfIcon,
+  PhpIcon,
+  PostcssIcon,
+  PrettierIcon,
+  PythonIcon,
+  ReactIcon,
+  RubyIcon,
+  RustIcon,
+  SassIcon,
+  StylelintIcon,
+  SvgIcon,
+  SvelteIcon,
+  SwiftIcon,
+  TailwindIcon,
+  TerraformIcon,
+  TextIcon,
+  TomlIcon,
+  TypescriptIcon,
+  ViteIcon,
+  VueIcon,
+  WasmIcon,
+  WebpackIcon,
+  WordDocumentFileIcon,
+  YmlIcon,
+  ZigIcon,
+  ZipIcon,
+  type FileIconSvgProps
+} from "@/assets/file-type-icons";
 
-const LANGUAGE_ICON_ALIASES: Record<string, string> = {
-  bash: "bash",
-  c: "c",
-  cc: "cpp",
-  cjs: "javascript",
-  cpp: "cpp",
-  csharp: "default",
-  css: "css",
-  dockerfile: "docker",
-  go: "go",
-  golang: "go",
-  graphql: "graphql",
-  gql: "graphql",
-  html: "html",
-  javascript: "javascript",
-  js: "javascript",
-  json: "json",
-  jsonc: "json",
-  jsx: "react",
-  markdown: "markdown",
-  md: "markdown",
-  mdx: "markdown",
-  mjs: "javascript",
-  py: "python",
-  python: "python",
-  rb: "ruby",
-  ruby: "ruby",
-  rs: "rust",
-  rust: "rust",
-  sass: "sass",
-  scss: "sass",
-  sh: "bash",
-  shell: "bash",
-  shellscript: "bash",
-  shellsession: "bash",
-  sql: "database",
-  svelte: "svelte",
-  swift: "swift",
-  ts: "typescript",
-  tsx: "react",
-  text: "text",
-  plaintext: "text",
-  txt: "text",
-  typescript: "typescript",
-  vue: "vue",
-  yaml: "yml",
-  yml: "yml",
-  zig: "zig",
-  zsh: "bash"
+export type FileIconComponent = ComponentType<FileIconSvgProps>;
+
+const LANGUAGE_ICON_BY_NAME: Record<string, FileIconComponent> = {
+  astro: AstroIcon,
+  bash: BashIcon,
+  c: CIcon,
+  cc: CppIcon,
+  cjs: JavascriptIcon,
+  cpp: CppIcon,
+  csharp: DefaultIcon,
+  css: CssIcon,
+  dockerfile: DockerIcon,
+  go: GoIcon,
+  golang: GoIcon,
+  graphql: GraphqlIcon,
+  gql: GraphqlIcon,
+  html: HtmlIcon,
+  javascript: JavascriptIcon,
+  js: JavascriptIcon,
+  json: JsonIcon,
+  jsonc: JsonIcon,
+  jsx: ReactIcon,
+  markdown: MarkdownIcon,
+  md: MarkdownIcon,
+  mdx: MarkdownIcon,
+  mjs: JavascriptIcon,
+  py: PythonIcon,
+  python: PythonIcon,
+  rb: RubyIcon,
+  ruby: RubyIcon,
+  rs: RustIcon,
+  rust: RustIcon,
+  sass: SassIcon,
+  scss: SassIcon,
+  sh: BashIcon,
+  shell: BashIcon,
+  shellscript: BashIcon,
+  shellsession: BashIcon,
+  sql: DatabaseIcon,
+  svelte: SvelteIcon,
+  swift: SwiftIcon,
+  ts: TypescriptIcon,
+  tsx: ReactIcon,
+  text: TextIcon,
+  plaintext: TextIcon,
+  txt: TextIcon,
+  typescript: TypescriptIcon,
+  vue: VueIcon,
+  wasm: WasmIcon,
+  yaml: YmlIcon,
+  yml: YmlIcon,
+  zig: ZigIcon,
+  zsh: BashIcon
 };
 
-const DEFAULT_ICON_TOKEN = "default";
+const FILE_NAME_ICON_BY_NAME: Record<string, FileIconComponent> = {
+  ".babelrc": BabelIcon,
+  ".browserslistrc": BrowserslistIcon,
+  ".dockerignore": DockerIcon,
+  ".eslintignore": EslintIcon,
+  ".eslintrc": EslintIcon,
+  ".gitattributes": GitIcon,
+  ".gitignore": GitIcon,
+  ".gitlab-ci.yml": YmlIcon,
+  ".gitmodules": GitIcon,
+  ".npmrc": NpmIcon,
+  ".prettierignore": PrettierIcon,
+  ".prettierrc": PrettierIcon,
+  ".stylelintrc": StylelintIcon,
+  "babel.config.js": BabelIcon,
+  "babel.config.json": BabelIcon,
+  "babel.config.mjs": BabelIcon,
+  "bun.lock": BunIcon,
+  "bun.lockb": BunIcon,
+  "dockerfile": DockerIcon,
+  "eslint.config.cjs": EslintIcon,
+  "eslint.config.js": EslintIcon,
+  "eslint.config.mjs": EslintIcon,
+  "eslint.config.ts": EslintIcon,
+  "mcp.json": McpIcon,
+  "next.config.js": NextjsIcon,
+  "next.config.mjs": NextjsIcon,
+  "next.config.ts": NextjsIcon,
+  "package-lock.json": NpmIcon,
+  "package.json": NpmIcon,
+  "pnpm-lock.yaml": NpmIcon,
+  "postcss.config.cjs": PostcssIcon,
+  "postcss.config.js": PostcssIcon,
+  "postcss.config.mjs": PostcssIcon,
+  "postcss.config.ts": PostcssIcon,
+  "prettier.config.cjs": PrettierIcon,
+  "prettier.config.js": PrettierIcon,
+  "prettier.config.mjs": PrettierIcon,
+  "prettier.config.ts": PrettierIcon,
+  "stylelint.config.cjs": StylelintIcon,
+  "stylelint.config.js": StylelintIcon,
+  "stylelint.config.mjs": StylelintIcon,
+  "stylelint.config.ts": StylelintIcon,
+  "tailwind.config.cjs": TailwindIcon,
+  "tailwind.config.js": TailwindIcon,
+  "tailwind.config.mjs": TailwindIcon,
+  "tailwind.config.ts": TailwindIcon,
+  "tsconfig.json": TypescriptIcon,
+  "vite.config.js": ViteIcon,
+  "vite.config.mjs": ViteIcon,
+  "vite.config.ts": ViteIcon,
+  "webpack.config.cjs": WebpackIcon,
+  "webpack.config.js": WebpackIcon,
+  "webpack.config.mjs": WebpackIcon,
+  "webpack.config.ts": WebpackIcon,
+  "yarn.lock": NpmIcon
+};
+
+const FILE_NAME_PREFIX_ICONS: Array<[prefix: string, icon: FileIconComponent]> = [
+  ["dockerfile.", DockerIcon],
+  [".eslintrc.", EslintIcon],
+  [".prettierrc.", PrettierIcon],
+  [".stylelintrc.", StylelintIcon]
+];
+
+const FILE_EXTENSION_ICONS: Record<string, FileIconComponent> = {
+  astro: AstroIcon,
+  biome: BiomeIcon,
+  c: CIcon,
+  cc: CppIcon,
+  cjs: JavascriptIcon,
+  cpp: CppIcon,
+  csv: ExcelDocumentIcon,
+  css: CssIcon,
+  db: DatabaseIcon,
+  doc: WordDocumentFileIcon,
+  docx: WordDocumentFileIcon,
+  go: GoIcon,
+  gql: GraphqlIcon,
+  graphql: GraphqlIcon,
+  h: CIcon,
+  hpp: CppIcon,
+  html: HtmlIcon,
+  ipynb: NotebookIcon,
+  java: JavaIcon,
+  jpeg: ImageIcon,
+  jpg: ImageIcon,
+  js: JavascriptIcon,
+  json: JsonIcon,
+  jsonc: JsonIcon,
+  jsx: ReactIcon,
+  lock: NpmIcon,
+  log: TextIcon,
+  md: MarkdownIcon,
+  mdx: MarkdownIcon,
+  mjs: JavascriptIcon,
+  pdf: PdfIcon,
+  php: PhpIcon,
+  png: ImageIcon,
+  py: PythonIcon,
+  rb: RubyIcon,
+  rs: RustIcon,
+  sass: SassIcon,
+  scss: SassIcon,
+  sh: BashIcon,
+  sqlite: DatabaseIcon,
+  sqlite3: DatabaseIcon,
+  sql: DatabaseIcon,
+  svg: SvgIcon,
+  svelte: SvelteIcon,
+  swift: SwiftIcon,
+  tf: TerraformIcon,
+  toml: TomlIcon,
+  ts: TypescriptIcon,
+  tsx: ReactIcon,
+  txt: TextIcon,
+  vue: VueIcon,
+  wasm: WasmIcon,
+  xls: ExcelDocumentIcon,
+  xlsx: ExcelDocumentIcon,
+  yaml: YmlIcon,
+  yml: YmlIcon,
+  zig: ZigIcon,
+  zip: ZipIcon
+};
 
 export function normalizeCodeLanguage(language: string | undefined): string {
   const normalized = (language ?? "").trim().toLowerCase();
@@ -65,12 +245,37 @@ export function normalizeCodeLanguage(language: string | undefined): string {
   return normalized.replace(/^language-/, "");
 }
 
-export function resolveCodeLanguageIcon(language: string | undefined): string {
+export function resolveCodeLanguageIcon(language: string | undefined): FileIconComponent {
   const normalized = normalizeCodeLanguage(language);
-  const token = LANGUAGE_ICON_ALIASES[normalized] ?? normalized;
-  return iconForToken(token) ?? iconForToken(DEFAULT_ICON_TOKEN) ?? "";
+  return LANGUAGE_ICON_BY_NAME[normalized] ?? FILE_EXTENSION_ICONS[normalized] ?? DefaultIcon;
 }
 
-function iconForToken(token: string): string | undefined {
-  return iconModules[`../assets/file-type-icons/${token}.svg`];
+export function resolveFileTypeIcon(path: string | undefined): FileIconComponent {
+  const baseName = basenameOf(path ?? "").toLowerCase();
+  const nameIcon = FILE_NAME_ICON_BY_NAME[baseName] ?? prefixIconForName(baseName);
+  if (nameIcon) {
+    return nameIcon;
+  }
+  return resolveCodeLanguageIcon(extensionOf(baseName));
+}
+
+function basenameOf(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  if (!trimmed) {
+    return path;
+  }
+  return trimmed.split(/[\\/]/).pop() ?? trimmed;
+}
+
+function extensionOf(path: string): string {
+  const base = basenameOf(path);
+  if (base.startsWith(".") && !base.includes(".", 1)) {
+    return base.slice(1).toLowerCase();
+  }
+  const dot = base.lastIndexOf(".");
+  return dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
+}
+
+function prefixIconForName(name: string): FileIconComponent | undefined {
+  return FILE_NAME_PREFIX_ICONS.find(([prefix]) => name.startsWith(prefix))?.[1];
 }

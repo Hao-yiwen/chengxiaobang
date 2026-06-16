@@ -87,7 +87,8 @@ describe("ToolCallGroup", () => {
       />
     );
 
-    expect(screen.getByText("1 失败")).toBeInTheDocument();
+    expect(screen.getByText("1 失败")).toHaveClass("text-muted-slate");
+    expect(screen.getByText("1 失败")).not.toHaveClass("text-destructive");
     expect(screen.queryByText("boom")).not.toBeInTheDocument();
   });
 

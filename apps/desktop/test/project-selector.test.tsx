@@ -6,7 +6,7 @@ import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from "vite
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
-import type { Project, ProviderConfig } from "@chengxiaobang/shared";
+import type { Project, ProviderConfig, Session } from "@chengxiaobang/shared";
 
 const provider: ProviderConfig = {
   id: "deepseek",
@@ -31,6 +31,18 @@ function makeProject(id: string, name: string): Project {
 
 const alpha = makeProject("project_alpha", "alpha-app");
 const beta = makeProject("project_beta", "beta-tools");
+
+function makeSession(id: string, title: string, projectId: string | null): Session {
+  return {
+    id,
+    projectId,
+    title,
+    providerId: "deepseek",
+    accessMode: "approval",
+    createdAt: "2026-06-08T00:00:00.000Z",
+    updatedAt: "2026-06-08T00:00:00.000Z"
+  };
+}
 
 function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
@@ -150,6 +162,22 @@ describe("项目选择器下拉", () => {
 
     expect(await screen.findByText("新建空白项目")).toBeInTheDocument();
     expect(screen.getByText("使用现有文件夹")).toBeInTheDocument();
+  });
+
+  it("进入会话页后不再展示项目选择器", async () => {
+    const session = makeSession("session_alpha", "alpha 会话", alpha.id);
+    const client = createClient({
+      listSessions: vi.fn(async () => [session])
+    });
+    useAppStore.setState({ view: "chat", activeSessionId: session.id });
+
+    render(<App client={client} />);
+    await screen.findByTestId("chat-scroll");
+
+    const composer = within(screen.getByTestId("composer-shell"));
+    expect(composer.getByLabelText("输入消息")).toBeInTheDocument();
+    expect(composer.queryByRole("button", { name: "alpha-app" })).not.toBeInTheDocument();
+    expect(composer.queryByRole("button", { name: "对话" })).not.toBeInTheDocument();
   });
 });
 

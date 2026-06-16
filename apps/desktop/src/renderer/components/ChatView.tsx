@@ -19,11 +19,9 @@ import { useTranslation } from "react-i18next";
 import type { Message, MessageAttachment, ToolCall } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { AssistantMarkdownWithArtifacts } from "@/components/AssistantMarkdownWithArtifacts";
-import { ArtifactFloatingPanel } from "@/components/ArtifactFloatingPanel";
 import { Markdown } from "@/components/Markdown";
 import { MessageActions, MessageEditor } from "@/components/MessageActions";
 import { PlanCard } from "@/components/PlanCard";
-import { ProgressFloatingPanel } from "@/components/ProgressFloatingPanel";
 import { ReasoningPanel } from "@/components/ReasoningPanel";
 import { ScrollToBottomButton } from "@/components/ScrollToBottomButton";
 import { ToolActivityStatus } from "@/components/ToolActivityStatus";
@@ -119,6 +117,27 @@ export function ChatView() {
     { sessionId?: string; lastId?: string; length: number } | undefined
   >(undefined);
   const [nearBottom, setNearBottom] = useState(true);
+  const [scrollProgress, setScrollProgress] = useState({
+    visible: false,
+    top: 0,
+    height: 100
+  });
+
+  const syncScrollProgress = useCallback((el: HTMLDivElement | null = scrollRef.current) => {
+    if (!el) {
+      return;
+    }
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    if (maxScroll <= 1) {
+      setScrollProgress((current) =>
+        current.visible ? { visible: false, top: 0, height: 100 } : current
+      );
+      return;
+    }
+    const height = Math.max(8, Math.min(100, (el.clientHeight / el.scrollHeight) * 100));
+    const top = Math.min(100 - height, Math.max(0, (el.scrollTop / maxScroll) * (100 - height)));
+    setScrollProgress({ visible: true, top, height });
+  }, []);
 
   const hasActiveTimelineTool = Boolean(runningTool);
   const showActivityStatus =
@@ -221,7 +240,8 @@ export function ChatView() {
       }
     }
     setNearBottom(isNearBottom(el));
-  }, []);
+    syncScrollProgress(el);
+  }, [syncScrollProgress]);
 
   // Anchor a just-sent user message to the viewport top (claude.ai-style).
   // The echo only ever arrives while the run is active; history loads and the
@@ -267,6 +287,7 @@ export function ChatView() {
       const target = anchorScrollTop(top);
       el.scrollTop = target;
       setNearBottom(isNearBottom(el));
+      syncScrollProgress(el);
       console.debug("[ChatView] 锚定用户消息到视口顶部", { id: last.id, target });
       return;
     }
@@ -279,9 +300,10 @@ export function ChatView() {
       }
       el.scrollTop = el.scrollHeight;
       setNearBottom(true);
+      syncScrollProgress(el);
       console.debug("[ChatView] 历史加载完成，滚动到底部", { count: messages.length });
     }
-  }, [messages, isRunning]);
+  }, [messages, isRunning, syncScrollProgress]);
 
   // While content streams in, shrink the spacer 1:1 with growth so the view
   // stays put (no auto-scroll — the user may still be reading above).
@@ -435,11 +457,9 @@ export function ChatView() {
     ) : null;
 
   return (
-    // 滚动区铺满主区域；内容列由共享布局左偏，和底部输入列保持同一个锚点。
-    <div className="chat-layout-scope relative flex min-h-0 w-full flex-1 flex-col">
-      {/* 为竖直滚动条预留固定槽位：内容超一屏出现滚动条时不再挤占内容宽度、
-          也不随滚动条出现/消失（含右侧面板展开导致宽度变化时）而回流抖动，
-          与审批区、右侧面板等其他滚动区的处理保持一致。 */}
+    // 滚动区铺满主区域；chat-layout-scope 由上层 App 统一提供，与输入框共用同一容器基准。
+    <div className="relative flex min-h-0 w-full flex-1 flex-col">
+      {/* 聊天主滚动条不预留 gutter，避免回复列可用宽度小于底部输入列。 */}
       <div
         ref={scrollRef}
         data-testid="chat-scroll"
@@ -447,14 +467,15 @@ export function ChatView() {
           const el = scrollRef.current;
           if (el) {
             setNearBottom(isNearBottom(el));
+            syncScrollProgress(el);
           }
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-12 [scrollbar-gutter:stable]"
+        className="chat-scroll-area min-h-0 flex-1 overflow-y-auto"
       >
         <div
           ref={contentColumnRef}
           data-testid="chat-content-column"
-          className="chat-primary-column relative flex flex-col py-5"
+          className="chat-primary-column relative flex flex-col pt-5 pb-0"
         >
           {blocks.map((block) =>
             block.kind === "standalone" ? (
@@ -480,18 +501,21 @@ export function ChatView() {
           <div ref={bottomRef} />
         </div>
       </div>
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] h-5 bg-gradient-to-b from-background/0 to-background/75"
-      />
 
-      <div data-testid="chat-floating-stack" className="chat-floating-stack">
-        <ArtifactFloatingPanel />
-        <ProgressFloatingPanel />
-      </div>
+      {scrollProgress.visible ? (
+        <div aria-hidden="true" className="chat-scroll-progress">
+          <div
+            className="chat-scroll-progress-thumb"
+            style={{
+              height: `${scrollProgress.height}%`,
+              top: `${scrollProgress.top}%`
+            }}
+          />
+        </div>
+      ) : null}
 
       {!nearBottom ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 px-12">
+        <div className="pointer-events-none absolute inset-x-0 bottom-10 z-10">
           <div className="chat-primary-column flex justify-center">
             <ScrollToBottomButton
               onClick={() =>

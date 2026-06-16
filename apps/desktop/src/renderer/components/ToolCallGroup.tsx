@@ -17,12 +17,8 @@ interface ToolCallGroupProps {
 }
 
 /**
- * A run of consecutive tool calls folded into one summary line, styled like
- * the reasoning panel header (muted text, no card chrome, left-aligned with
- * it): "读取 3 个文件 · 检索 2 次 ⌄". While a call is running the header
- * shows a spinner plus that call's description; failures surface as a red
- * count but never auto-expand. Expanding reveals one ToolCallLine per call
- * behind the same left rule the reasoning body uses.
+ * 连续普通工具调用折成一行摘要，视觉与思考面板头部保持一致：弱化文字、无卡片边框、
+ * 与正文左对齐。运行中显示 spinner 和当前工具描述；失败只显示中性计数，不自动展开。
  */
 export function ToolCallGroup({ toolCalls, onOpenFile }: ToolCallGroupProps) {
   const { t } = useTranslation();
@@ -60,7 +56,7 @@ export function ToolCallGroup({ toolCalls, onOpenFile }: ToolCallGroupProps) {
           {activeLabel ? ` · ${t(activeLabel.key, activeLabel.params)}` : ""}
         </span>
         {failedCount > 0 ? (
-          <span className="flex-none font-mono text-micro text-destructive">
+          <span className="flex-none font-mono text-micro text-muted-slate">
             {t("chat.toolGroup.failed", { count: failedCount })}
           </span>
         ) : null}

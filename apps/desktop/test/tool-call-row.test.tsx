@@ -60,10 +60,12 @@ describe("ToolCallRow", () => {
     expect(screen.queryByText("已完成")).not.toBeInTheDocument();
 
     rerender(<ToolCallRow toolCall={toolCall({ status: "failed", result: "boom" })} />);
-    expect(screen.getByText("失败")).toBeInTheDocument();
+    expect(screen.getByText("失败")).toHaveClass("text-muted-slate");
+    expect(screen.getByText("失败")).not.toHaveClass("text-destructive");
 
     rerender(<ToolCallRow toolCall={toolCall({ status: "rejected" })} />);
-    expect(screen.getByText("已拒绝")).toBeInTheDocument();
+    expect(screen.getByText("已拒绝")).toHaveClass("text-muted-slate");
+    expect(screen.getByText("已拒绝")).not.toHaveClass("text-destructive");
 
     rerender(<ToolCallRow toolCall={toolCall({ status: "pending_approval" })} />);
     expect(screen.getByText("待批准")).toBeInTheDocument();
@@ -91,6 +93,23 @@ describe("ToolCallRow", () => {
     );
 
     expect(screen.queryByText("智能审批：命令会删除文件")).not.toBeInTheDocument();
+  });
+
+  it("renders skill load failures with neutral text instead of red", () => {
+    render(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "Skill",
+          args: { skill: "ppt" },
+          status: "failed",
+          result: "加载失败：缺少文件"
+        })}
+      />
+    );
+
+    expect(screen.getByText("加载技能失败 ppt")).toBeInTheDocument();
+    expect(screen.getByText("加载失败：缺少文件")).toHaveClass("text-muted-foreground");
+    expect(screen.getByText("加载失败：缺少文件")).not.toHaveClass("text-destructive");
   });
 
   it("renders an Edit call as a +/- diff when expanded", () => {

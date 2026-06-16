@@ -6,7 +6,7 @@ import { workedParts } from "@/lib/work-timer";
 import { cn } from "@/lib/utils";
 
 /**
- * 一个 AI 轮次顶部的「已工作 X 分 Y 秒」折叠头。运行中实时计时（每 250ms）、shimmer、
+ * 一个 AI 轮次顶部的「已工作 X 分 Y 秒」折叠头。运行中实时计时（每 250ms）、
  * 默认展开承载中间过程；完成/历史态定格耗时、默认折叠、可点击展开；中间过程为空时退化为
  * 不可展开的纯标签。折叠头外的内容（上方 user 消息、下方最终答复）由 ChatView 渲染。
  *
@@ -63,11 +63,11 @@ export function WorkTimer({
           <ChevronDown
             className={cn("size-4 transition-transform duration-200", open ? "" : "-rotate-90")}
           />
-          <span className={cn(running && "shimmer-text")}>{header}</span>
+          <span>{header}</span>
         </button>
       ) : (
         <div className="flex items-center gap-2 text-body-xs font-medium text-muted-foreground">
-          <span className={cn(running && "shimmer-text")}>{header}</span>
+          <span>{header}</span>
         </div>
       )}
       {/* 折叠头下方常驻分隔线（折叠态 / 展开态都显示），呼应设计稿的轮次分隔。 */}
@@ -75,7 +75,7 @@ export function WorkTimer({
       {collapsible ? (
         <div
           className={cn(
-            "grid transition-[grid-template-rows] duration-300 ease-out",
+            "grid",
             open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
           )}
         >

@@ -1,7 +1,11 @@
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { CheckIcon, CopyIcon, TextAlignLeftIcon as WrapText } from "@phosphor-icons/react";
 import { CodeBlock } from "streamdown";
-import { normalizeCodeLanguage, resolveCodeLanguageIcon } from "@/lib/code-language-icons";
+import {
+  normalizeCodeLanguage,
+  resolveCodeLanguageIcon,
+  type FileIconComponent
+} from "@/lib/code-language-icons";
 import {
   Tooltip,
   TooltipContent,
@@ -18,10 +22,6 @@ export interface CodeBlockPanelProps {
   ariaLabel?: string;
 }
 
-type CodeBlockIconStyle = CSSProperties & {
-  "--cxb-code-language-icon": string;
-};
-
 export function CodeBlockPanel({
   code,
   language,
@@ -31,10 +31,7 @@ export function CodeBlockPanel({
 }: CodeBlockPanelProps) {
   const [wrap, setWrap] = useState(false);
   const normalizedLanguage = normalizeCodeLanguage(language);
-  const iconUrl = resolveCodeLanguageIcon(normalizedLanguage);
-  const iconStyle: CodeBlockIconStyle = {
-    "--cxb-code-language-icon": `url("${iconUrl}")`
-  };
+  const Icon = resolveCodeLanguageIcon(normalizedLanguage);
   const wrapLabel = wrap ? "关闭自动换行" : "自动换行";
   const actions = (
     <TooltipProvider delayDuration={300}>
@@ -61,25 +58,31 @@ export function CodeBlockPanel({
     <div
       className={cn("cxb-code-block-shell", wrap && "is-wrapped", className)}
       data-code-wrap={wrap ? "true" : "false"}
-      style={iconStyle}
       aria-label={ariaLabel}
     >
       {normalizedLanguage === "text" ? (
         <PlainTextCodeBlock
           actions={actions}
           code={code}
+          Icon={Icon}
           isIncomplete={isIncomplete}
           language={normalizedLanguage}
         />
       ) : (
-        <CodeBlock
-          code={code}
-          isIncomplete={isIncomplete}
-          language={normalizedLanguage}
-          lineNumbers={false}
-        >
-          {actions}
-        </CodeBlock>
+        <>
+          <Icon
+            aria-hidden
+            className="cxb-svg-icon cxb-code-block-header-icon size-3 flex-none opacity-70"
+          />
+          <CodeBlock
+            code={code}
+            isIncomplete={isIncomplete}
+            language={normalizedLanguage}
+            lineNumbers={false}
+          >
+            {actions}
+          </CodeBlock>
+        </>
       )}
     </div>
   );
@@ -88,11 +91,13 @@ export function CodeBlockPanel({
 function PlainTextCodeBlock({
   actions,
   code,
+  Icon,
   isIncomplete,
   language
 }: {
   actions: ReactNode;
   code: string;
+  Icon: FileIconComponent;
   isIncomplete: boolean;
   language: string;
 }) {
@@ -102,7 +107,8 @@ function PlainTextCodeBlock({
       data-language={language}
       data-streamdown="code-block"
     >
-      <div data-language={language} data-streamdown="code-block-header">
+      <div data-has-inline-icon="true" data-language={language} data-streamdown="code-block-header">
+        <Icon aria-hidden className="cxb-svg-icon size-3 flex-none opacity-70" />
         <span>{language}</span>
       </div>
       <div>

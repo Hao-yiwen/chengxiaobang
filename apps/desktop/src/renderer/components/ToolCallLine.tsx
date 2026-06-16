@@ -98,7 +98,7 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
             </span>
           ) : null}
           {isError ? (
-            <span className="flex-none text-micro text-destructive">
+            <span className="flex-none text-micro text-muted-slate">
               {t(toolCall.status === "failed" ? "chat.toolStatus.failed" : "chat.toolStatus.rejected")}
             </span>
           ) : null}

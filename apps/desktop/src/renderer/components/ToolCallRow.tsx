@@ -60,7 +60,7 @@ function ToolStatusIcon({ toolCall }: { toolCall: ToolCall }) {
     return <Loader2 className="size-3.5 flex-none animate-spin text-muted-foreground" />;
   }
   if (isError) {
-    return <X className="size-3.5 flex-none text-destructive" />;
+    return <X className="size-3.5 flex-none text-muted-foreground" />;
   }
   return <Check className="size-3.5 flex-none text-muted-foreground" />;
 }
@@ -195,7 +195,7 @@ function UseSkillChip({ toolCall }: { toolCall: ToolCall }) {
         </span>
       </div>
       {failed && toolCall.result ? (
-        <pre className="mt-1 max-h-[220px] overflow-auto whitespace-pre-wrap break-words rounded-sm bg-muted/50 px-3 py-2 font-mono text-micro leading-relaxed text-destructive">
+        <pre className="mt-1 max-h-[220px] overflow-auto whitespace-pre-wrap break-words rounded-sm bg-muted/50 px-3 py-2 font-mono text-micro leading-relaxed text-muted-foreground">
           {toolCall.result}
         </pre>
       ) : null}

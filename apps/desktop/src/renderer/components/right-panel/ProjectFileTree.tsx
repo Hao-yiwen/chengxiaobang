@@ -2,16 +2,13 @@ import {
   CaretDownIcon as ChevronDown,
   CaretRightIcon as ChevronRight,
   CircleNotchIcon as Loader2,
-  FileTextIcon as FileText,
-  FolderIcon as Folder,
-  FolderOpenIcon as FolderOpen,
   MagnifyingGlassIcon as Search,
   WarningCircleIcon as WarningCircle
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Project, ProjectFileEntry } from "@chengxiaobang/shared";
-import { iconForPath } from "@/lib/file-icon";
+import { resolveFileTypeIcon } from "@/lib/code-language-icons";
 import { gitStatusKind, type GitStatusKind } from "@/lib/git-diff";
 import { cn } from "@/lib/utils";
 import { getApiClient } from "@/store";
@@ -24,7 +21,6 @@ interface ProjectFileTreeProps {
   className?: string;
   showProjectPath?: boolean;
   onOpenFile(path: string): void;
-  onPickFile?: () => void;
 }
 
 type SearchState =
@@ -33,7 +29,7 @@ type SearchState =
   | { status: "error"; results: string[]; error: string };
 
 const ROOT_DIRECTORY = ".";
-const TREE_ROW_HEIGHT = "h-8";
+const TREE_ROW_HEIGHT = "h-7";
 
 /** 项目文件树：右侧工作台共用的文件导航、搜索与选中态。 */
 export function ProjectFileTree({
@@ -43,8 +39,7 @@ export function ProjectFileTree({
   title,
   className,
   showProjectPath = true,
-  onOpenFile,
-  onPickFile
+  onOpenFile
 }: ProjectFileTreeProps) {
   const { t } = useTranslation();
   const [entriesByDirectory, setEntriesByDirectory] = useState<Record<string, ProjectFileEntry[]>>(
@@ -277,18 +272,6 @@ export function ProjectFileTree({
           </div>
         )}
       </div>
-      {onPickFile ? (
-        <div className="flex-none border-t px-4 py-3">
-          <button
-            type="button"
-            onClick={onPickFile}
-            className="flex items-center gap-1.5 rounded-sm border bg-card px-3 py-1.5 text-micro text-foreground transition-colors hover:bg-muted"
-          >
-            <FolderOpen className="size-3.5" />
-            {t("rightPanel.pickFile")}
-          </button>
-        </div>
-      ) : null}
     </aside>
   );
 
@@ -298,8 +281,6 @@ export function ProjectFileTree({
     const children = entriesByDirectory[entry.path] ?? [];
     const loading = Boolean(loadingDirectories[entry.path]);
     const isSelected = selectedRelativePath === entry.path;
-    const paddingLeft = 10 + depth * 14;
-    const Icon = isDirectory ? (isExpanded ? FolderOpen : Folder) : iconForPath(entry.path);
 
     return (
       <div key={entry.path}>
@@ -307,13 +288,13 @@ export function ProjectFileTree({
           type="button"
           onClick={() => (isDirectory ? toggleDirectory(entry) : openFile(entry.path))}
           className={cn(
-            "flex w-full min-w-0 items-center gap-1.5 rounded-xs pr-2 text-left text-caption text-foreground transition-colors hover:bg-muted",
+            "flex w-full min-w-0 items-center gap-1 rounded-xs px-1.5 pr-2 text-left text-caption text-foreground transition-colors hover:bg-muted",
             TREE_ROW_HEIGHT,
             isSelected && "bg-muted"
           )}
-          style={{ paddingLeft }}
           title={entry.path}
         >
+          <TreeIndentGuides depth={depth} />
           {isDirectory ? (
             isExpanded ? (
               <ChevronDown className="size-3.5 flex-none text-muted-foreground" />
@@ -323,7 +304,7 @@ export function ProjectFileTree({
           ) : (
             <span className="w-3.5 flex-none" />
           )}
-          <Icon className="size-3.5 flex-none text-muted-foreground" />
+          {isDirectory ? null : <FileTypeIcon path={entry.path} />}
           <span className="min-w-0 flex-1 truncate font-mono text-micro">{entry.name}</span>
           {loading ? <Loader2 className="size-3 animate-spin text-muted-foreground" /> : null}
           {!isDirectory ? <GitStatusMark kind={statusByPath[entry.path]} /> : null}
@@ -334,6 +315,24 @@ export function ProjectFileTree({
       </div>
     );
   }
+}
+
+function TreeIndentGuides({ depth }: { depth: number }) {
+  if (depth <= 0) {
+    return null;
+  }
+  return (
+    <span className="flex h-full flex-none" aria-hidden="true">
+      {Array.from({ length: depth }).map((_, index) => (
+        <span key={index} className="relative h-full w-3.5 flex-none">
+          <span
+            data-testid="project-file-tree-guide"
+            className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border"
+          />
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function SearchResults(props: {
@@ -364,7 +363,6 @@ function SearchResults(props: {
   return (
     <div className="space-y-0.5">
       {props.state.results.map((path) => {
-        const Icon = iconForPath(path);
         const isSelected = props.selectedPath === path;
         return (
           <button
@@ -372,12 +370,12 @@ function SearchResults(props: {
             type="button"
             onClick={() => props.onOpenFile(path)}
             className={cn(
-              "flex h-8 w-full min-w-0 items-center gap-2 rounded-xs px-2 text-left text-caption text-foreground transition-colors hover:bg-muted",
+              "flex h-7 w-full min-w-0 items-center gap-1.5 rounded-xs px-2 text-left text-caption text-foreground transition-colors hover:bg-muted",
               isSelected && "bg-muted"
             )}
             title={path}
           >
-            <Icon className="size-3.5 flex-none text-muted-foreground" />
+            <FileTypeIcon path={path} />
             <span className="min-w-0 flex-1 truncate font-mono text-micro">{path}</span>
             <GitStatusMark kind={props.statusByPath[path]} />
           </button>
@@ -385,6 +383,11 @@ function SearchResults(props: {
       })}
     </div>
   );
+}
+
+function FileTypeIcon({ path }: { path: string }) {
+  const Icon = resolveFileTypeIcon(path);
+  return <Icon aria-hidden className="cxb-svg-icon size-3.5 flex-none" />;
 }
 
 function LoadFailure(props: { message: string; onRetry?: () => void }) {

@@ -3,14 +3,27 @@ import {
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
   ArrowSquareOutIcon as ExternalLink,
+  CheckIcon,
   CircleNotchIcon as Loader2,
+  CopyIcon,
   FileTextIcon as FileText,
-  FolderOpenIcon as FolderOpen,
   MagnifyingGlassMinusIcon as ZoomOut,
   MagnifyingGlassPlusIcon as ZoomIn,
+  TextAlignLeftIcon as WrapText,
   WarningCircleIcon as WarningCircle
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { bundledLanguages, codeToTokensWithThemes, type BundledLanguage } from "shiki";
+import {
+  normalizeCodeLanguage,
+  resolveFileTypeIcon
+} from "@/lib/code-language-icons";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from "@/components/ui/tooltip";
 import { useTranslation } from "react-i18next";
 import pdfjsModuleUrl from "pdfjs-dist/build/pdf.min.mjs?url";
 import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -46,6 +59,29 @@ type PreviewState =
 
 const ICON_BUTTON =
   "flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
+
+const SHIKI_THEMES = { light: "github-light", dark: "github-dark" } as const;
+const SHIKI_LANGUAGE_ALIASES: Record<string, string> = {
+  cjs: "javascript",
+  js: "javascript",
+  jsx: "jsx",
+  mjs: "javascript",
+  ts: "typescript",
+  tsx: "tsx",
+  yml: "yaml"
+};
+
+type HighlightTokenVariant = {
+  color?: string;
+  fontStyle?: number;
+};
+
+type HighlightToken = {
+  content: string;
+  variants?: Record<string, HighlightTokenVariant | undefined>;
+};
+
+type HighlightLine = HighlightToken[];
 
 export function FilePreviewPanel() {
   const { t } = useTranslation();
@@ -186,13 +222,6 @@ export function FilePreviewPanel() {
     };
   }, [path, previewContext, refreshKey, loadPreview]);
 
-  async function pickFile(): Promise<void> {
-    const paths = (await window.chengxiaobang?.pickFiles?.()) ?? [];
-    if (paths[0]) {
-      openFilePreview(paths[0]);
-    }
-  }
-
   async function openSystem(pathToOpen: string): Promise<void> {
     if (!window.chengxiaobang?.openPath) {
       setNotice(t("notice.openArtifactDesktopOnly"));
@@ -222,7 +251,6 @@ export function FilePreviewPanel() {
           project={project}
           selectedPath={path}
           onOpenFile={openProjectFile}
-          onPickFile={window.chengxiaobang?.pickFiles ? () => void pickFile() : undefined}
           className="w-[288px] flex-none border-l"
         />
       </div>
@@ -241,7 +269,7 @@ export function FilePreviewPanel() {
     }
 
     if (preview.status === "idle") {
-      return <EmptyPreview onPickFile={pickFile} projectMode={Boolean(project)} />;
+      return <EmptyPreview projectMode={Boolean(project)} />;
     }
 
     if (preview.status === "error") {
@@ -250,19 +278,19 @@ export function FilePreviewPanel() {
           title={preview.name ?? t("rightPanel.files")}
           path={preview.path}
           message={`${t("rightPanel.fileLoadFailed")}${preview.error ? `：${preview.error}` : ""}`}
-          onPickFile={pickFile}
           onOpenSystem={preview.path ? () => void openSystem(preview.path as string) : undefined}
         />
       );
     }
 
     const { info } = preview;
+    const HeaderIcon = resolveFileTypeIcon(info.path);
     return (
       <div className="flex h-full min-h-0 flex-col">
         <header className="flex flex-none items-start justify-between gap-3 border-b px-4 py-2.5">
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
-              <FileText className="size-4 flex-none text-muted-foreground" />
+              <HeaderIcon aria-hidden className="cxb-svg-icon size-4 flex-none shrink-0" />
               <p className="truncate font-mono text-micro font-medium">{info.name}</p>
             </div>
             <p
@@ -314,7 +342,7 @@ function PreviewBody(props: {
     case "json":
     case "code":
     case "text":
-      return <TextPreview text={state.text ?? ""} />;
+      return <CodePreview text={state.text ?? ""} extension={state.info.extension} />;
     case "html":
       return state.fileUrl ? <HtmlPreview url={state.fileUrl} name={state.info.name} /> : <MissingPreview />;
     case "image":
@@ -351,26 +379,14 @@ function PreviewBody(props: {
 }
 
 function EmptyPreview({
-  onPickFile,
   projectMode = false
 }: {
-  onPickFile: () => void;
   projectMode?: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-caption text-muted-foreground">
       <p>{t(projectMode ? "rightPanel.filesChooseFromTree" : "rightPanel.filesEmpty")}</p>
-      {window.chengxiaobang?.pickFiles ? (
-        <button
-          type="button"
-          onClick={() => void onPickFile()}
-          className="flex items-center gap-1.5 rounded-sm border bg-card px-3 py-1.5 text-micro text-foreground transition-colors hover:bg-muted"
-        >
-          <FolderOpen className="size-3.5" />
-          {t("rightPanel.pickFile")}
-        </button>
-      ) : null}
     </div>
   );
 }
@@ -379,7 +395,6 @@ function PreviewFailure(props: {
   title: string;
   path?: string;
   message: string;
-  onPickFile: () => void;
   onOpenSystem?: () => void;
 }) {
   const { t } = useTranslation();
@@ -401,34 +416,211 @@ function PreviewFailure(props: {
             {t("rightPanel.openWithSystem")}
           </button>
         ) : null}
-        {window.chengxiaobang?.pickFiles ? (
-          <button
-            type="button"
-            onClick={() => void props.onPickFile()}
-            className="rounded-sm border bg-card px-3 py-1.5 text-micro text-foreground transition-colors hover:bg-muted"
-          >
-            {t("rightPanel.pickFile")}
-          </button>
-        ) : null}
       </div>
     </div>
   );
 }
 
-function TextPreview({ text }: { text: string }) {
-  const lines = useMemo(() => text.split("\n"), [text]);
+function CodePreview({ text, extension }: { text: string; extension: string }) {
+  const [wrap, setWrap] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const displayText = useMemo(() => normalizeCodePreviewText(text), [text]);
+  const plainLines = useMemo(() => splitCodePreviewLines(displayText), [displayText]);
+  const highlight = useShikiHighlight(displayText, extension);
+  const language = highlight.language;
+
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    },
+    []
+  );
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("[FilePreviewPanel] 复制文件内容失败", { err });
+    }
+  };
+
   return (
-    <div className="h-full overflow-auto py-2 font-mono text-micro leading-relaxed">
-      {lines.map((line, index) => (
-        <div key={index} className="flex px-3">
-          <span className="w-10 flex-none select-none pr-3 text-right text-muted-slate/70">
-            {index + 1}
-          </span>
-          <span className="min-w-0 flex-1 whitespace-pre-wrap break-all">{line || " "}</span>
-        </div>
-      ))}
+    <div className="relative h-full min-h-0 bg-canvas" data-language={language} data-testid="file-code-preview">
+      <div className="absolute right-3 top-2 z-10 flex items-center gap-1 rounded-sm bg-canvas/85 p-0.5 backdrop-blur">
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={ICON_BUTTON}
+                aria-label={wrap ? "关闭自动换行" : "自动换行"}
+                aria-pressed={wrap}
+                onClick={() => setWrap((v) => !v)}
+              >
+                <WrapText className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{wrap ? "关闭自动换行" : "自动换行"}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={ICON_BUTTON}
+                aria-label="复制文件内容"
+                onClick={() => void handleCopy()}
+              >
+                {copied ? (
+                  <CheckIcon className="size-3.5" weight="bold" />
+                ) : (
+                  <CopyIcon className="size-3.5" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{copied ? "已复制" : "复制文件内容"}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+      <div
+        className={cn("h-full overflow-auto py-3 pl-4 pr-20 font-mono text-[12.5px] leading-5", wrap && "overflow-x-hidden")}
+        data-code-wrap={wrap ? "true" : "false"}
+      >
+        <pre className={cn("m-0", wrap && "whitespace-pre-wrap break-all")}>
+          <code>
+            <CodePreviewLines
+              highlightedLines={highlight.lines}
+              plainLines={plainLines}
+              wrap={wrap}
+            />
+          </code>
+        </pre>
+      </div>
     </div>
   );
+}
+
+function useShikiHighlight(text: string, extension: string): { language: string; lines?: HighlightLine[] } {
+  const shikiLanguage = useMemo(() => resolveShikiLanguage(extension), [extension]);
+  const displayLanguage = shikiLanguage ?? normalizeCodeLanguage(extension);
+  const [lines, setLines] = useState<HighlightLine[] | undefined>();
+
+  useEffect(() => {
+    if (!shikiLanguage) {
+      setLines(undefined);
+      return;
+    }
+    let cancelled = false;
+    setLines(undefined);
+    void codeToTokensWithThemes(text, {
+      lang: shikiLanguage,
+      themes: SHIKI_THEMES
+    }).then(
+      (tokens) => {
+        if (!cancelled) {
+          setLines(tokens as HighlightLine[]);
+        }
+      },
+      (error) => {
+        if (!cancelled) {
+          console.warn("[FilePreviewPanel] 代码高亮失败，回退纯文本预览", {
+            extension,
+            language: shikiLanguage,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          setLines(undefined);
+        }
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [extension, shikiLanguage, text]);
+
+  return { language: displayLanguage, lines };
+}
+
+function CodePreviewLines({
+  highlightedLines,
+  plainLines,
+  wrap
+}: {
+  highlightedLines?: HighlightLine[];
+  plainLines: string[];
+  wrap: boolean;
+}) {
+  return (
+    <>
+      {plainLines.map((plainLine, index) => (
+        <span key={index} className={cn("flex", !wrap && "min-w-max")}>
+          <span className="mr-4 inline-block w-6 flex-none select-none text-right text-[13px] text-muted-foreground/50">
+            {index + 1}
+          </span>
+          <span className={cn("min-h-5 min-w-0 flex-1", wrap ? "whitespace-pre-wrap break-all" : "whitespace-pre")}>
+            <CodePreviewLine highlightedLine={highlightedLines?.[index]} plainLine={plainLine} />
+          </span>
+        </span>
+      ))}
+    </>
+  );
+}
+
+function CodePreviewLine({
+  highlightedLine,
+  plainLine
+}: {
+  highlightedLine?: HighlightLine;
+  plainLine: string;
+}) {
+  if (!highlightedLine) {
+    return plainLine || " ";
+  }
+  if (highlightedLine.length === 0) {
+    return " ";
+  }
+  return (
+    <>
+      {highlightedLine.map((token, index) => (
+        <span key={index} className="cxb-shiki-token" style={shikiTokenStyle(token)}>
+          {token.content}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function shikiTokenStyle(token: HighlightToken): CSSProperties {
+  const light = token.variants?.light;
+  const dark = token.variants?.dark;
+  const fontStyle = light?.fontStyle ?? dark?.fontStyle ?? 0;
+  return {
+    "--cxb-shiki-light": light?.color ?? "inherit",
+    "--cxb-shiki-dark": dark?.color ?? light?.color ?? "inherit",
+    fontStyle: fontStyle & 1 ? "italic" : undefined,
+    fontWeight: fontStyle & 2 ? 600 : undefined,
+    textDecorationLine: fontStyle & 4 ? "underline" : undefined
+  } as CSSProperties;
+}
+
+function resolveShikiLanguage(extension: string): BundledLanguage | undefined {
+  const normalized = normalizeCodeLanguage(extension);
+  const candidate = SHIKI_LANGUAGE_ALIASES[normalized] ?? normalized;
+  return isBundledLanguage(candidate) ? candidate : undefined;
+}
+
+function isBundledLanguage(language: string): language is BundledLanguage {
+  return Object.prototype.hasOwnProperty.call(bundledLanguages, language);
+}
+
+function normalizeCodePreviewText(text: string): string {
+  return text.replace(/\r\n?/g, "\n");
+}
+
+function splitCodePreviewLines(text: string): string[] {
+  return text.split("\n");
 }
 
 function MarkdownPreview({ text }: { text: string }) {

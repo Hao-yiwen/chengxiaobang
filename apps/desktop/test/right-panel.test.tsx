@@ -78,8 +78,34 @@ const terminalMock = vi.hoisted(() => {
   return { MockTerminal, MockFitAddon };
 });
 
+const shikiMock = vi.hoisted(() => ({
+  bundledLanguages: {
+    javascript: {},
+    json: {},
+    jsx: {},
+    tsx: {},
+    typescript: {}
+  },
+  codeToTokensWithThemes: vi.fn(async (text: string) =>
+    text.replace(/\r\n?/g, "\n").split("\n").map((line) =>
+      line
+        ? [
+            {
+              content: line,
+              variants: {
+                light: { color: "#d73a49" },
+                dark: { color: "#f97583" }
+              }
+            }
+          ]
+        : []
+    )
+  )
+}));
+
 vi.mock("@xterm/xterm", () => ({ Terminal: terminalMock.MockTerminal }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: terminalMock.MockFitAddon }));
+vi.mock("shiki", () => shikiMock);
 vi.mock("mammoth", () => ({
   default: {
     convertToHtml: vi.fn(async () => ({ value: "<p>DOCX 内容预览</p>", messages: [] }))
@@ -267,6 +293,7 @@ beforeEach(() => {
   pptxRendererMock.goToSlide.mockClear();
   pptxRendererMock.setZoom.mockClear();
   pptxRendererMock.destroy.mockClear();
+  shikiMock.codeToTokensWithThemes.mockClear();
   resetAppStore();
   useAppStore.setState({ onboardingOpen: false, onboardingCompleted: true });
 });
@@ -418,6 +445,17 @@ async function clickArtifactButton(name: string): Promise<void> {
   const matches = await screen.findAllByText(name);
   const button = matches.map((match) => match.closest("button")).find(Boolean);
   fireEvent.click(button ?? matches[0]);
+}
+
+function fileTreeIconSvg(path: string): string {
+  const button = screen.getByTitle(path);
+  const image = button.querySelector("img");
+  expect(image).not.toBeNull();
+  return decodeURIComponent(image?.getAttribute("src") ?? "");
+}
+
+function fileTreeGuides(path: string): HTMLElement[] {
+  return within(screen.getByTitle(path)).queryAllByTestId("project-file-tree-guide");
 }
 
 function todoToolCall(
@@ -1110,11 +1148,32 @@ describe("right panel", () => {
     const bridge = installPreviewBridge({ kind: "code", text: "line one\nline two" });
     const rootEntries: ProjectFileEntry[] = [
       { name: "src", path: "src", type: "directory" },
+      { name: ".eslintrc.js", path: ".eslintrc.js", type: "file" },
+      { name: "package.json", path: "package.json", type: "file" },
       { name: "README.md", path: "README.md", type: "file" }
     ];
-    const listProjectDirectory = vi.fn(async (projectId: string, path = ".") =>
-      projectId === project.id && path === "." ? rootEntries : []
-    );
+    const srcEntries: ProjectFileEntry[] = [
+      { name: "components", path: "src/components", type: "directory" },
+      { name: "app.js", path: "src/app.js", type: "file" }
+    ];
+    const componentEntries: ProjectFileEntry[] = [
+      { name: "Button.tsx", path: "src/components/Button.tsx", type: "file" }
+    ];
+    const listProjectDirectory = vi.fn(async (projectId: string, path = ".") => {
+      if (projectId !== project.id) {
+        return [];
+      }
+      if (path === ".") {
+        return rootEntries;
+      }
+      if (path === "src") {
+        return srcEntries;
+      }
+      if (path === "src/components") {
+        return componentEntries;
+      }
+      return [];
+    });
     const client = createClient({ listProjectDirectory });
 
     render(<App client={client} />);
@@ -1123,8 +1182,22 @@ describe("right panel", () => {
     await openPane("文件预览");
 
     expect(await screen.findByText("项目文件")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /选择文件|rightPanel\.pickFile/u })).not.toBeInTheDocument();
+    expect(bridge.pickFiles).not.toHaveBeenCalled();
     expect(await screen.findByText("README.md")).toBeInTheDocument();
     expect(listProjectDirectory).toHaveBeenCalledWith(project.id, ".");
+    expect(screen.getByTitle("src")).toHaveClass("h-7");
+    expect(screen.getByTitle("src").querySelector("img")).toBeNull();
+    expect(fileTreeIconSvg(".eslintrc.js")).toContain("#693acf");
+    expect(fileTreeIconSvg("package.json")).toContain("#d52c36");
+
+    fireEvent.click(screen.getByTitle("src"));
+    expect(await screen.findByText("app.js")).toBeInTheDocument();
+    expect(fileTreeGuides("src/app.js")).toHaveLength(1);
+    fireEvent.click(screen.getByTitle("src/components"));
+    expect(await screen.findByText("Button.tsx")).toBeInTheDocument();
+    expect(screen.getByTitle("src/components").querySelector("img")).toBeNull();
+    expect(fileTreeGuides("src/components/Button.tsx")).toHaveLength(2);
 
     fireEvent.click(screen.getByText("README.md"));
 
@@ -1136,6 +1209,58 @@ describe("right panel", () => {
     expect(bridge.readFilePreviewText).toHaveBeenCalledWith("/tmp/demo/README.md", {
       maxBytes: 524288
     });
+  });
+
+  it("highlights JavaScript project files in the file preview panel", async () => {
+    const jsText = "const value = 1;\nconsole.log(value);";
+    installPreviewBridge({ kind: "code", text: jsText });
+    const listProjectDirectory = vi.fn(async () => [
+      { name: "app.js", path: "src/app.js", type: "file" } satisfies ProjectFileEntry
+    ]);
+    const client = createClient({ listProjectDirectory });
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+    await openPane("文件预览");
+
+    fireEvent.click(await screen.findByText("app.js"));
+
+    const preview = await screen.findByTestId("file-code-preview");
+    await waitFor(() =>
+      expect(shikiMock.codeToTokensWithThemes).toHaveBeenCalledWith(jsText, {
+        lang: "javascript",
+        themes: { light: "github-light", dark: "github-dark" }
+      })
+    );
+    expect(preview).toHaveAttribute("data-language", "javascript");
+    expect(preview.querySelector('[data-streamdown="code-block"]')).toBeNull();
+    expect(within(preview).getByText("const value = 1;")).toHaveClass("cxb-shiki-token");
+    expect(within(preview).getByText("1")).toBeInTheDocument();
+    expect(within(preview).getByLabelText("自动换行")).toBeInTheDocument();
+    expect(within(preview).getByLabelText("复制文件内容")).toBeInTheDocument();
+  });
+
+  it("keeps markdown-like JavaScript content as code in the file preview panel", async () => {
+    const jsText = 'const heading = "# 标题";\nconst fence = "```js";';
+    installPreviewBridge({ kind: "code", text: jsText });
+    const listProjectDirectory = vi.fn(async () => [
+      { name: "markdownish.js", path: "markdownish.js", type: "file" } satisfies ProjectFileEntry
+    ]);
+    const client = createClient({ listProjectDirectory });
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+    await openPane("文件预览");
+
+    fireEvent.click(await screen.findByText("markdownish.js"));
+
+    const preview = await screen.findByTestId("file-code-preview");
+    await waitFor(() => expect(shikiMock.codeToTokensWithThemes).toHaveBeenCalled());
+    expect(within(preview).getByText('const heading = "# 标题";')).toBeInTheDocument();
+    expect(within(preview).getByText('const fence = "```js";')).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "标题" })).not.toBeInTheDocument();
   });
 
   it("lists final XML artifacts in the floating artifact panel and opens preview", async () => {

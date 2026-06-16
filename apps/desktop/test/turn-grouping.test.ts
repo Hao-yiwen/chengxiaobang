@@ -153,7 +153,7 @@ describe("groupTurns", () => {
     expect(blocks[0].kind).toBe("standalone");
   });
 
-  it("失败轮：无答复，run-error 进折叠体，耗时兜底≥0", () => {
+  it("失败轮：红色错误提示独立显示，耗时用失败时间兜底", () => {
     const u = msg("user", "2026-06-11T00:00:00.000Z", "q");
     const t = tool("Bash", { at: "2026-06-11T00:00:02.000Z", status: "failed" });
     const notices: FailedRunNotice[] = [
@@ -161,9 +161,11 @@ describe("groupTurns", () => {
     ];
     const blocks = groupTurns(chatViewTimelineItems([u], [t], notices), ctx());
 
+    expect(blocks.map((block) => block.kind)).toEqual(["turn", "standalone"]);
     const turn = blocks[0] as TurnBlock;
     expect(turn.answer).toBeUndefined();
-    expect(turn.intermediate.some((m) => m.item.kind === "run-error")).toBe(true);
+    expect(turn.intermediate.some((m) => m.item.kind === "run-error")).toBe(false);
+    expect((blocks[1] as StandaloneBlock).item.kind).toBe("run-error");
     expect(turn.timing.mode).toBe("settled");
     if (turn.timing.mode === "settled") {
       expect(turn.timing.durationMs).toBe(3000);
