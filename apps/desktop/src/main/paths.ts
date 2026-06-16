@@ -29,7 +29,6 @@ export function devDockIconPath(appPath: string): string {
 
 export function startupSplashImageCandidates(appPath: string): string[] {
   return [
-    join(appPath, "assets", "onboarding-loading-startup.png"),
     join(appPath, "assets", "onboarding-loading.png"),
     devDockIconPath(appPath)
   ];

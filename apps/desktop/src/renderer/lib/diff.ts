@@ -1,74 +1,111 @@
-export interface DiffLine {
-  type: "context" | "added" | "removed";
-  text: string;
-  oldLineNumber?: number;
-  newLineNumber?: number;
-  hunk?: boolean;
+import { parsePatchFiles, type FileContents, type FileDiffMetadata } from "@pierre/diffs";
+
+export type DiffViewHeight = "inline" | "fill";
+
+export interface TextDiffSource {
+  kind: "text";
+  fileName: string;
+  oldText: string;
+  newText: string;
+  cacheKey: string;
 }
 
-/** 超过这个 DP 单元数后，降级为先全删再全增，避免 UI 被大 diff 卡住。 */
-const MAX_LCS_CELLS = 100_000;
-
-/**
- * 基于 LCS 的行级 diff，用于展示 Edit / Write 工具结果。
- * 替换会先展示删除行再展示新增行；过大的输入会降级成较粗但正确的展示。
- */
-export function diffLines(oldText: string, newText: string): DiffLine[] {
-  const oldLines = splitLines(oldText);
-  const newLines = splitLines(newText);
-  if (oldLines.length === 0) {
-    return newLines.map((text) => ({ type: "added" as const, text }));
-  }
-  if (newLines.length === 0) {
-    return oldLines.map((text) => ({ type: "removed" as const, text }));
-  }
-  if (oldLines.length * newLines.length > MAX_LCS_CELLS) {
-    return [
-      ...oldLines.map((text) => ({ type: "removed" as const, text })),
-      ...newLines.map((text) => ({ type: "added" as const, text }))
-    ];
-  }
-
-  const rows = oldLines.length;
-  const cols = newLines.length;
-  const dp = new Uint32Array((rows + 1) * (cols + 1));
-  const at = (i: number, j: number) => i * (cols + 1) + j;
-  for (let i = rows - 1; i >= 0; i -= 1) {
-    for (let j = cols - 1; j >= 0; j -= 1) {
-      dp[at(i, j)] =
-        oldLines[i] === newLines[j]
-          ? dp[at(i + 1, j + 1)] + 1
-          : Math.max(dp[at(i + 1, j)], dp[at(i, j + 1)]);
-    }
-  }
-
-  const result: DiffLine[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < rows && j < cols) {
-    if (oldLines[i] === newLines[j]) {
-      result.push({ type: "context", text: oldLines[i] });
-      i += 1;
-      j += 1;
-    } else if (dp[at(i + 1, j)] >= dp[at(i, j + 1)]) {
-      result.push({ type: "removed", text: oldLines[i] });
-      i += 1;
-    } else {
-      result.push({ type: "added", text: newLines[j] });
-      j += 1;
-    }
-  }
-  while (i < rows) {
-    result.push({ type: "removed", text: oldLines[i] });
-    i += 1;
-  }
-  while (j < cols) {
-    result.push({ type: "added", text: newLines[j] });
-    j += 1;
-  }
-  return result;
+export interface ParsedPatchDiffBlock {
+  kind: "file";
+  id: string;
+  fileDiff: FileDiffMetadata;
 }
 
-function splitLines(text: string): string[] {
-  return text === "" ? [] : text.split("\n");
+export interface RawPatchDiffBlock {
+  kind: "raw";
+  id: string;
+  raw: string;
+  error: string;
+}
+
+export type PatchDiffBlock = ParsedPatchDiffBlock | RawPatchDiffBlock;
+
+export function createTextDiffSource({
+  fileName,
+  oldText,
+  newText,
+  cacheKey
+}: {
+  fileName: string;
+  oldText: string;
+  newText: string;
+  cacheKey: string;
+}): TextDiffSource {
+  return {
+    kind: "text",
+    fileName: normalizeDiffFileName(fileName),
+    oldText,
+    newText,
+    cacheKey
+  };
+}
+
+export function textDiffFiles(source: TextDiffSource): {
+  oldFile: FileContents;
+  newFile: FileContents;
+} {
+  return {
+    oldFile: {
+      name: source.fileName,
+      contents: source.oldText,
+      cacheKey: `${source.cacheKey}:old`
+    },
+    newFile: {
+      name: source.fileName,
+      contents: source.newText,
+      cacheKey: `${source.cacheKey}:new`
+    }
+  };
+}
+
+/** 将后端返回的 unified patch 解析成 pierre 可渲染的单文件块；异常时保留原文兜底。 */
+export function parseGitPatchDiff({
+  patch,
+  path,
+  cacheKeyPrefix
+}: {
+  patch: string;
+  path: string;
+  cacheKeyPrefix: string;
+}): PatchDiffBlock[] {
+  if (patch.trim().length === 0) {
+    return [];
+  }
+  const normalizedPatch = patch.endsWith("\n") ? patch : `${patch}\n`;
+  try {
+    const parsed = parsePatchFiles(normalizedPatch, cacheKeyPrefix, true);
+    const blocks = parsed.flatMap((parsedPatch, patchIndex) =>
+      parsedPatch.files.map((fileDiff, fileIndex) => ({
+        kind: "file" as const,
+        id: `${cacheKeyPrefix}:${patchIndex}:${fileIndex}`,
+        fileDiff
+      }))
+    );
+    if (blocks.length > 0) {
+      return blocks;
+    }
+    return [{
+      kind: "raw",
+      id: `${cacheKeyPrefix}:raw`,
+      raw: normalizedPatch,
+      error: `没有解析到 ${path} 的文件 diff`
+    }];
+  } catch (error) {
+    return [{
+      kind: "raw",
+      id: `${cacheKeyPrefix}:raw`,
+      raw: normalizedPatch,
+      error: error instanceof Error ? error.message : String(error)
+    }];
+  }
+}
+
+function normalizeDiffFileName(fileName: string): string {
+  const trimmed = fileName.trim();
+  return trimmed.length > 0 ? trimmed : "untitled";
 }

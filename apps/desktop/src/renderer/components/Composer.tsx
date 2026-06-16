@@ -9,6 +9,7 @@ import {
   FolderOpenOutlineIcon,
   HandPointerIcon,
   PlusIcon,
+  RefreshIcon,
   SearchIcon,
   ShieldAlertIcon,
   ShieldTerminalIcon,
@@ -72,7 +73,7 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useAccessModeSelection } from "@/hooks/use-access-mode-selection";
-import { StampBadge } from "@/components/StampBadge";
+import { resolveFileTypeIcon } from "@/lib/code-language-icons";
 import { cn } from "@/lib/utils";
 import { getApiClient, selectActiveProject, useAppStore } from "@/store";
 
@@ -105,6 +106,29 @@ function reasoningModeSummary(
     return String(t("settings.providers.reasoningAlwaysOn"));
   }
   return "";
+}
+
+function fileSuggestionName(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  if (!trimmed) {
+    return path;
+  }
+  return trimmed.split(/[\\/]/).pop() ?? trimmed;
+}
+
+function fileSuggestionPathLabel(path: string, fileName: string): string | undefined {
+  const normalizedPath = path.replace(/^[.][\\/]+/, "").replace(/[\\/]+$/, "");
+  if (!normalizedPath || normalizedPath === fileName) {
+    return undefined;
+  }
+  return normalizedPath;
+}
+
+function slashCommandDisplayName(command: SlashCommand): string {
+  if (command.kind !== "skill") {
+    return command.name;
+  }
+  return command.name.replace(/^\/+/, "") || command.name;
 }
 
 export function Composer() {
@@ -278,23 +302,51 @@ export function Composer() {
     () => filterSlashCommands(slashCommands, slashQuery ?? ""),
     [slashCommands, slashQuery]
   );
-  const showSlashMenu = slashQuery !== undefined && filteredSlashCommands.length > 0;
+  const slashCommandSections = useMemo(() => {
+    const commandItems = filteredSlashCommands.filter((command) => command.kind !== "skill");
+    const skillItems = filteredSlashCommands.filter((command) => command.kind === "skill");
+    return {
+      ordered: [...commandItems, ...skillItems],
+      groups: [
+        {
+          id: "commands",
+          titleKey: "composer.slashCommandGroupCommands",
+          commands: commandItems,
+          startIndex: 0
+        },
+        {
+          id: "skills",
+          titleKey: "composer.slashCommandGroupSkills",
+          commands: skillItems,
+          startIndex: commandItems.length
+        }
+      ].filter((group) => group.commands.length > 0)
+    };
+  }, [filteredSlashCommands]);
+  const showSlashMenu = slashQuery !== undefined && slashCommandSections.ordered.length > 0;
 
-  // 项目会话里的 @ 文件引用；按 Escape 会隐藏当前 @ token 的建议。
-  const [dismissedAtStart, setDismissedAtStart] = useState<number>();
+  // 首页项目目录里的 @ 文件引用；按 Escape 会隐藏当前 @ token 的建议。
+  const [dismissedAtToken, setDismissedAtToken] = useState<{ start: number; query: string }>();
+  const [fileSuggestionsLoading, setFileSuggestionsLoading] = useState(false);
+  const [searchedAtQuery, setSearchedAtQuery] = useState<string>();
   const fileSuggestions = useAppStore((state) => state.fileSuggestions);
   const loadFileSuggestions = useAppStore((state) => state.loadFileSuggestions);
-  const atToken = activeProject ? getAtToken(value, selectionStart) : undefined;
+  const allowAtFileSuggestions = view === "home" && activeProject !== undefined;
+  const atToken = allowAtFileSuggestions ? getAtToken(value, selectionStart) : undefined;
+  const currentAtDismissed =
+    atToken !== undefined &&
+    dismissedAtToken?.start === atToken.start &&
+    dismissedAtToken.query === atToken.query;
   const showFileMenu =
     !showSlashMenu &&
     atToken !== undefined &&
-    atToken.start !== dismissedAtStart &&
-    fileSuggestions.length > 0;
+    !currentAtDismissed &&
+    (fileSuggestionsLoading || searchedAtQuery === atToken.query || fileSuggestions.length > 0);
   const activeSuggestionMenu = showSlashMenu ? "slash" : showFileMenu ? "file" : undefined;
   // 已插入的斜杠命令 / @ 文件引用打灰底标记，与普通输入区分。
   const highlightRanges = useMemo(
-    () => getComposerHighlightRanges(value, slashCommands, Boolean(activeProject)),
-    [value, slashCommands, activeProject]
+    () => getComposerHighlightRanges(value, slashCommands, allowAtFileSuggestions),
+    [value, slashCommands, allowAtFileSuggestions]
   );
   // 未配置供应商时也允许触发提交，store 会打开首次配置弹窗。
   const canSend = value.trim().length > 0 || attachments.length > 0;
@@ -308,7 +360,7 @@ export function Composer() {
 
   useEffect(() => {
     setHighlightedCommand(0);
-  }, [slashQuery, filteredSlashCommands.length, atToken?.query, fileSuggestions.length]);
+  }, [slashQuery, slashCommandSections.ordered.length, atToken?.query, fileSuggestions.length]);
 
   useEffect(() => {
     if (!activeSuggestionMenu) {
@@ -456,11 +508,27 @@ export function Composer() {
   // 输入 @ token 时防抖拉取项目文件建议。
   useEffect(() => {
     if (atToken === undefined) {
+      setFileSuggestionsLoading(false);
+      setSearchedAtQuery(undefined);
       return;
     }
     const query = atToken.query;
-    const timer = window.setTimeout(() => void loadFileSuggestions(query), 150);
-    return () => window.clearTimeout(timer);
+    let cancelled = false;
+    setFileSuggestionsLoading(true);
+    setSearchedAtQuery(undefined);
+    const timer = window.setTimeout(() => {
+      void loadFileSuggestions(query).finally(() => {
+        if (cancelled) {
+          return;
+        }
+        setFileSuggestionsLoading(false);
+        setSearchedAtQuery(query);
+      });
+    }, 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [atToken?.query, atToken === undefined, loadFileSuggestions]);
 
   // 输入框随内容增长，但限制最大高度，避免挤压页面。
@@ -678,7 +746,26 @@ export function Composer() {
     // 斜杠菜单和文件菜单共用键盘交互；两者同时命中时优先斜杠菜单。
     const menu = showSlashMenu ? "slash" : showFileMenu ? "file" : undefined;
     if (menu) {
-      const menuLength = menu === "slash" ? filteredSlashCommands.length : fileSuggestions.length;
+      const menuLength =
+        menu === "slash" ? slashCommandSections.ordered.length : fileSuggestions.length;
+      if (menuLength === 0) {
+        if (
+          event.key === "ArrowDown" ||
+          event.key === "ArrowUp" ||
+          event.key === "Enter" ||
+          event.key === "Tab"
+        ) {
+          event.preventDefault();
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          if (atToken !== undefined) {
+            setDismissedAtToken({ start: atToken.start, query: atToken.query });
+          }
+          return;
+        }
+      }
       if (event.key === "ArrowDown") {
         event.preventDefault();
         setHighlightedCommand((index) => (index + 1) % menuLength);
@@ -692,7 +779,9 @@ export function Composer() {
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
         if (menu === "slash") {
-          insertSlashCommand(filteredSlashCommands[highlightedCommand] ?? filteredSlashCommands[0]);
+          insertSlashCommand(
+            slashCommandSections.ordered[highlightedCommand] ?? slashCommandSections.ordered[0]
+          );
         } else {
           insertFileReference(fileSuggestions[highlightedCommand] ?? fileSuggestions[0]);
         }
@@ -704,7 +793,7 @@ export function Composer() {
           textareaRef.current?.setSelectionRange(value.length, value.length);
           setSelectionStart(value.length);
         } else if (atToken !== undefined) {
-          setDismissedAtStart(atToken.start);
+          setDismissedAtToken({ start: atToken.start, query: atToken.query });
         }
         return;
       }
@@ -851,81 +940,137 @@ export function Composer() {
               ? t("composer.slashMenuLabel")
               : t("composer.fileMenuLabel")
           }
-          className="max-h-[260px] overflow-y-auto p-0"
+          className={cn(
+            "p-0",
+            activeSuggestionMenu === "slash" && "scrollbar-hidden max-h-[260px] overflow-y-auto"
+          )}
           style={suggestionMenuWidth ? { width: suggestionMenuWidth } : undefined}
           onOpenAutoFocus={(event) => event.preventDefault()}
         >
           {activeSuggestionMenu === "slash" ? (
             <div className="py-1">
-              {filteredSlashCommands.map((command, index) => (
-                <button
-                  key={command.id}
-                  type="button"
-                  className={cn(
-                    "flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors",
-                    index === highlightedCommand
-                      ? "bg-accent text-accent-foreground"
-                      : "hover:bg-accent/60"
-                  )}
-                  onMouseEnter={() => setHighlightedCommand(index)}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    insertSlashCommand(command);
-                  }}
-                  onClick={() => insertSlashCommand(command)}
+              {slashCommandSections.groups.map((group, groupIndex) => (
+                <div
+                  key={group.id}
+                  className={cn(groupIndex > 0 && "mt-1 border-t border-border/70 pt-1")}
                 >
-                  <span className="flex size-6 flex-none items-center justify-center rounded-sm bg-canvas-soft-2 text-muted-foreground">
-                    <SkillIcon className="size-3.5" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-mono text-body-sm font-medium leading-tight text-foreground">
-                      {command.name}
-                    </span>
-                    <span className="mt-0.5 block truncate text-micro text-muted-foreground">
-                      {command.description || t("composer.slashNoDescription")}
-                    </span>
-                  </span>
-                  <span className="flex flex-none items-center gap-1.5">
-                    <span className="rounded-sm bg-canvas-soft-2 px-1.5 py-0.5 text-micro font-medium text-muted-foreground">
-                      {t(`composer.slashSource.${command.source}`)}
-                    </span>
-                    <StampBadge
-                      text={t("composer.kindSkill")}
-                      fullLabel={t("composer.kindSkillFull")}
-                      tone="indigo"
-                    />
-                  </span>
-                </button>
+                  <div className="px-3 pb-1 pt-1.5 text-caption font-medium text-muted-foreground">
+                    {t(group.titleKey)}
+                  </div>
+                  {group.commands.map((command, index) => {
+                    const commandIndex = group.startIndex + index;
+                    const isSkillCommand = command.kind === "skill";
+                    const CommandIcon = isSkillCommand ? SkillIcon : DocumentIcon;
+                    const displayName = slashCommandDisplayName(command);
+                    return (
+                      <button
+                        key={command.id}
+                        type="button"
+                        className={cn(
+                          "flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors",
+                          commandIndex === highlightedCommand
+                            ? "bg-accent text-accent-foreground"
+                            : "hover:bg-accent/60"
+                        )}
+                        onMouseEnter={() => setHighlightedCommand(commandIndex)}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          insertSlashCommand(command);
+                        }}
+                        onClick={() => insertSlashCommand(command)}
+                      >
+                        <span className="flex size-6 flex-none items-center justify-center rounded-sm bg-canvas-soft-2 text-muted-foreground">
+                          <CommandIcon className="size-3.5" />
+                        </span>
+                        <span className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
+                          <span className="max-w-[60%] flex-none truncate font-mono text-caption font-medium text-foreground">
+                            {displayName}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-micro text-muted-foreground">
+                            {command.description || t("composer.slashNoDescription")}
+                          </span>
+                        </span>
+                        <span className="flex-none rounded-sm bg-canvas-soft-2 px-1 py-0 text-[10px] font-medium leading-4 text-muted-foreground">
+                          {t(`composer.slashSource.${command.source}`)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               ))}
             </div>
           ) : (
-            <div className="py-1">
-              {fileSuggestions.map((path, index) => (
-                <button
-                  key={path}
-                  type="button"
-                  className={cn(
-                    "flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors",
-                    index === highlightedCommand
-                      ? "bg-accent text-accent-foreground"
-                      : "hover:bg-accent/60"
-                  )}
-                  onMouseEnter={() => setHighlightedCommand(index)}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    insertFileReference(path);
-                  }}
-                  onClick={() => insertFileReference(path)}
-                >
-                  <span className="flex size-6 flex-none items-center justify-center rounded-sm bg-canvas-soft-2 text-muted-foreground">
-                    <DocumentIcon className="size-3.5 text-muted-foreground" />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-body-sm">{path}</span>
-                  <span className="flex-none rounded-sm bg-canvas-soft-2 px-1.5 py-0.5 text-micro font-medium text-muted-foreground">
-                    {t("composer.atFileTag")}
-                  </span>
-                </button>
-              ))}
+            <div>
+              <div className="border-b border-border px-3 py-2 text-caption font-medium text-foreground">
+                {t("composer.fileMenuTitle")}
+              </div>
+              <div className="scrollbar-hidden max-h-[220px] overflow-y-auto py-1">
+                {fileSuggestionsLoading ? (
+                  <div className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-muted-foreground">
+                    <span className="flex size-6 flex-none items-center justify-center">
+                      <RefreshIcon className="size-3.5 animate-spin" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-caption">
+                      {t("composer.fileSuggestionsLoading")}
+                    </span>
+                  </div>
+                ) : fileSuggestions.length === 0 ? (
+                  <div className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-muted-foreground">
+                    <span className="flex size-6 flex-none items-center justify-center">
+                      <SearchIcon className="size-3.5" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-caption">
+                      {t("composer.fileSuggestionsEmpty")}
+                    </span>
+                  </div>
+                ) : (
+                  fileSuggestions.map((path, index) => {
+                    const FileIcon = resolveFileTypeIcon(path);
+                    const fileName = fileSuggestionName(path);
+                    const pathLabel = fileSuggestionPathLabel(path, fileName);
+                    return (
+                      <button
+                        key={path}
+                        type="button"
+                        className={cn(
+                          "flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left transition-colors",
+                          index === highlightedCommand
+                            ? "bg-accent text-accent-foreground"
+                            : "hover:bg-accent/60"
+                        )}
+                        onMouseEnter={() => setHighlightedCommand(index)}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          insertFileReference(path);
+                        }}
+                        onClick={() => insertFileReference(path)}
+                      >
+                        <span className="flex size-5 flex-none items-center justify-center text-muted-foreground">
+                          <FileIcon className="cxb-svg-icon size-3.5" />
+                        </span>
+                        <span
+                          className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden font-mono text-caption"
+                          title={path}
+                        >
+                          <span
+                            className={cn(
+                              "truncate font-medium text-foreground",
+                              pathLabel ? "max-w-[45%] flex-none" : "min-w-0 flex-1"
+                            )}
+                          >
+                            {fileName}
+                          </span>
+                          {pathLabel ? (
+                            <span className="min-w-0 flex-1 truncate text-muted-foreground/75">
+                              {pathLabel}
+                            </span>
+                          ) : null}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
           )}
         </PopoverContent>

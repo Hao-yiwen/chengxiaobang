@@ -56,8 +56,9 @@ export function createStartupSplashHtml(options: StartupSplashHtmlOptions): stri
       }
 
       .startup-image {
-        width: 148px;
-        height: 148px;
+        width: min(260px, 42vw, 40vh);
+        height: auto;
+        max-height: 56vh;
         object-fit: contain;
         opacity: 0;
         animation: startup-image-in 220ms ease-out forwards;
@@ -65,8 +66,7 @@ export function createStartupSplashHtml(options: StartupSplashHtmlOptions): stri
 
       @media (max-width: 640px) {
         .startup-image {
-          width: 124px;
-          height: 124px;
+          width: min(220px, 58vw, 44vh);
         }
       }
 

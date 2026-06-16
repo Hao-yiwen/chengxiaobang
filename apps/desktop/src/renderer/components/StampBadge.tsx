@@ -8,7 +8,7 @@
  * - 工具行：成→成功(moss)、败→失败(danger)、候→待批准(ochre)、行→运行中(indigo)
  * - 计划卡：草稿(ink)/待确认(ochre)/执行中(indigo)/已完成(moss)/已拒绝(faint)
  * - 复制回执：已录→已复制(moss)
- * - composer 菜单 kind 标：技→技能、件→文件
+ * - composer 菜单 kind 标：技→技能、令→命令、件→文件
  */
 
 export type StampTone = "moss" | "danger" | "ochre" | "indigo" | "ink" | "faint";

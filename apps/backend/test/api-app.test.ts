@@ -1303,7 +1303,7 @@ describe("createApp", () => {
     expect(response.status).toBe(404);
   });
 
-  it("lists builtin and pi slash commands with project resources taking priority", async () => {
+  it("lists compaction and pi slash commands with project resources taking priority", async () => {
     const globalRoot = join(dir, "global");
     const projectRoot = join(dir, "project");
     await mkdir(join(globalRoot, "prompts"), { recursive: true });
@@ -1339,7 +1339,7 @@ describe("createApp", () => {
     };
     expect(body.commands).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "/ls", source: "builtin" }),
+        expect.objectContaining({ name: "/compact", source: "builtin" }),
         expect.objectContaining({
           name: "/review",
           source: "project",
@@ -1375,7 +1375,9 @@ describe("createApp", () => {
       commands: Array<{ name: string }>;
       diagnostics: Array<{ message: string; source: string }>;
     };
-    expect(body.commands).toEqual(expect.arrayContaining([expect.objectContaining({ name: "/ls" })]));
+    expect(body.commands).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "/compact" })])
+    );
     expect(body.diagnostics.length).toBeGreaterThan(0);
     expect(body.diagnostics[0]?.source).toBe("global");
   });

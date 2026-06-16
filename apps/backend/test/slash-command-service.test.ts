@@ -18,10 +18,12 @@ describe("SlashCommandService", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("returns builtin commands when resource directories do not exist", async () => {
+  it("returns only the compaction builtin tool when resource directories do not exist", async () => {
     const { commands, diagnostics } = await service.list();
 
-    expect(commands).toEqual(expect.arrayContaining([expect.objectContaining({ name: "/ls" })]));
+    expect(commands.filter((command) => command.kind === "builtin_tool")).toEqual([
+      expect.objectContaining({ name: "/compact" })
+    ]);
     expect(diagnostics).toEqual([]);
   });
 
@@ -55,7 +57,7 @@ describe("SlashCommandService", () => {
     expect(result).toEqual({ matched: true, prompt: "Project target" });
   });
 
-  it("does not expand builtin tool commands", async () => {
+  it("does not expand removed tool slash shortcuts", async () => {
     const result = await service.expandPrompt("/ls src");
 
     expect(result).toEqual({ matched: false, prompt: "/ls src" });

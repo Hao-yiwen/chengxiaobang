@@ -7,14 +7,12 @@ import type {
 import type { StoredMessage } from "../repository/state-store";
 
 /**
- * Rebuild the pi conversation for a session from persisted rows.
+ * 从持久化消息行重建 pi 对话。
  *
- * Rows written by the pi loop carry the raw pi message JSON in `payload` and
- * replay losslessly (assistant toolCall blocks stay paired with their
- * toolResult messages). Legacy rows and direct slash-command results fall back
- * to plain text. After a /compact, rows up to and including
- * `compactedUpToMessageId` are replaced by the latest compaction summary,
- * hoisted to the front as a user block.
+ * pi 循环写入的行会在 `payload` 保存原始 pi 消息 JSON，因此 assistant
+ * toolCall 与 toolResult 能无损配对回放。旧数据或孤儿工具结果行没有 payload，
+ * 只能降级为纯文本。执行 /compact 后，`compactedUpToMessageId` 及之前的行
+ * 会被最新摘要替代，并以前置 user 块注入模型上下文。
  */
 export function buildAgentMessages(
   rows: StoredMessage[],

@@ -2,8 +2,8 @@ import { PanelRightOutlineIcon } from "@/assets/file-type-icons";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/store";
 
-/** The top-right toggle that opens/closes the right workspace panel. */
-export function RightPanelSwitch() {
+/** 右上角打开/关闭右侧工作区的开关。 */
+export function RightPanelSwitch({ onToggle }: { onToggle?: () => void }) {
   const { t } = useTranslation();
   const open = useAppStore((state) => state.rightPanelOpen);
   const toggleRightPanel = useAppStore((state) => state.toggleRightPanel);
@@ -16,6 +16,10 @@ export function RightPanelSwitch() {
           openBefore: open,
           innerWidth: window.innerWidth
         });
+        if (onToggle) {
+          onToggle();
+          return;
+        }
         toggleRightPanel();
       }}
       className="flex size-8 items-center justify-center rounded-xs border border-transparent bg-transparent text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"

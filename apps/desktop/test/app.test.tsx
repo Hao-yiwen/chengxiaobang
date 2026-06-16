@@ -50,12 +50,12 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     listSlashCommands: vi.fn(async () => ({
       commands: [
         {
-          id: "builtin:/ls",
-          name: "/ls",
+          id: "builtin:/compact",
+          name: "/compact",
           kind: "builtin_tool" as const,
-          description: "列出当前项目目录内容",
+          description: "压缩对话上下文",
           source: "builtin" as const,
-          insertText: "/ls "
+          insertText: "/compact"
         }
       ],
       diagnostics: []
@@ -859,7 +859,7 @@ describe("App", () => {
       id: "msg_1",
       sessionId: session.id,
       role: "user",
-      content: "/ls",
+      content: "列出目录",
       createdAt: "2026-06-08T00:00:00.000Z"
     };
     const toolCall: ToolCall = {
@@ -1850,7 +1850,7 @@ describe("App", () => {
     await waitFor(() => expect(streamRun).toHaveBeenCalled());
   });
 
-  it("shows only skill slash suggestions and inserts the selected skill into the composer", async () => {
+  it("shows skills and the compaction slash command in the composer", async () => {
     const client = createClient({
       listSlashCommands: vi.fn(async () => ({
         commands: [
@@ -1861,6 +1861,14 @@ describe("App", () => {
             description: "列出当前项目目录内容",
             source: "builtin" as const,
             insertText: "/ls "
+          },
+          {
+            id: "builtin:/compact",
+            name: "/compact",
+            kind: "builtin_tool" as const,
+            description: "压缩对话上下文",
+            source: "builtin" as const,
+            insertText: "/compact"
           },
           {
             id: "project:prompt_template:review",
@@ -1891,14 +1899,134 @@ describe("App", () => {
     const menu = await screen.findByLabelText("斜杠命令建议");
     expect(within(menu).queryByText("/ls")).not.toBeInTheDocument();
     expect(within(menu).queryByText("/review")).not.toBeInTheDocument();
-    expect(within(menu).getByText("/excel")).toBeInTheDocument();
+    expect(within(menu).getByText("/compact")).toBeInTheDocument();
+    expect(within(menu).getByText("excel")).toBeInTheDocument();
+    expect(within(menu).queryByText("/excel")).not.toBeInTheDocument();
 
-    fireEvent.click(within(menu).getByText("/excel"));
+    fireEvent.click(within(menu).getByText("excel"));
 
     expect(input).toHaveValue("/excel ");
   });
 
-  it("suggests project files when typing @ in a project session", async () => {
+  it("suggests project files when typing @ on the project home composer", async () => {
+    const project: Project = {
+      id: "project_1",
+      name: "demo",
+      path: "/tmp/demo",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const listProjectFiles = vi.fn(async () => ["src/index.ts", "src/main-index.ts"]);
+    const client = createClient({
+      listProjects: vi.fn(async () => [project]),
+      listProjectFiles
+    });
+
+    useAppStore.setState({ view: "home", activeProjectId: project.id });
+    render(<App client={client} />);
+    await waitFor(() => expect(useAppStore.getState().projects).toHaveLength(1));
+    const input = await screen.findByLabelText("输入消息");
+
+    fireEvent.change(input, { target: { value: "看看 @ind" } });
+
+    // 文件建议有 150ms 防抖；findByText 会等待菜单结果出现。
+    expect(await screen.findByText("src/index.ts")).toBeInTheDocument();
+    expect(listProjectFiles).toHaveBeenCalledWith("project_1", "ind");
+
+    fireEvent.click(screen.getByText("src/index.ts"));
+    expect(input).toHaveValue("看看 @src/index.ts ");
+  });
+
+  it("does not repeat the relative path label for root project files", async () => {
+    const project: Project = {
+      id: "project_1",
+      name: "demo",
+      path: "/tmp/demo",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const listProjectFiles = vi.fn(async () => ["package.json"]);
+    const client = createClient({
+      listProjects: vi.fn(async () => [project]),
+      listProjectFiles
+    });
+
+    useAppStore.setState({ view: "home", activeProjectId: project.id });
+    render(<App client={client} />);
+    await waitFor(() => expect(useAppStore.getState().projects).toHaveLength(1));
+    const input = await screen.findByLabelText("输入消息");
+
+    fireEvent.change(input, { target: { value: "@pack" } });
+
+    expect(await screen.findByText("package.json")).toBeInTheDocument();
+    expect(screen.getAllByText("package.json")).toHaveLength(1);
+
+    fireEvent.click(screen.getByText("package.json"));
+    expect(input).toHaveValue("@package.json ");
+  });
+
+  it("opens the project file popover as soon as @ is typed", async () => {
+    const project: Project = {
+      id: "project_1",
+      name: "demo",
+      path: "/tmp/demo",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    let resolveFiles!: (files: string[]) => void;
+    const listProjectFiles = vi.fn(
+      () =>
+        new Promise<string[]>((resolve) => {
+          resolveFiles = resolve;
+        })
+    );
+    const client = createClient({
+      listProjects: vi.fn(async () => [project]),
+      listProjectFiles
+    });
+
+    useAppStore.setState({ view: "home", activeProjectId: project.id });
+    render(<App client={client} />);
+    await waitFor(() => expect(useAppStore.getState().projects).toHaveLength(1));
+    const input = await screen.findByLabelText("输入消息");
+
+    fireEvent.change(input, { target: { value: "@" } });
+
+    expect(await screen.findByText("正在搜索文件…")).toBeInTheDocument();
+    await waitFor(() => expect(listProjectFiles).toHaveBeenCalledWith("project_1", ""));
+
+    await act(async () => {
+      resolveFiles(["src/index.ts"]);
+    });
+    expect(await screen.findByText("src/index.ts")).toBeInTheDocument();
+  });
+
+  it("keeps the project file popover open when @ has no matches", async () => {
+    const project: Project = {
+      id: "project_1",
+      name: "demo",
+      path: "/tmp/demo",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const listProjectFiles = vi.fn(async () => []);
+    const client = createClient({
+      listProjects: vi.fn(async () => [project]),
+      listProjectFiles
+    });
+
+    useAppStore.setState({ view: "home", activeProjectId: project.id });
+    render(<App client={client} />);
+    await waitFor(() => expect(useAppStore.getState().projects).toHaveLength(1));
+    const input = await screen.findByLabelText("输入消息");
+
+    fireEvent.change(input, { target: { value: "@zzz" } });
+
+    expect(await screen.findByText("没有匹配文件")).toBeInTheDocument();
+    expect(listProjectFiles).toHaveBeenCalledWith("project_1", "zzz");
+  });
+
+  it("does not fetch file suggestions inside a project chat", async () => {
     const project: Project = {
       id: "project_1",
       name: "demo",
@@ -1915,29 +2043,23 @@ describe("App", () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    const listProjectFiles = vi.fn(async () => ["src/index.ts", "src/main-index.ts"]);
+    const listProjectFiles = vi.fn(async () => ["src/index.ts"]);
     const client = createClient({
       listProjects: vi.fn(async () => [project]),
       listSessions: vi.fn(async () => [session]),
       listProjectFiles
     });
 
-    // Seed the chat view so the restored project session lands in conversation
-    // (a refresh keeps the user wherever they were); the composer remounts there.
     useAppStore.setState({ view: "chat", activeSessionId: session.id });
     render(<App client={client} />);
-    // Wait for the chat-only scroll area so we grab the live composer instance.
     await screen.findByTestId("chat-scroll");
     const input = await screen.findByLabelText("输入消息");
 
     fireEvent.change(input, { target: { value: "看看 @ind" } });
+    await new Promise((resolve) => setTimeout(resolve, 250));
 
-    // The fetch is debounced (150ms); findByText absorbs the wait.
-    expect(await screen.findByText("src/index.ts")).toBeInTheDocument();
-    expect(listProjectFiles).toHaveBeenCalledWith("project_1", "ind");
-
-    fireEvent.click(screen.getByText("src/index.ts"));
-    expect(input).toHaveValue("看看 @src/index.ts ");
+    expect(listProjectFiles).not.toHaveBeenCalled();
+    expect(screen.queryByText("src/index.ts")).not.toBeInTheDocument();
   });
 
   it("does not fetch file suggestions without an active project", async () => {
@@ -1962,7 +2084,7 @@ describe("App", () => {
 
     fireEvent.change(input, { target: { value: "hello" } });
 
-    expect(screen.queryByText("/ls")).not.toBeInTheDocument();
+    expect(screen.queryByText("/compact")).not.toBeInTheDocument();
   });
 
   it("explains why opening a folder is unavailable outside desktop", async () => {

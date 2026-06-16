@@ -97,8 +97,8 @@ describe("buildAgentMessages", () => {
       role: "assistant",
       content: [{ type: "text", text: "你好，有什么可以帮你？" }]
     });
-    // Tool rows without payload (direct slash commands, legacy data) become
-    // user context — an orphan toolResult would be rejected by providers.
+    // 没有 payload 的 tool 行来自旧数据或异常路径，只能作为 user 上下文回放；
+    // 孤儿 toolResult 会被 provider 拒收。
     expect(history[2]).toMatchObject({ role: "user", content: "【工具结果】\nfile a.txt" });
   });
 

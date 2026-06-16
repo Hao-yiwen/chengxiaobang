@@ -19,7 +19,7 @@ export const pluginAuthorSchema = z.union([
 export type PluginAuthor = z.infer<typeof pluginAuthorSchema>;
 
 /**
- * plugin.json 里 userConfig 的单项定义（对齐 Claude Code/ZCode 的 `key → 定义` 形状）。
+ * plugin.json 里 userConfig 的单项定义（对齐常见插件 manifest 的 `key → 定义` 形状）。
  * 宽松解析：未知字段 passthrough，避免插件用了我们暂不识别的约束就整体解析失败。
  */
 export const pluginUserConfigFieldSchema = z

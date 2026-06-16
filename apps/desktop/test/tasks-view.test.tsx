@@ -181,10 +181,20 @@ describe("TasksView", () => {
     // updateTask 返回的最新任务回写进 store
     expect(useAppStore.getState().tasks[0]?.enabled).toBe(false);
 
-    fireEvent.click(screen.getByTitle("立即运行"));
+    const runNowButton = screen.getByRole("button", { name: "立即运行「AI 日报」" });
+    fireEvent.focus(runNowButton);
+    expect(await screen.findByRole("tooltip", { name: "立即运行" })).toBeInTheDocument();
+    fireEvent.blur(runNowButton);
+
+    fireEvent.click(runNowButton);
     await waitFor(() => expect(client.runTaskNow).toHaveBeenCalledWith("task_1"));
 
-    fireEvent.click(screen.getByTitle("删除"));
+    const deleteButton = screen.getByRole("button", { name: "删除「AI 日报」" });
+    fireEvent.focus(deleteButton);
+    expect(await screen.findByRole("tooltip", { name: "删除" })).toBeInTheDocument();
+    fireEvent.blur(deleteButton);
+
+    fireEvent.click(deleteButton);
     await waitFor(() => expect(client.deleteTask).toHaveBeenCalledWith("task_1"));
     await waitFor(() => expect(useAppStore.getState().tasks).toHaveLength(0));
   });

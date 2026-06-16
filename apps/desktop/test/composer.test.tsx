@@ -48,6 +48,15 @@ const skillCommand: SlashCommand = {
   insertText: "/excel "
 };
 
+const compactCommand: SlashCommand = {
+  id: "builtin:/compact",
+  name: "/compact",
+  kind: "builtin_tool",
+  description: "压缩对话上下文",
+  source: "builtin",
+  insertText: "/compact"
+};
+
 const deepseekModelOptions: ProviderModelOption[] = [
   {
     id: "deepseek-v4-flash",
@@ -885,7 +894,7 @@ describe("Composer 计划模式（＋下拉 Switch + 标记）", () => {
     fireEvent.pointerDown(plusTrigger, { button: 0, ctrlKey: false });
     fireEvent.click(await screen.findByText("添加技能"));
 
-    await waitFor(() => expect(useAppStore.getState().view).toBe("skills"));
+    await waitFor(() => expect(useAppStore.getState().view).toBe("settings"));
     // 进入技能页后自动打开「添加技能」弹窗：GitHub 链接输入框可见。
     expect(await screen.findByLabelText("GitHub 链接")).toBeInTheDocument();
   });
@@ -899,7 +908,7 @@ describe("Composer 计划模式（＋下拉 Switch + 标记）", () => {
     fireEvent.pointerDown(plusTrigger, { button: 0, ctrlKey: false });
     fireEvent.click(await screen.findByText("管理技能"));
 
-    await waitFor(() => expect(useAppStore.getState().view).toBe("skills"));
+    await waitFor(() => expect(useAppStore.getState().view).toBe("settings"));
     // 仅进入技能页，不自动弹出添加弹窗。
     expect(screen.queryByLabelText("GitHub 链接")).not.toBeInTheDocument();
   });
@@ -1251,8 +1260,8 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
   });
 });
 
-describe("Composer slash 菜单技能标（ARCH-SPEC §5.5）", () => {
-  it("marks skill entries with a 「技」 StampBadge", async () => {
+describe("Composer slash 菜单分组（ARCH-SPEC §5.5）", () => {
+  it("groups command entries before skills without kind StampBadges", async () => {
     const client = createClient({
       listSlashCommands: vi.fn(async () => ({
         commands: [
@@ -1264,6 +1273,7 @@ describe("Composer slash 菜单技能标（ARCH-SPEC §5.5）", () => {
             source: "builtin" as const,
             insertText: "/ls "
           },
+          compactCommand,
           skillCommand
         ],
         diagnostics: []
@@ -1275,14 +1285,18 @@ describe("Composer slash 菜单技能标（ARCH-SPEC §5.5）", () => {
     fireEvent.change(input, { target: { value: "/" } });
 
     const menu = await screen.findByLabelText("斜杠命令建议");
-    expect(menu).toHaveTextContent("/excel");
+    expect(within(menu).getByText("excel")).toBeInTheDocument();
+    expect(within(menu).queryByText("/excel")).not.toBeInTheDocument();
+    expect(menu).toHaveTextContent("/compact");
     expect(within(menu).queryByText("/ls")).not.toBeInTheDocument();
-    // 斜杠建议只显示技能，技能行带印章标（title/aria-label = 技能）。
-    const badges = within(menu).getAllByTitle("技能");
-    expect(badges).toHaveLength(1);
-    expect(badges[0]).toHaveTextContent("技");
+    expect(within(menu).queryByTitle("技能")).not.toBeInTheDocument();
+    expect(within(menu).queryByTitle("命令")).not.toBeInTheDocument();
+    const menuText = menu.textContent ?? "";
+    expect(menuText.indexOf("命令")).toBeLessThan(menuText.indexOf("/compact"));
+    expect(menuText.indexOf("/compact")).toBeLessThan(menuText.indexOf("技能"));
+    expect(menuText.indexOf("技能")).toBeLessThan(menuText.indexOf("excel"));
 
-    fireEvent.click(within(menu).getByText("/excel"));
+    fireEvent.click(within(menu).getByText("excel"));
     expect(input).toHaveValue("/excel ");
   });
 });

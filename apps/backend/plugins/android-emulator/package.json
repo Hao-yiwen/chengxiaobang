@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@zcode/android-emulator-plugin",
+  "name": "@chengxiaobang/android-emulator-plugin",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",

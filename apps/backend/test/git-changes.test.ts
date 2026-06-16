@@ -125,7 +125,12 @@ describe("collectGitChanges", () => {
     expect(byPath.get("staged.txt")?.diff).toContain("+changed");
 
     expect(byPath.get("fresh.txt")?.status).toBe("??");
-    expect(byPath.get("fresh.txt")?.diff).toBe("+alpha\n+beta");
+    expect(byPath.get("fresh.txt")?.diff).toContain("diff --git a/fresh.txt b/fresh.txt");
+    expect(byPath.get("fresh.txt")?.diff).toContain("--- /dev/null");
+    expect(byPath.get("fresh.txt")?.diff).toContain("+++ b/fresh.txt");
+    expect(byPath.get("fresh.txt")?.diff).toContain("@@ -0,0 +1,2 @@");
+    expect(byPath.get("fresh.txt")?.diff).toContain("+alpha");
+    expect(byPath.get("fresh.txt")?.diff).toContain("+beta");
   }, 20_000);
 
   it("returns an empty diff for binary untracked files", async () => {

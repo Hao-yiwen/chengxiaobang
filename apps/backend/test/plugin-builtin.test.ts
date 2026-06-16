@@ -18,7 +18,7 @@ function memorySettings() {
   };
 }
 
-describe("内置插件（搬运自 ZCode）", () => {
+describe("内置插件", () => {
   let installedRoot: string;
 
   beforeEach(async () => {

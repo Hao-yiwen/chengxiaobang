@@ -127,6 +127,7 @@ export const initialState =  {
   tasks: [] as ScheduledTask[],
   skills: [] as SkillSummary[],
   skillsAddRequested: false,
+  pendingSettingsSection: undefined as string | undefined,
   plugins: [] as PluginSummary[],
   theme: "system" as Theme,
   codePreviewSettings: DEFAULT_CODE_PREVIEW_SETTINGS,

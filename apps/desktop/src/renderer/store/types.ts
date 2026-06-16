@@ -54,7 +54,7 @@ import type { Locale } from "../i18n";
 import type { CodePreviewSettings } from "../lib/code-preview-settings";
 
 export type Theme = "light" | "dark" | "system";
-export type View = "home" | "chat" | "settings" | "tasks" | "skills" | "connectPhone";
+export type View = "home" | "chat" | "settings" | "tasks" | "plugins" | "connectPhone";
 export type RightPanelMode = "changes" | "terminal" | "browser" | "files" | "chat";
 export type ProjectSortMode = "created" | "recent";
 export type OnboardingStep = "welcome" | "profile" | "model";
@@ -249,6 +249,8 @@ export interface AppState {
   skills: SkillSummary[];
   /** 一次性信号：从别处（如输入框加号）进入技能页时顺带打开「添加技能」弹窗。 */
   skillsAddRequested: boolean;
+  /** 一次性：打开设置时要定位到的分区 id（消费后由 clearPendingSettingsSection 清除）。 */
+  pendingSettingsSection?: string;
   // plugins（瞬态；打开插件设置页时加载）
   plugins: PluginSummary[];
   // 主题（持久化）
@@ -264,8 +266,9 @@ export interface AppState {
   setView(view: View): void;
   /** 跳到技能页；openAdd 为真时同时请求打开「添加技能」弹窗。 */
   openSkills(openAdd?: boolean): void;
-  /** 消费一次性的「添加技能」请求（SkillsView 打开弹窗后调用）。 */
+  /** 消费一次性的「添加技能」请求（技能设置页打开弹窗后调用）。 */
   clearSkillsAddRequest(): void;
+  clearPendingSettingsSection(): void;
   setInput(input: string): void;
   setPaletteOpen(open: boolean): void;
   setOnboardingOpen(open: boolean): void;

@@ -291,7 +291,7 @@ function ApprovalPreview({ toolCall }: { toolCall: ToolCall }) {
           {toolCall.args.file_path}
         </div>
         <div className="max-h-[180px] overflow-auto">
-          <DiffView lines={diff} />
+          <DiffView source={diff} />
         </div>
       </div>
     );

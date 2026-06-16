@@ -28,7 +28,7 @@ export function getComposerHighlightRanges(
   const ranges: Array<{ start: number; end: number }> = [];
   if (value.startsWith("/")) {
     const firstLine = value.split("\n", 1)[0] ?? "";
-    // 取最长的、与输入开头完整匹配的已知命令名（兼容 "/git status" 这类带空格的命令）。
+    // 取最长的、与输入开头完整匹配的已知命令名，避免已插入命令只高亮前缀。
     let matched = "";
     for (const command of commands) {
       const name = command.name;
@@ -102,12 +102,14 @@ export function getSlashQuery(value: string, selectionStart: number): string | u
 }
 
 export function filterSlashCommands(commands: SlashCommand[], query: string): SlashCommand[] {
-  const skillCommands = commands.filter((command) => command.kind === "skill");
+  const visibleCommands = commands.filter(
+    (command) => command.kind === "skill" || command.name === "/compact"
+  );
   const compactQuery = query.trim();
   if (!compactQuery) {
-    return skillCommands;
+    return visibleCommands;
   }
-  return skillCommands.filter((command) =>
+  return visibleCommands.filter((command) =>
     `${command.name} ${command.description}`.toLowerCase().includes(compactQuery)
   );
 }

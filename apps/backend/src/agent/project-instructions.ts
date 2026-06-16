@@ -76,7 +76,7 @@ async function readInstructionFile(filePath: string): Promise<ProjectInstruction
 
 /**
  * 构造一条不落库的 user system-reminder 消息,把项目指令以高优先级注入对话最前。
- * 文案对齐 ZCode/Claude Code 的 claudeMd 通道:强调这些指令优先于默认行为。
+ * 文案强调这些指令优先于默认行为,保持项目指令语义稳定。
  */
 export function buildProjectInstructionMessage(file: ProjectInstructionFile): PiMessage {
   const content = [

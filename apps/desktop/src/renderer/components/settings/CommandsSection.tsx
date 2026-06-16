@@ -4,6 +4,7 @@ import type { SlashCommand } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SectionShell, SettingBlock } from "@/components/settings/SectionShell";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
@@ -48,36 +49,64 @@ function CommandRow(props: { command: SlashCommand }) {
   const isPlugin = command.source === "plugin";
   // enabled 缺省视为启用；只有插件来源命令显式给出 enabled。
   const enabled = command.enabled !== false;
+  const description = command.description || t("composer.slashNoDescription");
 
   return (
-    <div className="flex items-start gap-3 px-4 py-3">
-      <span className="mt-0.5 rounded-xs bg-muted px-1.5 py-0.5 font-mono text-micro text-foreground">
+    <div className="grid grid-cols-[minmax(160px,240px)_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5">
+      <span
+        className="min-w-0 truncate rounded-xs bg-muted px-1.5 py-0.5 font-mono text-micro text-foreground"
+        title={command.name}
+      >
         {command.name}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
-          <span className="min-w-0">
-            {command.description || t("composer.slashNoDescription")}
+      <div className="flex min-w-0 items-center gap-2 overflow-hidden text-caption text-muted-foreground">
+        <CommandDescriptionTooltip
+          description={description}
+          argumentHint={command.argumentHint}
+        />
+        {command.argumentHint ? (
+          <span
+            className="max-w-[120px] flex-none truncate font-mono text-micro text-mute"
+            title={command.argumentHint}
+          >
+            {command.argumentHint}
           </span>
-          {command.argumentHint ? (
-            <span className="font-mono text-micro text-mute">{command.argumentHint}</span>
-          ) : null}
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-          <SourceBadge command={command} />
-          <KindBadge kind={command.kind} />
-          {isPlugin && !enabled ? (
-            <Badge
-              variant="outline"
-              className="h-4 px-1.5 py-0 text-[11px] leading-4 text-muted-foreground"
-            >
-              {t("skills.disabledTag")}
-            </Badge>
-          ) : null}
-        </div>
+        ) : null}
+        <SourceBadge command={command} />
+        <KindBadge kind={command.kind} />
+        {isPlugin && !enabled ? (
+          <Badge
+            variant="outline"
+            className="h-4 max-w-[88px] flex-none truncate px-1.5 py-0 text-[11px] leading-4 text-muted-foreground"
+          >
+            {t("skills.disabledTag")}
+          </Badge>
+        ) : null}
       </div>
-      {isPlugin ? <CommandToggle command={command} enabled={enabled} /> : null}
+      <div className="flex justify-end">
+        {isPlugin ? <CommandToggle command={command} enabled={enabled} /> : null}
+      </div>
     </div>
+  );
+}
+
+function CommandDescriptionTooltip(props: { description: string; argumentHint?: string }) {
+  const { description, argumentHint } = props;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="block min-w-0 flex-1 truncate">{description}</span>
+      </TooltipTrigger>
+      <TooltipContent
+        align="start"
+        className="max-w-[460px] whitespace-normal text-left leading-5"
+      >
+        <span>{description}</span>
+        {argumentHint ? (
+          <span className="mt-1 block font-mono text-[11px] opacity-80">{argumentHint}</span>
+        ) : null}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -95,7 +124,11 @@ function SourceBadge(props: { command: SlashCommand }) {
   return (
     <Badge
       variant="outline"
-      className={cn("h-4 px-1.5 py-0 text-[11px] leading-4", badgeClassName)}
+      className={cn(
+        "h-4 max-w-[160px] flex-none truncate px-1.5 py-0 text-[11px] leading-4",
+        badgeClassName
+      )}
+      title={label}
     >
       {label}
     </Badge>
@@ -107,7 +140,7 @@ function KindBadge(props: { kind: SlashCommand["kind"] }) {
   return (
     <Badge
       variant="secondary"
-      className="h-4 px-1.5 py-0 text-[11px] leading-4 text-muted-foreground"
+      className="h-4 flex-none px-1.5 py-0 text-[11px] leading-4 text-muted-foreground"
     >
       {t(`settings.commands.kind.${props.kind}`)}
     </Badge>

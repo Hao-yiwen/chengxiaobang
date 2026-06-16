@@ -34,7 +34,6 @@ describe("main process paths", () => {
 
   it("resolves startup splash image candidates from onboarding art to fallback assets", () => {
     expect(startupSplashImageCandidates("/repo/apps/desktop")).toEqual([
-      join("/repo/apps/desktop", "assets", "onboarding-loading-startup.png"),
       join("/repo/apps/desktop", "assets", "onboarding-loading.png"),
       join("/repo/apps/desktop", "build", "icon.png")
     ]);

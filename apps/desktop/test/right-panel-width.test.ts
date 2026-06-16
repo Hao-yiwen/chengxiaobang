@@ -64,6 +64,19 @@ describe("right panel width defaults", () => {
     expect(rightPanelWidthForOpen(700, true)).toBe(700);
   });
 
+  it("uses the file preview target width as the first visible panel width", () => {
+    const width = rightPanelWidthForOpen(
+      DEFAULT_RIGHT_PANEL_WIDTH,
+      false,
+      RIGHT_PANEL_FILE_WIDTH
+    );
+
+    expect(width).toBe(RIGHT_PANEL_FILE_WIDTH);
+    expect(visibleRightPanelWidth(width, CHAT_PANEL_MIN_WIDTH + RIGHT_PANEL_FILE_WIDTH)).toBe(
+      RIGHT_PANEL_FILE_WIDTH
+    );
+  });
+
   it("clamps saved and visible widths so chat keeps a minimum workspace", () => {
     const narrowContainer = CHAT_PANEL_MIN_WIDTH + 420;
 

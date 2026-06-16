@@ -76,26 +76,32 @@ describe("shortenPath", () => {
 
 describe("buildToolCallDiff", () => {
   it("diffs Edit old_string → new_string from its args", () => {
-    const lines = buildToolCallDiff(
+    const source = buildToolCallDiff(
       toolCall({
         name: "Edit",
         args: { file_path: "a.ts", old_string: "x = 1", new_string: "x = 2" }
       })
     );
-    expect(lines).toEqual([
-      { type: "removed", text: "x = 1" },
-      { type: "added", text: "x = 2" }
-    ]);
+    expect(source).toMatchObject({
+      kind: "text",
+      fileName: "a.ts",
+      oldText: "x = 1",
+      newText: "x = 2",
+      cacheKey: "tool_1:2026-06-08T00:00:01.200Z:edit"
+    });
   });
 
   it("treats Write content as all added", () => {
-    const lines = buildToolCallDiff(
+    const source = buildToolCallDiff(
       toolCall({ name: "Write", args: { file_path: "a.txt", content: "hello\nworld" } })
     );
-    expect(lines).toEqual([
-      { type: "added", text: "hello" },
-      { type: "added", text: "world" }
-    ]);
+    expect(source).toMatchObject({
+      kind: "text",
+      fileName: "a.txt",
+      oldText: "",
+      newText: "hello\nworld",
+      cacheKey: "tool_1:2026-06-08T00:00:01.200Z:write"
+    });
   });
 
   it("returns undefined for other tools or malformed args", () => {

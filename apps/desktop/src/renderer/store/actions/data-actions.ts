@@ -40,6 +40,8 @@ import {
 } from "../helpers/right-panel";
 import { selectActiveProject } from "../selectors";
 
+let fileSuggestionsRequestSeq = 0;
+
 export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {
   return {
       async initClient(injected) {
@@ -152,14 +154,58 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
       async loadFileSuggestions(query) {
         const project = selectActiveProject(get());
         if (!apiClientRef.current || !project) {
+          fileSuggestionsRequestSeq += 1;
+          console.debug("[store] 清空首页 @ 文件建议：缺少 ApiClient 或当前项目", {
+            hasClient: Boolean(apiClientRef.current),
+            query
+          });
           set({ fileSuggestions: [] });
           return;
         }
+        const requestSeq = (fileSuggestionsRequestSeq += 1);
+        console.debug("[store] 加载首页 @ 文件建议", {
+          projectId: project.id,
+          query,
+          requestSeq
+        });
         try {
           const files = await apiClientRef.current.listProjectFiles(project.id, query);
+          const currentProjectId = selectActiveProject(get())?.id;
+          if (requestSeq !== fileSuggestionsRequestSeq || currentProjectId !== project.id) {
+            console.debug("[store] 忽略过期的首页 @ 文件建议", {
+              projectId: project.id,
+              currentProjectId,
+              query,
+              requestSeq,
+              latestRequestSeq: fileSuggestionsRequestSeq,
+              count: files.length
+            });
+            return;
+          }
+          console.info("[store] 首页 @ 文件建议加载完成", {
+            projectId: project.id,
+            query,
+            count: files.length
+          });
           set({ fileSuggestions: files });
         } catch (error) {
-          console.warn("加载文件建议失败", error);
+          const currentProjectId = selectActiveProject(get())?.id;
+          if (requestSeq !== fileSuggestionsRequestSeq || currentProjectId !== project.id) {
+            console.debug("[store] 忽略过期的首页 @ 文件建议错误", {
+              projectId: project.id,
+              currentProjectId,
+              query,
+              requestSeq,
+              latestRequestSeq: fileSuggestionsRequestSeq,
+              error: error instanceof Error ? error.message : String(error)
+            });
+            return;
+          }
+          console.warn("[store] 首页 @ 文件建议加载失败", {
+            projectId: project.id,
+            query,
+            error: error instanceof Error ? error.message : String(error)
+          });
           set({ fileSuggestions: [] });
         }
       },
@@ -379,7 +425,19 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         }
         const session = get().sessions.find((item) => item.id === id);
         set((state) => {
-          const rightPanelBySession = rememberRightPanel(state);
+          const shouldRememberRightPanel = state.view === "chat";
+          const rightPanelBySession = shouldRememberRightPanel
+            ? rememberRightPanel(state)
+            : state.rightPanelBySession;
+          if (!shouldRememberRightPanel && state.activeSessionId) {
+            console.debug("[store] 非聊天页选择会话，跳过当前右侧面板快照保存", {
+              fromView: state.view,
+              sessionId: state.activeSessionId,
+              targetSessionId: id,
+              rememberedMode: rightPanelBySession[state.activeSessionId]?.mode,
+              rememberedPreviewPath: rightPanelBySession[state.activeSessionId]?.previewFile?.path
+            });
+          }
           const sessionProvider =
             configuredProviderById(state.providers, session?.providerId) ??
             configuredProviderById(state.providers, state.providerId) ??

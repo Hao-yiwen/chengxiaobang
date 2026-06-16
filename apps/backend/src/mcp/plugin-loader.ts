@@ -15,7 +15,7 @@ const MANIFEST_DIRS = [".claude-plugin", ".zcode-plugin"];
 
 /**
  * 读取一个插件根声明的 MCP server：合并 plugin.json 内的 mcpServers 与独立 .mcp.json
- * （后者覆盖前者，便于把 ${ZCODE_*} 写法的 manifest 与 ${CLAUDE_*} 写法的 .mcp.json 共存）。
+ * （后者覆盖前者，便于插件 manifest 与独立 .mcp.json 共存）。
  * 带 url 或缺 command 的非 stdio server 标记为 unsupported（本期只支持 stdio）。
  */
 export async function loadPluginMcpServers(

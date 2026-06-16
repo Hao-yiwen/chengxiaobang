@@ -22,7 +22,7 @@ describe("loadPluginMcpServers", () => {
       JSON.stringify({
         name: "android",
         mcpServers: {
-          "android-emulator": { command: "node", args: ["${ZCODE_PLUGIN_ROOT}/old.js"] }
+          "android-emulator": { command: "node", args: ["${CLAUDE_PLUGIN_ROOT}/old.js"] }
         }
       }),
       "utf8"

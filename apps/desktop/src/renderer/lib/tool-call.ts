@@ -1,11 +1,7 @@
 import type { ToolCall } from "@chengxiaobang/shared";
-import { diffLines, type DiffLine } from "./diff";
+import { createTextDiffSource, type TextDiffSource } from "./diff";
 
-/**
- * Execution duration of a finished tool call. Based on startedAt (set when
- * execution actually begins) so approval wait is excluded; undefined for
- * unfinished calls and for rows persisted before startedAt existed.
- */
+/** 已完成工具调用的执行耗时；基于 startedAt，避免把审批等待时间算进去。 */
 export function toolCallDurationMs(toolCall: ToolCall): number | undefined {
   if (!toolCall.startedAt) {
     return undefined;
@@ -30,7 +26,7 @@ export function formatDurationMs(ms: number): string {
   return `${minutes}m ${seconds}s`;
 }
 
-/** Last `segments` path segments for compact display ("…/src/index.ts"). */
+/** 取最后几个路径片段用于紧凑展示，例如 "…/src/index.ts"。 */
 export function shortenPath(path: string, segments = 2): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
   if (parts.length <= segments) {
@@ -39,20 +35,32 @@ export function shortenPath(path: string, segments = 2): string {
   return `…/${parts.slice(-segments).join("/")}`;
 }
 
-/**
- * Diff presentation for file-mutating tools, derived purely from their args
- * (Edit carries old_string/new_string; Write content counts as all-added).
- */
-export function buildToolCallDiff(toolCall: ToolCall): DiffLine[] | undefined {
+/** 文件写入类工具的文本 diff 源，直接由工具参数推导。 */
+export function buildToolCallDiff(toolCall: ToolCall): TextDiffSource | undefined {
   if (toolCall.name === "Edit") {
     const { old_string, new_string } = toolCall.args;
     if (typeof old_string === "string" && typeof new_string === "string") {
-      return diffLines(old_string, new_string);
+      return createTextDiffSource({
+        fileName: toolCallFileName(toolCall, "edit"),
+        oldText: old_string,
+        newText: new_string,
+        cacheKey: `${toolCall.id}:${toolCall.updatedAt}:edit`
+      });
     }
     return undefined;
   }
   if (toolCall.name === "Write" && typeof toolCall.args.content === "string") {
-    return diffLines("", toolCall.args.content);
+    return createTextDiffSource({
+      fileName: toolCallFileName(toolCall, "write"),
+      oldText: "",
+      newText: toolCall.args.content,
+      cacheKey: `${toolCall.id}:${toolCall.updatedAt}:write`
+    });
   }
   return undefined;
+}
+
+function toolCallFileName(toolCall: ToolCall, fallback: string): string {
+  const filePath = toolCall.args.file_path;
+  return typeof filePath === "string" && filePath.trim().length > 0 ? filePath : fallback;
 }

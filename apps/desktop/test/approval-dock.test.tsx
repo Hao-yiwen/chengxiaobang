@@ -8,6 +8,18 @@ import { ApprovalDock } from "../src/renderer/components/ApprovalDock";
 import { setupI18n } from "../src/renderer/i18n";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
 
+vi.mock("@pierre/diffs/react", () => ({
+  FileDiff: ({ fileDiff }: { fileDiff: { additionLines: string[]; deletionLines: string[] } }) =>
+    [...fileDiff.deletionLines, ...fileDiff.additionLines].join("\n"),
+  MultiFileDiff: ({
+    oldFile,
+    newFile
+  }: {
+    oldFile: { contents: string };
+    newFile: { contents: string };
+  }) => `-${oldFile.contents}\n+${newFile.contents}`
+}));
+
 beforeAll(() => {
   setupI18n("zh");
 });

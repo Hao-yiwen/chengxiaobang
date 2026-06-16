@@ -7,8 +7,8 @@ import { build } from "esbuild";
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = dirname(here);
 
-// 内置技能、市场技能、内置插件都随 dist 分发；市场技能与插件默认不激活，按需启用。
-for (const dirName of ["skills", "skills-market", "plugins"]) {
+// 内置技能、内置插件随 dist 分发；插件默认不激活，按需启用。
+for (const dirName of ["skills", "plugins"]) {
   const source = join(packageRoot, dirName);
   const target = join(packageRoot, "dist", dirName);
   if (!existsSync(source)) {

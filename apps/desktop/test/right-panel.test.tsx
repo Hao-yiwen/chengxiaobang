@@ -14,6 +14,7 @@ import {
 import type { ApiClient } from "../src/renderer/lib/api";
 import type { TerminalDataEvent, TerminalExitEvent } from "../src/renderer/global";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
+import { RIGHT_PANEL_FILE_WIDTH } from "../src/renderer/store/helpers/right-panel";
 import type {
   Message,
   Project,
@@ -24,11 +25,21 @@ import type {
 } from "@chengxiaobang/shared";
 
 const terminalMock = vi.hoisted(() => {
+  type MockTerminalTheme = Record<string, string>;
+  type MockTerminalOptions = {
+    theme?: MockTerminalTheme;
+    [key: string]: unknown;
+  };
+
   class MockTerminal {
     static instances: MockTerminal[] = [];
     cols = 80;
     rows = 24;
     element?: HTMLElement;
+    initialOptions: MockTerminalOptions;
+    options: MockTerminalOptions;
+    currentTheme?: MockTerminalTheme;
+    themeAssignments: MockTerminalTheme[] = [];
     dataListeners: Array<(data: string) => void> = [];
     focus = vi.fn();
     dispose = vi.fn();
@@ -38,7 +49,21 @@ const terminalMock = vi.hoisted(() => {
       }
     });
 
-    constructor() {
+    constructor(options: MockTerminalOptions = {}) {
+      this.initialOptions = options;
+      this.currentTheme = options.theme;
+      const terminalOptions = { ...options };
+      Object.defineProperty(terminalOptions, "theme", {
+        configurable: true,
+        get: () => this.currentTheme,
+        set: (theme: MockTerminalTheme | undefined) => {
+          this.currentTheme = theme;
+          if (theme) {
+            this.themeAssignments.push(theme);
+          }
+        }
+      });
+      this.options = terminalOptions;
       MockTerminal.instances.push(this);
     }
 
@@ -79,6 +104,47 @@ const terminalMock = vi.hoisted(() => {
   return { MockTerminal, MockFitAddon };
 });
 
+const LIGHT_TERMINAL_THEME_TOKENS: Record<string, string> = {
+  "--canvas": "255 255 255",
+  "--canvas-soft": "250 250 250",
+  "--canvas-soft-2": "245 245 245",
+  "--ink": "23 23 23",
+  "--body": "77 77 77",
+  "--mute": "136 136 136",
+  "--border": "235 235 235",
+  "--link": "0 112 243",
+  "--link-bg-soft": "211 229 255",
+  "--soft-blue": "64 118 190",
+  "--soft-blue-strong": "38 88 152",
+  "--soft-blue-foreground": "45 83 135",
+  "--error": "238 0 0",
+  "--warning": "245 166 35",
+  "--violet": "121 40 202"
+};
+
+const DARK_TERMINAL_THEME_TOKENS: Record<string, string> = {
+  ...LIGHT_TERMINAL_THEME_TOKENS,
+  "--canvas": "18 18 18",
+  "--canvas-soft": "10 10 10",
+  "--canvas-soft-2": "38 38 38",
+  "--ink": "250 250 250",
+  "--body": "209 209 209",
+  "--mute": "136 136 136",
+  "--border": "38 38 38",
+  "--link": "82 168 255",
+  "--link-bg-soft": "0 49 102",
+  "--soft-blue": "82 168 255",
+  "--soft-blue-strong": "147 197 253",
+  "--soft-blue-foreground": "147 197 253",
+  "--error": "255 77 79"
+};
+
+function setTerminalThemeTokens(tokens = LIGHT_TERMINAL_THEME_TOKENS): void {
+  for (const [variable, value] of Object.entries(tokens)) {
+    document.documentElement.style.setProperty(variable, value);
+  }
+}
+
 const shikiMock = vi.hoisted(() => ({
   bundledLanguages: {
     javascript: {},
@@ -107,6 +173,17 @@ const shikiMock = vi.hoisted(() => ({
 vi.mock("@xterm/xterm", () => ({ Terminal: terminalMock.MockTerminal }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: terminalMock.MockFitAddon }));
 vi.mock("shiki", () => shikiMock);
+vi.mock("@pierre/diffs/react", () => ({
+  FileDiff: ({ fileDiff }: { fileDiff: { additionLines: string[]; deletionLines: string[] } }) =>
+    [...fileDiff.deletionLines, ...fileDiff.additionLines].join("\n"),
+  MultiFileDiff: ({
+    oldFile,
+    newFile
+  }: {
+    oldFile: { contents: string };
+    newFile: { contents: string };
+  }) => `${oldFile.contents}\n${newFile.contents}`
+}));
 vi.mock("mammoth", () => ({
   default: {
     convertToHtml: vi.fn(async () => ({ value: "<p>DOCX 内容预览</p>", messages: [] }))
@@ -260,6 +337,7 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     listMessages: vi.fn(async () => []),
     listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [] })),
     listSlashCommands: vi.fn(async () => ({ commands: [], diagnostics: [] })),
+    listTasks: vi.fn(async () => []),
     listProviders: vi.fn(async () => [provider]),
     saveProvider: vi.fn() as never,
     deleteProvider: vi.fn(async () => true),
@@ -276,6 +354,9 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
 }
 
 beforeEach(() => {
+  document.documentElement.classList.remove("dark", "theme-switching");
+  document.documentElement.removeAttribute("style");
+  setTerminalThemeTokens();
   window.localStorage.clear();
   vi.stubGlobal(
     "ResizeObserver",
@@ -301,6 +382,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete (window as { chengxiaobang?: unknown }).chengxiaobang;
+  document.documentElement.classList.remove("dark", "theme-switching");
   vi.unstubAllGlobals();
 });
 
@@ -554,6 +636,25 @@ describe("right panel", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "浏览器" })).not.toBeInTheDocument()
     );
+  });
+
+  it("hides the top-right toolbar before opening the right panel", async () => {
+    const client = createClient();
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    const toolbar = screen.getByTestId("right-panel-toolbar");
+    fireEvent.click(await screen.findByTitle("打开侧边面板"));
+
+    expect(toolbar).toHaveClass("pointer-events-none", "scale-95", "opacity-0");
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    expect(screen.queryByTestId("right-panel")).not.toBeInTheDocument();
+
+    const panel = await screen.findByTestId("right-panel");
+    expect(panel).toHaveAttribute("data-right-panel-phase", "opening");
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
   });
 
   it("auto-opens the floating progress panel when the active run creates a todo", async () => {
@@ -1031,6 +1132,79 @@ describe("right panel", () => {
     expect(screen.getByTestId("progress-floating-panel")).toBeInTheDocument();
   });
 
+  it("opens file preview at a stable right-panel width while progress stays floating", async () => {
+    installPreviewBridge({ kind: "code", text: "line one\nline two" });
+    const client = createClient();
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.setRightPanelWidth(360);
+      store.handleRunEvent(
+        { type: "run_started", runId: "run_todo", sessionId: session.id },
+        { force: true }
+      );
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall(
+            "todo_1",
+            "TodoWrite",
+            todoArgs([{ content: "保持进度浮层", status: "in_progress" }])
+          )
+        },
+        { force: true }
+      );
+    });
+
+    const stack = await screen.findByTestId("chat-floating-stack");
+    expect(await within(stack).findByTestId("progress-floating-panel")).toBeInTheDocument();
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+
+    act(() => {
+      useAppStore.getState().openFilePreview("src/a.ts");
+    });
+
+    const panel = screen.getByTestId("right-panel");
+    const layoutScope = screen.getByTestId("chat-layout-scope");
+    const content = screen.getByTestId("right-panel-content");
+
+    expect(useAppStore.getState().progressPanelOpen).toBe(true);
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
+    expect(useAppStore.getState().rightPanelMode).toBe("files");
+    expect(useAppStore.getState().rightPanelWidth).toBe(RIGHT_PANEL_FILE_WIDTH);
+    expect(layoutScope).toHaveAttribute("data-right-panel-open", "true");
+    expect(layoutScope).toHaveAttribute("data-right-panel-phase", "opening");
+    expect(layoutScope).toHaveAttribute("data-right-panel-reserved", "true");
+    expect(layoutScope).toHaveAttribute("data-right-panel-mode", "files");
+    expect(panel).toHaveAttribute("data-right-panel-phase", "opening");
+    expect(content).toHaveClass("right-panel-content-enter");
+    expect(content).toHaveClass("border-l", "border-border");
+    expect(panel.getAttribute("class") ?? "").not.toContain("box-shadow");
+    const panelStyle = panel.getAttribute("style") ?? "";
+    expect(panelStyle).toContain(`--right-panel-width: ${RIGHT_PANEL_FILE_WIDTH}px`);
+    expect(panelStyle).not.toContain("width: 0px");
+    expect(within(stack).getByTestId("progress-floating-panel")).toBeInTheDocument();
+    expect(await screen.findByText("a.ts")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("关闭面板"));
+
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    expect(layoutScope).toHaveAttribute("data-right-panel-open", "false");
+    expect(layoutScope).toHaveAttribute("data-right-panel-phase", "closing");
+    expect(layoutScope).toHaveAttribute("data-right-panel-reserved", "true");
+    expect(panel).toHaveAttribute("data-right-panel-phase", "closing");
+    expect(content).toHaveClass("right-panel-content-exit");
+    expect(panel.getAttribute("style") ?? "").not.toContain("width: 0px");
+
+    await waitFor(() => expect(layoutScope).toHaveAttribute("data-right-panel-phase", "closed"));
+    expect(layoutScope).toHaveAttribute("data-right-panel-reserved", "false");
+    expect(screen.queryByTestId("right-panel")).not.toBeInTheDocument();
+  });
+
   it("keeps the floating progress panel open without exposing a close control", async () => {
     const client = createClient();
     render(<App client={client} />);
@@ -1117,6 +1291,14 @@ describe("right panel", () => {
   it("starts a pty terminal in the active project and streams data through the bridge", async () => {
     const bridge = installTerminalBridge();
     const client = createClient();
+    setTerminalThemeTokens({
+      ...LIGHT_TERMINAL_THEME_TOKENS,
+      "--canvas": "252 253 254",
+      "--ink": "24 25 26",
+      "--link": "1 113 244",
+      "--link-bg-soft": "210 228 254",
+      "--soft-blue": "65 119 191"
+    });
 
     render(<App client={client} />);
     await screen.findByText("项目对话");
@@ -1127,6 +1309,27 @@ describe("right panel", () => {
     await waitFor(() => expect(bridge.terminalStart).toHaveBeenCalled());
     const startInput = bridge.terminalStart.mock.calls[0][0];
     expect(startInput).toMatchObject({ cwd: "/tmp/demo", cols: 100, rows: 30 });
+    const terminalInstance = terminalMock.MockTerminal.instances[0];
+    expect(terminalInstance.initialOptions.theme).toMatchObject({
+      background: "rgb(252, 253, 254)",
+      foreground: "rgb(24, 25, 26)",
+      cursor: "rgb(65, 119, 191)",
+      selectionBackground: "rgba(210, 228, 254, 0.72)",
+      blue: "rgb(1, 113, 244)"
+    });
+    expect(terminalInstance.initialOptions.theme?.background).not.toBe("#171717");
+    expect(terminalInstance.initialOptions.theme?.background).not.toBe("#000");
+
+    setTerminalThemeTokens(DARK_TERMINAL_THEME_TOKENS);
+    document.documentElement.classList.add("dark");
+    await waitFor(() => {
+      expect(terminalInstance.themeAssignments.at(-1)).toMatchObject({
+        background: "rgb(18, 18, 18)",
+        foreground: "rgb(250, 250, 250)",
+        cursor: "rgb(82, 168, 255)",
+        blue: "rgb(82, 168, 255)"
+      });
+    });
 
     bridge.emitData({ id: startInput.id, data: "hello.txt\r\n" });
     expect(terminal).toHaveTextContent("hello.txt");
@@ -1176,6 +1379,40 @@ describe("right panel", () => {
     expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
     await waitFor(() => expect(getGitInfo).toHaveBeenCalledWith(project.id));
+    expect(screen.queryByRole("button", { name: "审查" })).not.toBeInTheDocument();
+  });
+
+  it("does not fall back from changes while git availability is still pending", async () => {
+    const gitInfoResolvers: Array<(value: { isRepo: boolean }) => void> = [];
+    const getGitInfo = vi.fn(
+      () =>
+        new Promise<{ isRepo: boolean }>((resolve) => {
+          gitInfoResolvers.push(resolve);
+        })
+    );
+    const client = createClient({ getGitInfo });
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      useAppStore.getState().openRightPanel("changes");
+    });
+
+    expect(await screen.findByText("审查")).toBeInTheDocument();
+    expect(useAppStore.getState().rightPanelMode).toBe("changes");
+    await waitFor(() => expect(getGitInfo).toHaveBeenCalledWith(project.id));
+    expect(useAppStore.getState().rightPanelMode).toBe("changes");
+
+    await act(async () => {
+      for (const resolve of gitInfoResolvers) {
+        resolve({ isRepo: false });
+      }
+    });
+
+    await waitFor(() => expect(useAppStore.getState().rightPanelMode).toBeNull());
+    expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "审查" })).not.toBeInTheDocument();
   });
 
@@ -1502,14 +1739,7 @@ describe("right panel", () => {
     expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
   });
 
-  it("opens a review workspace with diff and a persistent project file tree", async () => {
-    const rootEntries: ProjectFileEntry[] = [
-      { name: "src", path: "src", type: "directory" },
-      { name: "README.md", path: "README.md", type: "file" }
-    ];
-    const srcEntries: ProjectFileEntry[] = [
-      { name: "a.ts", path: "src/a.ts", type: "file" }
-    ];
+  it("opens a collapsed review list without a persistent project file tree", async () => {
     const getGitInfo = vi.fn(async () => ({ isRepo: true }));
     const getGitChanges = vi.fn(async () => ({
       isRepo: true,
@@ -1529,16 +1759,18 @@ describe("right panel", () => {
         {
           path: "README.md",
           status: "??",
-          diff: "+intro"
+          diff: [
+            "diff --git a/README.md b/README.md",
+            "new file mode 100644",
+            "--- /dev/null",
+            "+++ b/README.md",
+            "@@ -0,0 +1 @@",
+            "+intro"
+          ].join("\n")
         }
       ]
     }));
-    const listProjectDirectory = vi.fn(async (projectId: string, path = ".") => {
-      if (projectId !== project.id) {
-        return [];
-      }
-      return path === "src" ? srcEntries : rootEntries;
-    });
+    const listProjectDirectory = vi.fn(async () => [] satisfies ProjectFileEntry[]);
     const client = createClient({ getGitInfo, getGitChanges, listProjectDirectory });
 
     render(<App client={client} />);
@@ -1546,14 +1778,20 @@ describe("right panel", () => {
     await selectSession("项目对话");
     await openPane("审查");
 
-    expect(await screen.findByText("src/a.ts")).toBeInTheDocument();
+    const changedFile = await screen.findByText("a.ts");
+    expect(changedFile).toBeInTheDocument();
+    expect(screen.queryByText("src/a.ts")).not.toBeInTheDocument();
+    expect(screen.getByTitle("src/a.ts")).toBeInTheDocument();
     expect(screen.getByText("+2")).toBeInTheDocument();
-    expect(screen.getByText("-1")).toBeInTheDocument();
-    expect(screen.getByText("new line")).toBeInTheDocument();
-    expect(screen.getByText("old line")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("筛选文件…")).toBeInTheDocument();
-    expect(listProjectDirectory).toHaveBeenCalledWith(project.id, ".");
-    expect(listProjectDirectory).toHaveBeenCalledWith(project.id, "src");
+    expect(screen.getAllByText("-1").length).toBeGreaterThan(0);
+    expect(screen.queryByText("new line")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("筛选文件…")).not.toBeInTheDocument();
+    expect(listProjectDirectory).not.toHaveBeenCalled();
+
+    fireEvent.click(changedFile);
+    const diff = await screen.findByLabelText("变更对比");
+    expect(diff).toHaveTextContent("new line");
+    expect(diff).toHaveTextContent("old line");
   });
 
   it("returns to the menu when switching from a project-only panel to a conversation", async () => {
@@ -1758,6 +1996,65 @@ describe("right panel", () => {
     expect(useAppStore.getState().rightPanelMode).toBe("files");
   });
 
+  it("restores file preview when returning from a top-level page to the same chat", async () => {
+    installPreviewBridge({ kind: "code", text: "line one\nline two" });
+    const client = createClient();
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      useAppStore.getState().openFilePreview("src/a.ts");
+    });
+    expect(await screen.findByText("a.ts")).toBeInTheDocument();
+    expect(await screen.findByText("line one")).toBeInTheDocument();
+
+    act(() => {
+      useAppStore.getState().setView("tasks");
+    });
+    await waitFor(() => expect(useAppStore.getState().view).toBe("tasks"));
+    act(() => {
+      useAppStore.setState({
+        rightPanelOpen: true,
+        rightPanelMode: null,
+        previewFile: undefined
+      });
+    });
+    expect(useAppStore.getState().rightPanelBySession[session.id]?.mode).toBe("files");
+
+    act(() => {
+      useAppStore.getState().setView("chat");
+    });
+    expect(await screen.findByText("a.ts")).toBeInTheDocument();
+    expect(await screen.findByText("line one")).toBeInTheDocument();
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
+    expect(useAppStore.getState().rightPanelMode).toBe("files");
+    expect(useAppStore.getState().previewFile?.path).toBe("src/a.ts");
+    expect(screen.queryByRole("button", { name: "文件预览" })).not.toBeInTheDocument();
+
+    act(() => {
+      useAppStore.getState().setView("tasks");
+    });
+    await waitFor(() => expect(useAppStore.getState().view).toBe("tasks"));
+    act(() => {
+      useAppStore.setState({
+        rightPanelOpen: true,
+        rightPanelMode: null,
+        previewFile: undefined
+      });
+    });
+
+    await clickSidebarSession("项目对话");
+
+    expect(await screen.findByText("a.ts")).toBeInTheDocument();
+    expect(await screen.findByText("line one")).toBeInTheDocument();
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
+    expect(useAppStore.getState().rightPanelMode).toBe("files");
+    expect(useAppStore.getState().previewFile?.path).toBe("src/a.ts");
+    expect(screen.queryByRole("button", { name: "文件预览" })).not.toBeInTheDocument();
+  });
+
   it("routes DOCX, spreadsheet, and PDF artifacts into their embedded viewers", async () => {
     const docBridge = installPreviewBridge({ kind: "docx", buffer: previewBuffer("docx") });
     const { unmount } = render(
@@ -1847,5 +2144,18 @@ describe("right panel", () => {
     const frame = container.querySelector("iframe");
     expect(frame).not.toBeNull();
     expect(frame?.getAttribute("src")).toBe("https://example.com/");
+  });
+
+  it("renders the browser empty state with an icon and localized examples", async () => {
+    const client = createClient();
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    await openPane("浏览器");
+
+    expect(screen.getByText("输入网址开始浏览，例如 baidu.com，或本地服务 localhost:5173。")).toBeInTheDocument();
+    expect(screen.getByTestId("browser-empty-icon")).toBeInTheDocument();
   });
 });

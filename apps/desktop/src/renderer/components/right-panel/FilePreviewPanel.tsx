@@ -1,11 +1,14 @@
 import {
   ArrowLeftIcon,
   ArrowTopRightIcon,
+  CheckMediumIcon,
+  CopyIcon,
   MinusIcon,
   PanelRightOutlineIcon,
   PlusIcon,
   RefreshIcon,
   TextDocumentGrayIcon,
+  UndoIcon,
   WarningCircleIcon
 } from "@/assets/file-type-icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -427,11 +430,40 @@ function PreviewFailure(props: {
 
 function CodePreview({ text, extension }: { text: string; extension: string }) {
   const settings = useAppStore((state) => state.codePreviewSettings);
+  const setCodePreviewSettings = useAppStore((state) => state.setCodePreviewSettings);
   const displayText = useMemo(() => normalizeCodePreviewText(text), [text]);
   const plainLines = useMemo(() => splitCodePreviewLines(displayText), [displayText]);
   const highlight = useShikiHighlight(displayText, extension, settings, "FilePreviewPanel");
   const language = highlight.language;
   const wrap = settings.wrapLongLines;
+  const [copied, setCopied] = useState(false);
+  const wrapLabel = wrap ? "关闭自动换行" : "自动换行";
+
+  useEffect(() => {
+    if (!copied) {
+      return;
+    }
+    const timer = window.setTimeout(() => setCopied(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  async function copyFileContent(): Promise<void> {
+    if (!navigator.clipboard?.writeText) {
+      console.warn("[FilePreviewPanel] 当前环境缺少剪贴板能力，无法复制文件预览内容", {
+        chars: displayText.length
+      });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(displayText);
+      setCopied(true);
+      console.info("[FilePreviewPanel] 已复制文件预览内容", { chars: displayText.length });
+    } catch (error) {
+      console.warn("[FilePreviewPanel] 复制文件预览内容失败", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
 
   return (
     <div
@@ -442,6 +474,27 @@ function CodePreview({ text, extension }: { text: string; extension: string }) {
       data-testid="file-code-preview"
       style={codePreviewInlineStyle(settings)}
     >
+      <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-xs border border-border bg-canvas p-0.5">
+        <button
+          type="button"
+          aria-label={wrapLabel}
+          aria-pressed={wrap}
+          title={wrapLabel}
+          className={ICON_BUTTON}
+          onClick={() => setCodePreviewSettings({ wrapLongLines: !wrap })}
+        >
+          <UndoIcon className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          aria-label="复制文件内容"
+          title="复制文件内容"
+          className={ICON_BUTTON}
+          onClick={() => void copyFileContent()}
+        >
+          {copied ? <CheckMediumIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+        </button>
+      </div>
       <div
         className={cn("h-full overflow-auto py-3 pl-4 pr-20 font-mono text-[var(--cxb-code-font-size,12px)] leading-[var(--cxb-code-line-height,20px)]", wrap && "overflow-x-hidden")}
         data-code-wrap={wrap ? "true" : "false"}

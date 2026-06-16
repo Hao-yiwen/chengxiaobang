@@ -1,43 +1,28 @@
 # Android Emulator Plugin
 
-ZCode plugin for model-driven Android app development.
+Plugin for model-driven Android app development.
 
-The package root is the plugin root:
+The package root is the plugin root. When enabled, the app loads:
 
-```bash
-zcode --plugin-dir /absolute/path/to/android-emulator-plugin
-```
-
-When enabled, ZCode loads:
-
-- `.zcode-plugin/plugin.json` for plugin metadata and skill/command paths.
+- `.claude-plugin/plugin.json` for plugin metadata and skill/command paths.
 - `.mcp.json` for the stdio MCP server.
 - `skills/android-dev/SKILL.md` for the model workflow.
 - `commands/android-dev.md` as a convenience slash command.
 
-## ZCode CLI Usage
+## App Usage
 
-ZCode bundles this package as the official
-`android-emulator@zcode-plugins-official` plugin. Enable the plugin to project
-its skill, slash command, and MCP server into the session.
-At startup ZCode copies the packaged plugin files into
-`~/.zcode/cli/plugins/cache/zcode-plugins-official/android-emulator/0.1.0/`
-and runs the MCP server from that cache directory. SEA builds rewrite the
-official plugin's ZCode manifest to launch the cached MCP server through ZCode's
-internal plugin host, so the server uses the embedded Node.js runtime.
-Third-party plugins are not rewritten automatically and keep their own declared
-`command`.
-
-Example `~/.zcode/cli/config.json` entry:
+程小帮 bundles this package as the built-in `android-emulator` plugin. Enable
+the plugin to project its skill, slash command, and MCP server into the session.
+Runtime options are stored in the app's plugin settings:
 
 ```json
 {
   "plugins": {
     "enabledPlugins": {
-      "android-emulator@zcode-plugins-official": true
+      "android-emulator": true
     },
     "options": {
-      "android-emulator@zcode-plugins-official": {
+      "android-emulator": {
         "default_avd": "medium_phone",
         "api_level": "35"
       }
@@ -46,11 +31,11 @@ Example `~/.zcode/cli/config.json` entry:
 }
 ```
 
-The plugin MCP server name is `android-emulator`. ZCode normalizes that name for
-model-visible MCP tools, so the model sees `mcp__android_emulator__<tool>`, for
-example `mcp__android_emulator__android_preflight`. The MCP server still
-implements the raw MCP tool names such as `android_preflight`; ZCode maps
-between the model-visible name and the server tool name.
+The plugin MCP server name is `android-emulator`. The model sees
+`mcp__android_emulator__<tool>`, for example
+`mcp__android_emulator__android_preflight`. The MCP server still implements the
+raw MCP tool names such as `android_preflight`; the app maps between the
+model-visible name and the server tool name.
 
 Use stdio for the normal local workflow. HTTP is only useful if you later wrap
 this package as a long-running daemon shared by multiple clients.
@@ -117,14 +102,13 @@ target's serial directly to install, launch, screenshot, log, or UI tools.
 
 ```bash
 pnpm install
-pnpm --filter @zcode/android-emulator-plugin typecheck
-pnpm --filter @zcode/android-emulator-plugin test
-pnpm --filter @zcode/android-emulator-plugin build
+pnpm --dir apps/backend/plugins/android-emulator typecheck
+pnpm --dir apps/backend/plugins/android-emulator test
+pnpm --dir apps/backend/plugins/android-emulator build
 ```
 
-The Claude-compatible `.mcp.json` and the ZCode manifest both execute
-`dist/mcp/server.js` with Node.js. Run the package build after changing
-TypeScript sources.
+`.mcp.json` executes `dist/mcp/server.js` with Node.js. Run the package build
+after changing TypeScript sources.
 
 ## Extension Points
 

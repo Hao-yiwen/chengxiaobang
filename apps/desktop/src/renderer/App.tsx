@@ -1,5 +1,5 @@
 import type { DragEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DocumentIcon } from "@/assets/file-type-icons";
 import { ApprovalDock } from "./components/ApprovalDock";
@@ -15,14 +15,18 @@ import { HomeMascot } from "./components/HomeMascot";
 import { HomeStarters } from "./components/HomeStarters";
 import { NotificationToasts } from "./components/NotificationToasts";
 import { OpenInIdeButton } from "./components/OpenInIdeButton";
-import { RightPanel } from "./components/right-panel/RightPanel";
+import {
+  RIGHT_PANEL_VISUAL_TRANSITION_MS,
+  RightPanel,
+  type RightPanelVisualPhase
+} from "./components/right-panel/RightPanel";
 import { RightPanelSwitch } from "./components/right-panel/RightPanelSwitch";
 import { SettingsView } from "./components/SettingsView";
 import { SessionActionsMenu } from "./components/SessionActionsMenu";
 import { SessionDebugButton } from "./components/SessionDebugButton";
 import { SetupDialog } from "./components/SetupDialog";
 import { Sidebar, SidebarToggle } from "./components/Sidebar";
-import { SkillsView } from "./components/SkillsView";
+import { PluginsView } from "./components/PluginsView";
 import { TasksView } from "./components/TasksView";
 import { UpdateCenter } from "./components/UpdateCenter";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -33,6 +37,20 @@ import { cn } from "@/lib/utils";
 import { selectActiveSession, useAppStore } from "@/store";
 
 const HOME_HERO_PHRASE_KEYS = ["today", "next", "build", "ship"] as const;
+const RIGHT_PANEL_TRIGGER_HIDE_MS = 120;
+
+function effectiveRightPanelPhase(
+  open: boolean,
+  phase: RightPanelVisualPhase
+): RightPanelVisualPhase {
+  if (open) {
+    return phase === "open" ? "open" : "opening";
+  }
+  if (phase === "open" || phase === "opening") {
+    return "closing";
+  }
+  return phase;
+}
 
 export function App(props: { client?: ApiClient }) {
   const { t } = useTranslation();
@@ -45,18 +63,28 @@ export function App(props: { client?: ApiClient }) {
   const view = useAppStore((state) => state.view);
   const activeSession = useAppStore(selectActiveSession);
   const rightPanelOpen = useAppStore((state) => state.rightPanelOpen);
+  const rightPanelMode = useAppStore((state) => state.rightPanelMode);
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
   const pendingDecisionTool = useAppStore((state) => state.pendingTool);
   const addDroppedContext = useAppStore((state) => state.addDroppedContext);
+  const toggleRightPanel = useAppStore((state) => state.toggleRightPanel);
   const [dragDepth, setDragDepth] = useState(0);
+  const rightPanelTriggerTimerRef = useRef<number | undefined>(undefined);
   // macOS 隐藏标题栏下折叠按钮悬浮在主区左上角，头部标题需要让位。
   const isMacDesktop = window.chengxiaobang?.platform === "darwin";
   const headerInset = !sidebarOpen && isMacDesktop;
   const acceptsDroppedContext = view === "home" || view === "chat";
   const dropActive = acceptsDroppedContext && dragDepth > 0;
-  const showRightPanel = view === "chat" || (view === "home" && rightPanelOpen);
   const hideComposerForDecisionDock =
     pendingDecisionTool?.status === "pending_approval";
+  const [rightPanelVisualPhase, setRightPanelVisualPhase] = useState<RightPanelVisualPhase>(
+    rightPanelOpen ? "open" : "closed"
+  );
+  const [rightPanelTriggerHiding, setRightPanelTriggerHiding] = useState(false);
+  const rightPanelPhase = effectiveRightPanelPhase(rightPanelOpen, rightPanelVisualPhase);
+  const rightPanelLayoutActive = rightPanelPhase !== "closed";
+  const showRightPanel = view === "chat" || (view === "home" && rightPanelLayoutActive);
+  const rightPanelControlsHidden = rightPanelLayoutActive || rightPanelTriggerHiding;
 
   useThemeController();
   useI18nController();
@@ -83,6 +111,56 @@ export function App(props: { client?: ApiClient }) {
       name: pendingDecisionTool.name
     });
   }, [hideComposerForDecisionDock, pendingDecisionTool]);
+
+  useEffect(() => {
+    if (rightPanelOpen) {
+      if (rightPanelVisualPhase === "open") {
+        return;
+      }
+      if (rightPanelVisualPhase !== "opening") {
+        console.info("[App] 右侧工作区进入打开动画", {
+          from: rightPanelVisualPhase,
+          mode: rightPanelMode
+        });
+        setRightPanelVisualPhase("opening");
+      }
+      const timer = window.setTimeout(() => {
+        console.info("[App] 右侧工作区打开动画完成", { mode: rightPanelMode });
+        setRightPanelVisualPhase("open");
+      }, RIGHT_PANEL_VISUAL_TRANSITION_MS);
+      return () => window.clearTimeout(timer);
+    }
+    if (rightPanelVisualPhase === "closed") {
+      return;
+    }
+    if (rightPanelVisualPhase !== "closing") {
+      console.info("[App] 右侧工作区进入收起动画", {
+        from: rightPanelVisualPhase,
+        mode: rightPanelMode
+      });
+      setRightPanelVisualPhase("closing");
+    }
+    const timer = window.setTimeout(() => {
+      console.info("[App] 右侧工作区收起动画完成", { mode: rightPanelMode });
+      setRightPanelVisualPhase("closed");
+    }, RIGHT_PANEL_VISUAL_TRANSITION_MS);
+    return () => window.clearTimeout(timer);
+  }, [rightPanelMode, rightPanelOpen, rightPanelVisualPhase]);
+
+  useEffect(() => {
+    if (rightPanelOpen && rightPanelTriggerHiding) {
+      setRightPanelTriggerHiding(false);
+    }
+  }, [rightPanelOpen, rightPanelTriggerHiding]);
+
+  useEffect(
+    () => () => {
+      if (rightPanelTriggerTimerRef.current !== undefined) {
+        window.clearTimeout(rightPanelTriggerTimerRef.current);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     function onKey(event: KeyboardEvent): void {
@@ -143,6 +221,28 @@ export function App(props: { client?: ApiClient }) {
     }
   };
 
+  function handleRightPanelToggle(): void {
+    if (rightPanelOpen || rightPanelLayoutActive) {
+      toggleRightPanel();
+      return;
+    }
+    if (rightPanelTriggerHiding) {
+      return;
+    }
+    console.info("[App] 右上角工具组先隐藏，随后打开右侧工作区", {
+      delayMs: RIGHT_PANEL_TRIGGER_HIDE_MS,
+      mode: rightPanelMode
+    });
+    setRightPanelTriggerHiding(true);
+    rightPanelTriggerTimerRef.current = window.setTimeout(() => {
+      rightPanelTriggerTimerRef.current = undefined;
+      console.info("[App] 右上角工具组隐藏完成，打开右侧工作区", {
+        mode: useAppStore.getState().rightPanelMode
+      });
+      toggleRightPanel();
+    }, RIGHT_PANEL_TRIGGER_HIDE_MS);
+  }
+
   return (
     <TooltipProvider delayDuration={300}>
       <ConfirmDialogProvider>
@@ -184,22 +284,23 @@ export function App(props: { client?: ApiClient }) {
                 <main className="relative flex h-screen min-h-0 min-w-0 flex-1 flex-col bg-background">
                   {view === "chat" ? (
                     <div
+                      data-testid="right-panel-toolbar"
                       className={cn(
-                        "absolute right-3 top-3 z-[60] flex items-center gap-1 [-webkit-app-region:no-drag] transition-all duration-200 ease-out sm:right-6",
-                        rightPanelOpen
-                          ? "pointer-events-none translate-x-1 opacity-0"
-                          : "translate-x-0 opacity-100"
+                        "absolute right-3 top-3 z-[60] flex origin-top-right scale-100 items-center gap-1 opacity-100 [-webkit-app-region:no-drag] transition-[opacity,transform] duration-150 ease-out sm:right-6",
+                        rightPanelControlsHidden
+                          ? "pointer-events-none scale-95 opacity-0"
+                          : "pointer-events-auto scale-100 opacity-100"
                       )}
                     >
                       <OpenInIdeButton />
                       <SessionDebugButton />
-                      <RightPanelSwitch />
+                      <RightPanelSwitch onToggle={handleRightPanelToggle} />
                     </div>
                   ) : null}
                   {view === "tasks" ? (
                     <TasksView />
-                  ) : view === "skills" ? (
-                    <SkillsView />
+                  ) : view === "plugins" ? (
+                    <PluginsView />
                   ) : view === "connectPhone" ? (
                     <ConnectPhoneView />
                   ) : view === "home" ? (
@@ -247,8 +348,17 @@ export function App(props: { client?: ApiClient }) {
                         </div>
                       </header>
                       {/* chat-layout-scope 提供 @container 查询基准，relative 为浮动面板提供定位参照。
-                          内层 px-12 包裹 ChatView 与 Composer，两列共用同一横向内距，从源头消除宽度差异。 */}
-                      <div className="chat-layout-scope relative flex min-h-0 flex-1 flex-col">
+                          data-right-panel-* 只记录右侧工作区状态，方便测试和布局问题排查。 */}
+                      <div
+                        data-testid="chat-layout-scope"
+                        data-right-panel-open={rightPanelOpen ? "true" : "false"}
+                        data-right-panel-phase={rightPanelPhase}
+                        data-right-panel-reserved={rightPanelLayoutActive ? "true" : "false"}
+                        data-right-panel-mode={
+                          rightPanelLayoutActive ? (rightPanelMode ?? "menu") : "closed"
+                        }
+                        className="chat-layout-scope relative flex min-h-0 flex-1 flex-col"
+                      >
                         <div className="flex min-h-0 flex-1 flex-col px-12">
                           <ChatView />
                           <div className="chat-composer-dock flex-none pb-3 pt-0">
@@ -268,7 +378,7 @@ export function App(props: { client?: ApiClient }) {
                   )}
                 </main>
                 {/* 首页只在附件预览被主动打开后挂载右侧面板，默认仍保持干净。 */}
-                {showRightPanel ? <RightPanel /> : null}
+                {showRightPanel ? <RightPanel phase={rightPanelPhase} /> : null}
               </div>
             </>
           )}

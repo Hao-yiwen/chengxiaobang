@@ -1,14 +1,16 @@
 import {
   CheckMediumIcon,
   CommentTextIcon,
+  FolderOpenOutlineIcon,
   PlusIcon,
   TrashIcon
 } from "@/assets/file-type-icons";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SkillCategory, SkillDetail, SkillSummary } from "@chengxiaobang/shared";
 import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { Markdown } from "@/components/Markdown";
+import { SectionShell, SettingBlock } from "@/components/settings/SectionShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -22,37 +24,30 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
-type CategoryFilter = "all" | SkillCategory;
-
-const CATEGORY_FILTERS: CategoryFilter[] = ["all", "coding", "office", "other"];
 const softBluePillClassName = "border-soft-blue-border bg-soft-blue-surface text-soft-blue-foreground";
-// 插件来源用品牌紫做小型状态标记，与 builtin(绿)/market·custom(蓝) 区分。
+// 插件来源用品牌紫做小型状态标记，与 builtin(绿)/custom(蓝) 区分。
 const violetPillClassName = "border-violet/20 bg-violet/10 text-violet";
 const softBlueButtonClassName =
   "border border-soft-blue-border bg-soft-blue-surface text-soft-blue-foreground hover:border-soft-blue hover:bg-soft-blue-surface-hover hover:text-soft-blue-strong [&_svg]:text-soft-blue-foreground hover:[&_svg]:text-soft-blue-strong";
 
-/** 技能页 = 我的技能（已激活）+ 技能市场（按需添加）+ 自定义技能入口。 */
-export function SkillsView() {
+/** 技能设置页 = 技能清单（内置/自定义/插件）+ 自定义技能导入入口 + 技能目录管理。 */
+export function SkillsSection() {
   const { t } = useTranslation();
   const skills = useAppStore((state) => state.skills);
   const loadSkills = useAppStore((state) => state.loadSkills);
-  const sidebarOpen = useAppStore((state) => state.sidebarOpen);
+  const setNotice = useAppStore((state) => state.setNotice);
   const skillsAddRequested = useAppStore((state) => state.skillsAddRequested);
   const clearSkillsAddRequest = useAppStore((state) => state.clearSkillsAddRequest);
-  // macOS 隐藏标题栏下折叠按钮悬浮在头部左侧，标题需要让位。
-  const headerInset = !sidebarOpen && window.chengxiaobang?.platform === "darwin";
 
-  const [filter, setFilter] = useState<CategoryFilter>("all");
   const [addOpen, setAddOpen] = useState(false);
   // 当前查看详情的技能名（null = 详情弹窗关闭）。
   const [detailName, setDetailName] = useState<string | null>(null);
 
   useEffect(() => {
-    console.debug("[skills-view] 进入技能页，加载技能列表");
+    console.debug("[skills-section] 进入技能设置，加载技能列表");
     void loadSkills();
   }, [loadSkills]);
 
@@ -64,52 +59,29 @@ export function SkillsView() {
     }
   }, [skillsAddRequested, clearSkillsAddRequest]);
 
-  const mySkills = useMemo(() => skills.filter((skill) => skill.enabled), [skills]);
-  const marketSkills = useMemo(
-    () =>
-      skills.filter(
-        (skill) => skill.source === "market" && (filter === "all" || skill.category === filter)
-      ),
-    [skills, filter]
-  );
-  const hasOther = useMemo(
-    () => skills.some((skill) => skill.source === "market" && skill.category === "other"),
-    [skills]
-  );
-
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-background">
-      <header
-        className={cn(
-          "flex min-h-[76px] flex-none items-end justify-between gap-4 border-b px-12 pb-3 pt-5 transition-[padding] duration-200 ease-out",
-          headerInset ? "pl-[124px]" : "[-webkit-app-region:drag]"
-        )}
+    <SectionShell title={t("settings.skills.title")}>
+      <SettingBlock
+        title={t("settings.skills.listTitle")}
+        description={t("settings.skills.listDesc")}
       >
-        <div className="min-w-0">
-          <h1 className="truncate text-body-sm font-medium text-foreground">
-            {t("skills.title")}
-          </h1>
-          <p className="mt-0.5 text-caption text-mute">{t("skills.subtitle")}</p>
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className={cn("flex-none", softBlueButtonClassName)}
+            onClick={() => setAddOpen(true)}
+          >
+            <PlusIcon className="size-3.5" />
+            {t("skills.addCustom")}
+          </Button>
         </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className={cn("flex-none [-webkit-app-region:no-drag]", softBlueButtonClassName)}
-          onClick={() => setAddOpen(true)}
-        >
-          <PlusIcon className="size-3.5" />
-          {t("skills.addCustom")}
-        </Button>
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-12 py-6">
-        <SectionTitle>{t("skills.mine")}</SectionTitle>
-        {mySkills.length === 0 ? (
-          <p className="mt-2 text-body-sm [color:rgb(var(--body))]">{t("skills.mineEmpty")}</p>
+        {skills.length === 0 ? (
+          <p className="text-body-sm [color:rgb(var(--body))]">{t("settings.skills.empty")}</p>
         ) : (
-          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
-            {mySkills.map((skill) => (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {skills.map((skill) => (
               <SkillCard
                 key={`${skill.source}:${skill.name}`}
                 skill={skill}
@@ -119,62 +91,31 @@ export function SkillsView() {
             ))}
           </div>
         )}
+      </SettingBlock>
 
-        <div className="mt-10 flex flex-wrap items-center justify-between gap-2">
-          <SectionTitle>{t("skills.market")}</SectionTitle>
-          <ToggleGroup
-            type="single"
-            value={filter}
-            aria-label={t("skills.categoryFilter")}
-            onValueChange={(value) => {
-              if (!value) {
-                return;
-              }
-              console.debug("[skills-view] 切换技能市场分类筛选", { filter: value });
-              setFilter(value as CategoryFilter);
-            }}
-            className="flex items-center gap-1"
-          >
-            {CATEGORY_FILTERS.filter((value) => value !== "other" || hasOther).map((value) => (
-              <ToggleGroupItem
-                key={value}
-                value={value}
-                aria-label={t(`skills.category.${value}`)}
-                className="border-soft-blue-border !text-caption [color:rgb(var(--body))] hover:bg-soft-blue-surface hover:text-soft-blue-foreground data-[state=on]:border-soft-blue data-[state=on]:bg-soft-blue-surface-hover data-[state=on]:text-soft-blue-strong"
-              >
-                {t(`skills.category.${value}`)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </div>
-        <p className="mt-1 text-caption text-mute">{t("skills.marketHint")}</p>
-        {marketSkills.length === 0 ? (
-          <p className="mt-3 text-body-sm [color:rgb(var(--body))]">{t("skills.marketEmpty")}</p>
-        ) : (
-          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
-            {marketSkills.map((skill) => (
-              <SkillCard
-                key={`market:${skill.name}`}
-                skill={skill}
-                onOpen={() => setDetailName(skill.name)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      <SettingBlock
+        title={t("settings.skills.manageTitle")}
+        description={t("settings.skills.manageDesc")}
+      >
+        <Button
+          variant="outline"
+          className="w-fit"
+          onClick={async () => {
+            if (!window.chengxiaobang?.openSkillsDir) {
+              setNotice(t("settings.skills.desktopOnly"));
+              return;
+            }
+            await window.chengxiaobang.openSkillsDir();
+          }}
+        >
+          <FolderOpenOutlineIcon className="size-4" />
+          {t("settings.skills.openDir")}
+        </Button>
+      </SettingBlock>
 
       <AddSkillDialog open={addOpen} onOpenChange={setAddOpen} />
       <SkillDetailDialog name={detailName} onClose={() => setDetailName(null)} />
-    </section>
-  );
-}
-
-function SectionTitle(props: { children: ReactNode }) {
-  return (
-    <h2 className="flex items-center gap-2 font-mono text-caption tracking-[0.28px] text-foreground">
-      <span className="h-3 w-px rounded-full bg-foreground" aria-hidden />
-      {props.children}
-    </h2>
+    </SectionShell>
   );
 }
 
@@ -214,8 +155,8 @@ function SkillCategoryBadge(props: { category: SkillCategory; className?: string
 }
 
 /**
- * 单张技能卡，整张可点击查看详情；底部操作按钮（添加/移除/删除）阻止冒泡。
- * 市场区展示「添加/移除」；「我的技能」区里市场技能可移除、自定义技能可删除、内置技能始终启用。
+ * 单张技能卡，整张可点击查看详情；底部操作按钮（移除/删除）阻止冒泡。
+ * 内置技能始终启用、自定义技能可删除、插件技能可单项停用。
  */
 function SkillCard(props: { skill: SkillSummary; mine?: boolean; onOpen(): void }) {
   const { t } = useTranslation();
@@ -258,14 +199,13 @@ function SkillCard(props: { skill: SkillSummary; mine?: boolean; onOpen(): void 
 }
 
 /**
- * 技能的上下文操作按钮：内置=始终启用（只读）、市场=添加/移除、自定义=删除。
+ * 技能的上下文操作按钮：内置=始终启用（只读）、自定义=删除、插件=单项停用/恢复。
  * 卡片与详情弹窗共用；onClick 一律 stopPropagation，避免触发外层卡片的详情打开。
  */
 function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact?: boolean }) {
   const { t } = useTranslation();
   const confirmDialog = useConfirmDialog();
-  const { skill, mine, compact = false } = props;
-  const setSkillEnabled = useAppStore((state) => state.setSkillEnabled);
+  const { skill, compact = false } = props;
   const setSkillDisabled = useAppStore((state) => state.setSkillDisabled);
   const deleteCustomSkill = useAppStore((state) => state.deleteCustomSkill);
   const setNotice = useAppStore((state) => state.setNotice);
@@ -277,7 +217,7 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
     try {
       await action();
     } catch (error) {
-      console.error("[skills-view] 技能操作失败", { name: skill.name, error });
+      console.error("[skills-section] 技能操作失败", { name: skill.name, error });
       setNotice(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
@@ -288,7 +228,7 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
     if (busy) {
       return;
     }
-    console.debug("[skills-view] 请求删除自定义技能", { name: skill.name });
+    console.debug("[skills-section] 请求删除自定义技能", { name: skill.name });
     const confirmed = await confirmDialog({
       title: t("skills.deleteTitle", { name: skill.name }),
       description: t("skills.deleteConfirm", { name: skill.name }),
@@ -298,34 +238,11 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
       source: "skills.deleteCustomSkill"
     });
     if (!confirmed) {
-      console.debug("[skills-view] 用户取消删除自定义技能", { name: skill.name });
+      console.debug("[skills-section] 用户取消删除自定义技能", { name: skill.name });
       return;
     }
-    console.debug("[skills-view] 用户确认删除自定义技能", { name: skill.name });
+    console.debug("[skills-section] 用户确认删除自定义技能", { name: skill.name });
     await run(() => deleteCustomSkill(skill.name));
-  }
-
-  async function confirmToggleMarketSkill(enabled: boolean): Promise<void> {
-    if (busy) {
-      return;
-    }
-    const source = enabled ? "skills.addMarketSkill" : "skills.removeMarketSkill";
-    console.debug("[skills-view] 请求切换市场技能", { name: skill.name, enabled });
-    const confirmed = await confirmDialog({
-      title: t(enabled ? "skills.addTitle" : "skills.removeTitle", { name: skill.name }),
-      description: t(enabled ? "skills.addConfirm" : "skills.removeConfirm", {
-        name: skill.name
-      }),
-      confirmLabel: t(enabled ? "skills.add" : "skills.remove"),
-      cancelLabel: t("confirmDialog.cancel"),
-      source
-    });
-    if (!confirmed) {
-      console.debug("[skills-view] 用户取消切换市场技能", { name: skill.name, enabled });
-      return;
-    }
-    console.debug("[skills-view] 用户确认切换市场技能", { name: skill.name, enabled });
-    await run(() => setSkillEnabled(skill.name, enabled));
   }
 
   if (skill.source === "plugin") {
@@ -346,7 +263,7 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
           disabled={busy}
           aria-label={t(skill.enabled ? "skills.disablePlugin" : "skills.enablePlugin")}
           onCheckedChange={(checked) => {
-            console.debug("[skills-view] 切换插件技能停用态", {
+            console.debug("[skills-section] 切换插件技能停用态", {
               name: skill.name,
               enabled: checked
             });
@@ -386,52 +303,18 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
       </Button>
     );
   }
-  return skill.enabled ? (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      disabled={busy}
-      className={cn(
-        compact ? compactActionButtonClassName : "h-7 px-2.5 text-micro",
-        softBlueButtonClassName
-      )}
-      onClick={(event) => {
-        event.stopPropagation();
-        void confirmToggleMarketSkill(false);
-      }}
-    >
-      {mine ? t("skills.remove") : t("skills.added")}
-    </Button>
-  ) : (
-    <Button
-      type="button"
-      size="sm"
-      disabled={busy}
-      className={cn(
-        compact ? compactActionButtonClassName : "h-7 px-2.5 text-micro",
-        softBlueButtonClassName
-      )}
-      onClick={(event) => {
-        event.stopPropagation();
-        void confirmToggleMarketSkill(true);
-      }}
-    >
-      <PlusIcon className="size-3.5" />
-      {t("skills.add")}
-    </Button>
-  );
+  return null;
 }
 
 /**
  * 技能详情弹窗：按名拉取 SKILL.md 正文并以 Markdown 渲染；
- * 头部徽章与底部操作读取 store 里的实时概要，激活/删除后即时反映。
+ * 头部徽章与底部操作读取 store 里的实时概要，删除后即时反映。
  */
 function SkillDetailDialog(props: { name: string | null; onClose(): void }) {
   const { t } = useTranslation();
   const { name, onClose } = props;
   const getSkillDetail = useAppStore((state) => state.getSkillDetail);
-  // 头部/底部读实时概要：在弹窗里切换激活态或删除后能即时反映。
+  // 头部/底部读实时概要：在弹窗里切换停用态或删除后能即时反映。
   const summary = useAppStore((state) =>
     name ? state.skills.find((skill) => skill.name === name) : undefined
   );
@@ -541,7 +424,7 @@ function AddSkillDialog(props: { open: boolean; onOpenChange(open: boolean): voi
       setUrl("");
       props.onOpenChange(false);
     } catch (cause) {
-      console.error("[skills-view] 导入技能失败", { url, error: cause });
+      console.error("[skills-section] 导入技能失败", { url, error: cause });
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
@@ -550,7 +433,7 @@ function AddSkillDialog(props: { open: boolean; onOpenChange(open: boolean): voi
 
   // 交给对话：关掉弹窗、开一个新会话，并把起手提示词填进输入框，引导用户补充需求或链接。
   function startChatCreation(): void {
-    console.info("[skills-view] 通过对话创建技能");
+    console.info("[skills-section] 通过对话创建技能");
     props.onOpenChange(false);
     newChat();
     setInput(t("skills.chatCreatePrompt"));

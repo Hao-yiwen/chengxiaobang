@@ -21,7 +21,8 @@ describe("startup splash", () => {
     expect(html).toContain('class="startup-image"');
     expect(html).toContain("data:image/png;base64,aW1hZ2U=");
     expect(html).toContain('alt="程小帮"');
-    expect(html).toContain("width: 148px");
+    expect(html).toContain("width: min(260px, 42vw, 40vh)");
+    expect(html).toContain("height: auto");
     expect(html).not.toContain("启动中");
   });
 
@@ -48,7 +49,7 @@ describe("startup splash", () => {
 
   it("loads the onboarding loading image as an inline data url", async () => {
     const dataUrl = await loadStartupSplashImageDataUrl(
-      join(process.cwd(), "apps/desktop/assets/onboarding-loading-startup.png")
+      join(process.cwd(), "apps/desktop/assets/onboarding-loading.png")
     );
 
     expect(dataUrl.startsWith("data:image/png;base64,")).toBe(true);
@@ -59,6 +60,6 @@ describe("startup splash", () => {
       readFileSync(join(process.cwd(), "apps/desktop/package.json"), "utf8")
     ) as { build?: { files?: string[] } };
 
-    expect(pkg.build?.files).toContain("assets/onboarding-loading-startup.png");
+    expect(pkg.build?.files).toContain("assets/onboarding-loading.png");
   });
 });

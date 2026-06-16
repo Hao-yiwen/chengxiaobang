@@ -1,6 +1,7 @@
 import {
   ArrowLeftIcon,
   ArrowTopRightIcon,
+  GlobeOutlineIcon,
   RefreshIcon
 } from "@/assets/file-type-icons";
 import { useEffect, useRef, useState } from "react";
@@ -9,7 +10,7 @@ import { ExternalUrlMenu, openExternalUrlWithDefaultBrowser } from "@/components
 import { localPathFromFileUrl, normalizeBrowserUrl } from "@/lib/url";
 import { useAppStore } from "@/store";
 
-/** The subset of Electron's <webview> API the toolbar drives. */
+/** 工具栏会调用的 Electron <webview> API 子集。 */
 interface WebviewElement extends HTMLElement {
   src: string;
   canGoBack(): boolean;
@@ -33,8 +34,7 @@ export function BrowserPanel() {
   const [canGoForward, setCanGoForward] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const webviewRef = useRef<WebviewElement | null>(null);
-  // Electron's <webview> tag needs the desktop shell (webviewTag is enabled in
-  // the main process); plain browsers and jsdom fall back to a sandboxed iframe.
+  // Electron 的 <webview> 需要桌面壳层支持；普通浏览器和 jsdom 回退到沙箱 iframe。
   const hasWebview = Boolean(window.chengxiaobang);
   const currentLocalPath = url ? localPathFromFileUrl(url) : undefined;
 
@@ -45,8 +45,7 @@ export function BrowserPanel() {
     if (!view || !url) {
       return;
     }
-    // These fire only after the webview attaches, so calling its navigation
-    // methods inside the handler is safe.
+    // 这些事件只会在 webview 挂载后触发，因此处理函数里可以安全读取导航状态。
     const sync = () => {
       setCanGoBack(view.canGoBack());
       setCanGoForward(view.canGoForward());
@@ -63,10 +62,13 @@ export function BrowserPanel() {
   function submit(event: React.FormEvent): void {
     event.preventDefault();
     const normalized = normalizeBrowserUrl(address);
-    if (normalized) {
-      setBrowserUrl(normalized);
-      setReloadNonce((value) => value + 1);
+    if (!normalized) {
+      console.warn("[BrowserPanel] 忽略无效地址栏输入", { input: address });
+      return;
     }
+    console.info("[BrowserPanel] 地址栏导航", { input: address, url: normalized });
+    setBrowserUrl(normalized);
+    setReloadNonce((value) => value + 1);
   }
 
   function reload(): void {
@@ -174,8 +176,15 @@ export function BrowserPanel() {
             />
           )
         ) : (
-          <div className="flex h-full items-center justify-center px-6 text-center text-caption text-muted-foreground">
-            {t("rightPanel.browserEmpty")}
+          <div className="flex h-full items-center justify-center px-6 text-center">
+            <div className="flex max-w-[320px] flex-col items-center gap-3 text-caption leading-relaxed text-muted-foreground">
+              <GlobeOutlineIcon
+                aria-hidden="true"
+                data-testid="browser-empty-icon"
+                className="size-12 flex-none text-muted-foreground"
+              />
+              <p>{t("rightPanel.browserEmpty")}</p>
+            </div>
           </div>
         )}
       </div>

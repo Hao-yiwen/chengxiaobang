@@ -122,7 +122,7 @@ API / IPC 契约的唯一事实源。所有实体（Provider、Project、Session
 `POST /api/runs/stream` → `AgentRunner.stream()`：
 
 1. 解析/创建会话，落库 user 消息，发 `run_started` + `message`。
-2. **直接斜杠命令**（`/ls`、`/read`、`/write`、`/shell`、`/git status|diff`）在模型循环前先执行恰好一个内置工具；`/compact` 走仅总结的模型调用。
+2. **用户可见的内置斜杠命令只保留 `/compact`**：它走仅总结的模型调用，不落 user 消息；文件、shell、Git 等能力保留为 agent 内部工具，由模型在 pi 循环中按需调用。
 3. 从持久化行重建 pi 对话（`agent/history.ts`），交给 `runAgentLoopContinue`。`RunEventTranslator` 把 pi 事件映射到 `StreamEvent`：`delta` / `message` / `tool_call` / 最终 `run_end`。
 4. **审批门控**在 pi 的 `beforeToolCall` 钩子：`approval` 模式下 mutating 工具先落 `pending_approval`，阻塞在 `ApprovalQueue.wait()` 直到 `POST /api/approvals/:toolCallId`。
 5. `POST /api/runs/:runId/abort` 经以 runId 为键的 `AbortController` 取消。

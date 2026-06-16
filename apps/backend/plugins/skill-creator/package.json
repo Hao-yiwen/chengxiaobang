@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@zcode/skill-creator-plugin",
+  "name": "@chengxiaobang/skill-creator-plugin",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "作为官方 ZCode 插件发布的内置 skill-creator 技能。"
+  "description": "作为程小帮内置插件发布的 skill-creator 技能。"
 }

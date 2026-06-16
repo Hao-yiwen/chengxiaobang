@@ -158,9 +158,17 @@ describe("ConnectPhoneView", () => {
 
     await openConnectPhone(client);
 
+    const wechatButton = screen.getByRole("button", { name: "微信" });
+    const feishuButton = screen.getByRole("button", { name: "飞书 / Lark" });
     expect(screen.getByTestId("connect-phone-panel")).toHaveClass("rounded-sm", "border");
-    expect(screen.getByRole("button", { name: "微信" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "飞书 / Lark" })).toHaveAttribute("aria-pressed", "false");
+    expect(wechatButton).toHaveAttribute("aria-pressed", "true");
+    expect(wechatButton).toHaveClass(
+      "border-soft-blue-border",
+      "bg-soft-blue-surface",
+      "text-soft-blue-foreground"
+    );
+    expect(wechatButton).not.toHaveClass("bg-foreground");
+    expect(feishuButton).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("用微信或飞书扫码连接程小帮，在手机里继续对话与触发任务。")).toBeInTheDocument();
     expect(screen.getByText("微信扫码连接")).toBeInTheDocument();
     expect(screen.getByAltText("手机微信聊天页插画")).toBeInTheDocument();

@@ -18,6 +18,7 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
@@ -292,32 +293,42 @@ function TaskCard(props: {
                 }}
               />
             ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title={t("tasks.runNow")}
-              className="size-8 rounded-xs text-muted-foreground hover:bg-canvas-soft-2 hover:text-foreground"
-              onClick={() => {
-                console.debug("[tasks-view] 立即执行定时任务", { taskId: task.id });
-                void props.onRunNow(task.id);
-              }}
-            >
-              <LightningBoltIcon className="size-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title={t("tasks.delete")}
-              className="size-8 rounded-xs text-muted-foreground hover:text-error-deep"
-              onClick={() => {
-                console.debug("[tasks-view] 删除定时任务", { taskId: task.id });
-                void props.onDelete(task.id);
-              }}
-            >
-              <TrashIcon className="size-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t("tasks.runNowTask", { name: task.name })}
+                  className="size-8 rounded-xs text-muted-foreground hover:bg-canvas-soft-2 hover:text-foreground"
+                  onClick={() => {
+                    console.debug("[tasks-view] 立即执行定时任务", { taskId: task.id });
+                    void props.onRunNow(task.id);
+                  }}
+                >
+                  <LightningBoltIcon className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("tasks.runNow")}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t("tasks.deleteTask", { name: task.name })}
+                  className="size-8 rounded-xs text-muted-foreground hover:text-error-deep"
+                  onClick={() => {
+                    console.debug("[tasks-view] 删除定时任务", { taskId: task.id });
+                    void props.onDelete(task.id);
+                  }}
+                >
+                  <TrashIcon className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("tasks.delete")}</TooltipContent>
+            </Tooltip>
           </div>
         </div>
         <p className="mt-2 line-clamp-2 min-h-[2.5rem] text-caption leading-relaxed [color:rgb(var(--body))]">

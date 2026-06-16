@@ -254,6 +254,18 @@
     height: 0;
   }
 
+  /* 需要滚动能力但不露出原生滚动条的紧凑弹层列表。 */
+  .scrollbar-hidden {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
   /* 自绘悬浮滚动进度条，不参与布局，避免把 markdown 内容往左推。 */
   .chat-scroll-progress {
     position: absolute;
@@ -270,11 +282,11 @@
     right: 0;
     left: 0;
     border-radius: 999px;
-    background: rgb(var(--mute) / 0.28);
+    background: rgb(var(--ink) / 0.15);
   }
 
   .dark .chat-scroll-progress-thumb {
-    background: rgb(var(--mute) / 0.4);
+    background: rgb(var(--ink) / 0.16);
   }
 
   /* 输入区轻微叠到聊天区上方，让输入框圆角透明区能露出背后的 markdown。 */
@@ -315,6 +327,43 @@
   .chat-progress-floating {
     flex: 1 1 auto;
     max-height: min(22rem, calc(100vh - 6rem));
+  }
+
+  /* 右侧工作区外层稳定占位，内容层负责滑入/滑出动效，避免聊天区在动画中反复回流。 */
+  .right-panel-content-enter {
+    animation: right-panel-content-enter 200ms ease-out both;
+  }
+
+  .right-panel-content-exit {
+    animation: right-panel-content-exit 200ms ease-in both;
+  }
+
+  @keyframes right-panel-content-enter {
+    from {
+      opacity: 0.96;
+      transform: translateX(100%);
+      clip-path: inset(0 0 0 24px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateX(0);
+      clip-path: inset(0);
+    }
+  }
+
+  @keyframes right-panel-content-exit {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+      clip-path: inset(0);
+    }
+
+    to {
+      opacity: 0.96;
+      transform: translateX(100%);
+      clip-path: inset(0 0 0 24px);
+    }
   }
 
   /* 供应商三栏级联选择：仅用于设置页和首次配置，视觉贴合 DESIGN.md 的输入框与弹层系统。 */

@@ -48,7 +48,6 @@ import {
   selectAgentTools,
   type PlanPhase
 } from "../tools/registry";
-import { parseToolRequest } from "../tools/direct-commands";
 import { renderMemoryListing } from "../tools/memory-tools";
 import { createPlanTools } from "../tools/plan-tools";
 import { createScheduleTools } from "../tools/schedule-tools";
@@ -64,7 +63,6 @@ import {
   toClientMessage
 } from "./agent-runner-messages";
 import { AsyncEventQueue } from "./async-queue";
-import { runDirectTool } from "./direct-tool-runner";
 import { buildAgentMessages } from "./history";
 import { RunEventTranslator } from "./pi-events";
 import { ProjectApprovalTrustService } from "./project-approval-trust";
@@ -744,31 +742,6 @@ export class AgentRunner {
         environment,
         ...(await this.memoryPromptInput())
       });
-
-      // 直接斜杠命令快路径：模型循环前只执行一个内置工具，保持确定性的单工具语义。
-      const directRequest = parseToolRequest(expandedPrompt);
-      if (directRequest) {
-        const outcome = yield* runDirectTool({
-          store: this.store,
-          approvals: this.approvals,
-          runId,
-          sessionId: activeSession.id,
-          projectId: activeSession.projectId,
-          request: directRequest,
-          tools,
-          workspacePath,
-          accessMode: input.accessMode,
-          projectApprovalTrustService: this.projectApprovalTrustService,
-          provider,
-          apiKey,
-          signal: controller.signal,
-          strictApproval: headless || viaFeishu,
-          decideSmartApproval: (options) => this.decideSmartApproval(options)
-        });
-        if (outcome !== "ok") {
-          return;
-        }
-      }
 
       const autoCompact = yield* this.autoCompactIfNeeded({
         runId,

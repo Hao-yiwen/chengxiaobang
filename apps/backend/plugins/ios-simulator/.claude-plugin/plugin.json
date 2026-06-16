@@ -1,7 +1,7 @@
 {
   "name": "ios-simulator",
   "version": "0.1.0",
-  "description": "为 ZCode 提供 iOS 开发工作流和模拟器自动化能力。",
+  "description": "为程小帮提供 iOS 开发工作流和模拟器自动化能力。",
   "author": { "name": "Z.ai" },
   "license": "MIT",
   "skills": "skills",
@@ -9,11 +9,11 @@
   "mcpServers": {
     "ios-simulator": {
       "command": "node",
-      "args": ["${ZCODE_PLUGIN_ROOT}/dist/mcp/server.js"],
-      "cwd": "${ZCODE_PROJECT_DIR}",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp/server.js"],
+      "cwd": "${CLAUDE_PROJECT_DIR}",
       "env": {
-        "IOS_SIM_PACKAGE_ROOT": "${ZCODE_PLUGIN_ROOT}",
-        "IOS_SIM_PLUGIN_DATA": "${ZCODE_PLUGIN_DATA}",
+        "IOS_SIM_PACKAGE_ROOT": "${CLAUDE_PLUGIN_ROOT}",
+        "IOS_SIM_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}",
         "IOS_SIM_DEFAULT_DEVICE": "${user_config.default_device}",
         "IOS_SIM_UI_BACKEND": "${user_config.ui_backend}"
       }

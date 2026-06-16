@@ -1,56 +1,60 @@
 import {
-  ArrowTopRightIcon,
+  ChevronIcon,
   GitBranchIcon,
-  RefreshIcon,
-  TextDocumentGrayIcon
+  RefreshIcon
 } from "@/assets/file-type-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GitChangesResult, GitFileChange } from "@chengxiaobang/shared";
 import { DiffView } from "@/components/DiffView";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger
+} from "@/components/ui/tooltip";
+import { resolveFileTypeIcon } from "@/lib/code-language-icons";
+import { parseGitPatchDiff, type PatchDiffBlock } from "@/lib/diff";
+import {
   gitChangeStats,
   gitStatusKind,
-  unifiedDiffToLines,
   type GitStatusKind
 } from "@/lib/git-diff";
 import { cn } from "@/lib/utils";
 import { getApiClient, selectActiveProject, useAppStore } from "@/store";
-import { ProjectFileTree, gitStatusKindByPath } from "./ProjectFileTree";
 
 const ICON_BUTTON =
   "flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
 
-/** 当前项目未提交变更的审查工作台：左侧 diff，右侧项目文件树。 */
+/** 当前项目未提交变更的审查列表，默认折叠每个文件的 diff。 */
 export function ChangesPanel() {
   const { t } = useTranslation();
   const project = useAppStore(selectActiveProject);
-  const openFilePreview = useAppStore((state) => state.openFilePreview);
   const [changes, setChanges] = useState<GitChangesResult>();
-  const [selectedPath, setSelectedPath] = useState<string>();
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const projectId = project?.id;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (reason: "initial" | "refresh" = "initial") => {
     const client = getApiClient();
     if (!client || !projectId) {
       return;
     }
-    console.info("[changes-panel] 开始加载项目审查变更", { projectId });
+    console.info("[changes-panel] 开始加载项目审查变更", { projectId, reason });
     setLoading(true);
     setError(undefined);
     try {
       const nextChanges = await client.getGitChanges(projectId);
       console.info("[changes-panel] 项目审查变更加载完成", {
         projectId,
+        reason,
         isRepo: nextChanges.isRepo,
         fileCount: nextChanges.files.length
       });
       setChanges(nextChanges);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      console.error("[changes-panel] 加载 git 变更失败", { projectId, error: message });
+      console.error("[changes-panel] 加载 git 变更失败", { projectId, reason, error: message });
       setChanges(undefined);
       setError(message);
     } finally {
@@ -60,63 +64,40 @@ export function ChangesPanel() {
 
   useEffect(() => {
     setChanges(undefined);
-    setSelectedPath(undefined);
+    setExpandedPaths(new Set());
     setError(undefined);
-    void load();
+    void load("initial");
   }, [load]);
 
-  const fileByPath = useMemo(() => {
-    const map = new Map<string, GitFileChange>();
-    for (const file of changes?.files ?? []) {
-      map.set(file.path, file);
-    }
-    return map;
-  }, [changes?.files]);
-
-  useEffect(() => {
-    if (!changes?.isRepo || changes.files.length === 0) {
-      setSelectedPath(undefined);
-      return;
-    }
-    if (!selectedPath || !fileByPath.has(selectedPath)) {
-      const firstPath = changes.files[0]?.path;
-      console.debug("[changes-panel] 选中首个变更文件", { projectId, path: firstPath });
-      setSelectedPath(firstPath);
-    }
-  }, [changes, fileByPath, projectId, selectedPath]);
-
-  const selectedFile = selectedPath ? fileByPath.get(selectedPath) : undefined;
   const stats = useMemo(() => gitChangeStats(changes?.files ?? []), [changes?.files]);
-  const statusByPath = useMemo(
-    () => gitStatusKindByPath(changes?.files ?? []),
-    [changes?.files]
-  );
 
-  function openTreeFile(path: string): void {
-    const changedFile = fileByPath.get(path);
-    if (changedFile) {
-      console.info("[changes-panel] 从文件树切换审查文件", {
+  const refresh = useCallback(() => {
+    if (!projectId) {
+      return;
+    }
+    console.info("[changes-panel] 手动刷新审查变更", { projectId });
+    setExpandedPaths(new Set());
+    void load("refresh");
+  }, [load, projectId]);
+
+  const toggleFile = useCallback((file: GitFileChange) => {
+    setExpandedPaths((current) => {
+      const next = new Set(current);
+      const open = !next.has(file.path);
+      if (open) {
+        next.add(file.path);
+      } else {
+        next.delete(file.path);
+      }
+      console.info("[changes-panel] 切换变更文件展开状态", {
         projectId,
-        path,
-        status: changedFile.status
+        path: file.path,
+        status: file.status,
+        open
       });
-      setSelectedPath(path);
-      return;
-    }
-    console.info("[changes-panel] 文件树打开未变更文件预览", { projectId, path });
-    openFilePreview(path);
-  }
-
-  function openSelectedFilePreview(): void {
-    if (!selectedFile) {
-      return;
-    }
-    console.info("[changes-panel] 从审查视图打开文件预览", {
-      projectId,
-      path: selectedFile.path
+      return next;
     });
-    openFilePreview(selectedFile.path);
-  }
+  }, [projectId]);
 
   if (!project) {
     return (
@@ -135,30 +116,16 @@ export function ChangesPanel() {
         additions={stats.additions}
         deletions={stats.deletions}
         loading={loading}
-        onRefresh={() => void load()}
+        onRefresh={refresh}
       />
-      <div className="flex min-h-0 flex-1">
-        <section className="min-w-0 flex-1 overflow-hidden">
-          <ReviewBody
-            changes={changes}
-            selectedFile={selectedFile}
-            loading={loading}
-            error={error}
-            onOpenPreview={openSelectedFilePreview}
-          />
-        </section>
-        {changes?.isRepo ? (
-          <ProjectFileTree
-            project={project}
-            selectedPath={selectedPath}
-            statusByPath={statusByPath}
-            title={t("rightPanel.reviewFilesTitle")}
-            showProjectPath={false}
-            onOpenFile={openTreeFile}
-            className="w-[288px] flex-none border-l"
-          />
-        ) : null}
-      </div>
+      <ReviewBody
+        changes={changes}
+        expandedPaths={expandedPaths}
+        loading={loading}
+        error={error}
+        projectId={project.id}
+        onToggleFile={toggleFile}
+      />
     </div>
   );
 }
@@ -211,10 +178,11 @@ function ReviewToolbar(props: {
 
 function ReviewBody(props: {
   changes: GitChangesResult | undefined;
-  selectedFile: GitFileChange | undefined;
+  expandedPaths: Set<string>;
   loading: boolean;
   error: string | undefined;
-  onOpenPreview: () => void;
+  projectId: string;
+  onToggleFile: (file: GitFileChange) => void;
 }) {
   const { t } = useTranslation();
   if (props.error) {
@@ -248,29 +216,64 @@ function ReviewBody(props: {
       </div>
     );
   }
-  if (!props.selectedFile) {
-    return (
-      <div className="flex h-full items-center justify-center px-6 text-center text-caption text-muted-foreground">
-        {t("rightPanel.reviewSelectFile")}
+  return (
+    <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
+      <div className="space-y-2">
+        {props.changes.files.map((file) => (
+          <ChangedFileRow
+            key={file.path}
+            file={file}
+            isExpanded={props.expandedPaths.has(file.path)}
+            projectId={props.projectId}
+            onToggle={() => props.onToggleFile(file)}
+          />
+        ))}
       </div>
-    );
-  }
-  return <SelectedFileDiff file={props.selectedFile} onOpenPreview={props.onOpenPreview} />;
+    </div>
+  );
 }
 
-function SelectedFileDiff(props: { file: GitFileChange; onOpenPreview: () => void }) {
+function ChangedFileRow({
+  file,
+  isExpanded,
+  projectId,
+  onToggle
+}: {
+  file: GitFileChange;
+  isExpanded: boolean;
+  projectId: string;
+  onToggle: () => void;
+}) {
   const { t } = useTranslation();
-  const kind = gitStatusKind(props.file.status);
-  const lines = useMemo(() => unifiedDiffToLines(props.file.diff), [props.file.diff]);
+  const kind = gitStatusKind(file.status);
+  const stats = useMemo(() => gitChangeStats([file]), [file]);
+  const FileIcon = resolveFileTypeIcon(file.path);
+  const fileName = basenameOf(file.path);
+  const actionLabel = isExpanded
+    ? t("rightPanel.changesCollapseFile")
+    : t("rightPanel.changesExpandFile");
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-none items-center justify-between gap-3 border-b px-4 py-2.5">
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <TextDocumentGrayIcon className="size-4 flex-none text-muted-foreground" />
-            <p className="truncate font-mono text-micro font-medium text-foreground">
-              {props.file.path}
-            </p>
+    <section className="overflow-hidden rounded-md border bg-card">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-expanded={isExpanded}
+            aria-label={`${actionLabel} ${file.path}`}
+            title={file.path}
+            onClick={onToggle}
+            className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/60"
+          >
+            <ChevronIcon
+              className={cn(
+                "size-3.5 flex-none text-muted-foreground transition-transform duration-200",
+                !isExpanded && "-rotate-90"
+              )}
+            />
+            <FileIcon aria-hidden className="cxb-svg-icon size-3.5 flex-none" />
+            <span className="min-w-0 flex-1 truncate font-mono text-micro font-medium text-foreground">
+              {fileName}
+            </span>
             <span
               className={cn(
                 "flex-none rounded-xs px-1.5 py-0.5 text-micro",
@@ -279,28 +282,83 @@ function SelectedFileDiff(props: { file: GitFileChange; onOpenPreview: () => voi
             >
               {t(`rightPanel.gitStatus.${kind}`)}
             </span>
-          </div>
+            <span className="flex-none font-mono text-micro text-link">
+              +{stats.additions.toLocaleString()}
+            </span>
+            <span className="flex-none font-mono text-micro text-destructive">
+              -{stats.deletions.toLocaleString()}
+            </span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[480px] break-all font-mono text-micro">
+          {file.path}
+        </TooltipContent>
+      </Tooltip>
+      {isExpanded ? (
+        <div className="border-t">
+          <GitFileDiff file={file} projectId={projectId} />
         </div>
-        <button
-          type="button"
-          title={t("rightPanel.reviewOpenFilePreview")}
-          onClick={props.onOpenPreview}
-          className={ICON_BUTTON}
-        >
-          <ArrowTopRightIcon className="size-3.5" />
-        </button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {props.file.diff ? (
-          <DiffView lines={lines} height="fill" />
-        ) : (
-          <div className="flex h-full items-center justify-center px-6 text-center text-caption text-muted-foreground">
-            {t("rightPanel.changesBinaryFile")}
-          </div>
-        )}
-      </div>
-    </div>
+      ) : null}
+    </section>
   );
+}
+
+function basenameOf(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  if (!trimmed) {
+    return path;
+  }
+  return trimmed.split(/[\\/]/).pop() ?? trimmed;
+}
+
+function GitFileDiff({ file, projectId }: { file: GitFileChange; projectId: string }) {
+  const { t } = useTranslation();
+  const cacheKeyPrefix = useMemo(
+    () => `${projectId}:${file.path}:${file.status}:${diffFingerprint(file.diff)}`,
+    [file.diff, file.path, file.status, projectId]
+  );
+  const blocks = useMemo(
+    () =>
+      parseGitPatchDiff({
+        patch: file.diff,
+        path: file.path,
+        cacheKeyPrefix
+      }),
+    [cacheKeyPrefix, file.diff, file.path]
+  );
+
+  useEffect(() => {
+    const rawBlocks = blocks.filter(isRawPatchBlock);
+    if (rawBlocks.length === 0) {
+      return;
+    }
+    console.warn("[changes-panel] Git diff patch 解析失败，改为展示原始内容", {
+      projectId,
+      path: file.path,
+      errors: rawBlocks.map((block) => block.error)
+    });
+  }, [blocks, file.path, projectId]);
+
+  if (!file.diff) {
+    return (
+      <div className="flex min-h-[160px] items-center justify-center px-6 text-center text-caption text-muted-foreground">
+        {t("rightPanel.changesBinaryFile")}
+      </div>
+    );
+  }
+  return <DiffView blocks={blocks} />;
+}
+
+function isRawPatchBlock(block: PatchDiffBlock): block is Extract<PatchDiffBlock, { kind: "raw" }> {
+  return block.kind === "raw";
+}
+
+function diffFingerprint(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return `${value.length}:${hash >>> 0}`;
 }
 
 function statusBadgeClassName(kind: GitStatusKind): string {

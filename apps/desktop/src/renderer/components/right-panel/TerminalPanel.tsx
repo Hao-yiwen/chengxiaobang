@@ -1,4 +1,4 @@
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { createId } from "@chengxiaobang/shared";
 import { useEffect, useRef } from "react";
@@ -8,6 +8,22 @@ import "@xterm/xterm/css/xterm.css";
 
 const TERMINAL_FONT =
   "JetBrains Mono, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace";
+
+const TERMINAL_THEME_FALLBACKS = {
+  canvas: "255 255 255",
+  ink: "23 23 23",
+  body: "77 77 77",
+  mute: "136 136 136",
+  hairline: "235 235 235",
+  link: "0 112 243",
+  linkBgSoft: "211 229 255",
+  softBlue: "64 118 190",
+  softBlueStrong: "38 88 152",
+  softBlueForeground: "45 83 135",
+  error: "238 0 0",
+  warning: "245 166 35",
+  violet: "121 40 202"
+} as const;
 
 function hasTerminalBridge(): boolean {
   const bridge = window.chengxiaobang;
@@ -19,6 +35,94 @@ function hasTerminalBridge(): boolean {
       bridge.onTerminalData &&
       bridge.onTerminalExit
   );
+}
+
+function createTerminalTheme(): ITheme {
+  const style = getComputedStyle(document.documentElement);
+  const canvas = tokenColor(style, "--canvas", TERMINAL_THEME_FALLBACKS.canvas);
+  const ink = tokenColor(style, "--ink", TERMINAL_THEME_FALLBACKS.ink);
+  const body = tokenColor(style, "--body", TERMINAL_THEME_FALLBACKS.body);
+  const mute = tokenColor(style, "--mute", TERMINAL_THEME_FALLBACKS.mute);
+  const hairline = tokenColor(style, "--border", TERMINAL_THEME_FALLBACKS.hairline);
+  const link = tokenColor(style, "--link", TERMINAL_THEME_FALLBACKS.link);
+  const linkBgSoft = tokenColor(style, "--link-bg-soft", TERMINAL_THEME_FALLBACKS.linkBgSoft);
+  const softBlue = tokenColor(style, "--soft-blue", TERMINAL_THEME_FALLBACKS.softBlue);
+  const softBlueStrong = tokenColor(
+    style,
+    "--soft-blue-strong",
+    TERMINAL_THEME_FALLBACKS.softBlueStrong
+  );
+  const softBlueForeground = tokenColor(
+    style,
+    "--soft-blue-foreground",
+    TERMINAL_THEME_FALLBACKS.softBlueForeground
+  );
+  const error = tokenColor(style, "--error", TERMINAL_THEME_FALLBACKS.error);
+  const warning = tokenColor(style, "--warning", TERMINAL_THEME_FALLBACKS.warning);
+  const violet = tokenColor(style, "--violet", TERMINAL_THEME_FALLBACKS.violet);
+
+  return {
+    background: rgb(canvas),
+    foreground: rgb(ink),
+    cursor: rgb(softBlue),
+    cursorAccent: rgb(canvas),
+    selectionBackground: rgba(linkBgSoft, 0.72),
+    selectionForeground: rgb(ink),
+    selectionInactiveBackground: rgba(linkBgSoft, 0.42),
+    scrollbarSliderBackground: rgba(mute, 0.22),
+    scrollbarSliderHoverBackground: rgba(mute, 0.34),
+    scrollbarSliderActiveBackground: rgba(mute, 0.46),
+    overviewRulerBorder: rgb(hairline),
+    black: rgb(ink),
+    red: rgb(error),
+    green: rgb(link),
+    yellow: rgb(warning),
+    blue: rgb(link),
+    magenta: rgb(violet),
+    cyan: rgb(softBlueForeground),
+    white: rgb(body),
+    brightBlack: rgb(mute),
+    brightRed: rgb(error),
+    brightGreen: rgb(softBlue),
+    brightYellow: rgb(warning),
+    brightBlue: rgb(softBlueStrong),
+    brightMagenta: rgb(violet),
+    brightCyan: rgb(softBlue),
+    brightWhite: rgb(ink)
+  };
+}
+
+function tokenColor(style: CSSStyleDeclaration, variable: string, fallback: string): string {
+  const rawValue =
+    style.getPropertyValue(variable).trim() ||
+    document.documentElement.style.getPropertyValue(variable).trim();
+  const parsed = parseRgbToken(rawValue);
+  if (parsed) {
+    return parsed;
+  }
+  const fallbackColor = parseRgbToken(fallback) ?? "255, 255, 255";
+  console.warn("[terminal] 主题变量缺失或格式异常，使用回退色", {
+    variable,
+    value: rawValue,
+    fallback
+  });
+  return fallbackColor;
+}
+
+function parseRgbToken(value: string): string | undefined {
+  const match = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/.exec(value);
+  if (!match) {
+    return undefined;
+  }
+  return `${match[1]}, ${match[2]}, ${match[3]}`;
+}
+
+function rgb(value: string): string {
+  return `rgb(${value})`;
+}
+
+function rgba(value: string, alpha: number): string {
+  return `rgba(${value}, ${alpha})`;
 }
 
 /** 右侧真实 PTY 终端：main 进程持有 node-pty，renderer 只负责 xterm 渲染和输入转发。 */
@@ -41,20 +145,7 @@ export function TerminalPanel() {
       fontSize: 12,
       lineHeight: 1.45,
       scrollback: 5000,
-      theme: {
-        background: "#171717",
-        foreground: "#f5f5f5",
-        cursor: "#50e3c2",
-        selectionBackground: "#d3e5ff55",
-        black: "#171717",
-        red: "#ee0000",
-        green: "#0070f3",
-        yellow: "#f5a623",
-        blue: "#0070f3",
-        magenta: "#7928ca",
-        cyan: "#50e3c2",
-        white: "#f5f5f5"
-      }
+      theme: createTerminalTheme()
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -79,6 +170,16 @@ export function TerminalPanel() {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(resizePty);
     };
+    const applyTerminalTheme = () => {
+      try {
+        terminal.options.theme = createTerminalTheme();
+      } catch (error) {
+        console.warn("[terminal] 应用 xterm 主题失败", {
+          terminalId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    };
     const resizeObserver =
       typeof ResizeObserver === "undefined"
         ? undefined
@@ -86,6 +187,16 @@ export function TerminalPanel() {
             scheduleResize();
           });
     resizeObserver?.observe(containerRef.current);
+    const themeObserver =
+      typeof MutationObserver === "undefined"
+        ? undefined
+        : new MutationObserver(() => {
+            applyTerminalTheme();
+          });
+    themeObserver?.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "style"]
+    });
 
     const inputDisposable = terminal.onData((data) => {
       void bridge?.terminalWrite?.(terminalId, data);
@@ -121,6 +232,7 @@ export function TerminalPanel() {
       disposed = true;
       cancelAnimationFrame(frame);
       resizeObserver?.disconnect();
+      themeObserver?.disconnect();
       inputDisposable.dispose();
       offData?.();
       offExit?.();
@@ -149,11 +261,11 @@ export function TerminalPanel() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-primary text-primary-foreground">
+    <div className="flex h-full min-h-0 flex-col bg-canvas text-foreground">
       <div
         ref={containerRef}
         aria-label={t("rightPanel.terminal")}
-        className="min-h-0 flex-1 overflow-hidden px-3 py-3"
+        className="min-h-0 flex-1 overflow-hidden px-3 py-3 [&_.composition-view]:!bg-canvas [&_.composition-view]:!text-foreground [&_.xterm-viewport]:!bg-canvas [&_.xterm]:!bg-canvas [&_.xterm]:!text-foreground"
         onMouseDown={() => terminalRef.current?.focus()}
       />
     </div>

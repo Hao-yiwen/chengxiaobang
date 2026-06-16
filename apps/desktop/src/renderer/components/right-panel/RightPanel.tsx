@@ -38,6 +38,10 @@ const TITLE_KEYS: Record<RightPanelMode, RightPanelLabelKey> = {
 
 type GitRepoStatus = "loading" | "repo" | "not-repo" | "error";
 
+export type RightPanelVisualPhase = "closed" | "opening" | "open" | "closing";
+
+export const RIGHT_PANEL_VISUAL_TRANSITION_MS = 200;
+
 function availableModesForContext(hasProject: boolean, isGitRepo: boolean): RightPanelMode[] {
   if (!hasProject) {
     return ["browser", "chat"];
@@ -51,7 +55,7 @@ function availableModesForContext(hasProject: boolean, isGitRepo: boolean): Righ
  * 右侧工作区面板：一个可调整宽度的槽位，先展示菜单，再承载变更、终端、
  * 浏览器、文件预览和侧边会话等工具页。
  */
-export function RightPanel() {
+export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
   const { t } = useTranslation();
   const open = useAppStore((state) => state.rightPanelOpen);
   const mode = useAppStore((state) => state.rightPanelMode);
@@ -65,12 +69,9 @@ export function RightPanel() {
   const [gitRepoStatusByProject, setGitRepoStatusByProject] = useState<
     Record<string, GitRepoStatus>
   >({});
-  // 面板展开/收起动画:open 控制业务可见性,rendered 维持收起动画期间的挂载,
-  // expanded 是真正驱动宽度过渡的标志(挂载后下一帧再翻 true 才能触发过渡)。
-  const [rendered, setRendered] = useState(open);
-  const [expanded, setExpanded] = useState(open);
   const [resizing, setResizing] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
+  const layoutLogKeyRef = useRef<string | undefined>(undefined);
   const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
   const projectId = project?.id;
   const gitRepoStatus = projectId ? gitRepoStatusByProject[projectId] : undefined;
@@ -83,8 +84,24 @@ export function RightPanel() {
     [isGitRepo, project]
   );
   const directFilePreview = mode === "files" && Boolean(previewFile?.path);
-  const currentModeAllowed = mode === null || directFilePreview || availableModes.includes(mode);
-  const waitingForCurrentMode = mode === "changes" && checkingGitRepo;
+  const modeFallbackReason = (() => {
+    if (mode === null || directFilePreview || mode === "browser" || mode === "chat") {
+      return undefined;
+    }
+    if (!project) {
+      return "missing-project";
+    }
+    if (mode === "terminal" || mode === "files") {
+      return undefined;
+    }
+    if (mode === "changes" && (!clientReady || checkingGitRepo || !gitRepoStatus)) {
+      return "pending";
+    }
+    if (mode === "changes" && isGitRepo) {
+      return undefined;
+    }
+    return "not-git-repo";
+  })();
 
   useEffect(() => {
     if (!projectId || !clientReady || gitRepoStatus) {
@@ -121,38 +138,32 @@ export function RightPanel() {
   }, [clientReady, gitRepoStatus, project?.path, projectId]);
 
   useEffect(() => {
-    if (mode === null || currentModeAllowed || waitingForCurrentMode) {
+    if (!modeFallbackReason || modeFallbackReason === "pending") {
       return;
     }
     console.info("[right-panel] 当前面板模式不适用于当前上下文，返回菜单", {
       mode,
       projectId,
-      isGitRepo
+      clientReady,
+      gitRepoStatus,
+      phase,
+      reason: modeFallbackReason
     });
     openRightPanel(null);
-  }, [currentModeAllowed, isGitRepo, mode, openRightPanel, projectId, waitingForCurrentMode]);
+  }, [
+    clientReady,
+    gitRepoStatus,
+    mode,
+    modeFallbackReason,
+    openRightPanel,
+    phase,
+    projectId
+  ]);
 
-  useEffect(() => {
-    if (open) {
-      setRendered(true);
-      // 挂载到 DOM(宽度 0)后等两帧再展开,确保浏览器先以 0 宽绘制一帧,过渡才会生效。
-      let raf2 = 0;
-      const raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => setExpanded(true));
-      });
-      return () => {
-        cancelAnimationFrame(raf1);
-        cancelAnimationFrame(raf2);
-      };
-    }
-    // 收起:先触发宽度归零的过渡,过渡结束后再卸载内容。
-    setExpanded(false);
-    const timer = setTimeout(() => setRendered(false), 220);
-    return () => clearTimeout(timer);
-  }, [open]);
+  const shouldRender = phase !== "closed";
 
   useLayoutEffect(() => {
-    if (!rendered) {
+    if (!shouldRender) {
       return;
     }
     const parent = panelRef.current?.parentElement;
@@ -160,7 +171,16 @@ export function RightPanel() {
       return;
     }
     const updateContainerWidth = () => {
-      setContainerWidth(parent.getBoundingClientRect().width);
+      const measuredWidth = parent.getBoundingClientRect().width;
+      if (measuredWidth <= 0) {
+        console.debug("[right-panel] 跳过无效父容器宽度测量", {
+          measuredWidth,
+          mode,
+          targetWidth: width
+        });
+        return;
+      }
+      setContainerWidth(measuredWidth);
     };
     updateContainerWidth();
     const resizeObserver =
@@ -171,17 +191,43 @@ export function RightPanel() {
       resizeObserver?.disconnect();
       window.removeEventListener("resize", updateContainerWidth);
     };
-  }, [rendered]);
+  }, [mode, shouldRender, width]);
 
-  if (!rendered) {
+  const visualWidth = visibleRightPanelWidth(width, containerWidth);
+
+  useEffect(() => {
+    if (!shouldRender) {
+      layoutLogKeyRef.current = undefined;
+      return;
+    }
+    const logKey = [
+      mode ?? "menu",
+      open ? "open" : "closing",
+      phase,
+      width,
+      visualWidth
+    ].join(":");
+    if (layoutLogKeyRef.current === logKey) {
+      return;
+    }
+    layoutLogKeyRef.current = logKey;
+    console.info("[right-panel] 同步右侧面板布局宽度", {
+      mode,
+      targetWidth: width,
+      visibleWidth: visualWidth,
+      closing: !open,
+      phase
+    });
+  }, [mode, open, phase, shouldRender, visualWidth, width]);
+
+  if (!shouldRender) {
     return null;
   }
 
   const title = mode ? t(TITLE_KEYS[mode]) : t("rightPanel.menuTitle");
-  const visualWidth = visibleRightPanelWidth(width, containerWidth);
   const panelStyle = {
     "--right-panel-width": `${visualWidth}px`,
-    width: expanded ? "var(--right-panel-width)" : "0px"
+    width: "var(--right-panel-width)"
   } as CSSProperties & { "--right-panel-width": string };
 
   function onResizeStart(event: React.PointerEvent<HTMLDivElement>): void {
@@ -204,17 +250,18 @@ export function RightPanel() {
     <aside
       ref={panelRef}
       data-testid="right-panel"
+      data-right-panel-phase={phase}
       style={panelStyle}
-      className={cn(
-        "relative h-screen min-h-0 shrink-0 overflow-hidden bg-background max-[840px]:hidden",
-        !resizing && "transition-[width] duration-200 ease-out",
-        expanded && "[box-shadow:inset_1px_0_0_rgb(var(--border))]"
-      )}
+      className="relative h-screen min-h-0 shrink-0 overflow-hidden bg-background max-[840px]:hidden"
     >
-      {/* 固定宽度的内容层:外层宽度做展开/收起过渡时,内容被裁剪而非回流挤压。 */}
+      {/* 固定宽度的内容层：分隔线跟随内容层移动，避免外层槽位先露出一条空线。 */}
       <div
         data-testid="right-panel-content"
-        className="flex h-full min-h-0 min-w-0 w-[var(--right-panel-width)] flex-col overflow-hidden [contain:layout_paint]"
+        className={cn(
+          "relative flex h-full min-h-0 min-w-0 w-[var(--right-panel-width)] flex-col overflow-hidden border-l border-border bg-background [contain:layout_paint] [will-change:transform,opacity,clip-path]",
+          phase === "opening" && !resizing && "right-panel-content-enter",
+          phase === "closing" && !resizing && "right-panel-content-exit"
+        )}
       >
         <div
           role="separator"

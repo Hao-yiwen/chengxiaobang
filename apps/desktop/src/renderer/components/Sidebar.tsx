@@ -20,7 +20,7 @@ import {
   PlusIcon,
   RefreshIcon,
   SearchIcon,
-  SkillIcon,
+  PluginFocusCornersIcon,
   TrashIcon,
   XMarkIcon
 } from "@/assets/file-type-icons";
@@ -581,11 +581,11 @@ export function Sidebar() {
           onClick={() => setView("tasks")}
         />
         <SidebarRow
-          icon={<SkillIcon />}
-          label={t("sidebar.skills")}
+          icon={<PluginFocusCornersIcon />}
+          label={t("sidebar.plugins")}
           compactLabel
-          active={view === "skills"}
-          onClick={() => setView("skills")}
+          active={view === "plugins"}
+          onClick={() => setView("plugins")}
         />
         <SidebarRow
           icon={<PhoneOutlineIcon />}

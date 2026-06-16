@@ -69,22 +69,33 @@ describe("AgentRunner", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("waits for approval before risky direct tools", async () => {
-    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+  it("waits for approval before risky model tools", async () => {
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          { id: "publish_tool", name: "Bash", arguments: { command: "npm publish" } }
+        ]
+      },
+      { text: "完成" }
+    ]);
     const events: StreamEvent[] = [];
     const stream = runner.stream({
-      prompt: "/shell npm publish",
+      prompt: "发布到 npm",
       projectId: null,
       accessMode: "approval"
     });
 
     const first = await stream.next();
     expect(first.value?.type).toBe("run_started");
-    const userMessage = await stream.next();
+    let userMessage = await stream.next();
+    while (!userMessage.done && userMessage.value?.type !== "message") {
+      userMessage = await stream.next();
+    }
     expect(userMessage.value?.type).toBe("message");
-    const preparing = await stream.next();
-    expect(preparing.value?.type).toBe("delta");
-    const approval = await stream.next();
+    let approval = await stream.next();
+    while (!approval.done && approval.value?.type !== "tool_call") {
+      approval = await stream.next();
+    }
     expect(approval.value?.type).toBe("tool_call");
     if (approval.value?.type === "tool_call") {
       expect(approval.value.toolCall.status).toBe("pending_approval");
@@ -99,54 +110,27 @@ describe("AgentRunner", () => {
     expect(
       events.some((event) => event.type === "tool_call" && event.toolCall.status === "rejected")
     ).toBe(true);
-    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "aborted" });
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
   });
 
-  it("skips direct tool approval after trusting the same command for the project", async () => {
+  it("runs ordinary model file writes without manual approval", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
-    const command = `node -e "console.log('trusted direct')"`;
-    const { runner } = runnerWith(store, secrets, [{ text: "完成" }, { text: "完成" }]);
-    const firstTransitions: string[] = [];
-
-    for await (const event of runner.stream({
-      prompt: `/shell ${command}`,
-      projectId: project.id,
-      accessMode: "approval"
-    })) {
-      if (event.type === "tool_call") {
-        firstTransitions.push(event.toolCall.status);
-        if (event.toolCall.status === "pending_approval") {
-          runner.approvals.decide(event.toolCall.id, {
-            approved: true,
-            approvalScope: "project"
-          });
-        }
-      }
-    }
-
-    expect(firstTransitions).toEqual(["pending_approval", "running", "completed"]);
-
-    const secondTransitions: string[] = [];
-    for await (const event of runner.stream({
-      prompt: `/shell ${command}`,
-      projectId: project.id,
-      accessMode: "approval"
-    })) {
-      if (event.type === "tool_call") {
-        secondTransitions.push(event.toolCall.status);
-      }
-    }
-
-    expect(secondTransitions).toEqual(["running", "completed"]);
-  });
-
-  it("runs ordinary direct file writes without manual approval", async () => {
-    const project = await store.createProject({ name: "tmp", path: dir });
-    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          {
+            id: "write_tool",
+            name: "Write",
+            arguments: { file_path: "ordinary.txt", content: "hello" }
+          }
+        ]
+      },
+      { text: "完成" }
+    ]);
     const transitions: string[] = [];
 
     for await (const event of runner.stream({
-      prompt: "/write ordinary.txt\nhello",
+      prompt: "写入 ordinary.txt",
       projectId: project.id,
       accessMode: "approval"
     })) {
@@ -239,17 +223,28 @@ describe("AgentRunner", () => {
     });
   });
 
-  it("requires approval before direct writes to absolute paths outside the workspace", async () => {
+  it("requires approval before model writes to absolute paths outside the workspace", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
     const outsideDir = await mkdtemp(join(tmpdir(), "cxb-agent-outside-"));
     const outsideFile = join(outsideDir, "note.txt");
-    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          {
+            id: "outside_write_tool",
+            name: "Write",
+            arguments: { file_path: outsideFile, content: "hello" }
+          }
+        ]
+      },
+      { text: "完成" }
+    ]);
     const transitions: string[] = [];
     let pendingHadNoStart = false;
 
     try {
       for await (const event of runner.stream({
-        prompt: `/write ${outsideFile}\nhello`,
+        prompt: "写入工作区外文件",
         projectId: project.id,
         accessMode: "approval"
       })) {
@@ -272,13 +267,20 @@ describe("AgentRunner", () => {
 
   it("runs tools automatically in full access mode", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
-    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          { id: "pwd_tool", name: "Bash", arguments: { command: "pwd" } }
+        ]
+      },
+      { text: "完成" }
+    ]);
     const events: StreamEvent[] = [];
     const transitions: string[] = [];
     let result: { startedAt?: string; createdAt: string } | undefined;
 
     for await (const event of runner.stream({
-      prompt: "/shell pwd",
+      prompt: "查看当前目录",
       projectId: project.id,
       accessMode: "full_access"
     })) {
@@ -405,15 +407,26 @@ describe("AgentRunner", () => {
     expect(messages.map((message) => message.content)).not.toContain("迟到的补充");
   });
 
-  it("aborts a running direct shell command promptly", async () => {
+  it("aborts a running model shell command promptly", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
-    const { runner, calls } = runnerWith(store, secrets, [{ text: "不应该被调用" }]);
+    const { runner, calls } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          {
+            id: "long_shell_tool",
+            name: "Bash",
+            arguments: { command: longRunningShellCommand() }
+          }
+        ]
+      },
+      { text: "不应该被调用" }
+    ]);
     const events: StreamEvent[] = [];
     let runId: string | undefined;
     const startedAt = Date.now();
 
     for await (const event of runner.stream({
-      prompt: `/shell ${longRunningShellCommand()}`,
+      prompt: "执行长时间命令",
       projectId: project.id,
       accessMode: "full_access"
     })) {
@@ -432,20 +445,31 @@ describe("AgentRunner", () => {
       events.filter((event) => event.type === "tool_call").map((event) => event.toolCall.status)
     ).toEqual(["running", "failed"]);
     expect(events.at(-1)).toMatchObject({ type: "run_end", status: "aborted" });
-    expect(calls).toHaveLength(0);
+    expect(calls).toHaveLength(1);
   });
 
-  it("智能审批跳过低风险 direct 工具裁决", async () => {
+  it("智能审批跳过低风险模型工具裁决", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
     const judge = vi.fn(async () => smartDecision("allow"));
-    const { runner } = runnerWith(store, secrets, [{ text: "完成" }], {
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          {
+            id: "smart_write_tool",
+            name: "Write",
+            arguments: { file_path: "smart.txt", content: "hello" }
+          }
+        ]
+      },
+      { text: "完成" }
+    ], {
       smartApprovalJudge: judge
     });
     const transitions: string[] = [];
     let completedApproval: ToolCallApproval | undefined;
 
     for await (const event of runner.stream({
-      prompt: "/write smart.txt\nhello",
+      prompt: "写入 smart.txt",
       projectId: project.id,
       accessMode: "smart_approval"
     })) {
@@ -461,17 +485,28 @@ describe("AgentRunner", () => {
     await expect(readFile(join(dir, "smart.txt"), "utf8")).resolves.toBe("hello");
   });
 
-  it("智能审批把工作区外 direct 写入升级为人工确认", async () => {
+  it("智能审批把工作区外模型写入升级为人工确认", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
     const outsideDir = await mkdtemp(join(tmpdir(), "cxb-agent-smart-outside-"));
     const outsideFile = join(outsideDir, "smart.txt");
-    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          {
+            id: "smart_outside_write_tool",
+            name: "Write",
+            arguments: { file_path: outsideFile, content: "hello" }
+          }
+        ]
+      },
+      { text: "完成" }
+    ]);
     const transitions: string[] = [];
     let approval: ToolCallApproval | undefined;
 
     try {
       for await (const event of runner.stream({
-        prompt: `/write ${outsideFile}\nhello`,
+        prompt: "智能审批写入工作区外文件",
         projectId: project.id,
         accessMode: "smart_approval"
       })) {
@@ -501,14 +536,21 @@ describe("AgentRunner", () => {
     }
   });
 
-  it("智能审批自动拒绝高风险 direct 工具", async () => {
+  it("智能审批自动拒绝高风险模型工具", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
     const judge = vi.fn(async () => smartDecision("deny", { reason: "会删除文件" }));
-    const { runner } = runnerWith(store, secrets, [], { smartApprovalJudge: judge });
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          { id: "danger_shell_tool", name: "Bash", arguments: { command: "rm -rf build" } }
+        ]
+      },
+      { text: "已拒绝执行危险命令" }
+    ], { smartApprovalJudge: judge });
     const events: StreamEvent[] = [];
 
     for await (const event of runner.stream({
-      prompt: "/shell rm -rf build",
+      prompt: "删除 build 目录",
       projectId: project.id,
       accessMode: "smart_approval"
     })) {
@@ -526,14 +568,21 @@ describe("AgentRunner", () => {
           approval: { verdict: "deny" }
         }
       });
-    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "aborted" });
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
   });
 
-  it("智能审批自动同意未命中危险规则的 direct shell", async () => {
+  it("智能审批自动同意未命中危险规则的模型 shell", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
-    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          { id: "safe_shell_tool", name: "Bash", arguments: { command: "echo hi; echo bye" } }
+        ]
+      },
+      { text: "完成" }
+    ]);
     const stream = runner.stream({
-      prompt: "/shell echo hi; echo bye",
+      prompt: "运行安全的 echo 命令",
       projectId: project.id,
       accessMode: "smart_approval"
     });
@@ -573,12 +622,23 @@ describe("AgentRunner", () => {
 
   it("uses a per-session workspace for standalone chats", async () => {
     const sessionWorkspacePath = (sessionId: string) => join(dir, "sessions", sessionId);
-    const { runner } = runnerWith(store, secrets, [{ text: "完成" }], { sessionWorkspacePath });
+    const { runner } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          {
+            id: "standalone_write_tool",
+            name: "Write",
+            arguments: { file_path: "note.txt", content: "hello" }
+          }
+        ]
+      },
+      { text: "完成" }
+    ], { sessionWorkspacePath });
     let sessionId: string | undefined;
     let toolOutput = "";
 
     for await (const event of runner.stream({
-      prompt: "/write note.txt\nhello",
+      prompt: "写入独立会话文件",
       projectId: null,
       accessMode: "full_access"
     })) {
@@ -1262,8 +1322,8 @@ describe("AgentRunner", () => {
     expect(usage?.sessionCostCny).toBeGreaterThan(0);
   });
 
-  it("persists failed direct tool calls and ends the run as failed", async () => {
-    const { runner, calls } = runnerWith(store, secrets, [{ text: "不应该被调用" }]);
+  it("treats removed tool slash shortcuts as normal user prompts", async () => {
+    const { runner, calls } = runnerWith(store, secrets, [{ text: "我会按普通请求处理" }]);
     const events: StreamEvent[] = [];
 
     for await (const event of runner.stream({
@@ -1274,27 +1334,31 @@ describe("AgentRunner", () => {
       events.push(event);
     }
 
-    const failed = events.find(
-      (event) => event.type === "tool_call" && event.toolCall.status === "failed"
-    );
-    expect(failed?.type).toBe("tool_call");
-    if (failed?.type === "tool_call") {
-      expect(failed.toolCall.result).toContain("missing.txt");
-    }
-    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "failed" });
-    // The model is never consulted after a failed direct command.
-    expect(calls).toHaveLength(0);
+    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
+    expect(calls).toHaveLength(1);
+    const userContents = calls[0].context.messages
+      .filter((message) => message.role === "user")
+      .map((message) => message.content);
+    expect(userContents).toContain("/read missing.txt");
   });
 
-  it("spills oversized direct tool results before storing them as model context", async () => {
+  it("spills oversized model tool results before storing them as model context", async () => {
     const project = await store.createProject({ name: "project", path: dir });
     const largeText = `DIRECT_START\n${"C".repeat(30_000)}\nDIRECT_MIDDLE\n${"D".repeat(30_000)}\nDIRECT_END`;
     await writeFile(join(dir, "large.txt"), largeText, "utf8");
-    const { runner, calls } = runnerWith(store, secrets, [{ text: "已处理大输出" }]);
+    const { runner, calls } = runnerWith(store, secrets, [
+      {
+        toolCalls: [
+          { id: "large_read_tool", name: "Read", arguments: { file_path: "large.txt" } }
+        ]
+      },
+      { text: "已处理大输出" }
+    ]);
     const events: StreamEvent[] = [];
 
     for await (const event of runner.stream({
-      prompt: "/read large.txt",
+      prompt: "读取 large.txt",
       projectId: project.id,
       accessMode: "full_access"
     })) {

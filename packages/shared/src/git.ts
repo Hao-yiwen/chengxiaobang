@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-/** One file with uncommitted changes: porcelain XY status code + merged unified diff body. */
+/** 一个未提交变更文件：porcelain XY 状态码 + 合并后的 unified diff。 */
 export const gitFileChangeSchema = z.object({
   path: z.string().min(1),
   status: z.string().min(2),
-  /** Empty when the content cannot be shown (binary or oversized file). */
+  /** 二进制或过大文件无法展示内容时为空。 */
   diff: z.string()
 });
 export type GitFileChange = z.infer<typeof gitFileChangeSchema>;

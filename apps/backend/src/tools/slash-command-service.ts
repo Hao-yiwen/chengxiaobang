@@ -42,54 +42,6 @@ interface LoadedResource {
 
 export const builtinSlashCommands: SlashCommand[] = [
   {
-    id: "builtin:/ls",
-    name: "/ls",
-    kind: "builtin_tool",
-    description: "列出当前项目目录内容",
-    source: "builtin",
-    insertText: "/ls "
-  },
-  {
-    id: "builtin:/read",
-    name: "/read",
-    kind: "builtin_tool",
-    description: "读取当前项目中的文件",
-    source: "builtin",
-    insertText: "/read "
-  },
-  {
-    id: "builtin:/write",
-    name: "/write",
-    kind: "builtin_tool",
-    description: "写入当前项目中的文件，需要审批或完全访问权限",
-    source: "builtin",
-    insertText: "/write "
-  },
-  {
-    id: "builtin:/shell",
-    name: "/shell",
-    kind: "builtin_tool",
-    description: "在当前项目目录执行 shell 命令，需要审批或完全访问权限",
-    source: "builtin",
-    insertText: "/shell "
-  },
-  {
-    id: "builtin:/git status",
-    name: "/git status",
-    kind: "builtin_tool",
-    description: "查看当前项目 Git 状态",
-    source: "builtin",
-    insertText: "/git status"
-  },
-  {
-    id: "builtin:/git diff",
-    name: "/git diff",
-    kind: "builtin_tool",
-    description: "查看当前项目 Git 变更摘要和 diff 检查",
-    source: "builtin",
-    insertText: "/git diff"
-  },
-  {
     id: "builtin:/compact",
     name: "/compact",
     kind: "builtin_tool",

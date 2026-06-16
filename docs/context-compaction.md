@@ -21,7 +21,6 @@
 ```text
 普通 run
   写入本次 user message
-  可选：直接斜杠工具先执行一次
   autoCompactIfNeeded()
   runPiLoop()
 
@@ -95,10 +94,9 @@
 
 1. provider、会话、工作目录等准备完成。
 2. 写入本次 user message。
-3. 如果是直接斜杠命令（如 `/read`、`/shell`），先执行一次工具并把结果写入历史。
-4. 估算即将发送给模型的上下文。
-5. 超过阈值时自动调用 `compactSessionHistory()`。
-6. 用压缩后的上下文继续原本这次 run。
+3. 估算即将发送给模型的上下文。
+4. 超过阈值时自动调用 `compactSessionHistory()`。
+5. 用压缩后的上下文继续原本这次 run。
 
 自动压缩与手动 `/compact` 的差异：
 
@@ -162,7 +160,7 @@ autoCompactThresholdTokens = 模型显式 autoCompactThresholdTokens
 - 跳过 system 行。
 - 指针之后的普通消息继续按原规则回放。
 
-普通 pi 循环产生的 assistant/toolResult 行会带原始 `payload`，因此能无损回放工具调用对。直接斜杠命令产生的 tool 行没有配对 assistant toolCall，会作为普通 user 上下文回放：
+普通 pi 循环产生的 assistant/toolResult 行会带原始 `payload`，因此能无损回放工具调用对。旧版本或异常路径中可能存在没有 payload 的 tool 行，它没有配对 assistant toolCall，会作为普通 user 上下文回放：
 
 ```text
 【工具结果】
@@ -195,7 +193,6 @@ autoCompactThresholdTokens = 模型显式 autoCompactThresholdTokens
 这个保护同时覆盖：
 
 - 模型请求的普通工具调用：通过 pi 的 `afterToolCall` 钩子保护。
-- 直接斜杠命令工具调用：本地执行后手动保护。
 - 工具错误结果：错误文本过长时也会落盘或降级为短预览。
 
 如果落盘失败，也不会把完整长结果塞回模型；系统会记录错误日志，并只返回固定大小的开头/末尾预览。

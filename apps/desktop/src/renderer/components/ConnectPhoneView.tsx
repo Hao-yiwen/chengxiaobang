@@ -382,7 +382,7 @@ function ConnectTargetSelector(props: {
             className={cn(
               "flex h-10 items-center justify-center gap-2 rounded-sm border px-3 text-caption font-medium transition-colors",
               active
-                ? "border-foreground bg-foreground text-background"
+                ? "border-soft-blue-border bg-soft-blue-surface text-soft-blue-foreground hover:border-soft-blue hover:bg-soft-blue-surface-hover hover:text-soft-blue-strong"
                 : "border-border bg-background text-muted-foreground hover:bg-canvas-soft-2 hover:text-foreground"
             )}
           >

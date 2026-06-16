@@ -24,7 +24,8 @@ import {
   RIGHT_PANEL_REVIEW_WIDTH,
   clampRightPanelWidth,
   rightPanelWidthForOpen,
-  rememberRightPanel
+  rememberRightPanel,
+  restoredRightPanel
 } from "../helpers/right-panel";
 import { selectActiveProject, selectActiveSession } from "../selectors";
 import { upsertSession } from "../helpers/collections";
@@ -33,8 +34,34 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
   return {
       setView: (view) =>
         set((state) => {
-          const targetScope = composerDraftScopeForView(view, state.activeSessionId);
+          const fromView = state.view;
+          const sessionId = state.activeSessionId;
+          const shouldRememberRightPanel = fromView === "chat" && Boolean(sessionId);
+          const rightPanelBySession = shouldRememberRightPanel
+            ? rememberRightPanel(state)
+            : state.rightPanelBySession;
+          const stateWithRightPanelMemory = { ...state, rightPanelBySession };
+          const restoredRightPanelPatch =
+            view === "chat" && sessionId
+              ? restoredRightPanel(stateWithRightPanelMemory, sessionId)
+              : undefined;
+          const targetScope = composerDraftScopeForView(view, sessionId);
+          if (fromView !== view && (shouldRememberRightPanel || view === "chat")) {
+            console.info("[store] 切换页面时同步右侧面板记忆", {
+              fromView,
+              toView: view,
+              sessionId,
+              savedMode: shouldRememberRightPanel
+                ? rightPanelBySession[sessionId ?? ""]?.mode
+                : undefined,
+              restoredMode: restoredRightPanelPatch?.rightPanelMode,
+              previewPath:
+                restoredRightPanelPatch?.previewFile?.path ??
+                (sessionId ? rightPanelBySession[sessionId]?.previewFile?.path : undefined)
+            });
+          }
           return {
+            rightPanelBySession,
             view,
             ...(view === "home"
               ? {
@@ -42,14 +69,20 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
                   ...restoreHomeModelSelection(state, state.providers, "setView")
                 }
               : {}),
-            ...(targetScope ? switchComposerDraftScope(state, targetScope, "setView") : {})
+            ...(targetScope ? switchComposerDraftScope(state, targetScope, "setView") : {}),
+            ...(restoredRightPanelPatch ?? {})
           };
         }),
       openSkills: (openAdd) => {
-        console.debug("[store] 打开技能页", { openAdd: Boolean(openAdd) });
-        set({ view: "skills", skillsAddRequested: Boolean(openAdd) });
+        console.debug("[store] 打开设置-技能页", { openAdd: Boolean(openAdd) });
+        set({
+          view: "settings",
+          pendingSettingsSection: "skills",
+          skillsAddRequested: Boolean(openAdd)
+        });
       },
       clearSkillsAddRequest: () => set({ skillsAddRequested: false }),
+      clearPendingSettingsSection: () => set({ pendingSettingsSection: undefined }),
       setInput: (input) => set({ input }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       setOnboardingOpen: (onboardingOpen) =>
@@ -244,6 +277,10 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         set({ accessMode });
       },
       setActiveProjectId: (activeProjectId) => {
+        console.info("[store] 切换首页项目并清空 @ 文件建议", {
+          fromProjectId: get().activeProjectId,
+          toProjectId: activeProjectId
+        });
         set((state) => ({
           rightPanelBySession: rememberRightPanel(state),
           ...switchComposerDraftScope(state, HOME_COMPOSER_DRAFT_SCOPE, "setActiveProjectId"),
@@ -251,6 +288,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           ...restoreHomeModelSelection(state, state.providers, "setActiveProjectId"),
           activeProjectId,
           activeSessionId: undefined,
+          fileSuggestions: [],
           messages: [],
           toolHistory: [],
           runHistory: [],

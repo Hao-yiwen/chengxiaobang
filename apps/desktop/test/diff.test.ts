@@ -1,53 +1,144 @@
 import { describe, expect, it } from "vitest";
-import { diffLines } from "../src/renderer/lib/diff";
+import {
+  createTextDiffSource,
+  parseGitPatchDiff,
+  textDiffFiles
+} from "../src/renderer/lib/diff";
 
-describe("diffLines", () => {
-  it("marks identical text as all context", () => {
-    expect(diffLines("a\nb", "a\nb")).toEqual([
-      { type: "context", text: "a" },
-      { type: "context", text: "b" }
+describe("text diff sources", () => {
+  it("builds old/new file contents for Edit and Write previews", () => {
+    const source = createTextDiffSource({
+      fileName: " src/a.ts ",
+      oldText: "x = 1",
+      newText: "x = 2",
+      cacheKey: "tool_1:edit"
+    });
+
+    expect(source).toEqual({
+      kind: "text",
+      fileName: "src/a.ts",
+      oldText: "x = 1",
+      newText: "x = 2",
+      cacheKey: "tool_1:edit"
+    });
+    expect(textDiffFiles(source)).toEqual({
+      oldFile: {
+        name: "src/a.ts",
+        contents: "x = 1",
+        cacheKey: "tool_1:edit:old"
+      },
+      newFile: {
+        name: "src/a.ts",
+        contents: "x = 2",
+        cacheKey: "tool_1:edit:new"
+      }
+    });
+  });
+});
+
+describe("parseGitPatchDiff", () => {
+  it("parses a complete git patch", () => {
+    const blocks = parseGitPatchDiff({
+      patch: [
+        "diff --git a/src/a.ts b/src/a.ts",
+        "--- a/src/a.ts",
+        "+++ b/src/a.ts",
+        "@@ -1 +1 @@",
+        "-old line",
+        "+new line"
+      ].join("\n"),
+      path: "src/a.ts",
+      cacheKeyPrefix: "change:src/a.ts"
+    });
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      kind: "file",
+      fileDiff: {
+        name: "src/a.ts",
+        deletionLines: ["old line\n"],
+        additionLines: ["new line\n"]
+      }
+    });
+  });
+
+  it("parses a synthesized untracked-file patch", () => {
+    const blocks = parseGitPatchDiff({
+      patch: [
+        "diff --git a/fresh.txt b/fresh.txt",
+        "new file mode 100644",
+        "--- /dev/null",
+        "+++ b/fresh.txt",
+        "@@ -0,0 +1,2 @@",
+        "+alpha",
+        "+beta"
+      ].join("\n"),
+      path: "fresh.txt",
+      cacheKeyPrefix: "change:fresh.txt"
+    });
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      kind: "file",
+      fileDiff: {
+        name: "fresh.txt",
+        deletionLines: [],
+        additionLines: ["alpha\n", "beta\n"]
+      }
+    });
+  });
+
+  it("returns one block per file when a patch contains multiple file blocks", () => {
+    const blocks = parseGitPatchDiff({
+      patch: [
+        "diff --git a/a.ts b/a.ts",
+        "--- a/a.ts",
+        "+++ b/a.ts",
+        "@@ -1 +1 @@",
+        "-a",
+        "+aa",
+        "diff --git a/b.ts b/b.ts",
+        "--- a/b.ts",
+        "+++ b/b.ts",
+        "@@ -1 +1 @@",
+        "-b",
+        "+bb"
+      ].join("\n"),
+      path: "mixed",
+      cacheKeyPrefix: "change:mixed"
+    });
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks.map((block) => block.kind === "file" ? block.fileDiff.name : "raw")).toEqual([
+      "a.ts",
+      "b.ts"
     ]);
   });
 
-  it("keeps surrounding context for a pure insertion", () => {
-    expect(diffLines("a\nc", "a\nb\nc")).toEqual([
-      { type: "context", text: "a" },
-      { type: "added", text: "b" },
-      { type: "context", text: "c" }
+  it("keeps raw fallback for unparseable non-empty diffs", () => {
+    expect(
+      parseGitPatchDiff({
+        patch: "+alpha\n+beta",
+        path: "fresh.txt",
+        cacheKeyPrefix: "change:fresh.txt"
+      })
+    ).toEqual([
+      {
+        kind: "raw",
+        id: "change:fresh.txt:raw",
+        raw: "+alpha\n+beta\n",
+        error: "没有解析到 fresh.txt 的文件 diff"
+      }
     ]);
   });
 
-  it("keeps surrounding context for a pure deletion", () => {
-    expect(diffLines("a\nb\nc", "a\nc")).toEqual([
-      { type: "context", text: "a" },
-      { type: "removed", text: "b" },
-      { type: "context", text: "c" }
-    ]);
-  });
-
-  it("emits removed before added for a replacement", () => {
-    expect(diffLines("a\nold\nc", "a\nnew\nc")).toEqual([
-      { type: "context", text: "a" },
-      { type: "removed", text: "old" },
-      { type: "added", text: "new" },
-      { type: "context", text: "c" }
-    ]);
-  });
-
-  it("treats empty old text as all added and empty new text as all removed", () => {
-    expect(diffLines("", "a\nb")).toEqual([
-      { type: "added", text: "a" },
-      { type: "added", text: "b" }
-    ]);
-    expect(diffLines("a", "")).toEqual([{ type: "removed", text: "a" }]);
-  });
-
-  it("degrades to removed+added for oversized inputs without hanging", () => {
-    const big = Array.from({ length: 400 }, (_, index) => `line${index}`).join("\n");
-    const lines = diffLines(big, `${big}\nextra`);
-    // 400 × 401 cells > 100k → blunt fallback, still complete and ordered.
-    expect(lines.filter((line) => line.type === "removed")).toHaveLength(400);
-    expect(lines.filter((line) => line.type === "added")).toHaveLength(401);
-    expect(lines.some((line) => line.type === "context")).toBe(false);
+  it("returns no blocks for empty diffs", () => {
+    expect(
+      parseGitPatchDiff({
+        patch: "",
+        path: "blob.bin",
+        cacheKeyPrefix: "change:blob.bin"
+      })
+    ).toEqual([]);
   });
 });

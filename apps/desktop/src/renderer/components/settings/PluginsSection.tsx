@@ -183,7 +183,7 @@ function PluginSourceBadge(props: { source: PluginSummary["source"] }) {
  * 单张插件卡：整卡可点击查看详情；右侧启停 Switch 阻止冒泡。
  * 启停失败的反馈走全局 notice（与技能卡一致）。
  */
-function PluginCard(props: { plugin: PluginSummary; onOpen(): void }) {
+export function PluginCard(props: { plugin: PluginSummary; onOpen(): void }) {
   const { t } = useTranslation();
   const { plugin, onOpen } = props;
   const setPluginEnabled = useAppStore((state) => state.setPluginEnabled);
@@ -272,7 +272,7 @@ function DetailGroup(props: { title: string; children: ReactNode }) {
  * 插件详情弹窗：按名拉取详情；头部 name/version/author；分区列出技能/命令/MCP server；
  * configFields 非空时渲染配置表单；底部安装路径 + 卸载按钮（仅 installed 来源）。
  */
-function PluginDetailDialog(props: { name: string | null; onClose(): void }) {
+export function PluginDetailDialog(props: { name: string | null; onClose(): void }) {
   const { t } = useTranslation();
   const { name, onClose } = props;
   const confirmDialog = useConfirmDialog();
@@ -600,7 +600,7 @@ function initialConfigDraft(
  * 导入插件入口：① 选择本地文件夹/压缩包（取绝对路径后 installPlugin({path})）；
  * ② 粘贴 GitHub 链接（installPlugin({url})）。
  */
-function ImportPluginDialog(props: { open: boolean; onOpenChange(open: boolean): void }) {
+export function ImportPluginDialog(props: { open: boolean; onOpenChange(open: boolean): void }) {
   const { t } = useTranslation();
   const installPlugin = useAppStore((state) => state.installPlugin);
 

@@ -141,7 +141,7 @@
 `POST /api/runs/stream` → `AgentRunner.stream()`:
 
 1. 解析/创建会话,落库 user 消息,发 `run_started` + `message`。
-2. **直接斜杠命令**:以 `/ls`、`/read`、`/write`、`/shell`、`/git status`、`/git diff` 开头的输入(`tools/direct-commands.ts`)在模型循环之前先执行恰好一个内置工具;`/compact` 走仅总结的模型调用(`agent/compaction.ts`)。
+2. **用户可见的内置斜杠命令只保留 `/compact`**:它走仅总结的模型调用(`agent/compaction.ts`),不落 user 消息;文件、shell、Git 等能力保留为 agent 内部工具,由模型在 pi 循环中按需调用。
 3. 从持久化行重建 pi 对话(`agent/history.ts`),交给 `runAgentLoopContinue`(`toolExecution: "sequential"`)。`RunEventTranslator` 把 pi 事件映射到 `StreamEvent` 契约:`delta`(text/thinking 通道)、`message`(已持久化的 user 回显 / assistant 轮次)、`tool_call`(每次状态迁移一个事件:`pending_approval → running → completed | failed | rejected`)、最终的 `run_end`(completed/failed/aborted,带 usage)。与模型循环并行,新会话的 AI 标题(`agent/session-title.ts`)生成后经 `session_updated` 事件即时推送(失败时回退为用户首句)。
 4. **审批门控**在 pi 的 `beforeToolCall` 钩子:`approval` 模式会话中的 mutating 工具先落 `pending_approval` 的 ToolCall,阻塞在 `ApprovalQueue.wait()` 直到 `POST /api/approvals/:toolCallId`;拒绝时返回 `{block: true}`,pi 把拒绝作为错误工具结果喂回模型(run 继续)。
 5. `POST /api/runs/:runId/abort` 经以 runId 为键的 `AbortController` 取消;部分回答先落库并发出,再 `run_end(aborted)`。

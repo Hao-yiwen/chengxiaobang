@@ -5,13 +5,13 @@ import { runCommand } from "./shell";
 
 const MAX_UNTRACKED_BYTES = 256 * 1024;
 
-/** runCommand merges stdout/stderr from a login shell, so only well-formed lines count. */
+/** runCommand 会合并登录 shell 的 stdout/stderr，所以只接收格式完整的行。 */
 const PORCELAIN_LINE = /^([ MADRCUT?!]{2}) (.+)$/;
 
-/** Disable path escaping so non-ASCII file names come back verbatim. */
+/** 关闭路径转义，确保中文等非 ASCII 文件名按原样返回。 */
 const GIT = "git -c core.quotePath=false";
 
-/** Parses `git status --porcelain` output; rename/copy entries yield the new path. */
+/** 解析 `git status --porcelain` 输出；重命名/复制条目取新路径。 */
 export function parsePorcelainStatus(text: string): Array<{ status: string; path: string }> {
   const entries: Array<{ status: string; path: string }> = [];
   let skipped = 0;
@@ -38,7 +38,7 @@ export function parsePorcelainStatus(text: string): Array<{ status: string; path
   return entries;
 }
 
-/** Splits a unified diff into per-file blocks keyed by path; pathless blocks (binary) drop. */
+/** 将 unified diff 按文件拆块；无法定位路径的块（通常是二进制）直接丢弃。 */
 export function splitUnifiedDiff(text: string): Map<string, string> {
   const blocks = new Map<string, string>();
   let blockLines: string[] = [];
@@ -59,13 +59,13 @@ export function splitUnifiedDiff(text: string): Map<string, string> {
     } else if (blockLines.length > 0) {
       blockLines.push(line);
     }
-    // Lines before the first "diff --git" (shell profile noise) are dropped.
+    // 第一个 "diff --git" 之前可能是 shell profile 噪音，直接忽略。
   }
   flush();
   return blocks;
 }
 
-/** Reads the block's target path from `+++ b/…`, falling back to `--- a/…` for deletions. */
+/** 从 `+++ b/…` 读取目标路径；删除文件则退回 `--- a/…`。 */
 function diffBlockPath(lines: string[]): string | undefined {
   const target = lines.find((line) => line.startsWith("+++ "))?.slice(4).trim();
   if (target && target !== "/dev/null") {
@@ -82,7 +82,7 @@ function stripDiffPrefix(path: string, prefix: string): string {
   return path.startsWith(prefix) ? path.slice(prefix.length) : path;
 }
 
-/** Strips surrounding quotes git adds for paths with special characters. */
+/** 去掉 git 对特殊路径添加的外层引号。 */
 function unquoteGitPath(path: string): string {
   if (path.length >= 2 && path.startsWith('"') && path.endsWith('"')) {
     return path.slice(1, -1).replace(/\\(["\\tn])/g, (_, char: string) =>
@@ -102,24 +102,43 @@ function looksBinary(buffer: Buffer): boolean {
   return false;
 }
 
-/** Untracked files have no diff, so render the whole content as added lines. */
-async function readUntrackedDiff(absolutePath: string): Promise<string> {
+/** 未跟踪文本文件没有 git diff 块，这里合成完整 unified patch 供前端解析。 */
+async function readUntrackedDiff(projectPath: string, relativePath: string): Promise<string> {
+  const absolutePath = join(projectPath, relativePath);
   try {
     const info = await stat(absolutePath);
-    if (!info.isFile() || info.size > MAX_UNTRACKED_BYTES) {
+    if (!info.isFile()) {
+      console.debug("[git-changes] 未跟踪文件不生成文本 diff", {
+        path: relativePath,
+        reason: "not_file"
+      });
+      return "";
+    }
+    if (info.size > MAX_UNTRACKED_BYTES) {
+      console.debug("[git-changes] 未跟踪文件不生成文本 diff", {
+        path: relativePath,
+        reason: "too_large",
+        size: info.size,
+        limit: MAX_UNTRACKED_BYTES
+      });
       return "";
     }
     const buffer = await readFile(absolutePath);
     if (looksBinary(buffer)) {
+      console.debug("[git-changes] 未跟踪文件不生成文本 diff", {
+        path: relativePath,
+        reason: "binary",
+        size: info.size
+      });
       return "";
     }
-    const lines = buffer.toString("utf8").split("\n");
-    if (lines.at(-1) === "") {
-      lines.pop();
-    }
-    return lines.map((line) => `+${line}`).join("\n");
+    return createUntrackedFilePatch(relativePath, buffer.toString("utf8"));
   } catch (error) {
-    console.warn(`[git-changes] 读取未跟踪文件失败 path=${absolutePath}:`, error);
+    console.warn("[git-changes] 读取未跟踪文件失败", {
+      path: relativePath,
+      absolutePath,
+      error: error instanceof Error ? error.message : String(error)
+    });
     return "";
   }
 }
@@ -156,7 +175,7 @@ export async function collectGitChanges(projectPath: string): Promise<GitChanges
   const files: GitFileChange[] = [];
   for (const entry of parsePorcelainStatus(status.output)) {
     if (entry.status === "??") {
-      files.push({ ...entry, diff: await readUntrackedDiff(join(projectPath, entry.path)) });
+      files.push({ ...entry, diff: await readUntrackedDiff(projectPath, entry.path) });
       continue;
     }
     const diff = [stagedBlocks.get(entry.path), unstagedBlocks.get(entry.path)]
@@ -165,4 +184,25 @@ export async function collectGitChanges(projectPath: string): Promise<GitChanges
     files.push({ ...entry, diff });
   }
   return { isRepo: true, files };
+}
+
+function createUntrackedFilePatch(relativePath: string, content: string): string {
+  const lines = content.split("\n");
+  if (lines.at(-1) === "") {
+    lines.pop();
+  }
+  const header = [
+    `diff --git a/${relativePath} b/${relativePath}`,
+    "new file mode 100644",
+    "--- /dev/null",
+    `+++ b/${relativePath}`
+  ];
+  if (lines.length === 0) {
+    return `${header.join("\n")}\n`;
+  }
+  return `${[
+    ...header,
+    `@@ -0,0 +1,${lines.length} @@`,
+    ...lines.map((line) => `+${line}`)
+  ].join("\n")}\n`;
 }

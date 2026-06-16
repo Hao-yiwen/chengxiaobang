@@ -23,7 +23,7 @@ const ENABLED_KEY = "plugins.enabled";
 /** 各插件的 userConfig 取值，JSON 对象 `{[plugin]:{[key]:value}}` 存 settings KV。 */
 const OPTIONS_KEY = "plugins.options";
 
-/** manifest 可能放在 .claude-plugin/（Claude Code）或 .zcode-plugin/（ZCode），两者都认。 */
+/** manifest 优先读取当前插件目录；同时保留旧目录名兼容，避免已安装插件失效。 */
 const MANIFEST_DIRS = [".claude-plugin", ".zcode-plugin"];
 const MANIFEST_FILE = "plugin.json";
 
@@ -325,7 +325,7 @@ export class PluginService {
 /** 业务可预期的失败（重名、链接无效、非法插件等），路由层映射为 400。 */
 export class PluginError extends Error {}
 
-/** 读取并校验插件 manifest（.claude-plugin 优先，回退 .zcode-plugin）。 */
+/** 读取并校验插件 manifest（当前目录优先，回退旧兼容目录）。 */
 async function readManifest(pluginDir: string): Promise<PluginManifest | undefined> {
   for (const sub of MANIFEST_DIRS) {
     const manifestPath = join(pluginDir, sub, MANIFEST_FILE);

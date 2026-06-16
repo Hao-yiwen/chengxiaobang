@@ -12,8 +12,8 @@ export function wrapSystemReminder(body: string): string {
 }
 
 /**
- * 开场上下文 SR:把可用技能清单以「可能相关的背景」形式注入,对齐 ZCode 的
- * context_prefix + skills_listing。无技能时返回 undefined。
+ * 开场上下文 SR:把可用技能清单以「可能相关的背景」形式注入。
+ * 无技能时返回 undefined。
  */
 export function buildContextReminderMessage(input: {
   skills?: Array<{ name: string; description: string }>;
@@ -34,16 +34,16 @@ export function buildContextReminderMessage(input: {
   return reminderUserMessage(wrapSystemReminder(body));
 }
 
-/** todo 长时间未更新的软提醒文案(对齐 ZCode todo_reminder)。 */
+/** todo 长时间未更新的软提醒文案。 */
 export const TODO_IDLE_REMINDER =
   "你已经有一段时间没有更新任务清单了。如果当前工作适合用清单跟踪进度,考虑用 TodoWrite 更新进度;清单若已过时也可以清理。仅在与当前工作相关时使用——这只是温和提醒,不适用可忽略。";
 
-/** 连续以相同参数重复调用同一工具的软提醒(对齐 ZCode model_anomaly:repeated)。 */
+/** 连续以相同参数重复调用同一工具的软提醒。 */
 export function buildRepeatedToolReminder(toolName: string, count: number): string {
   return `你已经用相同的参数连续调用了 ${count} 次 ${toolName}。不要再重复完全相同的调用,除非用户明确要求原样重试。请基于已有结果换一个下一步:采取不同动作、说明卡点,或向用户求助。`;
 }
 
-/** 单个 run 工具调用次数过多的软提醒(对齐 ZCode model_anomaly:budget)。 */
+/** 单个 run 工具调用次数过多的软提醒。 */
 export function buildToolOverloadReminder(count: number): string {
   return `本次运行已经发起了 ${count} 次工具调用。不要再机械地连续调用工具;请利用已收集到的结果选择不同的下一步:总结进展、说明卡点,或在卡住时向用户求助。`;
 }

@@ -7,11 +7,11 @@ description: 通过 ios-simulator MCP 工具构建、运行、检查并轻量自
 
 Use this skill when the user wants you to create, modify, build, run, debug, screenshot, or inspect an iOS app in the macOS iOS Simulator.
 
-## ZCode Tool Names
+## MCP Tool Names
 
-This skill assumes the MCP server is configured in zcode as `ios_simulator`. In zcode, MCP tools are exposed to the model as `mcp__ios_simulator__<tool>`.
+This skill assumes the iOS simulator MCP server is available to the model as `mcp__ios_simulator__<tool>`.
 
-If the server is configured with a different name, use the corresponding visible `mcp__<server>__...` tool names from the active zcode tool list.
+If the server is configured with a different name, use the corresponding visible `mcp__<server>__...` tool names from the active MCP tool list.
 
 ## Default Workflow
 

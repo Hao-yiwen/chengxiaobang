@@ -50,6 +50,7 @@ import { CommandsSection } from "@/components/settings/CommandsSection";
 import { OptionCard } from "@/components/settings/OptionCard";
 import { PluginsSection } from "@/components/settings/PluginsSection";
 import { SectionShell, SettingBlock } from "@/components/settings/SectionShell";
+import { SkillsSection } from "@/components/settings/SkillsSection";
 import { UsageStatsSection } from "@/components/settings/UsageStatsSection";
 import { WebSearchSection } from "@/components/settings/WebSearchSection";
 import {
@@ -128,6 +129,8 @@ export function SettingsView() {
     state.providers.some((provider) => provider.apiKeyRef)
   );
   const setView = useAppStore((state) => state.setView);
+  const pendingSettingsSection = useAppStore((state) => state.pendingSettingsSection);
+  const clearPendingSettingsSection = useAppStore((state) => state.clearPendingSettingsSection);
 
   const [section, setSection] = useState<SectionId>(
     hasConfiguredProvider ? "appearance" : "providers"
@@ -139,6 +142,17 @@ export function SettingsView() {
       setSection("providers");
     }
   }, [hasConfiguredProvider]);
+
+  // 外部（如输入框「管理技能」）请求打开设置并定位到指定分区时消费一次。
+  useEffect(() => {
+    if (pendingSettingsSection) {
+      console.debug("[settings-view] 定位到外部请求的设置分区", {
+        section: pendingSettingsSection
+      });
+      setSection(pendingSettingsSection as SectionId);
+      clearPendingSettingsSection();
+    }
+  }, [pendingSettingsSection, clearPendingSettingsSection]);
 
   const navItems = useMemo<NavItem[]>(
     () =>
@@ -177,7 +191,7 @@ export function SettingsView() {
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground"
+          className="h-8 w-full justify-start gap-2 px-2 text-foreground hover:text-foreground [&_svg]:text-foreground"
           onClick={() => setView(activeSessionId ? "chat" : "home")}
         >
           <ArrowLeftIcon className="size-4" />
@@ -957,34 +971,6 @@ function ProvidersSection() {
             </form>
           )}
         </div>
-      </SettingBlock>
-    </SectionShell>
-  );
-}
-
-export function SkillsSection() {
-  const { t } = useTranslation();
-  const setNotice = useAppStore((state) => state.setNotice);
-
-  return (
-    <SectionShell title={t("settings.skills.title")}>
-      <SettingBlock
-        title={t("settings.skills.manageTitle")}
-        description={t("settings.skills.manageDesc")}
-      >
-        <Button
-          variant="outline"
-          onClick={async () => {
-            if (!window.chengxiaobang?.openSkillsDir) {
-              setNotice(t("settings.skills.desktopOnly"));
-              return;
-            }
-            await window.chengxiaobang.openSkillsDir();
-          }}
-        >
-          <FolderOpenOutlineIcon className="size-4" />
-          {t("settings.skills.openDir")}
-        </Button>
       </SettingBlock>
     </SectionShell>
   );

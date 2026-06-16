@@ -61,7 +61,7 @@ describe("buildSystemPrompt", () => {
     expect(viaFeishu).not.toContain("<artifacts>");
   });
 
-  it("注入 ZCode 骨架段：Harness、代码与协作规范、上下文管理、安全段", () => {
+  it("注入系统骨架段：Harness、代码与协作规范、上下文管理、安全段", () => {
     const prompt = buildSystemPrompt({ workspacePath: "/w", accessMode: "approval" });
     expect(prompt).toContain("# Harness");
     expect(prompt).toContain("<system-reminder>");

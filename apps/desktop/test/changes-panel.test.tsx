@@ -6,7 +6,6 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   GitChangesResult,
   Project,
-  ProjectFileEntry,
   ProviderConfig,
   Session
 } from "@chengxiaobang/shared";
@@ -14,6 +13,18 @@ import { App } from "../src/renderer/App";
 import { setupI18n } from "../src/renderer/i18n";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
+
+vi.mock("@pierre/diffs/react", () => ({
+  FileDiff: ({ fileDiff }: { fileDiff: { additionLines: string[]; deletionLines: string[] } }) =>
+    [...fileDiff.deletionLines, ...fileDiff.additionLines].join("\n"),
+  MultiFileDiff: ({
+    oldFile,
+    newFile
+  }: {
+    oldFile: { contents: string };
+    newFile: { contents: string };
+  }) => `${oldFile.contents}\n${newFile.contents}`
+}));
 
 const provider: ProviderConfig = {
   id: "deepseek",
@@ -104,44 +115,34 @@ describe("changes panel", () => {
     const changes: GitChangesResult = {
       isRepo: true,
       files: [
-        { path: "src/a.ts", status: " M", diff: "@@ -1 +1 @@\n-old line\n+new line" },
-        { path: "fresh.txt", status: "??", diff: "+alpha" },
+        { path: "src/a.ts", status: " M", diff: patchFor("src/a.ts", "-old line", "+new line") },
+        { path: "fresh.txt", status: "??", diff: untrackedPatchFor("fresh.txt", ["alpha"]) },
         { path: "blob.bin", status: "??", diff: "" }
       ]
     };
     const getGitChanges = vi.fn(async () => changes);
-    const listProjectDirectory = vi.fn(async (_projectId: string, directory = ".") => {
-      if (directory === ".") {
-        return [
-          { name: "src", path: "src", type: "directory" },
-          { name: "fresh.txt", path: "fresh.txt", type: "file" },
-          { name: "blob.bin", path: "blob.bin", type: "file" }
-        ] satisfies ProjectFileEntry[];
-      }
-      if (directory === "src") {
-        return [
-          { name: "a.ts", path: "src/a.ts", type: "file" }
-        ] satisfies ProjectFileEntry[];
-      }
-      return [] satisfies ProjectFileEntry[];
-    });
-    const client = createClient({ getGitChanges, listProjectDirectory });
+    const client = createClient({ getGitChanges });
 
     render(<App client={client} />);
     await screen.findByText("项目对话");
     await openChangesPane();
 
     expect(await screen.findByText("3 个文件有变更")).toBeInTheDocument();
-    const modifiedFile = await screen.findByText("src/a.ts");
+    const modifiedFile = await screen.findByText("a.ts");
     expect(modifiedFile).toBeInTheDocument();
+    expect(screen.queryByText("src/a.ts")).not.toBeInTheDocument();
+    expect(screen.getByTitle("src/a.ts")).toBeInTheDocument();
     expect(screen.getByText("修改")).toBeInTheDocument();
     expect(await screen.findByText("fresh.txt")).toBeInTheDocument();
     expect(await screen.findByText("blob.bin")).toBeInTheDocument();
     expect(getGitChanges).toHaveBeenCalledWith(project.id);
+    expect(screen.queryByPlaceholderText("筛选文件…")).not.toBeInTheDocument();
+    expect(screen.queryByText("new line")).not.toBeInTheDocument();
 
     fireEvent.click(modifiedFile);
-    expect(await screen.findByText("new line")).toBeInTheDocument();
-    expect(screen.getByText("old line")).toBeInTheDocument();
+    const diff = await screen.findByLabelText("变更对比");
+    expect(diff).toHaveTextContent("new line");
+    expect(diff).toHaveTextContent("old line");
 
     fireEvent.click(screen.getByText("blob.bin"));
     expect(await screen.findByText("二进制或过大文件，不展示内容")).toBeInTheDocument();
@@ -153,7 +154,7 @@ describe("changes panel", () => {
       .mockResolvedValueOnce({ isRepo: true, files: [] })
       .mockResolvedValueOnce({
         isRepo: true,
-        files: [{ path: "new.ts", status: "A ", diff: "+x" }]
+        files: [{ path: "new.ts", status: "A ", diff: untrackedPatchFor("new.ts", ["x"]) }]
       });
     const client = createClient({ getGitChanges: getGitChanges as never });
 
@@ -181,3 +182,25 @@ describe("changes panel", () => {
     expect(await screen.findByRole("button", { name: "终端" })).toBeInTheDocument();
   });
 });
+
+function patchFor(path: string, removed: string, added: string): string {
+  return [
+    `diff --git a/${path} b/${path}`,
+    `--- a/${path}`,
+    `+++ b/${path}`,
+    "@@ -1 +1 @@",
+    removed,
+    added
+  ].join("\n");
+}
+
+function untrackedPatchFor(path: string, lines: string[]): string {
+  return [
+    `diff --git a/${path} b/${path}`,
+    "new file mode 100644",
+    "--- /dev/null",
+    `+++ b/${path}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+    ...lines.map((line) => `+${line}`)
+  ].join("\n");
+}
