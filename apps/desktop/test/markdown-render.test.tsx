@@ -238,11 +238,35 @@ describe("Markdown", () => {
     );
   });
 
+  it("trims boundary blank lines from markdown code blocks", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true
+    });
+
+    const { container } = render(<Markdown text={"```python\n\nimport random\n```"} />);
+    const lineTexts = Array.from(
+      container.querySelectorAll(".cxb-code-block-shell pre code > span")
+    ).map((line) => line.textContent);
+
+    expect(lineTexts).toEqual(["import random"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "复制代码" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("import random"));
+  });
+
   it("renders bash fences with the rewritten code block chrome", () => {
     const { container } = render(<Markdown text={"```bash\npnpm test\n```"} />);
 
     expect(container.querySelector(".cxb-code-block-shell")).not.toBeNull();
     expect(screen.getByText("bash")).toBeInTheDocument();
+    expect(
+      container.querySelector(
+        '[data-streamdown="code-block-header"] [data-code-block-header-label] .cxb-code-block-header-icon'
+      )
+    ).not.toBeNull();
     expect(screen.getByRole("button", { name: "自动换行" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "复制代码" })).toBeInTheDocument();
     expect(screen.queryByTitle("下载文件")).not.toBeInTheDocument();

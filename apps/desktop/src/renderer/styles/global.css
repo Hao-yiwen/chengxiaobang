@@ -759,9 +759,9 @@
   .cxb-code-block-shell > [data-streamdown="code-block"]::after {
     content: '';
     position: absolute;
-    top: 34px;
+    top: 30px;
     width: 48px;
-    height: calc(100% - 34px);
+    height: calc(100% - 30px);
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.2s ease;
@@ -790,15 +790,15 @@
   .cxb-code-block-shell [data-streamdown="code-block-header"] {
     display: flex;
     align-items: center;
-    height: 34px;
-    padding: 0 80px 0 30px;
+    height: 30px;
+    padding: 0 80px 0 12px;
     color: rgb(var(--mute));
     font-size: 12px;
     line-height: 16px;
     font-weight: 400;
   }
 
-  .cxb-code-block-shell [data-streamdown="code-block-header"] span {
+  .cxb-code-block-shell [data-streamdown="code-block-header"] [data-code-block-header-label] {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -806,10 +806,7 @@
   }
 
   .cxb-code-block-header-icon {
-    position: absolute;
-    top: 11px;
-    left: 12px;
-    z-index: 2;
+    display: block;
     pointer-events: none;
   }
 
@@ -828,7 +825,7 @@
 
   .cxb-code-block-shell [data-streamdown="code-block"] > div:has([data-streamdown="code-block-actions"]) {
     position: absolute;
-    top: 5px;
+    top: 3px;
     right: 8px;
     z-index: 2;
     margin-top: 0;
@@ -862,7 +859,7 @@
     border-radius: 0;
     /* !important 覆盖 streamdown 在 utilities 层的 bg-background(#fafafa),保证代码块纯白 */
     background: rgb(var(--canvas)) !important;
-    padding: 10px 14px 12px;
+    padding: 6px 14px 12px;
     font-size: var(--cxb-code-font-size, 12px);
     line-height: var(--cxb-code-line-height, 20px);
     scrollbar-gutter: stable;

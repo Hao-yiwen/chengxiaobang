@@ -40,7 +40,7 @@ export function CodeBlockPanel({
   const [wrapOverride, setWrapOverride] = useState<boolean | undefined>();
   const normalizedLanguage = normalizeCodeLanguage(language);
   const Icon = resolveCodeLanguageIcon(normalizedLanguage);
-  const displayCode = useMemo(() => trimTrailingNewlines(normalizeCodePreviewText(code)), [code]);
+  const displayCode = useMemo(() => trimCodeBlockBoundaryNewlines(normalizeCodePreviewText(code)), [code]);
   const plainLines = useMemo(() => splitCodePreviewLines(displayCode), [displayCode]);
   const highlight = useShikiHighlight(displayCode, normalizedLanguage, settings, "CodeBlockPanel");
   const wrap = wrapOverride ?? settings.wrapLongLines;
@@ -67,7 +67,7 @@ export function CodeBlockPanel({
         </TooltipTrigger>
         <TooltipContent>{wrapLabel}</TooltipContent>
       </Tooltip>
-      <CopyButton code={code} />
+      <CopyButton code={displayCode} />
     </TooltipProvider>
   );
 
@@ -80,12 +80,14 @@ export function CodeBlockPanel({
       aria-label={ariaLabel}
       style={codePreviewInlineStyle(settings)}
     >
-      <Icon
-        aria-hidden
-        className="cxb-svg-icon cxb-code-block-header-icon size-3 flex-none opacity-70"
-      />
       <CodeBlockFrame
         actions={actions}
+        headerIcon={
+          <Icon
+            aria-hidden
+            className="cxb-svg-icon cxb-code-block-header-icon size-3 flex-none opacity-70"
+          />
+        }
         highlightedLines={highlight.lines}
         isIncomplete={isIncomplete}
         language={normalizedLanguage}
@@ -99,6 +101,7 @@ export function CodeBlockPanel({
 
 function CodeBlockFrame({
   actions,
+  headerIcon,
   highlightedLines,
   isIncomplete,
   language,
@@ -107,6 +110,7 @@ function CodeBlockFrame({
   wrap
 }: {
   actions: ReactNode;
+  headerIcon: ReactNode;
   highlightedLines?: HighlightLine[];
   isIncomplete: boolean;
   language: string;
@@ -121,7 +125,10 @@ function CodeBlockFrame({
       data-streamdown="code-block"
     >
       <div data-language={language} data-streamdown="code-block-header">
-        <span>{language}</span>
+        <span data-code-block-header-label>
+          {headerIcon}
+          <span>{language}</span>
+        </span>
       </div>
       <div>
         <div data-streamdown="code-block-actions">{actions}</div>
@@ -142,8 +149,8 @@ function CodeBlockFrame({
   );
 }
 
-function trimTrailingNewlines(value: string): string {
-  return value.replace(/[\r\n]+$/g, "");
+function trimCodeBlockBoundaryNewlines(value: string): string {
+  return value.replace(/^(?:[ \t]*\n)+/, "").replace(/(?:\n[ \t]*)+$/g, "");
 }
 
 function CopyButton({ code }: { code: string }) {
