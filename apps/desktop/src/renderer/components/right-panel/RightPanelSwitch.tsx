@@ -1,4 +1,4 @@
-import { SidebarSimpleIcon as PanelRight } from "@phosphor-icons/react";
+import { PanelRightOutlineIcon } from "@/assets/file-type-icons";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/store";
 
@@ -20,7 +20,7 @@ export function RightPanelSwitch() {
       }}
       className="flex size-8 items-center justify-center rounded-xs border border-transparent bg-transparent text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
     >
-      <PanelRight className="size-4" />
+      <PanelRightOutlineIcon className="size-4" />
     </button>
   );
 }

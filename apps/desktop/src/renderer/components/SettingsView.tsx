@@ -1,23 +1,22 @@
+import type { ComponentType } from "react";
 import {
-  ArrowLeftIcon as ArrowLeft,
-  ArrowSquareOutIcon as ExternalLink,
-  ChartBarIcon as ChartBar,
-  CircleHalfTiltIcon as SunMoon,
-  FolderOpenIcon as FolderOpen,
-  GlobeIcon as Globe,
-  LaptopIcon as Laptop,
-  MagnifyingGlassIcon as Search,
-  MoonIcon as Moon,
-  PuzzlePieceIcon as Puzzle,
-  SlidersHorizontalIcon as SlidersHorizontal,
-  SparkleIcon as Sparkles,
-  StackIcon as Boxes,
-  SunIcon as Sun,
-  TerminalWindowIcon as Terminal,
-  TranslateIcon as Languages,
-  TrashIcon as Trash2,
-  type Icon
-} from "@phosphor-icons/react";
+  ArrowLeftIcon,
+  ArrowTopRightIcon,
+  FilterLinesIcon,
+  FolderOpenOutlineIcon,
+  GlobeOutlineIcon,
+  LaptopIcon,
+  LightbulbRaysIcon,
+  MoonOutlineIcon,
+  PluginFocusCornersIcon,
+  PricingUsageTrendIcon,
+  SearchIcon,
+  SitesGridOutlineIcon,
+  SunIcon,
+  TerminalIcon,
+  TrashIcon,
+  type FileIconSvgProps
+} from "@/assets/file-type-icons";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -27,6 +26,7 @@ import {
 } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { useConfirmDialog } from "@/components/ConfirmDialog";
+import { CodePreviewLines } from "@/components/CodePreviewLines";
 import { ExternalUrlAnchor } from "@/components/ExternalUrlMenu";
 import {
   defaultModelIds,
@@ -37,12 +37,35 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { CommandsSection } from "@/components/settings/CommandsSection";
 import { OptionCard } from "@/components/settings/OptionCard";
 import { PluginsSection } from "@/components/settings/PluginsSection";
 import { SectionShell, SettingBlock } from "@/components/settings/SectionShell";
 import { UsageStatsSection } from "@/components/settings/UsageStatsSection";
 import { WebSearchSection } from "@/components/settings/WebSearchSection";
+import {
+  CODE_PREVIEW_FONT_SIZE_MAX,
+  CODE_PREVIEW_FONT_SIZE_MIN,
+  CODE_PREVIEW_THEME_OPTIONS,
+  codePreviewThemeLabel,
+  type CodePreviewSettings,
+  type CodePreviewThemeId
+} from "@/lib/code-preview-settings";
+import {
+  codePreviewInlineStyle,
+  normalizeCodePreviewText,
+  splitCodePreviewLines,
+  useShikiHighlight
+} from "@/lib/code-highlight";
 import { API_KEY_URLS, PROVIDER_KIND_OPTIONS, PROVIDER_PRESETS } from "@/lib/provider-presets";
 import {
   validateProviderDraft,
@@ -50,6 +73,8 @@ import {
 } from "@/lib/provider-validation";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
+
+type Icon = ComponentType<FileIconSvgProps>;
 
 type SectionId =
   | "appearance"
@@ -84,14 +109,14 @@ interface NavItem {
 }
 
 const NAV_DEFS: NavDef[] = [
-  { id: "appearance", labelKey: "settings.nav.appearance", icon: SunMoon, groupKey: "settings.groupPersonal" },
-  { id: "general", labelKey: "settings.nav.general", icon: SlidersHorizontal, groupKey: "settings.groupPersonal" },
-  { id: "providers", labelKey: "settings.nav.providers", icon: Boxes, groupKey: "settings.groupModel" },
-  { id: "usage", labelKey: "settings.nav.usage", icon: ChartBar, groupKey: "settings.groupModel" },
-  { id: "skills", labelKey: "settings.nav.skills", icon: Sparkles, groupKey: "settings.groupModel" },
-  { id: "plugins", labelKey: "settings.nav.plugins", icon: Puzzle, groupKey: "settings.groupModel" },
-  { id: "commands", labelKey: "settings.nav.commands", icon: Terminal, groupKey: "settings.groupModel" },
-  { id: "webSearch", labelKey: "settings.nav.webSearch", icon: Globe, groupKey: "settings.groupIntegrations" }
+  { id: "appearance", labelKey: "settings.nav.appearance", icon: SunIcon, groupKey: "settings.groupPersonal" },
+  { id: "general", labelKey: "settings.nav.general", icon: FilterLinesIcon, groupKey: "settings.groupPersonal" },
+  { id: "providers", labelKey: "settings.nav.providers", icon: SitesGridOutlineIcon, groupKey: "settings.groupModel" },
+  { id: "usage", labelKey: "settings.nav.usage", icon: PricingUsageTrendIcon, groupKey: "settings.groupModel" },
+  { id: "skills", labelKey: "settings.nav.skills", icon: LightbulbRaysIcon, groupKey: "settings.groupModel" },
+  { id: "plugins", labelKey: "settings.nav.plugins", icon: PluginFocusCornersIcon, groupKey: "settings.groupModel" },
+  { id: "commands", labelKey: "settings.nav.commands", icon: TerminalIcon, groupKey: "settings.groupModel" },
+  { id: "webSearch", labelKey: "settings.nav.webSearch", icon: GlobeOutlineIcon, groupKey: "settings.groupIntegrations" }
 ];
 
 export function SettingsView() {
@@ -155,11 +180,11 @@ export function SettingsView() {
           className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground"
           onClick={() => setView(activeSessionId ? "chat" : "home")}
         >
-          <ArrowLeft className="size-4" />
+          <ArrowLeftIcon className="size-4" />
           {t("settings.back")}
         </Button>
         <div className="relative my-2">
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <SearchIcon className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder={t("settings.searchPlaceholder")}
             value={query}
@@ -187,10 +212,7 @@ export function SettingsView() {
                   )}
                 >
                   <Icon
-                    className={cn(
-                      "size-[18px] transition-colors",
-                      section === item.id ? "text-foreground" : "text-muted-foreground"
-                    )}
+                    className="size-[18px] text-foreground transition-colors"
                   />
                   {item.label}
                 </button>
@@ -224,6 +246,9 @@ function AppearanceSection() {
   const { t } = useTranslation();
   const theme = useAppStore((state) => state.theme);
   const setTheme = useAppStore((state) => state.setTheme);
+  const codePreviewSettings = useAppStore((state) => state.codePreviewSettings);
+  const setCodePreviewSettings = useAppStore((state) => state.setCodePreviewSettings);
+  const resolvedAppearance = useResolvedAppearance(theme);
   return (
     <SectionShell title={t("settings.appearance.title")}>
       <SettingBlock
@@ -233,29 +258,270 @@ function AppearanceSection() {
         <div className="flex flex-col gap-3 sm:flex-row">
           <OptionCard
             selected={theme === "light"}
-            icon={<Sun />}
+            icon={<SunIcon />}
             title={t("settings.appearance.light")}
             description={t("settings.appearance.lightDesc")}
             onSelect={() => setTheme("light")}
           />
           <OptionCard
             selected={theme === "dark"}
-            icon={<Moon />}
+            icon={<MoonOutlineIcon />}
             title={t("settings.appearance.dark")}
             description={t("settings.appearance.darkDesc")}
             onSelect={() => setTheme("dark")}
           />
           <OptionCard
             selected={theme === "system"}
-            icon={<Laptop />}
+            icon={<LaptopIcon />}
             title={t("settings.appearance.system")}
             description={t("settings.appearance.systemDesc")}
             onSelect={() => setTheme("system")}
           />
         </div>
       </SettingBlock>
+      <SettingBlock
+        title={t("settings.appearance.codePreviewTitle")}
+        description={t("settings.appearance.codePreviewDesc")}
+      >
+        <div className="overflow-hidden rounded-md border bg-canvas">
+          <CodePreviewControlRow
+            title={t("settings.appearance.codeLightThemeTitle")}
+            description={t("settings.appearance.codeLightThemeDesc")}
+          >
+            <CodeThemeSelect
+              ariaLabel={t("settings.appearance.codeLightThemeTitle")}
+              value={codePreviewSettings.lightTheme}
+              onValueChange={(lightTheme) => setCodePreviewSettings({ lightTheme })}
+            />
+          </CodePreviewControlRow>
+          <CodePreviewControlRow
+            title={t("settings.appearance.codeDarkThemeTitle")}
+            description={t("settings.appearance.codeDarkThemeDesc")}
+          >
+            <CodeThemeSelect
+              ariaLabel={t("settings.appearance.codeDarkThemeTitle")}
+              value={codePreviewSettings.darkTheme}
+              onValueChange={(darkTheme) => setCodePreviewSettings({ darkTheme })}
+            />
+          </CodePreviewControlRow>
+          <CodePreviewControlRow
+            title={t("settings.appearance.codeWrapTitle")}
+            description={t("settings.appearance.codeWrapDesc")}
+          >
+            <Switch
+              aria-label={t("settings.appearance.codeWrapTitle")}
+              checked={codePreviewSettings.wrapLongLines}
+              onCheckedChange={(wrapLongLines) => setCodePreviewSettings({ wrapLongLines })}
+            />
+          </CodePreviewControlRow>
+          <CodePreviewControlRow
+            title={t("settings.appearance.codeFontSizeTitle")}
+            description={t("settings.appearance.codeFontSizeDesc")}
+          >
+            <div className="flex w-[220px] items-center gap-4">
+              <Slider
+                aria-label={t("settings.appearance.codeFontSizeTitle")}
+                min={CODE_PREVIEW_FONT_SIZE_MIN}
+                max={CODE_PREVIEW_FONT_SIZE_MAX}
+                step={1}
+                value={[codePreviewSettings.fontSize]}
+                onValueChange={([fontSize]) => {
+                  if (fontSize !== undefined) {
+                    setCodePreviewSettings({ fontSize });
+                  }
+                }}
+              />
+              <span className="w-5 text-right font-mono text-body-sm text-foreground">
+                {codePreviewSettings.fontSize}
+              </span>
+            </div>
+          </CodePreviewControlRow>
+        </div>
+        <div className="mt-8">
+          <h3 className="text-body-lg font-medium">{t("settings.appearance.codePreviewLiveTitle")}</h3>
+          <p className="mt-1 text-caption text-muted-foreground">
+            {t("settings.appearance.codePreviewLiveDesc")}
+          </p>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <CodeThemePreviewCard
+              active={resolvedAppearance === "light"}
+              badge={resolvedAppearance === "light"
+                ? t("settings.appearance.codePreviewCurrent")
+                : t("settings.appearance.light")}
+              settings={codePreviewSettings}
+              themeId={codePreviewSettings.lightTheme}
+              title={t("settings.appearance.codeLightPreview")}
+              variant="light"
+            />
+            <CodeThemePreviewCard
+              active={resolvedAppearance === "dark"}
+              badge={resolvedAppearance === "dark"
+                ? t("settings.appearance.codePreviewCurrent")
+                : t("settings.appearance.dark")}
+              settings={codePreviewSettings}
+              themeId={codePreviewSettings.darkTheme}
+              title={t("settings.appearance.codeDarkPreview")}
+              variant="dark"
+            />
+          </div>
+        </div>
+      </SettingBlock>
     </SectionShell>
   );
+}
+
+function CodePreviewControlRow({
+  children,
+  description,
+  title
+}: {
+  children: ReactNode;
+  description: string;
+  title: string;
+}) {
+  return (
+    <div className="flex min-h-[84px] items-center justify-between gap-6 border-b px-4 py-4 last:border-b-0">
+      <div className="min-w-0">
+        <div className="text-body-sm font-medium text-foreground">{title}</div>
+        <p className="mt-1 text-caption text-muted-foreground">{description}</p>
+      </div>
+      <div className="flex flex-none justify-end">{children}</div>
+    </div>
+  );
+}
+
+function CodeThemeSelect({
+  ariaLabel,
+  onValueChange,
+  value
+}: {
+  ariaLabel: string;
+  onValueChange(value: CodePreviewThemeId): void;
+  value: CodePreviewThemeId;
+}) {
+  return (
+    <Select value={value} onValueChange={(next) => onValueChange(next as CodePreviewThemeId)}>
+      <SelectTrigger aria-label={ariaLabel} className="w-[220px] bg-canvas">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent position="item-aligned" className="rounded-xl border bg-popover p-1.5 shadow-overlay">
+        {CODE_PREVIEW_THEME_OPTIONS.map((option) => (
+          <SelectItem key={option.id} value={option.id} className="py-2.5 text-body-sm">
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+const CODE_PREVIEW_SAMPLE = `const themePreview: ThemeConfig = {
+  surface: "sidebar",
+  accent: "#339CFF",
+  contrast: 45,
+};`;
+
+function CodeThemePreviewCard({
+  active,
+  badge,
+  settings,
+  themeId,
+  title,
+  variant
+}: {
+  active: boolean;
+  badge: string;
+  settings: CodePreviewSettings;
+  themeId: CodePreviewThemeId;
+  title: string;
+  variant: "light" | "dark";
+}) {
+  const previewSettings = useMemo<CodePreviewSettings>(
+    () => ({
+      ...settings,
+      lightTheme: themeId,
+      darkTheme: themeId
+    }),
+    [settings, themeId]
+  );
+  const displayText = useMemo(() => normalizeCodePreviewText(CODE_PREVIEW_SAMPLE), []);
+  const plainLines = useMemo(() => splitCodePreviewLines(displayText), [displayText]);
+  const highlight = useShikiHighlight(displayText, "typescript", previewSettings, "SettingsView");
+  const wrap = settings.wrapLongLines;
+
+  return (
+    <div className={cn("overflow-hidden rounded-md border bg-canvas", variant === "dark" && "dark")}>
+      <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
+        <div className="min-w-0">
+          <div className="text-body-sm font-medium text-foreground">{title}</div>
+          <div className="mt-0.5 truncate text-caption text-muted-foreground">
+            {codePreviewThemeLabel(themeId)}
+          </div>
+        </div>
+        <span
+          className={cn(
+            "rounded-sm px-2.5 py-1 text-micro font-medium",
+            active ? "bg-canvas-soft-2 text-foreground" : "bg-canvas-soft text-muted-foreground"
+          )}
+        >
+          {badge}
+        </span>
+      </div>
+      <div className="p-3">
+        <div
+          className={cn(
+            "overflow-hidden rounded-md border px-3 py-2 font-mono text-[var(--cxb-code-font-size,12px)] leading-[var(--cxb-code-line-height,20px)]",
+            variant === "dark"
+              ? "border-transparent bg-primary text-primary-foreground"
+              : "border-border bg-canvas-soft-2 text-foreground"
+          )}
+          data-code-font-size={settings.fontSize}
+          data-code-line-numbers="true"
+          data-code-wrap={wrap ? "true" : "false"}
+          style={codePreviewInlineStyle(settings)}
+        >
+          <pre className={cn("m-0", wrap && "whitespace-pre-wrap break-all")}>
+            <code>
+              <CodePreviewLines
+                highlightedLines={highlight.lines}
+                lineNumbers={true}
+                plainLines={plainLines}
+                wrap={wrap}
+              />
+            </code>
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function useResolvedAppearance(theme: "light" | "dark" | "system"): "light" | "dark" {
+  const [resolved, setResolved] = useState<"light" | "dark">(() => resolveAppearance(theme));
+
+  useEffect(() => {
+    if (theme !== "system" || typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      setResolved(resolveAppearance(theme));
+      return;
+    }
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => setResolved(media.matches ? "dark" : "light");
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [theme]);
+
+  return resolved;
+}
+
+function resolveAppearance(theme: "light" | "dark" | "system"): "light" | "dark" {
+  if (theme === "light" || theme === "dark") {
+    return theme;
+  }
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return "light";
 }
 
 function GeneralSection() {
@@ -272,14 +538,14 @@ function GeneralSection() {
         <div className="flex flex-col gap-3 sm:flex-row">
           <OptionCard
             selected={locale === "zh"}
-            icon={<Languages />}
+            icon={<GlobeOutlineIcon />}
             title={t("settings.general.langZh")}
             description={t("settings.general.langZhDesc")}
             onSelect={() => setLocale("zh")}
           />
           <OptionCard
             selected={locale === "en"}
-            icon={<Globe />}
+            icon={<GlobeOutlineIcon />}
             title={t("settings.general.langEn")}
             description={t("settings.general.langEnDesc")}
             onSelect={() => setLocale("en")}
@@ -311,7 +577,7 @@ function GeneralSection() {
               setLogsStatus(t("settings.general.logsOpened", { path: result.path }));
             }}
           >
-            <FolderOpen className="size-4" />
+            <FolderOpenOutlineIcon className="size-4" />
             {t("settings.general.openLogs")}
           </Button>
           {logsStatus ? (
@@ -454,7 +720,7 @@ function ProvidersSection() {
             );
           }}
         >
-          <FolderOpen className="size-4" />
+          <FolderOpenOutlineIcon className="size-4" />
           {t("settings.providers.openConfigYaml")}
         </Button>
       </SettingBlock>
@@ -515,7 +781,7 @@ function ProvidersSection() {
                       setStatus(t("settings.providers.deleted"));
                     }}
                   >
-                    <Trash2 className="size-4" />
+                    <TrashIcon className="size-4" />
                   </Button>
                 </div>
               );
@@ -639,7 +905,7 @@ function ProvidersSection() {
                         href={API_KEY_URLS[draft.kind]!}
                         title={t("settings.providers.getApiKey")}
                       >
-                        <ExternalLink className="size-4" />
+                        <ArrowTopRightIcon className="size-4" />
                         {t("settings.providers.getApiKey")}
                       </ExternalUrlAnchor>
                     </Button>
@@ -682,7 +948,7 @@ function ProvidersSection() {
                       setStatus(t("settings.providers.deleted"));
                     }}
                   >
-                    <Trash2 className="size-4" />
+                    <TrashIcon className="size-4" />
                     {t("settings.providers.delete")}
                   </Button>
                 ) : null}
@@ -716,7 +982,7 @@ export function SkillsSection() {
             await window.chengxiaobang.openSkillsDir();
           }}
         >
-          <FolderOpen className="size-4" />
+          <FolderOpenOutlineIcon className="size-4" />
           {t("settings.skills.openDir")}
         </Button>
       </SettingBlock>

@@ -743,7 +743,22 @@
       "dark": "Dark",
       "darkDesc": "Always use the dark interface",
       "system": "System",
-      "systemDesc": "Switch automatically with the system"
+      "systemDesc": "Switch automatically with the system",
+      "codePreviewTitle": "Code preview",
+      "codePreviewDesc": "Configure code block themes and layout for chat, tool details, and file previews.",
+      "codeLightThemeTitle": "Light code theme",
+      "codeLightThemeDesc": "Highlight theme used by code blocks in light mode.",
+      "codeDarkThemeTitle": "Dark code theme",
+      "codeDarkThemeDesc": "Highlight theme used by code blocks in dark mode.",
+      "codeWrapTitle": "Wrap long lines",
+      "codeWrapDesc": "Wrap long content inside the preview area.",
+      "codeFontSizeTitle": "Code font size",
+      "codeFontSizeDesc": "Adjust the default font size for code previews.",
+      "codePreviewLiveTitle": "Live preview",
+      "codePreviewLiveDesc": "Code previews switch colors with the current interface theme.",
+      "codePreviewCurrent": "Active now",
+      "codeLightPreview": "Light preview",
+      "codeDarkPreview": "Dark preview"
     },
     "general": {
       "title": "General",

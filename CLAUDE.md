@@ -107,7 +107,7 @@
 
 - 任何 UI 实现/改动(组件、样式、配色、字体、布局、交互态)动手前**必须先阅读根目录 `DESIGN.md`**,并以其中的设计系统(色板、字体层级、间距、组件形态)为唯一视觉事实源。
 - 不要凭感觉引入 DESIGN.md 之外的颜色、字号或圆角;确有缺口时先在 DESIGN.md 中补充定义,再实现。
-- 涉及图标时,先看 `apps/desktop/src/renderer/assets/file-type-icons/README.md` 确认有没有合适图标;有则从 `@/assets/file-type-icons` 导入,没有则用 `@phosphor-icons/react`;按语言或路径动态选图标走 `@/lib/code-language-icons`。不要用 `<img src="...svg">`,也不要新增独立 `.svg` 文件。
+- 涉及图标时,先看 `apps/desktop/src/renderer/assets/file-type-icons/README.md` 确认有没有合适图标;优先从 `@/assets/file-type-icons` 直接导入内置图标,没有合适图标时先复用语义相近的内置图标或按本目录模式补充 TSX 图标组件;按语言或路径动态选图标走 `@/lib/code-language-icons`。不要用 `<img src="...svg">`,也不要新增独立 `.svg` 文件。
 
 ## 常用命令
 

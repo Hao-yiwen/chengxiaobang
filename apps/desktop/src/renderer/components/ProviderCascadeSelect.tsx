@@ -1,9 +1,9 @@
 import {
-  CaretDownIcon as ChevronDown,
-  CaretRightIcon as ChevronRight,
-  CheckIcon as Check,
-  XIcon as X
-} from "@phosphor-icons/react";
+  CheckMediumIcon,
+  ChevronIcon,
+  ChevronRightIcon,
+  XMarkIcon
+} from "@/assets/file-type-icons";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -166,7 +166,7 @@ export function ProviderCascadeSelect({
               {t("settings.providers.modelCount", { count: visibleSelectedModelIds.length })}
             </span>
           ) : null}
-          <ChevronDown className="provider-cascade-suffix-icon" />
+          <ChevronIcon className="provider-cascade-suffix-icon" />
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -194,7 +194,7 @@ export function ProviderCascadeSelect({
                 onClick={() => activateRegion(group.region)}
               >
                 <span>{t(providerRegionLabelKey(group.region))}</span>
-                <ChevronRight className="provider-cascade-expand-icon" />
+                <ChevronRightIcon className="provider-cascade-expand-icon" />
               </button>
             ))}
           </div>
@@ -216,7 +216,7 @@ export function ProviderCascadeSelect({
                 onClick={() => previewProvider(option.value)}
               >
                 <span className="truncate">{option.label}</span>
-                <ChevronRight className="provider-cascade-expand-icon" />
+                <ChevronRightIcon className="provider-cascade-expand-icon" />
               </button>
             ))}
           </div>
@@ -264,7 +264,7 @@ export function ProviderCascadeSelect({
                           }}
                         />
                         <span className="provider-cascade-checkbox" aria-hidden="true">
-                          {checked ? <Check className="size-3" /> : null}
+                          {checked ? <CheckMediumIcon className="size-3" /> : null}
                         </span>
                         <span className="min-w-0 flex-1 truncate">
                           {modelOptionLabel(model)}
@@ -314,7 +314,7 @@ export function ProviderModelTags({
                 }
               }}
             >
-              <X className="size-3" />
+              <XMarkIcon className="size-3" />
             </button>
           ) : null}
         </span>

@@ -1,9 +1,9 @@
+import { BugOutlined } from "@ant-design/icons";
 import {
-  ArrowsClockwiseIcon as Refresh,
-  BugIcon as Bug,
-  CaretRightIcon as CaretRight,
-  CopyIcon as Copy
-} from "@phosphor-icons/react";
+  ChevronRightIcon,
+  CopyIcon,
+  RefreshIcon
+} from "@/assets/file-type-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -159,7 +159,7 @@ export function SessionDebugButton() {
             className="size-8 rounded-xs text-muted-foreground hover:text-foreground"
             onClick={() => setOpen(true)}
           >
-            <Bug className="size-4" />
+            <BugOutlined className="text-[16px]" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>{t("debug.open")}</TooltipContent>
@@ -215,7 +215,7 @@ export function SessionDebugButton() {
                   onClick={() => void copyCurrent()}
                   disabled={!content || loading}
                 >
-                  <Copy className="size-4" />
+                  <CopyIcon className="size-4" />
                   {t("debug.copy")}
                 </Button>
                 <Button
@@ -225,7 +225,7 @@ export function SessionDebugButton() {
                   onClick={() => void loadDebugContext()}
                   disabled={loading}
                 >
-                  <Refresh className="size-4" />
+                  <RefreshIcon className="size-4" />
                   {t("debug.refresh")}
                 </Button>
               </div>
@@ -451,7 +451,7 @@ function ToolResultMessageDetails(props: { entry: TimelineEntry; index: number }
       }}
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-caption transition-colors hover:bg-canvas-soft-2 [&::-webkit-details-marker]:hidden">
-        <CaretRight className="size-3.5 flex-none text-muted-foreground transition-transform group-open:rotate-90" />
+        <ChevronRightIcon className="size-3.5 flex-none text-muted-foreground transition-transform group-open:rotate-90" />
         <span className="flex-none font-medium text-foreground">
           {props.index + 1}. {props.entry.title}
         </span>
@@ -493,7 +493,7 @@ function ToolCallDetails(props: { entry: TimelineEntry; index: number }) {
       }}
     >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-caption transition-colors hover:bg-canvas-soft-2 [&::-webkit-details-marker]:hidden">
-        <CaretRight className="size-3.5 flex-none text-muted-foreground transition-transform group-open:rotate-90" />
+        <ChevronRightIcon className="size-3.5 flex-none text-muted-foreground transition-transform group-open:rotate-90" />
         <span className="flex-none font-medium text-foreground">
           {props.index + 1}. 工具调用: {toolCall.name}
         </span>

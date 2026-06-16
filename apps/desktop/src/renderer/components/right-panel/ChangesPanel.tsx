@@ -1,9 +1,9 @@
 import {
-  ArrowClockwiseIcon as RefreshCw,
-  ArrowSquareOutIcon as ExternalLink,
-  FileTextIcon as FileText,
-  GitBranchIcon as GitBranch
-} from "@phosphor-icons/react";
+  ArrowTopRightIcon,
+  GitBranchIcon,
+  RefreshIcon,
+  TextDocumentGrayIcon
+} from "@/assets/file-type-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GitChangesResult, GitFileChange } from "@chengxiaobang/shared";
@@ -177,7 +177,7 @@ function ReviewToolbar(props: {
     <header className="flex flex-none items-center justify-between gap-3 border-b px-4 py-2.5">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
-          <GitBranch className="size-4 flex-none text-muted-foreground" />
+          <GitBranchIcon className="size-4 flex-none text-muted-foreground" />
           <p className="truncate text-caption font-medium text-foreground">{props.projectName}</p>
           {props.changes?.isRepo ? (
             <span className="flex-none font-mono text-micro text-link">
@@ -203,7 +203,7 @@ function ReviewToolbar(props: {
         onClick={props.onRefresh}
         className={ICON_BUTTON}
       >
-        <RefreshCw className={cn("size-3.5", props.loading && "animate-spin")} />
+        <RefreshIcon className={cn("size-3.5", props.loading && "animate-spin")} />
       </button>
     </header>
   );
@@ -227,7 +227,7 @@ function ReviewBody(props: {
   if (!props.changes && props.loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <RefreshCw className="size-5 animate-spin text-muted-foreground" />
+        <RefreshIcon className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -267,7 +267,7 @@ function SelectedFileDiff(props: { file: GitFileChange; onOpenPreview: () => voi
       <header className="flex flex-none items-center justify-between gap-3 border-b px-4 py-2.5">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
-            <FileText className="size-4 flex-none text-muted-foreground" />
+            <TextDocumentGrayIcon className="size-4 flex-none text-muted-foreground" />
             <p className="truncate font-mono text-micro font-medium text-foreground">
               {props.file.path}
             </p>
@@ -287,7 +287,7 @@ function SelectedFileDiff(props: { file: GitFileChange; onOpenPreview: () => voi
           onClick={props.onOpenPreview}
           className={ICON_BUTTON}
         >
-          <ExternalLink className="size-3.5" />
+          <ArrowTopRightIcon className="size-3.5" />
         </button>
       </header>
       <div className="min-h-0 flex-1 overflow-hidden">

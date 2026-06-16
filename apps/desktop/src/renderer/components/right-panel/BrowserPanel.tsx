@@ -1,9 +1,8 @@
 import {
-  ArrowClockwiseIcon as RotateCw,
-  ArrowLeftIcon as ArrowLeft,
-  ArrowRightIcon as ArrowRight,
-  ArrowSquareOutIcon as ExternalLink
-} from "@phosphor-icons/react";
+  ArrowLeftIcon,
+  ArrowTopRightIcon,
+  RefreshIcon
+} from "@/assets/file-type-icons";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ExternalUrlMenu, openExternalUrlWithDefaultBrowser } from "@/components/ExternalUrlMenu";
@@ -102,7 +101,7 @@ export function BrowserPanel() {
       onClick={() => void openExternal()}
       className={NAV_BUTTON_CLASS}
     >
-      <ExternalLink className="size-3.5" />
+      <ArrowTopRightIcon className="size-3.5" />
     </button>
   );
 
@@ -116,7 +115,7 @@ export function BrowserPanel() {
           onClick={() => webviewRef.current?.goBack()}
           className={NAV_BUTTON_CLASS}
         >
-          <ArrowLeft className="size-3.5" />
+          <ArrowLeftIcon className="size-3.5" />
         </button>
         <button
           type="button"
@@ -125,7 +124,7 @@ export function BrowserPanel() {
           onClick={() => webviewRef.current?.goForward()}
           className={NAV_BUTTON_CLASS}
         >
-          <ArrowRight className="size-3.5" />
+          <ArrowLeftIcon className="size-3.5 rotate-180" />
         </button>
         <button
           type="button"
@@ -134,7 +133,7 @@ export function BrowserPanel() {
           onClick={reload}
           className={NAV_BUTTON_CLASS}
         >
-          <RotateCw className="size-3.5" />
+          <RefreshIcon className="size-3.5" />
         </button>
         <form onSubmit={submit} className="min-w-0 flex-1">
           <input

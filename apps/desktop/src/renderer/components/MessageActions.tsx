@@ -1,10 +1,10 @@
 import {
-  ArrowClockwiseIcon as RefreshCw,
-  CheckIcon as Check,
-  CopyIcon as Copy,
-  GitForkIcon as GitFork,
-  PencilSimpleIcon as Pencil
-} from "@phosphor-icons/react";
+  CheckMediumIcon,
+  CopyIcon,
+  PencilOutlineIcon,
+  PullRequestOpenIcon,
+  RefreshIcon
+} from "@/assets/file-type-icons";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Message } from "@chengxiaobang/shared";
@@ -50,16 +50,16 @@ export function MessageActions({
         label={copied ? t("chat.copied") : t("chat.copy")}
         onClick={() => void copy(copyContent ?? message.content)}
       >
-        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        {copied ? <CheckMediumIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
       </ActionButton>
       {!isUser && isLastAssistant && !isRunning ? (
         <ActionButton label={t("chat.regenerate")} onClick={() => void regenerateLast()}>
-          <RefreshCw className="size-3.5" />
+          <RefreshIcon className="size-3.5" />
         </ActionButton>
       ) : null}
       {isUser && !isRunning && onEdit ? (
         <ActionButton label={t("chat.edit")} onClick={onEdit}>
-          <Pencil className="size-3.5" />
+          <PencilOutlineIcon className="size-3.5" />
         </ActionButton>
       ) : null}
       {!isRunning ? (
@@ -67,7 +67,7 @@ export function MessageActions({
           label={t("chat.forkFromHere")}
           onClick={() => void forkSession(message.id)}
         >
-          <GitFork className="size-3.5" />
+          <PullRequestOpenIcon className="size-3.5" />
         </ActionButton>
       ) : null}
     </div>

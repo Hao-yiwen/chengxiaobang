@@ -51,6 +51,7 @@ import type { AttachmentDescriptor } from "../lib/attachment-preparation";
 import type { ArtifactKind } from "../lib/artifact";
 import type { ApiClient } from "../lib/api";
 import type { Locale } from "../i18n";
+import type { CodePreviewSettings } from "../lib/code-preview-settings";
 
 export type Theme = "light" | "dark" | "system";
 export type View = "home" | "chat" | "settings" | "tasks" | "skills" | "connectPhone";
@@ -248,6 +249,8 @@ export interface AppState {
   plugins: PluginSummary[];
   // 主题（持久化）
   theme: Theme;
+  // 代码预览（持久化）
+  codePreviewSettings: CodePreviewSettings;
   // 语言（持久化）
   locale: Locale;
   // 初始化状态
@@ -276,6 +279,7 @@ export interface AppState {
   setAccessMode(mode: AccessMode): void;
   setActiveProjectId(id: string | undefined): void;
   setTheme(theme: Theme): void;
+  setCodePreviewSettings(patch: Partial<CodePreviewSettings>): void;
   setLocale(locale: Locale): void;
   /** 折叠/展开左侧边栏。 */
   toggleSidebar(): void;

@@ -1,4 +1,4 @@
-import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react";
+import { RefreshIcon } from "@/assets/file-type-icons";
 import { useTranslation } from "react-i18next";
 import type { ToolActivity, ToolCall } from "@chengxiaobang/shared";
 import { toolLineLabel, type ToolLineLabel } from "@/lib/tool-display";
@@ -43,7 +43,7 @@ export function ToolActivityStatus({
         className
       )}
     >
-      <Loader2 className="size-3.5 flex-none animate-spin" />
+      <RefreshIcon className="size-3.5 flex-none animate-spin" />
       <span className="min-w-0 truncate">{text}</span>
     </div>
   );

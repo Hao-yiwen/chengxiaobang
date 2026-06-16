@@ -5,12 +5,47 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { resetExternalUrlBrowserCacheForTest } from "../src/renderer/components/ExternalUrlMenu";
 import { Markdown } from "../src/renderer/components/Markdown";
 import { setupI18n } from "../src/renderer/i18n";
+import { DEFAULT_CODE_PREVIEW_SETTINGS } from "../src/renderer/lib/code-preview-settings";
+import { resetAppStore, useAppStore } from "../src/renderer/store";
+
+const shikiMock = vi.hoisted(() => ({
+  bundledLanguages: {
+    bash: {},
+    javascript: {},
+    text: {},
+    typescript: {}
+  },
+  codeToTokensWithThemes: vi.fn(async (text: string) =>
+    text.replace(/\r\n?/g, "\n").split("\n").map((line) =>
+      line
+        ? [
+            {
+              content: line,
+              variants: {
+                light: { color: "#0969da" },
+                dark: { color: "#79c0ff" }
+              }
+            }
+          ]
+        : []
+    )
+  )
+}));
+
+vi.mock("shiki", () => shikiMock);
 
 beforeAll(() => {
   setupI18n("zh");
 });
 
 beforeEach(() => {
+  resetAppStore();
+  shikiMock.codeToTokensWithThemes.mockClear();
+  class MockResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
   class MockIntersectionObserver {
     observe() {}
     unobserve() {}
@@ -20,6 +55,7 @@ beforeEach(() => {
     }
   }
   vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+  vi.stubGlobal("ResizeObserver", MockResizeObserver);
 });
 
 afterEach(() => {
@@ -115,11 +151,21 @@ describe("Markdown", () => {
     expect(screen.getByText("ts")).toBeInTheDocument();
     const shell = container.querySelector(".cxb-code-block-shell");
     expect(shell).toHaveAttribute("data-code-wrap", "false");
-    expect(shell?.getAttribute("style")).toContain("data:image/svg+xml");
+    expect(shell).toHaveAttribute("data-code-line-numbers", "false");
+    expect(shell).toHaveAttribute("data-code-font-size", "12");
+    expect(shell?.getAttribute("style")).toContain("--cxb-code-font-size: 12px");
+    expect(shell?.getAttribute("style")).toContain("font-size: 12px");
     expect(screen.queryByTitle("下载文件")).not.toBeInTheDocument();
 
     const code = container.querySelector('[data-streamdown="code-block-body"] code');
     expect(code?.getAttribute("class") ?? "").not.toContain("counter");
+    expect(container.querySelector(".cxb-code-line-number")).toBeNull();
+    await waitFor(() =>
+      expect(shikiMock.codeToTokensWithThemes).toHaveBeenCalledWith(expect.stringContaining("const x = 1;"), {
+        lang: "typescript",
+        themes: { light: "github-light", dark: "github-dark" }
+      })
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "自动换行" }));
     expect(screen.getByRole("button", { name: "关闭自动换行" })).toHaveAttribute("aria-pressed", "true");
@@ -129,6 +175,33 @@ describe("Markdown", () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("const x = 1")));
     expect(await screen.findByRole("button", { name: "复制代码" })).toBeInTheDocument();
+  });
+
+  it("applies global code preview settings to markdown code blocks", async () => {
+    useAppStore.setState({
+      codePreviewSettings: {
+        ...DEFAULT_CODE_PREVIEW_SETTINGS,
+        darkTheme: "vitesse-dark",
+        fontSize: 14,
+        lightTheme: "vitesse-light",
+        wrapLongLines: true
+      }
+    });
+
+    const { container } = render(<Markdown text={"```ts\nconst x = 1;\n```"} />);
+    const shell = container.querySelector(".cxb-code-block-shell");
+
+    expect(shell).toHaveAttribute("data-code-wrap", "true");
+    expect(shell).toHaveAttribute("data-code-line-numbers", "false");
+    expect(shell).toHaveAttribute("data-code-font-size", "14");
+    expect(shell?.getAttribute("style")).toContain("font-size: 14px");
+    expect(container.querySelector(".cxb-code-line-number")).toBeNull();
+    await waitFor(() =>
+      expect(shikiMock.codeToTokensWithThemes).toHaveBeenCalledWith(expect.stringContaining("const x = 1;"), {
+        lang: "typescript",
+        themes: { light: "vitesse-light", dark: "vitesse-dark" }
+      })
+    );
   });
 
   it("renders bash fences with the rewritten code block chrome", () => {
@@ -149,7 +222,8 @@ describe("Markdown", () => {
     expect(screen.getByText("text")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "自动换行" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "复制代码" })).toBeInTheDocument();
-    expect(container.querySelector(".cxb-code-block-shell pre")?.textContent).toBe(codeText);
+    expect(screen.getByText("feature/* -> MR -> dev")).toBeInTheDocument();
+    expect(screen.getByText("preview_train -> main")).toBeInTheDocument();
     expect(container.querySelector('[data-streamdown="code-block"][data-language=""]')).toBeNull();
   });
 

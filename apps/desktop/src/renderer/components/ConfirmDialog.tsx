@@ -1,4 +1,4 @@
-import { WarningCircleIcon } from "@phosphor-icons/react";
+import { WarningCircleIcon } from "@/assets/file-type-icons";
 import {
   createContext,
   useCallback,

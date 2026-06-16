@@ -1,11 +1,10 @@
 import {
-  DotsThreeIcon as More,
-  ListChecksIcon as ListChecks,
-  PencilSimpleIcon as Pencil,
-  PlayIcon as Play,
-  SparkleIcon as Sparkles,
-  TrashIcon as Trash
-} from "@phosphor-icons/react";
+  ChecklistPlanIcon,
+  EllipsisHorizontalIcon,
+  PencilOutlineIcon,
+  PlaySmallIcon,
+  TrashIcon
+} from "@/assets/file-type-icons";
 import { useTranslation } from "react-i18next";
 import {
   DropdownMenu,
@@ -66,7 +65,7 @@ export function QueuedRunStack(props: {
                   onClick={props.onResume}
                   className="inline-flex items-center gap-1 rounded-xs px-1.5 py-0.5 font-medium text-link transition-colors hover:bg-link/10"
                 >
-                  <Play className="size-3" />
+                  <PlaySmallIcon className="size-3" />
                   {t("composer.queueResume")}
                 </button>
               ) : null}
@@ -80,7 +79,7 @@ export function QueuedRunStack(props: {
               onClick={() => props.onSteer(item.id)}
               className="inline-flex h-6 flex-none items-center gap-1 rounded-sm border border-border bg-background px-1.5 text-caption font-medium text-foreground transition-colors hover:bg-canvas-soft-2"
             >
-              <Sparkles className="size-3" />
+              <PencilOutlineIcon className="size-3" />
               {t("composer.queueSteer")}
             </button>
           ) : null}
@@ -91,7 +90,7 @@ export function QueuedRunStack(props: {
             onClick={() => props.onRemove(item.id)}
             className="flex size-6 flex-none items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-destructive"
           >
-            <Trash className="size-3.5" />
+            <TrashIcon className="size-3.5" />
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -101,16 +100,16 @@ export function QueuedRunStack(props: {
                 aria-label={t("composer.queueMore")}
                 className="flex size-6 flex-none items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
               >
-                <More className="size-3.5" />
+                <EllipsisHorizontalIcon className="size-3.5" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[160px]">
               <DropdownMenuItem onSelect={() => props.onEdit(item.id)}>
-                <Pencil className="size-4 text-muted-foreground" />
+                <PencilOutlineIcon className="size-4 text-muted-foreground" />
                 {t("composer.queueEdit")}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={props.onClear}>
-                <ListChecks className="size-4 text-muted-foreground" />
+                <ChecklistPlanIcon className="size-4 text-muted-foreground" />
                 {t("composer.queueClear")}
               </DropdownMenuItem>
             </DropdownMenuContent>

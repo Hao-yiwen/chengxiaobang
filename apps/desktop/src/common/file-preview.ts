@@ -76,11 +76,15 @@ const CODE_EXTENSIONS = new Set([
 ]);
 const TEXT_EXTENSIONS = new Set([
   "conf",
+  "dockerignore",
   "env",
+  "eslintignore",
   "gitignore",
   "ini",
   "lock",
   "log",
+  "npmignore",
+  "prettierignore",
   "sql",
   "text",
   "toml",

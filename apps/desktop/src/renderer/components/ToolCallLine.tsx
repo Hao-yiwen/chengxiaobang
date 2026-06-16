@@ -1,8 +1,8 @@
 import {
-  CaretDownIcon as ChevronDown,
-  CircleNotchIcon as Loader2,
-  FileTextIcon as FileText
-} from "@phosphor-icons/react";
+  ChevronIcon,
+  DocumentIcon,
+  RefreshIcon
+} from "@/assets/file-type-icons";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ToolCall } from "@chengxiaobang/shared";
@@ -54,7 +54,6 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
     ? toolCall.result
     : undefined;
   const expandable = Boolean(command || result || diff);
-
   return (
     <div className="max-w-full">
       <div className="flex items-center gap-2">
@@ -82,7 +81,7 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
           )}
         >
           {isRunning ? (
-            <Loader2 className="size-3.5 flex-none animate-spin" />
+            <RefreshIcon className="size-3.5 flex-none animate-spin" />
           ) : (
             <ToolIcon className="size-3.5 flex-none" />
           )}
@@ -108,7 +107,7 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
             </span>
           ) : null}
           {expandable ? (
-            <ChevronDown
+            <ChevronIcon
               className={cn(
                 "size-3.5 flex-none transition-transform duration-200",
                 !open && "-rotate-90"
@@ -123,7 +122,7 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
             onClick={() => onOpenFile?.(filePath, artifactKind(filePath))}
             className="flex max-w-[220px] flex-none items-center gap-1 font-mono text-micro text-muted-foreground transition-colors hover:text-link hover:underline"
           >
-            <FileText className="size-3 flex-none" />
+            <DocumentIcon className="size-3 flex-none text-muted-foreground" />
             <span className="truncate">{shortenPath(filePath)}</span>
           </button>
         ) : null}

@@ -36,7 +36,7 @@ export function FileLinkAnchor({
         className
       )}
     >
-      <Icon className="mr-0.5 inline-block size-[1em] align-[-0.15em]" aria-hidden />
+      <Icon className="mr-0.5 inline-block size-[1em] align-[-0.15em] text-muted-foreground" aria-hidden />
       {children}
     </a>
   );

@@ -1,9 +1,9 @@
 import {
-  ChatCenteredTextIcon as ChatText,
-  CheckIcon as Check,
-  PlusIcon as Plus,
-  TrashIcon as Trash2
-} from "@phosphor-icons/react";
+  CheckMediumIcon,
+  CommentTextIcon,
+  PlusIcon,
+  TrashIcon
+} from "@/assets/file-type-icons";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { SkillCategory, SkillDetail, SkillSummary } from "@chengxiaobang/shared";
@@ -98,7 +98,7 @@ export function SkillsView() {
           className={cn("flex-none [-webkit-app-region:no-drag]", softBlueButtonClassName)}
           onClick={() => setAddOpen(true)}
         >
-          <Plus className="size-3.5" />
+          <PlusIcon className="size-3.5" />
           {t("skills.addCustom")}
         </Button>
       </header>
@@ -360,7 +360,7 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
   if (skill.source === "builtin") {
     return (
       <span className="flex items-center gap-1 text-micro text-soft-blue-foreground">
-        <Check className="size-3.5" />
+        <CheckMediumIcon className="size-3.5" />
         {t("skills.alwaysOn")}
       </span>
     );
@@ -381,7 +381,7 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
           void confirmDeleteCustomSkill();
         }}
       >
-        <Trash2 className="size-3.5" />
+        <TrashIcon className="size-3.5" />
         {t("skills.delete")}
       </Button>
     );
@@ -417,7 +417,7 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
         void confirmToggleMarketSkill(true);
       }}
     >
-      <Plus className="size-3.5" />
+      <PlusIcon className="size-3.5" />
       {t("skills.add")}
     </Button>
   );
@@ -602,7 +602,7 @@ function AddSkillDialog(props: { open: boolean; onOpenChange(open: boolean): voi
             className={cn("mt-3", softBlueButtonClassName)}
             onClick={startChatCreation}
           >
-            <ChatText className="size-3.5" />
+            <CommentTextIcon className="size-3.5" />
             {t("skills.chatCreateCta")}
           </Button>
         </Card>

@@ -1,10 +1,10 @@
 import {
   CheckCircleIcon,
-  InfoIcon,
+  InfoCircleIcon,
   WarningCircleIcon,
   XCircleIcon,
-  XIcon
-} from "@phosphor-icons/react";
+  XMarkIcon
+} from "@/assets/file-type-icons";
 import { type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -54,7 +54,7 @@ export function NotificationToasts() {
             }
           }}
         >
-          <InfoIcon className="mt-0.5 size-[18px] flex-none text-link" />
+          <InfoCircleIcon className="mt-0.5 size-[18px] flex-none text-link" />
           <div className="min-w-0">
             <ToastTitle>{notice}</ToastTitle>
           </div>
@@ -100,7 +100,7 @@ function ToastCloseButton(props: { title?: string }) {
       title={props.title ?? t("notifications.dismiss")}
       className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <XIcon className="size-3.5" />
+      <XMarkIcon className="size-3.5" />
     </ToastClose>
   );
 }

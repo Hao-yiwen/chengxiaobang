@@ -1,11 +1,15 @@
+import type { ComponentType } from "react";
 import {
-  ChatsCircleIcon as MessagesSquare,
-  FileCodeIcon as FileCode,
-  GitDiffIcon as GitCompareArrows,
-  GlobeIcon as Globe,
-  TerminalWindowIcon as SquareTerminal
-} from "@phosphor-icons/react";
-import type { Icon } from "@phosphor-icons/react";
+  ChatBubblesIcon,
+  CodeIcon,
+  GlobeOutlineIcon,
+  PullRequestOpenIcon,
+  TerminalIcon,
+  type FileIconSvgProps
+} from "@/assets/file-type-icons";
+
+type Icon = ComponentType<FileIconSvgProps>;
+
 import { useTranslation } from "react-i18next";
 import { useAppStore, type RightPanelMode } from "@/store";
 
@@ -17,11 +21,11 @@ type RightPanelLabelKey =
   | "rightPanel.chat";
 
 const MENU_ITEMS: Array<{ mode: RightPanelMode; icon: Icon; labelKey: RightPanelLabelKey }> = [
-  { mode: "changes", icon: GitCompareArrows, labelKey: "rightPanel.changes" },
-  { mode: "terminal", icon: SquareTerminal, labelKey: "rightPanel.terminal" },
-  { mode: "browser", icon: Globe, labelKey: "rightPanel.browser" },
-  { mode: "files", icon: FileCode, labelKey: "rightPanel.files" },
-  { mode: "chat", icon: MessagesSquare, labelKey: "rightPanel.chat" }
+  { mode: "changes", icon: PullRequestOpenIcon, labelKey: "rightPanel.changes" },
+  { mode: "terminal", icon: TerminalIcon, labelKey: "rightPanel.terminal" },
+  { mode: "browser", icon: GlobeOutlineIcon, labelKey: "rightPanel.browser" },
+  { mode: "files", icon: CodeIcon, labelKey: "rightPanel.files" },
+  { mode: "chat", icon: ChatBubblesIcon, labelKey: "rightPanel.chat" }
 ];
 
 /** 面板菜单页：选择当前上下文可用的右侧工具。 */

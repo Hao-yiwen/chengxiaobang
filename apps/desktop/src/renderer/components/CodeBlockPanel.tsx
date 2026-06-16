@@ -1,17 +1,24 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { CheckIcon, CopyIcon, TextAlignLeftIcon as WrapText } from "@phosphor-icons/react";
-import { CodeBlock } from "streamdown";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { CheckMediumIcon, CopyIcon, UndoIcon } from "@/assets/file-type-icons";
+import { CodePreviewLines } from "@/components/CodePreviewLines";
 import {
   normalizeCodeLanguage,
-  resolveCodeLanguageIcon,
-  type FileIconComponent
+  resolveCodeLanguageIcon
 } from "@/lib/code-language-icons";
+import {
+  codePreviewInlineStyle,
+  type HighlightLine,
+  normalizeCodePreviewText,
+  splitCodePreviewLines,
+  useShikiHighlight
+} from "@/lib/code-highlight";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/tooltip";
+import { useAppStore } from "@/store";
 import { cn } from "@/lib/utils";
 
 export interface CodeBlockPanelProps {
@@ -29,10 +36,20 @@ export function CodeBlockPanel({
   className,
   ariaLabel
 }: CodeBlockPanelProps) {
-  const [wrap, setWrap] = useState(false);
+  const settings = useAppStore((state) => state.codePreviewSettings);
+  const [wrapOverride, setWrapOverride] = useState<boolean | undefined>();
   const normalizedLanguage = normalizeCodeLanguage(language);
   const Icon = resolveCodeLanguageIcon(normalizedLanguage);
+  const displayCode = useMemo(() => trimTrailingNewlines(normalizeCodePreviewText(code)), [code]);
+  const plainLines = useMemo(() => splitCodePreviewLines(displayCode), [displayCode]);
+  const highlight = useShikiHighlight(displayCode, normalizedLanguage, settings, "CodeBlockPanel");
+  const wrap = wrapOverride ?? settings.wrapLongLines;
   const wrapLabel = wrap ? "关闭自动换行" : "自动换行";
+
+  useEffect(() => {
+    setWrapOverride(undefined);
+  }, [settings.wrapLongLines]);
+
   const actions = (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
@@ -43,9 +60,9 @@ export function CodeBlockPanel({
             data-streamdown="code-block-wrap-button"
             aria-label={wrapLabel}
             aria-pressed={wrap}
-            onClick={() => setWrap((value) => !value)}
+            onClick={() => setWrapOverride((value) => !(value ?? settings.wrapLongLines))}
           >
-            <WrapText className="size-3" />
+            <UndoIcon className="size-3" />
           </button>
         </TooltipTrigger>
         <TooltipContent>{wrapLabel}</TooltipContent>
@@ -58,48 +75,44 @@ export function CodeBlockPanel({
     <div
       className={cn("cxb-code-block-shell", wrap && "is-wrapped", className)}
       data-code-wrap={wrap ? "true" : "false"}
+      data-code-line-numbers="false"
+      data-code-font-size={settings.fontSize}
       aria-label={ariaLabel}
+      style={codePreviewInlineStyle(settings)}
     >
-      {normalizedLanguage === "text" ? (
-        <PlainTextCodeBlock
-          actions={actions}
-          code={code}
-          Icon={Icon}
-          isIncomplete={isIncomplete}
-          language={normalizedLanguage}
-        />
-      ) : (
-        <>
-          <Icon
-            aria-hidden
-            className="cxb-svg-icon cxb-code-block-header-icon size-3 flex-none opacity-70"
-          />
-          <CodeBlock
-            code={code}
-            isIncomplete={isIncomplete}
-            language={normalizedLanguage}
-            lineNumbers={false}
-          >
-            {actions}
-          </CodeBlock>
-        </>
-      )}
+      <Icon
+        aria-hidden
+        className="cxb-svg-icon cxb-code-block-header-icon size-3 flex-none opacity-70"
+      />
+      <CodeBlockFrame
+        actions={actions}
+        highlightedLines={highlight.lines}
+        isIncomplete={isIncomplete}
+        language={normalizedLanguage}
+        lineNumbers={false}
+        plainLines={plainLines}
+        wrap={wrap}
+      />
     </div>
   );
 }
 
-function PlainTextCodeBlock({
+function CodeBlockFrame({
   actions,
-  code,
-  Icon,
+  highlightedLines,
   isIncomplete,
-  language
+  language,
+  lineNumbers,
+  plainLines,
+  wrap
 }: {
   actions: ReactNode;
-  code: string;
-  Icon: FileIconComponent;
+  highlightedLines?: HighlightLine[];
   isIncomplete: boolean;
   language: string;
+  lineNumbers: boolean;
+  plainLines: string[];
+  wrap: boolean;
 }) {
   return (
     <div
@@ -107,8 +120,7 @@ function PlainTextCodeBlock({
       data-language={language}
       data-streamdown="code-block"
     >
-      <div data-has-inline-icon="true" data-language={language} data-streamdown="code-block-header">
-        <Icon aria-hidden className="cxb-svg-icon size-3 flex-none opacity-70" />
+      <div data-language={language} data-streamdown="code-block-header">
         <span>{language}</span>
       </div>
       <div>
@@ -116,7 +128,14 @@ function PlainTextCodeBlock({
       </div>
       <div data-language={language} data-streamdown="code-block-body">
         <pre>
-          <code>{trimTrailingNewlines(code)}</code>
+          <code>
+            <CodePreviewLines
+              highlightedLines={highlightedLines}
+              lineNumbers={lineNumbers}
+              plainLines={plainLines}
+              wrap={wrap}
+            />
+          </code>
         </pre>
       </div>
     </div>
@@ -166,7 +185,7 @@ function CopyButton({ code }: { code: string }) {
           onClick={handleCopy}
         >
           {copied ? (
-            <CheckIcon className="size-3" weight="bold" />
+            <CheckMediumIcon className="size-3" />
           ) : (
             <CopyIcon className="size-3" />
           )}

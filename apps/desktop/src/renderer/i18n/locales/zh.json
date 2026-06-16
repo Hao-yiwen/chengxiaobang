@@ -244,7 +244,7 @@
   "chat": {
     "thinking": "思考",
     "reasoningInProgress": "思考中",
-    "reasoningDone": "已深度思考 · 用时 {{seconds}} 秒",
+    "reasoningDone": "深度思考 · 用时 {{seconds}} 秒",
     "workedMinSec": "已工作 {{minutes}} 分 {{seconds}} 秒",
     "workedSec": "已工作 {{seconds}} 秒",
     "workedLabel": "已工作",
@@ -732,7 +732,22 @@
       "dark": "深色",
       "darkDesc": "始终使用深色界面",
       "system": "跟随系统",
-      "systemDesc": "随系统外观自动切换"
+      "systemDesc": "随系统外观自动切换",
+      "codePreviewTitle": "代码预览",
+      "codePreviewDesc": "设置聊天、工具详情和文件预览中代码块的主题与排版。",
+      "codeLightThemeTitle": "浅色代码主题",
+      "codeLightThemeDesc": "浅色模式下代码块使用的高亮主题。",
+      "codeDarkThemeTitle": "深色代码主题",
+      "codeDarkThemeDesc": "深色模式下代码块使用的高亮主题。",
+      "codeWrapTitle": "长行自动换行",
+      "codeWrapDesc": "内容过长时在预览区域内自动换行。",
+      "codeFontSizeTitle": "代码字号",
+      "codeFontSizeDesc": "调整代码预览的默认字号。",
+      "codePreviewLiveTitle": "实时预览",
+      "codePreviewLiveDesc": "右侧代码预览会按当前界面主题自动切换对应配色。",
+      "codePreviewCurrent": "当前生效",
+      "codeLightPreview": "浅色预览",
+      "codeDarkPreview": "深色预览"
     },
     "general": {
       "title": "常规",

@@ -13,7 +13,7 @@ import { PdfIcon, TypescriptIcon } from "@/assets/file-type-icons";
 
 业务代码优先直接导入所需图标组件。语言和文件路径这种需要动态选择图标的场景继续走 `@/lib/code-language-icons`：它直接返回可渲染的 Icon 组件，内部也显式导入本目录的组件。
 
-本目录没有合适图标时,回退到项目通用的 Phosphor Icons(`@phosphor-icons/react`),不要新增独立 `.svg` 文件。
+本目录没有合适图标时,优先复用语义相近的内置图标;确实需要新增时,按本目录模式补充 TSX 图标组件,不要新增独立 `.svg` 文件。
 
 ## 文件结构
 
@@ -33,17 +33,17 @@ import { PdfIcon, TypescriptIcon } from "@/assets/file-type-icons";
 - 组件名由 token 转为 PascalCase，并统一以 `Icon` 结尾，例如 `typescript` 对应 `TypescriptIcon`。
 - 原有文件类型 token 保持不动，例如 `typescript`、`react`、`markdown`，避免影响现有解析逻辑。
 - 同一图形的视觉变体使用可读状态词区分，例如 `light`、`dark`、`blue`、`filled`、`outline`。
-- 当前模块共导出 `352` 个 SVG 组件；没有保留上游专用命名图标。
+- 当前模块共导出 `495` 个 SVG 组件；没有保留上游专用命名图标。
 
 ## 分类
 
 - **文件类型基础图标**：53 个。项目原有的稳定文件类型 token，`code-language-icons.ts` 会直接按这些名字解析语言、扩展名和常见配置文件。
-- **文件预览 / 文档类型图标**：42 个。从上游文件预览图标和素材集中补充的文档、附件、Office、PDF、终端等类型。
+- **文件预览 / 文档类型图标**：46 个。从上游文件预览图标和素材集中补充的文档、附件、Office、PDF、终端等类型。
 - **文件树基础符号**：5 个。文件树展开、文件、锁、省略号等基础 UI 符号。
-- **品牌 / 产品图标**：14 个。外部产品、工具或品牌相关图标。
-- **插件入口图标**：28 个。插件、连接器或能力入口中使用的一组语义化图标。
-- **通用 UI 动作图标**：48 个。按钮、状态、导航、编辑、选择、反馈等通用 UI 符号。
-- **插画 / 状态素材图标**：162 个。从上游素材集中拆出的 light、dark、color 等视觉变体，已按图形语义重新命名。
+- **品牌 / 产品图标**：24 个。外部产品、工具或品牌相关图标。
+- **插件入口图标**：37 个。插件、连接器或能力入口中使用的一组语义化图标。
+- **通用 UI 动作图标**：132 个。按钮、状态、导航、编辑、选择、反馈等通用 UI 符号。
+- **插画 / 状态素材图标**：198 个。从上游素材集中拆出的 light、dark、color 等视觉变体，已按图形语义重新命名。
 
 ## 全量清单
 
@@ -144,6 +144,10 @@ import { PdfIcon, TypescriptIcon } from "@/assets/file-type-icons";
 | `toml` | `TomlIcon` | 文件预览 / 文档类型图标 | toml预览图标。 |
 | `word-document-file` | `WordDocumentFileIcon` | 文件预览 / 文档类型图标 | Word文档文件预览图标。 |
 | `word-document-square` | `WordDocumentSquareIcon` | 文件预览 / 文档类型图标 | Word文档square预览图标。 |
+| `csv-document-badge` | `CsvDocumentBadgeIcon` | 文件预览 / 文档类型图标 | CSV 文档徽标图标。 |
+| `pdf-document-badge` | `PdfDocumentBadgeIcon` | 文件预览 / 文档类型图标 | PDF 文档徽标图标。 |
+| `presentation-document-badge` | `PresentationDocumentBadgeIcon` | 文件预览 / 文档类型图标 | 演示文档徽标图标。 |
+| `word-document-badge-blue` | `WordDocumentBadgeBlueIcon` | 文件预览 / 文档类型图标 | Word 文档蓝色徽标图标。 |
 | `file-tree-chevron` | `FileTreeChevronIcon` | 文件树基础符号 | 文件treechevron文件树符号。 |
 | `file-tree-dot` | `FileTreeDotIcon` | 文件树基础符号 | 文件tree圆点文件树符号。 |
 | `file-tree-ellipsis` | `FileTreeEllipsisIcon` | 文件树基础符号 | 文件tree省略号文件树符号。 |
@@ -159,10 +163,20 @@ import { PdfIcon, TypescriptIcon } from "@/assets/file-type-icons";
 | `google-drive-logo` | `GoogleDriveLogoIcon` | 品牌 / 产品图标 | Googledrive标志品牌或产品图标。 |
 | `notion-logo` | `NotionLogoIcon` | 品牌 / 产品图标 | notion标志品牌或产品图标。 |
 | `notion-page` | `NotionPageIcon` | 品牌 / 产品图标 | notionpage品牌或产品图标。 |
-| `openai-blossom` | `OpenaiBlossomIcon` | 品牌 / 产品图标 | openai花形品牌或产品图标。 |
-| `openai-knot-logo` | `OpenaiKnotLogoIcon` | 品牌 / 产品图标 | openai结形标志品牌或产品图标。 |
 | `sentry-logo` | `SentryLogoIcon` | 品牌 / 产品图标 | Sentry标志品牌或产品图标。 |
 | `webstorm-app` | `WebstormAppIcon` | 品牌 / 产品图标 | webstorm应用品牌或产品图标。 |
+| `chrome-logo-small` | `ChromeLogoSmallIcon` | 品牌 / 产品图标 | 小号 Chrome 彩色标志图标。 |
+| `github-mark-filled` | `GithubMarkFilledIcon` | 品牌 / 产品图标 | GitHub 实心标志图标。 |
+| `sentry-logo-mark` | `SentryLogoMarkIcon` | 品牌 / 产品图标 | Sentry 标志图标。 |
+| `slack-logo-mono` | `SlackLogoMonoIcon` | 品牌 / 产品图标 | Slack 单色标志图标。 |
+| `figma-mark-color` | `FigmaMarkColorIcon` | 品牌 / 产品图标 | Figma 彩色标志图标。 |
+| `google-docs-logo-color` | `GoogleDocsLogoColorIcon` | 品牌 / 产品图标 | Google Docs 彩色标志图标。 |
+| `google-sheets-logo-color` | `GoogleSheetsLogoColorIcon` | 品牌 / 产品图标 | Google Sheets 彩色标志图标。 |
+| `google-slides-logo-color` | `GoogleSlidesLogoColorIcon` | 品牌 / 产品图标 | Google Slides 彩色标志图标。 |
+| `slack-logo-color` | `SlackLogoColorIcon` | 品牌 / 产品图标 | Slack 彩色标志图标。 |
+| `globe-color` | `GlobeColorIcon` | 品牌 / 产品图标 | 彩色地球图标。 |
+| `google-logo-color` | `GoogleLogoColorIcon` | 品牌 / 产品图标 | Google 彩色标志图标。 |
+| `microsoft-logo-color` | `MicrosoftLogoColorIcon` | 品牌 / 产品图标 | Microsoft 彩色标志图标。 |
 | `plugin-add-window` | `PluginAddWindowIcon` | 插件入口图标 | 插件添加窗口插件入口图标。 |
 | `plugin-app-grid` | `PluginAppGridIcon` | 插件入口图标 | 插件应用网格插件入口图标。 |
 | `plugin-badge-star` | `PluginBadgeStarIcon` | 插件入口图标 | 插件徽章星标插件入口图标。 |
@@ -191,6 +205,15 @@ import { PdfIcon, TypescriptIcon } from "@/assets/file-type-icons";
 | `plugin-sitemap` | `PluginSitemapIcon` | 插件入口图标 | 插件站点结构插件入口图标。 |
 | `plugin-text-document` | `PluginTextDocumentIcon` | 插件入口图标 | 插件文本文档插件入口图标。 |
 | `plugin-window-stack` | `PluginWindowStackIcon` | 插件入口图标 | 插件窗口stack插件入口图标。 |
+| `figma-skill-logo` | `FigmaSkillLogoIcon` | 插件入口图标 | Figma 技能入口图标。 |
+| `playwright-masks` | `PlaywrightMasksIcon` | 插件入口图标 | Playwright 面具图标。 |
+| `buildkite-cube-color` | `BuildkiteCubeColorIcon` | 插件入口图标 | Buildkite 彩色立方体图标。 |
+| `buildkite-logo` | `BuildkiteLogoIcon` | 插件入口图标 | Buildkite 标志图标。 |
+| `context7-logo` | `Context7LogoIcon` | 插件入口图标 | Context7 标志图标。 |
+| `plugin-focus-corners` | `PluginFocusCornersIcon` | 插件入口图标 | 插件聚焦角标图标。 |
+| `plugin-target-dot` | `PluginTargetDotIcon` | 插件入口图标 | 插件目标圆点图标。 |
+| `plugin-user-lock` | `PluginUserLockIcon` | 插件入口图标 | 插件用户锁定图标。 |
+| `plugin-slash` | `PluginSlashIcon` | 插件入口图标 | 插件斜线图标。 |
 | `arrow-left` | `ArrowLeftIcon` | 通用 UI 动作图标 | 箭头left通用 UI 图标。 |
 | `arrow-rotate-ccw` | `ArrowRotateCcwIcon` | 通用 UI 动作图标 | 箭头rotateccw通用 UI 图标。 |
 | `arrow-top-right` | `ArrowTopRightIcon` | 通用 UI 动作图标 | 箭头topright通用 UI 图标。 |
@@ -239,6 +262,90 @@ import { PdfIcon, TypescriptIcon } from "@/assets/file-type-icons";
 | `warning-circle` | `WarningCircleIcon` | 通用 UI 动作图标 | warning圆形通用 UI 图标。 |
 | `x-circle` | `XCircleIcon` | 通用 UI 动作图标 | x圆形通用 UI 图标。 |
 | `x-mark` | `XMarkIcon` | 通用 UI 动作图标 | xmark通用 UI 图标。 |
+| `project-folder-add` | `ProjectFolderAddIcon` | 通用 UI 动作图标 | 添加项目文件夹图标。 |
+| `workflow-nodes` | `WorkflowNodesIcon` | 通用 UI 动作图标 | 工作流节点连接图标。 |
+| `annotation-comment-add` | `AnnotationCommentAddIcon` | 通用 UI 动作图标 | 批注评论添加图标。 |
+| `arrow-right-heavy` | `ArrowRightHeavyIcon` | 通用 UI 动作图标 | 粗箭头向右图标。 |
+| `mobile-status-dot` | `MobileStatusDotIcon` | 通用 UI 动作图标 | 手机状态圆点图标。 |
+| `folder-add-small` | `FolderAddSmallIcon` | 通用 UI 动作图标 | 小号文件夹添加图标。 |
+| `folder-web` | `FolderWebIcon` | 通用 UI 动作图标 | 带网络标记的文件夹图标。 |
+| `folder-outline-small` | `FolderOutlineSmallIcon` | 通用 UI 动作图标 | 小号文件夹描边图标。 |
+| `feather-edit` | `FeatherEditIcon` | 通用 UI 动作图标 | 羽毛编辑图标。 |
+| `folder-open-small` | `FolderOpenSmallIcon` | 通用 UI 动作图标 | 小号打开文件夹图标。 |
+| `folder-flow` | `FolderFlowIcon` | 通用 UI 动作图标 | 带流程节点的文件夹图标。 |
+| `close-circle-filled` | `CloseCircleFilledIcon` | 通用 UI 动作图标 | 实心圆形关闭图标。 |
+| `panel-left-outline` | `PanelLeftOutlineIcon` | 通用 UI 动作图标 | 左侧面板描边图标。 |
+| `panel-right-outline` | `PanelRightOutlineIcon` | 通用 UI 动作图标 | 右侧面板描边图标。 |
+| `team-users-outline` | `TeamUsersOutlineIcon` | 通用 UI 动作图标 | 团队用户描边图标。 |
+| `automation-pin-outline` | `AutomationPinOutlineIcon` | 通用 UI 动作图标 | 自动化固定标记图标。 |
+| `browser-settings-star` | `BrowserSettingsStarIcon` | 通用 UI 动作图标 | 浏览器设置星标图标。 |
+| `code-snippet-enter` | `CodeSnippetEnterIcon` | 通用 UI 动作图标 | 代码片段进入图标。 |
+| `code-snippet-return` | `CodeSnippetReturnIcon` | 通用 UI 动作图标 | 代码片段返回图标。 |
+| `mobile-device-lock` | `MobileDeviceLockIcon` | 通用 UI 动作图标 | 移动设备加锁图标。 |
+| `mobile-setup-spark` | `MobileSetupSparkIcon` | 通用 UI 动作图标 | 移动设置点击星标图标。 |
+| `mobile-setup-refresh` | `MobileSetupRefreshIcon` | 通用 UI 动作图标 | 移动设置刷新图标。 |
+| `comment-plus` | `CommentPlusIcon` | 通用 UI 动作图标 | 评论添加图标。 |
+| `lock-bag` | `LockBagIcon` | 通用 UI 动作图标 | 带锁包裹图标。 |
+| `focus-frame` | `FocusFrameIcon` | 通用 UI 动作图标 | 聚焦框图标。 |
+| `hand-pointer` | `HandPointerIcon` | 通用 UI 动作图标 | 手势指针图标。 |
+| `warning-triangle-outline` | `WarningTriangleOutlineIcon` | 通用 UI 动作图标 | 三角警告描边图标。 |
+| `diff-split-green-red` | `DiffSplitGreenRedIcon` | 通用 UI 动作图标 | 绿色到红色的差异分栏图标。 |
+| `diff-split-red-green` | `DiffSplitRedGreenIcon` | 通用 UI 动作图标 | 红色到绿色的差异分栏图标。 |
+| `code-brackets` | `CodeBracketsIcon` | 通用 UI 动作图标 | 代码尖括号图标。 |
+| `checklist-lines` | `ChecklistLinesIcon` | 通用 UI 动作图标 | 清单线条图标。 |
+| `curved-arrow-right` | `CurvedArrowRightIcon` | 通用 UI 动作图标 | 弯曲向右箭头图标。 |
+| `window-briefcase` | `WindowBriefcaseIcon` | 通用 UI 动作图标 | 窗口公文包图标。 |
+| `chat-bubbles-outline` | `ChatBubblesOutlineIcon` | 通用 UI 动作图标 | 双气泡对话图标。 |
+| `branch-filter` | `BranchFilterIcon` | 通用 UI 动作图标 | 分支筛选图标。 |
+| `moon-outline` | `MoonOutlineIcon` | 通用 UI 动作图标 | 月亮描边图标。 |
+| `pin-outline` | `PinOutlineIcon` | 通用 UI 动作图标 | 图钉描边图标。 |
+| `pin-filled-small` | `PinFilledSmallIcon` | 通用 UI 动作图标 | 小号实心图钉图标。 |
+| `pin-filled-large` | `PinFilledLargeIcon` | 通用 UI 动作图标 | 大号实心图钉图标。 |
+| `folder-remove` | `FolderRemoveIcon` | 通用 UI 动作图标 | 文件夹移除图标。 |
+| `list-bullets-small` | `ListBulletsSmallIcon` | 通用 UI 动作图标 | 小号列表圆点图标。 |
+| `document-frame` | `DocumentFrameIcon` | 通用 UI 动作图标 | 文档边框图标。 |
+| `image-stack-outline` | `ImageStackOutlineIcon` | 通用 UI 动作图标 | 图片堆叠描边图标。 |
+| `cloud-off-outline` | `CloudOffOutlineIcon` | 通用 UI 动作图标 | 云端关闭图标。 |
+| `info-circle-small` | `InfoCircleSmallIcon` | 通用 UI 动作图标 | 小号信息圆形图标。 |
+| `sync-arrows-vertical` | `SyncArrowsVerticalIcon` | 通用 UI 动作图标 | 上下同步箭头图标。 |
+| `comment-filled` | `CommentFilledIcon` | 通用 UI 动作图标 | 实心评论气泡图标。 |
+| `shield-terminal` | `ShieldTerminalIcon` | 通用 UI 动作图标 | 带终端符号的盾牌图标。 |
+| `permission-robot` | `PermissionRobotIcon` | 通用 UI 动作图标 | 权限机器人图标。 |
+| `thumbs-up-filled` | `ThumbsUpFilledIcon` | 通用 UI 动作图标 | 实心点赞图标。 |
+| `thumbs-up-outline` | `ThumbsUpOutlineIcon` | 通用 UI 动作图标 | 描边点赞图标。 |
+| `profile-badge-filled` | `ProfileBadgeFilledIcon` | 通用 UI 动作图标 | 资料菜单实心徽标图标。 |
+| `gift-outline` | `GiftOutlineIcon` | 通用 UI 动作图标 | 礼物描边图标。 |
+| `lightbulb-rays` | `LightbulbRaysIcon` | 通用 UI 动作图标 | 带光线的灯泡图标。 |
+| `wallet-card` | `WalletCardIcon` | 通用 UI 动作图标 | 钱包卡片图标。 |
+| `mail-envelope` | `MailEnvelopeIcon` | 通用 UI 动作图标 | 邮件信封图标。 |
+| `sparkle-filled` | `SparkleFilledIcon` | 通用 UI 动作图标 | 实心星光图标。 |
+| `message-turn-enter` | `MessageTurnEnterIcon` | 通用 UI 动作图标 | 消息队列进入箭头图标。 |
+| `message-turn-return` | `MessageTurnReturnIcon` | 通用 UI 动作图标 | 消息队列返回箭头图标。 |
+| `review-status-dashed-circle` | `ReviewStatusDashedCircleIcon` | 通用 UI 动作图标 | 审核状态虚线圆形图标。 |
+| `review-status-half-circle` | `ReviewStatusHalfCircleIcon` | 通用 UI 动作图标 | 审核状态半圆图标。 |
+| `review-checks-failing` | `ReviewChecksFailingIcon` | 通用 UI 动作图标 | 审核检查失败图标。 |
+| `review-checks-skipped` | `ReviewChecksSkippedIcon` | 通用 UI 动作图标 | 审核检查跳过图标。 |
+| `review-status-dot` | `ReviewStatusDotIcon` | 通用 UI 动作图标 | 审核状态圆点分支图标。 |
+| `review-branch-path` | `ReviewBranchPathIcon` | 通用 UI 动作图标 | 审核分支路径图标。 |
+| `review-plus-square` | `ReviewPlusSquareIcon` | 通用 UI 动作图标 | 审核添加方框图标。 |
+| `review-eye` | `ReviewEyeIcon` | 通用 UI 动作图标 | 审核查看眼睛图标。 |
+| `dot-filled` | `DotFilledIcon` | 通用 UI 动作图标 | 实心圆点图标。 |
+| `clipboard-outline` | `ClipboardOutlineIcon` | 通用 UI 动作图标 | 剪贴板描边图标。 |
+| `sort-lines-vertical` | `SortLinesVerticalIcon` | 通用 UI 动作图标 | 竖向排序线条图标。 |
+| `sort-lines-compress` | `SortLinesCompressIcon` | 通用 UI 动作图标 | 压缩排序线条图标。 |
+| `comment-reply-lines` | `CommentReplyLinesIcon` | 通用 UI 动作图标 | 评论回复线条图标。 |
+| `sites-grid-outline` | `SitesGridOutlineIcon` | 通用 UI 动作图标 | 站点网格描边图标。 |
+| `spinner-ring` | `SpinnerRingIcon` | 通用 UI 动作图标 | 环形加载图标。 |
+| `panel-bottom-small` | `PanelBottomSmallIcon` | 通用 UI 动作图标 | 小号底部面板图标。 |
+| `panel-bottom-large` | `PanelBottomLargeIcon` | 通用 UI 动作图标 | 大号底部面板图标。 |
+| `microphone-outline` | `MicrophoneOutlineIcon` | 通用 UI 动作图标 | 麦克风描边图标。 |
+| `stop-square-filled` | `StopSquareFilledIcon` | 通用 UI 动作图标 | 实心停止方块图标。 |
+| `pointer-spark` | `PointerSparkIcon` | 通用 UI 动作图标 | 指针星标图标。 |
+| `paperclip-outline` | `PaperclipOutlineIcon` | 通用 UI 动作图标 | 回形针描边图标。 |
+| `sliders-horizontal` | `SlidersHorizontalIcon` | 通用 UI 动作图标 | 横向滑杆图标。 |
+| `microphone-off` | `MicrophoneOffIcon` | 通用 UI 动作图标 | 麦克风关闭图标。 |
+| `volume-off` | `VolumeOffIcon` | 通用 UI 动作图标 | 音量关闭图标。 |
+| `volume-on` | `VolumeOnIcon` | 通用 UI 动作图标 | 音量开启图标。 |
 | `alert-circle-blue` | `AlertCircleBlueIcon` | 插画 / 状态素材图标 | 警告圆形蓝色素材图标。 |
 | `alert-circle-light` | `AlertCircleLightIcon` | 插画 / 状态素材图标 | 警告圆形浅色素材图标。 |
 | `alert-circle` | `AlertCircleIcon` | 插画 / 状态素材图标 | 警告圆形素材图标。 |
@@ -256,8 +363,6 @@ import { PdfIcon, TypescriptIcon } from "@/assets/file-type-icons";
 | `bar-chart-color` | `BarChartColorIcon` | 插画 / 状态素材图标 | 柱状图表彩色素材图标。 |
 | `bar-chart-light` | `BarChartLightIcon` | 插画 / 状态素材图标 | 柱状图表浅色素材图标。 |
 | `blank-placeholder` | `BlankPlaceholderIcon` | 插画 / 状态素材图标 | 空白占位素材图标。 |
-| `blossom-outline-alt` | `BlossomOutlineAltIcon` | 插画 / 状态素材图标 | 花形描边备选素材图标。 |
-| `blossom-outline` | `BlossomOutlineIcon` | 插画 / 状态素材图标 | 花形描边素材图标。 |
 | `book-open-light` | `BookOpenLightIcon` | 插画 / 状态素材图标 | 书本打开浅色素材图标。 |
 | `book-open-red` | `BookOpenRedIcon` | 插画 / 状态素材图标 | 书本打开红色素材图标。 |
 | `bookmark-star-light` | `BookmarkStarLightIcon` | 插画 / 状态素材图标 | 书签星标浅色素材图标。 |
@@ -331,7 +436,6 @@ import { PdfIcon, TypescriptIcon } from "@/assets/file-type-icons";
 | `lightning-bolt` | `LightningBoltIcon` | 插画 / 状态素材图标 | 闪电bolt素材图标。 |
 | `lightning-light` | `LightningLightIcon` | 插画 / 状态素材图标 | 闪电浅色素材图标。 |
 | `lightning-yellow` | `LightningYellowIcon` | 插画 / 状态素材图标 | 闪电黄色素材图标。 |
-| `loading-blossom` | `LoadingBlossomIcon` | 插画 / 状态素材图标 | loading花形素材图标。 |
 | `log-out` | `LogOutIcon` | 插画 / 状态素材图标 | logout素材图标。 |
 | `macbook` | `MacbookIcon` | 插画 / 状态素材图标 | MacBook素材图标。 |
 | `map-pin-light` | `MapPinLightIcon` | 插画 / 状态素材图标 | 地图定位浅色素材图标。 |
@@ -401,10 +505,42 @@ import { PdfIcon, TypescriptIcon } from "@/assets/file-type-icons";
 | `waveform-blue` | `WaveformBlueIcon` | 插画 / 状态素材图标 | 波形蓝色素材图标。 |
 | `waveform-light` | `WaveformLightIcon` | 插画 / 状态素材图标 | 波形浅色素材图标。 |
 | `worktree` | `WorktreeIcon` | 插画 / 状态素材图标 | 工作树素材图标。 |
-
-## 维护建议
-
-- 新增图标时先取稳定语义 token；不要直接保留上游打包生成的 hash 名称。
-- 新增图标内容直接以 React SVG 组件导出；如果要参与语言或文件路径自动解析，再到 `@/lib/code-language-icons` 显式导入并补映射。
-- 正式业务引用优先使用无视觉状态后缀的稳定 token；只有确实需要浅色、深色、彩色等变体时再引用对应变体。
-- 修改图标模块后至少运行 `pnpm typecheck`。
+| `app-preview-blank` | `AppPreviewBlankIcon` | 插画 / 状态素材图标 | 空白应用预览图标。 |
+| `app-preview-dots` | `AppPreviewDotsIcon` | 插画 / 状态素材图标 | 带彩色窗口点的应用预览图标。 |
+| `pricing-integration-links` | `PricingIntegrationLinksIcon` | 插画 / 状态素材图标 | 价格页集成链接图标。 |
+| `pricing-cross-tool-action` | `PricingCrossToolActionIcon` | 插画 / 状态素材图标 | 价格页跨工具操作图标。 |
+| `pricing-project-tools` | `PricingProjectToolsIcon` | 插画 / 状态素材图标 | 价格页项目工具图标。 |
+| `pricing-memory-brain-left` | `PricingMemoryBrainLeftIcon` | 插画 / 状态素材图标 | 价格页记忆能力左脑图标。 |
+| `pricing-memory-brain-center` | `PricingMemoryBrainCenterIcon` | 插画 / 状态素材图标 | 价格页记忆能力中置脑图标。 |
+| `pricing-memory-brain-outline` | `PricingMemoryBrainOutlineIcon` | 插画 / 状态素材图标 | 价格页记忆能力描边脑图标。 |
+| `pricing-chat-double` | `PricingChatDoubleIcon` | 插画 / 状态素材图标 | 价格页双聊天气泡图标。 |
+| `pricing-chat-outline-double` | `PricingChatOutlineDoubleIcon` | 插画 / 状态素材图标 | 价格页双聊天描边图标。 |
+| `pricing-cloud-environment` | `PricingCloudEnvironmentIcon` | 插画 / 状态素材图标 | 价格页云端环境图标。 |
+| `pricing-smile-circle` | `PricingSmileCircleIcon` | 插画 / 状态素材图标 | 价格页笑脸圆形图标。 |
+| `pricing-agent-face` | `PricingAgentFaceIcon` | 插画 / 状态素材图标 | 价格页智能体头像图标。 |
+| `pricing-lab-flask` | `PricingLabFlaskIcon` | 插画 / 状态素材图标 | 价格页实验功能烧瓶图标。 |
+| `pricing-folder-tools` | `PricingFolderToolsIcon` | 插画 / 状态素材图标 | 价格页工具文件夹图标。 |
+| `pricing-privacy-shield-user` | `PricingPrivacyShieldUserIcon` | 插画 / 状态素材图标 | 价格页隐私盾牌用户图标。 |
+| `pricing-image-outline` | `PricingImageOutlineIcon` | 插画 / 状态素材图标 | 价格页图片描边图标。 |
+| `pricing-image-sparkle` | `PricingImageSparkleIcon` | 插画 / 状态素材图标 | 价格页图片星标图标。 |
+| `pricing-image-stack` | `PricingImageStackIcon` | 插画 / 状态素材图标 | 价格页图片堆叠图标。 |
+| `pricing-member-management` | `PricingMemberManagementIcon` | 插画 / 状态素材图标 | 价格页成员管理图标。 |
+| `pricing-lock` | `PricingLockIcon` | 插画 / 状态素材图标 | 价格页锁定安全图标。 |
+| `pricing-shield-lock` | `PricingShieldLockIcon` | 插画 / 状态素材图标 | 价格页盾牌锁图标。 |
+| `pricing-infinity` | `PricingInfinityIcon` | 插画 / 状态素材图标 | 价格页无限图标。 |
+| `pricing-terminal` | `PricingTerminalIcon` | 插画 / 状态素材图标 | 价格页终端图标。 |
+| `pricing-sparkle-pair` | `PricingSparklePairIcon` | 插画 / 状态素材图标 | 价格页双星光图标。 |
+| `pricing-sparkle-cluster` | `PricingSparkleClusterIcon` | 插画 / 状态素材图标 | 价格页星光集群图标。 |
+| `pricing-sparkle-single` | `PricingSparkleSingleIcon` | 插画 / 状态素材图标 | 价格页单星光图标。 |
+| `pricing-research-telescope` | `PricingResearchTelescopeIcon` | 插画 / 状态素材图标 | 价格页研究望远镜图标。 |
+| `pricing-research-sparkle` | `PricingResearchSparkleIcon` | 插画 / 状态素材图标 | 价格页研究星标图标。 |
+| `pricing-receipt-note` | `PricingReceiptNoteIcon` | 插画 / 状态素材图标 | 价格页票据说明图标。 |
+| `pricing-usage-trend` | `PricingUsageTrendIcon` | 插画 / 状态素材图标 | 价格页用量趋势图标。 |
+| `pricing-voice-waveform` | `PricingVoiceWaveformIcon` | 插画 / 状态素材图标 | 价格页语音波形图标。 |
+| `remote-desktop-to-desktop` | `RemoteDesktopToDesktopIcon` | 插画 / 状态素材图标 | 远程桌面到桌面连接图标。 |
+| `remote-desktop-to-server` | `RemoteDesktopToServerIcon` | 插画 / 状态素材图标 | 远程桌面到服务器连接图标。 |
+| `remote-phone-to-laptop` | `RemotePhoneToLaptopIcon` | 插画 / 状态素材图标 | 远程手机到笔记本连接图标。 |
+| `remote-phone-scan` | `RemotePhoneScanIcon` | 插画 / 状态素材图标 | 远程手机扫描图标。 |
+| `remote-laptop-phone` | `RemoteLaptopPhoneIcon` | 插画 / 状态素材图标 | 远程笔记本与手机图标。 |
+| `tier-lightning` | `TierLightningIcon` | 插画 / 状态素材图标 | 服务等级闪电图标。 |
+| `tier-lightning-double` | `TierLightningDoubleIcon` | 插画 / 状态素材图标 | 服务等级双闪电图标。 |

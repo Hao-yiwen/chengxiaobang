@@ -1,10 +1,10 @@
 import {
-  CaretDownIcon as ChevronDown,
-  CheckIcon as Check,
-  ChatCircleDotsIcon as ChatCircleDots,
-  CircleNotchIcon as Loader2,
-  XIcon as X
-} from "@phosphor-icons/react";
+  ChatBubblesIcon,
+  ChevronIcon,
+  RefreshIcon,
+  SkillIcon,
+  XMarkIcon
+} from "@/assets/file-type-icons";
 import { useState } from "react";
 import {
   askUserAnswerItemText,
@@ -49,7 +49,7 @@ function textArg(toolCall: ToolCall, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function ToolStatusIcon({ toolCall }: { toolCall: ToolCall }) {
+function SkillChipIcon({ toolCall }: { toolCall: ToolCall }) {
   const isRunning =
     toolCall.status === "running" ||
     toolCall.status === "pending_approval" ||
@@ -57,12 +57,12 @@ function ToolStatusIcon({ toolCall }: { toolCall: ToolCall }) {
   const isError = toolCall.status === "failed" || toolCall.status === "rejected";
 
   if (isRunning) {
-    return <Loader2 className="size-3.5 flex-none animate-spin text-muted-foreground" />;
+    return <RefreshIcon className="size-3.5 flex-none animate-spin text-muted-foreground" />;
   }
   if (isError) {
-    return <X className="size-3.5 flex-none text-muted-foreground" />;
+    return <XMarkIcon className="size-3.5 flex-none text-muted-foreground" />;
   }
-  return <Check className="size-3.5 flex-none text-muted-foreground" />;
+  return <SkillIcon className="size-3.5 flex-none text-muted-foreground" />;
 }
 
 function AskUserReceipt({ toolCall }: { toolCall: ToolCall }) {
@@ -91,10 +91,9 @@ function AskUserReceipt({ toolCall }: { toolCall: ToolCall }) {
           setOpen(nextOpen);
         }}
       >
-        <ChatCircleDots className="size-3.5 flex-none" />
+        <ChatBubblesIcon className="size-3.5 flex-none" />
         <span className="min-w-0 truncate">{summary}</span>
-        <ToolStatusIcon toolCall={toolCall} />
-        <ChevronDown
+        <ChevronIcon
           className={cn("size-3.5 flex-none transition-transform", open && "rotate-180")}
         />
       </button>
@@ -189,7 +188,7 @@ function UseSkillChip({ toolCall }: { toolCall: ToolCall }) {
   return (
     <div className="mb-4 max-w-full self-stretch">
       <div className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
-        <ToolStatusIcon toolCall={toolCall} />
+        <SkillChipIcon toolCall={toolCall} />
         <span className="min-w-0 truncate">
           {label} {skillName}
         </span>

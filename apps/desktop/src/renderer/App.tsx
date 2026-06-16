@@ -1,7 +1,7 @@
 import type { DragEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FilePlusIcon as FilePlus } from "@phosphor-icons/react";
+import { DocumentIcon } from "@/assets/file-type-icons";
 import { ApprovalDock } from "./components/ApprovalDock";
 import { ArtifactFloatingPanel } from "./components/ArtifactFloatingPanel";
 import { ChatView } from "./components/ChatView";
@@ -175,7 +175,7 @@ export function App(props: { client?: ApiClient }) {
                     className="pointer-events-none absolute inset-0 z-[80] flex items-center justify-center border-2 border-dashed border-link bg-link-bg-soft/55"
                   >
                     <div className="flex items-center gap-2 rounded-pill border border-link/30 bg-card px-4 py-2 text-caption text-link-deep shadow-subtle">
-                      <FilePlus className="size-4" />
+                      <DocumentIcon className="size-4 text-muted-foreground" />
                       <span>{t("composer.dropContextHint")}</span>
                     </div>
                   </div>

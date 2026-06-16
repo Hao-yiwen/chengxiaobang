@@ -1,20 +1,18 @@
+import type { ComponentType } from "react";
 import {
-  FileAudioIcon as FileAudio,
-  FileCodeIcon as FileCode,
-  FileDocIcon as FileDoc,
-  FileIcon as FileAttachment,
-  FileImageIcon as FileImage,
-  FilePdfIcon as FilePdf,
-  FilePptIcon as FilePpt,
-  FileTextIcon as FileText,
-  FileVideoIcon as FileVideo,
-  FileXlsIcon as FileSpreadsheet,
-  XIcon as X,
-  type Icon
-} from "@phosphor-icons/react";
+  AppWindowIcon,
+  AudioWaveformIcon,
+  CodeIcon,
+  DocumentIcon,
+  FileIcon,
+  XMarkIcon,
+  type FileIconSvgProps
+} from "@/assets/file-type-icons";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
+
+type Icon = ComponentType<FileIconSvgProps>;
 
 const ATTACHMENT_CARD_TEXT_PREVIEW_BYTES = 1600;
 
@@ -181,7 +179,7 @@ export function ComposerAttachmentCard(props: {
         onClick={props.onRemove}
         className="absolute right-1.5 top-1.5 z-10 flex size-[18px] items-center justify-center rounded-full bg-primary/95 text-primary-foreground shadow-subtle transition-colors hover:bg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
       >
-        <X className="size-2.5" />
+        <XMarkIcon className="size-2.5" />
       </button>
     </div>
   );
@@ -224,28 +222,28 @@ function imageMimeTypeForPath(path: string): string {
 function attachmentIconForKind(kind: string | undefined): Icon {
   switch (kind) {
     case "image":
-      return FileImage;
+      return FileIcon;
     case "pdf":
-      return FilePdf;
+      return DocumentIcon;
     case "code":
     case "json":
     case "html":
     case "markdown":
-      return FileCode;
+      return CodeIcon;
     case "docx":
-      return FileDoc;
+      return DocumentIcon;
     case "presentation":
-      return FilePpt;
+      return DocumentIcon;
     case "spreadsheet":
-      return FileSpreadsheet;
+      return DocumentIcon;
     case "audio":
-      return FileAudio;
+      return AudioWaveformIcon;
     case "video":
-      return FileVideo;
+      return AppWindowIcon;
     case "text":
-      return FileText;
+      return DocumentIcon;
     default:
-      return FileAttachment;
+      return FileIcon;
   }
 }
 

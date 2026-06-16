@@ -1,4 +1,4 @@
-import { CaretDownIcon as ChevronDown } from "@phosphor-icons/react";
+import { ChevronIcon } from "@/assets/file-type-icons";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TurnTiming } from "@/lib/timeline";
@@ -60,7 +60,7 @@ export function WorkTimer({
           onClick={() => setOpen((value) => !value)}
           className="flex cursor-pointer items-center gap-2 text-body-xs font-medium text-muted-foreground"
         >
-          <ChevronDown
+          <ChevronIcon
             className={cn("size-4 transition-transform duration-200", open ? "" : "-rotate-90")}
           />
           <span>{header}</span>

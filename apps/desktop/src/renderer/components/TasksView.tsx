@@ -1,8 +1,8 @@
 import {
-  CaretDownIcon as ChevronDown,
-  LightningIcon as Bolt,
-  TrashIcon as Trash2
-} from "@phosphor-icons/react";
+  ChevronIcon,
+  LightningBoltIcon,
+  TrashIcon
+} from "@/assets/file-type-icons";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ScheduledTask } from "@chengxiaobang/shared";
@@ -164,7 +164,7 @@ export function TasksView() {
                         count={expiredTasks.length}
                         compact
                       />
-                      <ChevronDown
+                      <ChevronIcon
                         className={cn(
                           "size-4 flex-none text-muted-foreground transition-transform",
                           expiredOpen && "rotate-180"
@@ -303,7 +303,7 @@ function TaskCard(props: {
                 void props.onRunNow(task.id);
               }}
             >
-              <Bolt className="size-4" />
+              <LightningBoltIcon className="size-4" />
             </Button>
             <Button
               type="button"
@@ -316,7 +316,7 @@ function TaskCard(props: {
                 void props.onDelete(task.id);
               }}
             >
-              <Trash2 className="size-4" />
+              <TrashIcon className="size-4" />
             </Button>
           </div>
         </div>

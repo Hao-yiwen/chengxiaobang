@@ -45,7 +45,14 @@ describe("AskUserCard", () => {
     expect(screen.getByText(OPTIONS[0]!)).toBeInTheDocument();
     expect(screen.getByText(OPTIONS[1]!)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "跳过" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "继续" })).toBeInTheDocument();
+    const continueButton = screen.getByRole("button", { name: "继续" });
+    expect(continueButton).toBeInTheDocument();
+    expect(continueButton).toHaveClass(
+      "inline-flex",
+      "items-center",
+      "justify-center",
+      "text-primary-foreground"
+    );
   });
 
   it("选项点击后不会立即提交，点继续才提交结构化 answers", () => {

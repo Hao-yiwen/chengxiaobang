@@ -1,10 +1,10 @@
 import {
-  CaretDownIcon as ChevronDown,
-  CaretRightIcon as ChevronRight,
-  CircleNotchIcon as Loader2,
-  MagnifyingGlassIcon as Search,
-  WarningCircleIcon as WarningCircle
-} from "@phosphor-icons/react";
+  ChevronIcon,
+  ChevronRightIcon,
+  RefreshIcon,
+  SearchIcon,
+  WarningCircleIcon
+} from "@/assets/file-type-icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Project, ProjectFileEntry } from "@chengxiaobang/shared";
@@ -239,14 +239,14 @@ export function ProjectFileTree({
           </p>
         ) : null}
         <label className="mt-3 flex h-8 items-center gap-2 rounded-sm border bg-card px-2.5 text-muted-foreground focus-within:border-hairline-strong">
-          <Search className="size-3.5 flex-none" />
+          <SearchIcon className="size-3.5 flex-none" />
           <input
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
             placeholder={t("rightPanel.projectFilesSearchPlaceholder")}
             className="min-w-0 flex-1 bg-transparent text-caption text-foreground outline-none placeholder:text-muted-foreground"
           />
-          {searchState.status === "loading" ? <Loader2 className="size-3 animate-spin" /> : null}
+          {searchState.status === "loading" ? <RefreshIcon className="size-3 animate-spin" /> : null}
         </label>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2">
@@ -260,7 +260,7 @@ export function ProjectFileTree({
           />
         ) : rootLoading ? (
           <div className="flex h-full items-center justify-center">
-            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+            <RefreshIcon className="size-4 animate-spin text-muted-foreground" />
           </div>
         ) : error ? (
           <LoadFailure message={error} onRetry={() => void loadDirectory(ROOT_DIRECTORY, { force: true })} />
@@ -297,16 +297,16 @@ export function ProjectFileTree({
           <TreeIndentGuides depth={depth} />
           {isDirectory ? (
             isExpanded ? (
-              <ChevronDown className="size-3.5 flex-none text-muted-foreground" />
+              <ChevronIcon className="size-3.5 flex-none text-muted-foreground" />
             ) : (
-              <ChevronRight className="size-3.5 flex-none text-muted-foreground" />
+              <ChevronRightIcon className="size-3.5 flex-none text-muted-foreground" />
             )
           ) : (
             <span className="w-3.5 flex-none" />
           )}
           {isDirectory ? null : <FileTypeIcon path={entry.path} />}
           <span className="min-w-0 flex-1 truncate font-mono text-micro">{entry.name}</span>
-          {loading ? <Loader2 className="size-3 animate-spin text-muted-foreground" /> : null}
+          {loading ? <RefreshIcon className="size-3 animate-spin text-muted-foreground" /> : null}
           {!isDirectory ? <GitStatusMark kind={statusByPath[entry.path]} /> : null}
         </button>
         {isDirectory && isExpanded
@@ -349,7 +349,7 @@ function SearchResults(props: {
   if (props.state.status === "loading" && props.state.results.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        <RefreshIcon className="size-4 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -394,7 +394,7 @@ function LoadFailure(props: { message: string; onRetry?: () => void }) {
   const { t } = useTranslation();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-caption text-muted-foreground">
-      <WarningCircle className="size-5 text-warning" />
+      <WarningCircleIcon className="size-5 text-warning" />
       <p>{`${t("rightPanel.projectFilesLoadFailed")}：${props.message}`}</p>
       {props.onRetry ? (
         <button

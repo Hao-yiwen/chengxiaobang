@@ -1,12 +1,12 @@
 import {
-  ArrowRightIcon as ArrowRight,
-  ArrowSquareOutIcon as ExternalLink,
-  BriefcaseIcon as Briefcase,
-  CaretLeftIcon as CaretLeft,
-  CheckCircleIcon as CheckCircle,
-  CodeIcon as Code,
-  SparkleIcon as Sparkle
-} from "@phosphor-icons/react";
+  ArrowLeftIcon,
+  ArrowTopRightIcon,
+  CheckCircleIcon,
+  ChevronRightIcon,
+  CodeIcon,
+  SkillIcon,
+  WindowBriefcaseIcon
+} from "@/assets/file-type-icons";
 import { resolveProviderConfigModelOption } from "@chengxiaobang/shared";
 import type { ProviderConfig, ProviderInput, ProviderKind } from "@chengxiaobang/shared";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
@@ -65,25 +65,25 @@ const PRIMARY_USE_OPTIONS: PrimaryUseOption[] = [
     id: "work",
     titleKey: "setup.profile.primary.work.title",
     descKey: "setup.profile.primary.work.desc",
-    icon: <Briefcase className="size-4" />,
+    icon: <WindowBriefcaseIcon className="size-4" />,
     selectedCardClassName: "border-link/40 bg-link-bg-soft/45 shadow-subtle",
-    selectedIconClassName: "border-link/35 bg-link/10 text-link-deep"
+    selectedIconClassName: "border-link/35 bg-link/10 text-muted-foreground"
   },
   {
     id: "code",
     titleKey: "setup.profile.primary.code.title",
     descKey: "setup.profile.primary.code.desc",
-    icon: <Code className="size-4" />,
+    icon: <CodeIcon className="size-4" />,
     selectedCardClassName: "border-link/40 bg-link-bg-soft/45 shadow-subtle",
-    selectedIconClassName: "border-link/35 bg-link/10 text-link-deep"
+    selectedIconClassName: "border-link/35 bg-link/10 text-muted-foreground"
   },
   {
     id: "both",
     titleKey: "setup.profile.primary.both.title",
     descKey: "setup.profile.primary.both.desc",
-    icon: <Sparkle className="size-4" />,
+    icon: <SkillIcon className="size-4" />,
     selectedCardClassName: "border-link/40 bg-link-bg-soft/45 shadow-subtle",
-    selectedIconClassName: "border-link/35 bg-link/10 text-link-deep"
+    selectedIconClassName: "border-link/35 bg-link/10 text-muted-foreground"
   }
 ];
 
@@ -271,7 +271,7 @@ function WelcomeStep(props: { onNext: () => void }) {
           onClick={props.onNext}
         >
           {t("setup.welcome.start")}
-          <ArrowRight className="size-4" />
+          <ArrowLeftIcon className="size-4 rotate-180" />
         </Button>
       </div>
     </div>
@@ -364,7 +364,7 @@ function ProfileStep(props: {
 
       <div className="mt-auto flex items-center justify-between gap-3 pt-8">
         <Button type="button" variant="ghost" size="sm" onClick={props.onBack}>
-          <CaretLeft className="size-4" />
+          <ChevronRightIcon className="size-4 rotate-180" />
           {t("setup.back")}
         </Button>
         <Button
@@ -374,7 +374,7 @@ function ProfileStep(props: {
           onClick={props.onNext}
         >
           {t("setup.next")}
-          <ArrowRight className="size-4" />
+          <ArrowLeftIcon className="size-4 rotate-180" />
         </Button>
       </div>
     </div>
@@ -412,7 +412,7 @@ function ModelStep(props: {
           className="mt-5 flex items-start gap-3 rounded-md border border-border bg-canvas-soft p-3"
         >
           <span className="flex size-8 flex-none items-center justify-center rounded-sm bg-primary text-primary-foreground">
-            <CheckCircle className="size-4" />
+            <CheckCircleIcon className="size-4" />
           </span>
           <div className="min-w-0 flex-1">
             <div className="text-body-sm font-medium text-foreground">
@@ -483,7 +483,7 @@ function ModelStep(props: {
                     href={API_KEY_URLS[draft.kind]!}
                     className="flex items-center gap-1 text-micro text-link underline-offset-2 hover:underline"
                   >
-                    <ExternalLink className="size-3" />
+                    <ArrowTopRightIcon className="size-3" />
                     {t("settings.providers.getApiKey")}
                   </ExternalUrlAnchor>
                 ) : null}
@@ -517,7 +517,7 @@ function ModelStep(props: {
           </Button>
         ) : (
           <Button type="button" variant="ghost" size="sm" onClick={props.onBack}>
-            <CaretLeft className="size-4" />
+            <ChevronRightIcon className="size-4 rotate-180" />
             {t("setup.back")}
           </Button>
         )}

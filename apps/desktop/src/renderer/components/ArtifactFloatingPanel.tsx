@@ -1,16 +1,12 @@
+import type { ComponentType } from "react";
 import {
-  FileAudioIcon as FileAudio,
-  FileCodeIcon as FileCode,
-  FileDocIcon as FileDoc,
-  FileHtmlIcon as FileHtml,
-  FileImageIcon as FileImage,
-  FilePdfIcon as FilePdf,
-  FilePptIcon as FilePpt,
-  FileTextIcon as FileText,
-  FileVideoIcon as FileVideo,
-  FileXlsIcon as FileSpreadsheet,
-  type Icon
-} from "@phosphor-icons/react";
+  AppWindowIcon,
+  AudioWaveformIcon,
+  CodeIcon,
+  DocumentIcon,
+  FileIcon,
+  type FileIconSvgProps
+} from "@/assets/file-type-icons";
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -23,20 +19,22 @@ import {
 } from "@/lib/artifact";
 import { useAppStore } from "@/store";
 
+type Icon = ComponentType<FileIconSvgProps>;
+
 const KIND_ICON: Partial<Record<CollectedArtifact["kind"], Icon>> = {
-  code: FileCode,
-  markdown: FileText,
-  json: FileCode,
-  html: FileHtml,
-  pdf: FilePdf,
-  image: FileImage,
-  audio: FileAudio,
-  video: FileVideo,
-  spreadsheet: FileSpreadsheet,
-  docx: FileDoc,
-  presentation: FilePpt,
-  text: FileText,
-  unsupported: FileText
+  code: CodeIcon,
+  markdown: CodeIcon,
+  json: CodeIcon,
+  html: CodeIcon,
+  pdf: DocumentIcon,
+  image: FileIcon,
+  audio: AudioWaveformIcon,
+  video: AppWindowIcon,
+  spreadsheet: DocumentIcon,
+  docx: DocumentIcon,
+  presentation: DocumentIcon,
+  text: DocumentIcon,
+  unsupported: FileIcon
 };
 
 const EMPTY_ARTIFACT_COLLECTION: CollectedArtifactDeclarations = {
@@ -183,7 +181,7 @@ export function ArtifactFloatingPanel() {
       >
         <div className="flex flex-col gap-2">
           {collection.artifacts.map((artifact) => {
-            const Icon = KIND_ICON[artifact.kind] ?? FileText;
+            const Icon = KIND_ICON[artifact.kind] ?? FileIcon;
             return (
               <button
                 key={artifact.path}
@@ -199,7 +197,7 @@ export function ArtifactFloatingPanel() {
                 }}
                 className="flex w-full min-w-0 items-center gap-2.5 rounded-sm border bg-canvas px-2.5 py-2 text-left transition-colors hover:bg-canvas-soft-2"
               >
-                <span className="flex size-7 flex-none items-center justify-center rounded-xs bg-canvas-soft-2 text-ink">
+                <span className="flex size-7 flex-none items-center justify-center rounded-xs bg-canvas-soft-2 text-muted-foreground">
                   <Icon className="size-3.5" />
                 </span>
                 <span className="min-w-0 flex-1">

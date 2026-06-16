@@ -1,5 +1,6 @@
 import { createJSONStorage, type PersistOptions } from "zustand/middleware";
 import { DEFAULT_LOCALE } from "../i18n";
+import { DEFAULT_CODE_PREVIEW_SETTINGS, sanitizeCodePreviewSettings } from "../lib/code-preview-settings";
 import { migrateRightPanelMemory, sanitizePersistedAppState } from "./helpers/right-panel";
 import type { AppState, ModelSelection } from "./types";
 
@@ -19,10 +20,17 @@ function migrateHomeModelSelection(state: Partial<AppState>): Partial<AppState> 
   return homeModelSelection ? { ...state, homeModelSelection } : state;
 }
 
+function migrateCodePreviewSettings(state: Partial<AppState>): Partial<AppState> {
+  return {
+    ...state,
+    codePreviewSettings: sanitizeCodePreviewSettings(state.codePreviewSettings)
+  };
+}
+
 export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
   name: "chengxiaobang.app",
   storage: createJSONStorage(() => localStorage),
-  version: 6,
+  version: 8,
   partialize: (state) => ({
     view: state.view,
     activeSessionId: state.view === "home" ? undefined : state.activeSessionId,
@@ -42,6 +50,7 @@ export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
     pausedRunQueuesBySession: state.pausedRunQueuesBySession,
     projectSortMode: state.projectSortMode,
     theme: state.theme,
+    codePreviewSettings: state.codePreviewSettings,
     locale: state.locale,
     onboardingCompleted: state.onboardingCompleted,
     onboardingStep: state.onboardingStep,
@@ -51,14 +60,18 @@ export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
     if (version === 1 && persisted) {
       // v1 没有 rightPanelOpen：mode 非空就表示面板可见。
       const previous = persisted as Partial<AppState>;
-      return migrateHomeModelSelection(migrateRightPanelMemory(sanitizePersistedAppState({
-        ...previous,
-        rightPanelOpen: previous.rightPanelMode != null
-      })));
+      return migrateCodePreviewSettings(
+        migrateHomeModelSelection(migrateRightPanelMemory(sanitizePersistedAppState({
+          ...previous,
+          rightPanelOpen: previous.rightPanelMode != null
+        })))
+      );
     }
     if (version === 2 && persisted) {
-      return migrateHomeModelSelection(
-        migrateRightPanelMemory(sanitizePersistedAppState(persisted as Partial<AppState>))
+      return migrateCodePreviewSettings(
+        migrateHomeModelSelection(
+          migrateRightPanelMemory(sanitizePersistedAppState(persisted as Partial<AppState>))
+        )
       );
     }
     if (version < 1 || !persisted) {
@@ -75,17 +88,20 @@ export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
               ? "smart_approval"
               : "approval",
         theme: "system",
+        codePreviewSettings: DEFAULT_CODE_PREVIEW_SETTINGS,
         locale: DEFAULT_LOCALE
       } satisfies Partial<AppState>;
     }
-    return migrateHomeModelSelection(
-      migrateRightPanelMemory(sanitizePersistedAppState(persisted as Partial<AppState>))
+    return migrateCodePreviewSettings(
+      migrateHomeModelSelection(
+        migrateRightPanelMemory(sanitizePersistedAppState(persisted as Partial<AppState>))
+      )
     );
   },
   merge: (persisted, current) => {
-    const sanitized = migrateHomeModelSelection(migrateRightPanelMemory(
+    const sanitized = migrateCodePreviewSettings(migrateHomeModelSelection(migrateRightPanelMemory(
       sanitizePersistedAppState((persisted ?? {}) as Partial<AppState>)
-    ));
+    )));
     return {
       ...current,
       ...sanitized

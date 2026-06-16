@@ -1,6 +1,7 @@
 import { createId } from "@chengxiaobang/shared";
 import { normalizeOnboardingProfile, type OnboardingProfile } from "../../../common/profile";
 import { isAbsolutePathLike } from "../../../common/file-preview";
+import { sanitizeCodePreviewSettings } from "../../lib/code-preview-settings";
 import { apiClientRef } from "../client";
 import type { AppState, AppStoreGet, AppStoreSet, RightPanelPatch } from "../types";
 import {
@@ -18,10 +19,11 @@ import {
   restoreHomeModelSelection
 } from "../helpers/model-selection";
 import {
+  DEFAULT_RIGHT_PANEL_WIDTH,
   RIGHT_PANEL_FILE_WIDTH,
-  RIGHT_PANEL_MAX_WIDTH,
-  RIGHT_PANEL_MIN_WIDTH,
   RIGHT_PANEL_REVIEW_WIDTH,
+  clampRightPanelWidth,
+  rightPanelWidthForOpen,
   rememberRightPanel
 } from "../helpers/right-panel";
 import { selectActiveProject, selectActiveSession } from "../selectors";
@@ -268,6 +270,20 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         void get().refreshSlashCommands(activeProjectId);
       },
       setTheme: (theme) => set({ theme }),
+      setCodePreviewSettings: (patch) =>
+        set((state) => {
+          const next = sanitizeCodePreviewSettings({
+            ...state.codePreviewSettings,
+            ...patch
+          });
+          console.info("[store] 更新代码预览设置", {
+            lightTheme: next.lightTheme,
+            darkTheme: next.darkTheme,
+            wrapLongLines: next.wrapLongLines,
+            fontSize: next.fontSize
+          });
+          return { codePreviewSettings: next };
+        }),
       setLocale: (locale) => set({ locale }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setProjectSortMode: (projectSortMode) => {
@@ -278,7 +294,11 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         set((state) => {
           const patch: RightPanelPatch = state.rightPanelOpen
             ? { rightPanelOpen: false }
-            : { rightPanelOpen: true, rightPanelMode: null };
+            : {
+                rightPanelOpen: true,
+                rightPanelMode: null,
+                rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH
+              };
           return {
             ...patch,
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
@@ -295,7 +315,11 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           const patch: RightPanelPatch = {
             rightPanelOpen: true,
             rightPanelMode: mode,
-            ...(targetWidth ? { rightPanelWidth: Math.max(state.rightPanelWidth, targetWidth) } : {})
+            rightPanelWidth: rightPanelWidthForOpen(
+              state.rightPanelWidth,
+              state.rightPanelOpen,
+              targetWidth
+            )
           };
           console.info("[store] 打开右侧面板", {
             mode,
@@ -317,10 +341,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         }),
       setRightPanelWidth: (width) =>
         set((state) => {
-          const nextWidth = Math.min(
-            RIGHT_PANEL_MAX_WIDTH,
-            Math.max(RIGHT_PANEL_MIN_WIDTH, Math.round(width))
-          );
+          const nextWidth = clampRightPanelWidth(width);
           const patch: RightPanelPatch = { rightPanelWidth: nextWidth };
           return {
             ...patch,
@@ -356,7 +377,11 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
             },
             rightPanelOpen: true,
             rightPanelMode: "files",
-            rightPanelWidth: Math.max(state.rightPanelWidth, RIGHT_PANEL_FILE_WIDTH)
+            rightPanelWidth: rightPanelWidthForOpen(
+              state.rightPanelWidth,
+              state.rightPanelOpen,
+              RIGHT_PANEL_FILE_WIDTH
+            )
           };
           return {
             ...patch,
@@ -381,7 +406,11 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
             },
             rightPanelOpen: true,
             rightPanelMode: "files",
-            rightPanelWidth: Math.max(state.rightPanelWidth, RIGHT_PANEL_FILE_WIDTH)
+            rightPanelWidth: rightPanelWidthForOpen(
+              state.rightPanelWidth,
+              state.rightPanelOpen,
+              RIGHT_PANEL_FILE_WIDTH
+            )
           };
           return {
             ...patch,

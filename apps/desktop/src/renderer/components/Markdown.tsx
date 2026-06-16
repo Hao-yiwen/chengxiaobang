@@ -1,4 +1,4 @@
-import { type ComponentPropsWithoutRef, memo, useEffect, useRef } from "react";
+import { type ComponentPropsWithoutRef, memo, useEffect, useMemo, useRef } from "react";
 import { code } from "@streamdown/code";
 import { cjk } from "@streamdown/cjk";
 import { createMathPlugin } from "@streamdown/math";
@@ -21,6 +21,8 @@ import { CodeBlockPanel } from "@/components/CodeBlockPanel";
 import { ExternalUrlAnchor } from "@/components/ExternalUrlMenu";
 import { FileLinkAnchor } from "@/components/FileLinkAnchor";
 import { localFilePathFromHref } from "../../common/file-preview";
+import { useAppStore } from "@/store";
+import { rehypeNumericTables } from "@/lib/markdown-utils";
 import { cn } from "@/lib/utils";
 
 type MarkdownAstNode = {
@@ -51,7 +53,8 @@ const REMARK_PLUGINS: StreamdownProps["remarkPlugins"] = [
 ];
 
 const REHYPE_PLUGINS: StreamdownProps["rehypePlugins"] = [
-  ...Object.values(defaultRehypePlugins)
+  ...Object.values(defaultRehypePlugins),
+  rehypeNumericTables
 ];
 
 const STREAMDOWN_CONTROLS: ControlsConfig = {
@@ -96,8 +99,6 @@ const STREAMDOWN_MERMAID: MermaidOptions = {
     }
   }
 };
-
-const STREAMDOWN_SHIKI_THEME: StreamdownProps["shikiTheme"] = ["github-light", "github-dark"];
 
 const STREAMDOWN_ANIMATION: StreamdownProps["animated"] = {
   animation: "fadeIn",
@@ -278,6 +279,11 @@ function MarkdownStream({
   isAnimating?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const codePreviewSettings = useAppStore((state) => state.codePreviewSettings);
+  const shikiTheme = useMemo<StreamdownProps["shikiTheme"]>(
+    () => [codePreviewSettings.lightTheme, codePreviewSettings.darkTheme],
+    [codePreviewSettings.darkTheme, codePreviewSettings.lightTheme]
+  );
   useScrollOverflowDetection(containerRef);
 
   return (
@@ -294,7 +300,7 @@ function MarkdownStream({
       rehypePlugins={REHYPE_PLUGINS}
       plugins={STREAMDOWN_PLUGINS}
       mermaid={STREAMDOWN_MERMAID}
-      shikiTheme={STREAMDOWN_SHIKI_THEME}
+      shikiTheme={shikiTheme}
       lineNumbers={false}
       isAnimating={isAnimating}
       animated={mode === "streaming" ? STREAMDOWN_ANIMATION : false}

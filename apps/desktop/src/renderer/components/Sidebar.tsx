@@ -1,29 +1,30 @@
 import {
-  CaretDownIcon as ChevronDown,
-  CaretRightIcon as ChevronRight,
-  ChatCenteredTextIcon as MessageSquareText,
-  CheckIcon as Check,
-  ClockIcon as Clock,
-  ArrowsInSimpleIcon as CollapseAll,
-  ArrowsOutSimpleIcon as ExpandAll,
-  DeviceMobileIcon as DeviceMobile,
-  DotsThreeIcon as MoreHorizontal,
-  FileArrowDownIcon as FileDown,
-  FolderIcon as Folder,
-  FolderOpenIcon as FolderOpen,
-  GearIcon as Settings,
-  CircleNotchIcon as Loader2,
-  MagnifyingGlassIcon as Search,
-  NotePencilIcon as SquarePen,
-  PencilSimpleIcon as Pencil,
-  PlusIcon as Plus,
-  PushPinIcon as PushPin,
-  PushPinSlashIcon as PushPinSlash,
-  SidebarSimpleIcon as PanelLeft,
-  SparkleIcon as Sparkle,
-  TrashIcon as Trash2,
-  XIcon as X
-} from "@phosphor-icons/react";
+  CheckMediumIcon,
+  ChevronIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  CommentTextIcon,
+  ComposeIcon,
+  DownloadIcon,
+  EllipsisHorizontalIcon,
+  ExpandCornersIcon,
+  ExpandInwardIcon,
+  FolderIcon,
+  FolderOpenOutlineIcon,
+  PanelLeftOutlineIcon,
+  PanelRightOutlineIcon,
+  PencilOutlineIcon,
+  PhoneOutlineIcon,
+  PinFilledSmallIcon,
+  PinOutlineIcon,
+  PlusIcon,
+  RefreshIcon,
+  SearchIcon,
+  SkillIcon,
+  TrashIcon,
+  XMarkIcon
+} from "@/assets/file-type-icons";
+import { SettingOutlined } from "@ant-design/icons";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Project, Session } from "@chengxiaobang/shared";
@@ -69,7 +70,7 @@ export function SidebarToggle() {
         isMacDesktop ? "left-[84px] top-[12px]" : "left-3 top-3"
       )}
     >
-      <PanelLeft className="size-4" />
+      {open ? <PanelLeftOutlineIcon className="size-4" /> : <PanelRightOutlineIcon className="size-4" />}
     </button>
   );
 }
@@ -125,7 +126,7 @@ function SectionLabel(props: {
           onClick={props.onAction}
           className="absolute right-1 flex size-5 flex-none items-center justify-center rounded-xs text-muted-slate opacity-0 transition-opacity hover:text-foreground group-hover/section:opacity-100"
         >
-          <Plus className="size-3.5" />
+          <PlusIcon className="size-3.5" />
         </button>
       ) : null}
     </div>
@@ -198,9 +199,9 @@ function ProjectSectionLabel(props: {
               className="flex size-6 flex-none items-center justify-center rounded-xs p-1 text-muted-slate transition-colors hover:bg-canvas-soft-2 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
             >
               {props.allCollapsed ? (
-                <ExpandAll className="size-4" />
+                <ExpandCornersIcon className="size-4" />
               ) : (
-                <CollapseAll className="size-4" />
+                <ExpandInwardIcon className="size-4" />
               )}
             </button>
           </TooltipTrigger>
@@ -215,7 +216,7 @@ function ProjectSectionLabel(props: {
                   aria-label={t("sidebar.projectSortMenu")}
                   className="flex size-6 flex-none items-center justify-center rounded-xs p-1 text-muted-slate transition-colors hover:bg-canvas-soft-2 hover:text-foreground data-[state=open]:bg-canvas-soft-2 data-[state=open]:text-foreground"
                 >
-                  <MoreHorizontal className="size-4" />
+                  <EllipsisHorizontalIcon className="size-4" />
                 </button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
@@ -229,11 +230,11 @@ function ProjectSectionLabel(props: {
           >
             <DropdownMenuItem onSelect={() => selectSortMode("created")}>
               <span>{t("sidebar.sortByCreated")}</span>
-              {props.sortMode === "created" ? <Check className="ml-auto size-3.5" /> : null}
+              {props.sortMode === "created" ? <CheckMediumIcon className="ml-auto size-3.5" /> : null}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => selectSortMode("recent")}>
               <span>{t("sidebar.sortByRecent")}</span>
-              {props.sortMode === "recent" ? <Check className="ml-auto size-3.5" /> : null}
+              {props.sortMode === "recent" ? <CheckMediumIcon className="ml-auto size-3.5" /> : null}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -245,7 +246,7 @@ function ProjectSectionLabel(props: {
               onClick={props.onOpenFolder}
               className="flex size-6 flex-none items-center justify-center rounded-xs p-1 text-muted-slate transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
             >
-              <Plus className="size-4" />
+              <PlusIcon className="size-4" />
             </button>
           </TooltipTrigger>
           <TooltipContent>{t("sidebar.openFolder")}</TooltipContent>
@@ -513,24 +514,24 @@ export function Sidebar() {
       <div className="h-10 flex-none" />
 
       <div className="mt-1 flex-none space-y-0.5">
-        <SidebarRow icon={<SquarePen />} label={t("sidebar.newChat")} compactLabel onClick={newChat} />
-        <SidebarRow icon={<Search />} label={t("sidebar.search")} compactLabel onClick={() => setPaletteOpen(true)} />
+        <SidebarRow icon={<ComposeIcon />} label={t("sidebar.newChat")} compactLabel onClick={newChat} />
+        <SidebarRow icon={<SearchIcon />} label={t("sidebar.search")} compactLabel onClick={() => setPaletteOpen(true)} />
         <SidebarRow
-          icon={<Clock />}
+          icon={<ClockIcon />}
           label={t("sidebar.tasks")}
           compactLabel
           active={view === "tasks"}
           onClick={() => setView("tasks")}
         />
         <SidebarRow
-          icon={<Sparkle />}
+          icon={<SkillIcon />}
           label={t("sidebar.skills")}
           compactLabel
           active={view === "skills"}
           onClick={() => setView("skills")}
         />
         <SidebarRow
-          icon={<DeviceMobile />}
+          icon={<PhoneOutlineIcon />}
           label={t("sidebar.connectPhone")}
           compactLabel
           active={view === "connectPhone"}
@@ -592,13 +593,13 @@ export function Sidebar() {
         <div
           data-sidebar-bottom-fade="true"
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-b from-background/0 via-background/80 to-background"
+          className="pointer-events-none absolute inset-x-0 -bottom-3 h-5 bg-gradient-to-b from-background/0 via-background/80 to-background"
         />
       </div>
 
-      <div className="mt-2 flex-none border-t border-border pt-2">
+      <div className="mt-2 flex-none pt-2">
         <SidebarRow
-          icon={<Settings />}
+          icon={<SettingOutlined />}
           label={t("sidebar.settings")}
           active={view === "settings"}
           onClick={() => setView("settings")}
@@ -636,7 +637,7 @@ function ProjectGroup(props: {
     return (
       <Collapsible open={props.open} onOpenChange={props.onOpenChange} className="mb-1">
         <div className="flex items-center gap-1 py-1 pl-1.5 pr-1">
-          <Folder className="size-4 flex-none stroke-[1.75] text-muted-slate" />
+          <FolderIcon className="size-4 flex-none text-foreground" />
           <Input
             aria-label={t("sidebar.projectName")}
             autoFocus
@@ -654,7 +655,7 @@ function ProjectGroup(props: {
             onClick={props.onCommitRename}
             className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-canvas-soft-2 hover:text-foreground"
           >
-            <Check className="size-4" />
+            <CheckMediumIcon className="size-4" />
           </button>
           <button
             type="button"
@@ -662,7 +663,7 @@ function ProjectGroup(props: {
             onClick={props.onCancelRename}
             className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-canvas-soft-2 hover:text-foreground"
           >
-            <X className="size-4" />
+            <XMarkIcon className="size-4" />
           </button>
         </div>
         <CollapsibleContent>{props.children}</CollapsibleContent>
@@ -679,12 +680,12 @@ function ProjectGroup(props: {
               <button
                 type="button"
                 title={props.open ? t("sidebar.collapseFolder") : t("sidebar.expandFolder")}
-                className="flex h-7 w-full min-w-0 max-w-full flex-1 items-center gap-1.5 overflow-hidden rounded-sm px-1.5 pr-8 text-left text-body-sm text-foreground transition-colors hover:bg-surface-hover"
+                className="flex h-7 w-full min-w-0 max-w-full flex-1 items-center gap-1.5 overflow-hidden rounded-sm px-1.5 pr-8 text-left text-caption font-normal text-foreground transition-colors hover:bg-surface-hover"
               >
                 {props.open ? (
-                  <FolderOpen className="size-4 flex-none stroke-[1.75] text-muted-slate" />
+                  <FolderOpenOutlineIcon className="size-4 flex-none text-foreground" />
                 ) : (
-                  <Folder className="size-4 flex-none stroke-[1.75] text-muted-slate" />
+                  <FolderIcon className="size-4 flex-none text-foreground" />
                 )}
                 <span className="block min-w-0 max-w-[174px] truncate" title={props.name}>
                   {props.name}
@@ -692,9 +693,9 @@ function ProjectGroup(props: {
                 {/* 展开/收起指示：紧跟名字，悬停浮现。 */}
                 <span className="ml-0.5 flex size-4 flex-none items-center justify-center text-muted-slate opacity-0 transition-opacity group-hover/header:opacity-100">
                   {props.open ? (
-                    <ChevronDown className="size-3.5" />
+                    <ChevronIcon className="size-3.5" />
                   ) : (
-                    <ChevronRight className="size-3.5" />
+                    <ChevronRightIcon className="size-3.5" />
                   )}
                 </span>
               </button>
@@ -706,25 +707,25 @@ function ProjectGroup(props: {
               onClick={props.onNewChat}
               className="absolute right-1 flex size-6 flex-none items-center justify-center rounded-xs text-muted-slate opacity-0 transition-opacity hover:bg-canvas-soft-2 hover:text-foreground group-hover/header:opacity-100"
             >
-              <Plus className="size-3.5" />
+              <PlusIcon className="size-3.5" />
             </button>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuItem onSelect={props.onStartRename}>
-            <Pencil className="size-3.5" />
+            <PencilOutlineIcon className="size-3.5" />
             {t("sidebar.rename")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={props.onTogglePin}>
             {props.pinned ? (
-              <PushPinSlash className="size-3.5" />
+              <PinFilledSmallIcon className="size-3.5" />
             ) : (
-              <PushPin className="size-3.5" />
+              <PinOutlineIcon className="size-3.5" />
             )}
             {props.pinned ? t("sidebar.unpin") : t("sidebar.pin")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={props.onNewChat}>
-            <Plus className="size-3.5" />
+            <PlusIcon className="size-3.5" />
             {t("sidebar.newChatInProject")}
           </ContextMenuItem>
           <ContextMenuSeparator />
@@ -732,7 +733,7 @@ function ProjectGroup(props: {
             onSelect={props.onDelete}
             className="text-destructive focus:text-destructive"
           >
-            <Trash2 className="size-3.5" />
+            <TrashIcon className="size-3.5" />
             {t("sidebar.deleteProject")}
           </ContextMenuItem>
         </ContextMenuContent>
@@ -784,7 +785,7 @@ function SessionRow(props: SessionRowProps) {
           onClick={props.onCommitRename}
           className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-canvas-soft-2 hover:text-foreground"
         >
-          <Check className="size-4" />
+          <CheckMediumIcon className="size-4" />
         </button>
         <button
           type="button"
@@ -792,7 +793,7 @@ function SessionRow(props: SessionRowProps) {
           onClick={props.onCancelRename}
           className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-canvas-soft-2 hover:text-foreground"
         >
-          <X className="size-4" />
+          <XMarkIcon className="size-4" />
         </button>
       </div>
     );
@@ -822,7 +823,7 @@ function SessionRow(props: SessionRowProps) {
                 className="flex-none text-muted-slate"
                 title={t(props.session.wechatChatId ? "sidebar.wechatSession" : "sidebar.feishuSession")}
               >
-                <MessageSquareText className="size-3.5" />
+                <CommentTextIcon className="size-3.5" />
               </span>
             ) : null}
             <span className="min-w-0 flex-1 truncate">{props.session.title}</span>
@@ -832,7 +833,7 @@ function SessionRow(props: SessionRowProps) {
               title={t("sidebar.sessionRunning")}
               className="absolute right-1 top-0 flex h-full w-6 flex-none items-center justify-center text-muted-foreground"
             >
-              <Loader2 className="size-3.5 animate-spin" />
+              <RefreshIcon className="size-3.5 animate-spin" />
             </span>
           ) : null}
           <div
@@ -848,9 +849,9 @@ function SessionRow(props: SessionRowProps) {
               className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               {props.session.pinnedAt ? (
-                <PushPinSlash className="size-3.5" />
+                <PinFilledSmallIcon className="size-3.5" />
               ) : (
-                <PushPin className="size-3.5" />
+                <PinOutlineIcon className="size-3.5" />
               )}
             </button>
           </div>
@@ -858,24 +859,24 @@ function SessionRow(props: SessionRowProps) {
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onSelect={props.onStartRename}>
-          <Pencil className="size-3.5" />
+          <PencilOutlineIcon className="size-3.5" />
           {t("sidebar.rename")}
         </ContextMenuItem>
         <ContextMenuItem onSelect={props.onTogglePin}>
           {props.session.pinnedAt ? (
-            <PushPinSlash className="size-3.5" />
+            <PinFilledSmallIcon className="size-3.5" />
           ) : (
-            <PushPin className="size-3.5" />
+            <PinOutlineIcon className="size-3.5" />
           )}
           {props.session.pinnedAt ? t("sidebar.unpin") : t("sidebar.pin")}
         </ContextMenuItem>
         <ContextMenuItem onSelect={props.onExport}>
-          <FileDown className="size-3.5" />
+          <DownloadIcon className="size-3.5" />
           {t("sidebar.exportSession")}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={props.onDelete} className="text-destructive focus:text-destructive">
-          <Trash2 className="size-3.5" />
+          <TrashIcon className="size-3.5" />
           {t("sidebar.deleteSession")}
         </ContextMenuItem>
       </ContextMenuContent>

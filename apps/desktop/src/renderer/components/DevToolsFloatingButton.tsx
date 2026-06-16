@@ -1,4 +1,4 @@
-import { CodeIcon as Code } from "@phosphor-icons/react";
+import { CodeIcon } from "@/assets/file-type-icons";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -43,7 +43,7 @@ export function DevToolsFloatingButton() {
             className="size-10 rounded-full border border-border bg-canvas text-foreground shadow-float hover:bg-canvas-soft-2"
             onClick={handleOpen}
           >
-            <Code className="size-4" />
+            <CodeIcon className="size-4" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="left">{t("devTools.open")}</TooltipContent>

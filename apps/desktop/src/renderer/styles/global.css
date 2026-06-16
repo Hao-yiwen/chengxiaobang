@@ -79,6 +79,9 @@
     --ring: var(--link);
     --bubble-user: var(--canvas-soft-2);
     --sidebar: var(--canvas-soft);
+    --color-token-main-surface-primary: rgb(var(--canvas));
+    --color-token-border: rgb(var(--border));
+    --color-token-primary: rgb(var(--primary));
 
     /* 状态色映射到 Vercel 语义与渐变色系，供印章/计划/问答卡复用。 */
     --success: var(--link);
@@ -153,6 +156,9 @@
     --ring: var(--link);
     --bubble-user: 38 38 38;
     --sidebar: 18 18 18;
+    --color-token-main-surface-primary: rgb(var(--canvas));
+    --color-token-border: rgb(var(--border));
+    --color-token-primary: rgb(var(--primary));
 
     --success: var(--link);
     --moss: var(--link);
@@ -667,7 +673,7 @@
     margin-block: 0;
     overflow: hidden;
     border-radius: 8px;
-    /* PlainTextCodeBlock 没有 Tailwind border 类，必须在 CSS 里补全 border-style/width */
+    /* 自定义代码块 frame 没有 Tailwind border 类，必须在 CSS 里补全 border-style/width */
     border: 1px solid rgb(var(--border));
     /* !important 覆盖 streamdown 在 utilities 层的 bg-sidebar(#fafafa),保证代码块纯白 */
     background: rgb(var(--canvas)) !important;
@@ -783,8 +789,8 @@
     /* !important 覆盖 streamdown 在 utilities 层的 bg-background(#fafafa),保证代码块纯白 */
     background: rgb(var(--canvas)) !important;
     padding: 10px 14px 12px;
-    font-size: 12.5px;
-    line-height: 20px;
+    font-size: var(--cxb-code-font-size, 12px);
+    line-height: var(--cxb-code-line-height, 20px);
     scrollbar-gutter: stable;
   }
 
@@ -811,10 +817,18 @@
     margin: 0;
   }
 
-  /* shiki 每行是 <span>，非空行末尾无 \n，lineNumbers=false 时无 class 也无 display:block，
-     导致所有行内联显示在一行。强制 block 让每行 span 独占一行。 */
   .cxb-code-block-shell [data-streamdown="code-block-body"] pre code > span {
-    display: block;
+    display: flex;
+  }
+
+  .cxb-code-line-number {
+    display: inline-block;
+    width: 1.5rem;
+    flex: none;
+    margin-right: 1rem;
+    user-select: none;
+    text-align: right;
+    color: rgb(var(--muted-foreground) / 0.5);
   }
 
   .cxb-shiki-token {

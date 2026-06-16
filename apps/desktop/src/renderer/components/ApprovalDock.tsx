@@ -1,4 +1,8 @@
-import { CheckIcon as Check, InfoIcon as Info, XIcon as X } from "@phosphor-icons/react";
+import {
+  CheckMediumIcon,
+  InfoCircleIcon,
+  XMarkIcon
+} from "@/assets/file-type-icons";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ApprovalDecision, ToolCall } from "@chengxiaobang/shared";
@@ -102,11 +106,11 @@ function PlanApprovalCard({
             1
           </span>
           <span className="min-w-0 flex-1">{t("plan.approveAction")}</span>
-          <Check className="size-4 flex-none text-muted-foreground" />
+          <CheckMediumIcon className="size-4 flex-none text-muted-foreground" />
         </button>
         <div className="flex min-h-12 items-center gap-3 border-t border-border bg-card px-4">
           <span className="flex size-7 flex-none items-center justify-center rounded-full border bg-card text-muted-foreground">
-            <X className="size-4" />
+            <XMarkIcon className="size-4" />
           </span>
           <input
             value={feedback}
@@ -251,7 +255,7 @@ function ApprovalCard({
         </div>
         <div className="flex items-center justify-between gap-4 pt-1">
           <div className="flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-            <Info className="size-4 flex-none text-foreground" />
+            <InfoCircleIcon className="size-4 flex-none text-foreground" />
             <span className="min-w-0 break-words">{t("chat.approvalDialog.keyboardHint")}</span>
           </div>
           <Button className="h-9 flex-none rounded-md px-4 text-button-md" onClick={confirm}>

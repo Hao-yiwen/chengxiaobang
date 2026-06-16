@@ -1,4 +1,4 @@
-import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react";
+import { ArrowTopRightIcon } from "@/assets/file-type-icons";
 import { useTranslation } from "react-i18next";
 import type { Artifact } from "@/lib/artifact";
 import { iconForKind } from "@/lib/file-icon";
@@ -17,7 +17,7 @@ export function ArtifactCard({ artifact }: { artifact: Artifact }) {
       onClick={() => openArtifact(artifact.path, artifact.kind)}
       className="group mb-3 flex w-full max-w-[420px] items-center gap-3 self-start rounded-lg border bg-card px-3.5 py-3 text-left transition-colors hover:border-primary/40"
     >
-      <span className="flex size-9 flex-none items-center justify-center rounded-sm bg-canvas-soft-2 text-ink">
+      <span className="flex size-9 flex-none items-center justify-center rounded-sm bg-canvas-soft-2 text-muted-foreground">
         <Icon className="size-[18px]" />
       </span>
       <span className="min-w-0 flex-1">
@@ -28,7 +28,7 @@ export function ArtifactCard({ artifact }: { artifact: Artifact }) {
           {t("chat.artifactPreview")}
         </span>
       </span>
-      <ArrowUpRight className="size-4 flex-none text-muted-foreground transition-colors group-hover:text-link" />
+      <ArrowTopRightIcon className="size-4 flex-none text-muted-foreground transition-colors group-hover:text-link" />
     </button>
   );
 }

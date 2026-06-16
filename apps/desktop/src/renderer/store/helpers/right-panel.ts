@@ -14,15 +14,56 @@ import {
 } from "./composer-drafts";
 import { restoreHomeModelSelection } from "./model-selection";
 
+export const CHAT_PANEL_MIN_WIDTH = 560;
 export const RIGHT_PANEL_MIN_WIDTH = 300;
-export const RIGHT_PANEL_MAX_WIDTH = 960;
-export const RIGHT_PANEL_REVIEW_WIDTH = 760;
-export const RIGHT_PANEL_FILE_WIDTH = 760;
-export const DEFAULT_RIGHT_PANEL_WIDTH = 340;
-const LEGACY_DEFAULT_RIGHT_PANEL_WIDTH = 380;
+export const RIGHT_PANEL_MAX_WIDTH = 720;
+export const RIGHT_PANEL_REVIEW_WIDTH = 640;
+export const RIGHT_PANEL_FILE_WIDTH = 640;
+export const DEFAULT_RIGHT_PANEL_WIDTH = 320;
+const LEGACY_DEFAULT_RIGHT_PANEL_WIDTHS = new Set<number>([340, 380]);
+
+export function rightPanelMaxWidthForContainer(containerWidth: number | undefined): number {
+  if (typeof containerWidth !== "number" || !Number.isFinite(containerWidth)) {
+    return RIGHT_PANEL_MAX_WIDTH;
+  }
+  return Math.min(
+    RIGHT_PANEL_MAX_WIDTH,
+    Math.max(0, Math.floor(containerWidth - CHAT_PANEL_MIN_WIDTH))
+  );
+}
+
+export function clampRightPanelWidth(width: number, maxWidth = RIGHT_PANEL_MAX_WIDTH): number {
+  const boundedMaxWidth = Math.max(0, Math.min(RIGHT_PANEL_MAX_WIDTH, Math.round(maxWidth)));
+  if (boundedMaxWidth < RIGHT_PANEL_MIN_WIDTH) {
+    return boundedMaxWidth;
+  }
+  return Math.min(boundedMaxWidth, Math.max(RIGHT_PANEL_MIN_WIDTH, Math.round(width)));
+}
+
+export function visibleRightPanelWidth(
+  width: number,
+  containerWidth: number | undefined
+): number {
+  return clampRightPanelWidth(width, rightPanelMaxWidthForContainer(containerWidth));
+}
+
+export function rightPanelWidthForOpen(
+  currentWidth: number,
+  wasOpen: boolean,
+  targetWidth?: number
+): number {
+  const baseWidth = wasOpen ? clampRightPanelWidth(currentWidth) : DEFAULT_RIGHT_PANEL_WIDTH;
+  return targetWidth ? Math.max(baseWidth, clampRightPanelWidth(targetWidth)) : baseWidth;
+}
 
 function normalizeStoredRightPanelWidth(width: number | undefined): number | undefined {
-  return width === LEGACY_DEFAULT_RIGHT_PANEL_WIDTH ? DEFAULT_RIGHT_PANEL_WIDTH : width;
+  if (width === undefined) {
+    return undefined;
+  }
+  const normalizedWidth = LEGACY_DEFAULT_RIGHT_PANEL_WIDTHS.has(width)
+    ? DEFAULT_RIGHT_PANEL_WIDTH
+    : width;
+  return clampRightPanelWidth(normalizedWidth);
 }
 
 function normalizeStoredRightPanelWidths(state: Partial<AppState>): Partial<AppState> {
@@ -48,9 +89,10 @@ function normalizeStoredRightPanelWidths(state: Partial<AppState>): Partial<AppS
   if (!rootWidthMigrated && !sessionWidthMigrated) {
     return state;
   }
-  console.info("[store] 迁移右侧面板旧默认宽度", {
-    from: LEGACY_DEFAULT_RIGHT_PANEL_WIDTH,
+  console.info("[store] 迁移右侧面板旧宽度设置", {
+    from: Array.from(LEGACY_DEFAULT_RIGHT_PANEL_WIDTHS),
     to: DEFAULT_RIGHT_PANEL_WIDTH,
+    max: RIGHT_PANEL_MAX_WIDTH,
     rootWidthMigrated,
     sessionWidthMigrated
   });
@@ -143,7 +185,7 @@ export function migrateRightPanelMemory(state: Partial<AppState>): Partial<AppSt
         mode: sanitizeLegacyProgressMode(
           state.rightPanelMode as LegacyRightPanelMode | null | undefined
         ),
-        width: state.rightPanelWidth ?? DEFAULT_RIGHT_PANEL_WIDTH,
+        width: normalizeStoredRightPanelWidth(state.rightPanelWidth) ?? DEFAULT_RIGHT_PANEL_WIDTH,
         browserUrl: state.browserUrl ?? "",
         ...(state.previewFile ? { previewFile: state.previewFile } : {})
       }
@@ -162,7 +204,9 @@ function rightPanelSnapshot(state: AppState, patch: RightPanelPatch = {}): Right
   return {
     open: patch.rightPanelOpen ?? state.rightPanelOpen,
     mode: sanitizeLegacyProgressMode(patch.rightPanelMode ?? state.rightPanelMode),
-    width: patch.rightPanelWidth ?? state.rightPanelWidth,
+    width:
+      normalizeStoredRightPanelWidth(patch.rightPanelWidth ?? state.rightPanelWidth) ??
+      DEFAULT_RIGHT_PANEL_WIDTH,
     browserUrl: patch.browserUrl ?? state.browserUrl,
     ...(hasPatchKey(patch, "previewFile")
       ? patch.previewFile
@@ -243,7 +287,8 @@ export function restoredRightPanel(
       progressPanelOpen: false,
       rightPanelOpen: keepOpenOnSessionSwitch,
       rightPanelMode: null,
-      rightPanelWidth: state.rightPanelWidth,
+      rightPanelWidth:
+        normalizeStoredRightPanelWidth(state.rightPanelWidth) ?? DEFAULT_RIGHT_PANEL_WIDTH,
       previewFile: undefined,
       browserUrl: ""
     };
@@ -258,7 +303,7 @@ export function restoredRightPanel(
     progressPanelOpen: false,
     rightPanelOpen: snapshot.open,
     rightPanelMode: snapshot.mode,
-    rightPanelWidth: snapshot.width,
+    rightPanelWidth: normalizeStoredRightPanelWidth(snapshot.width) ?? DEFAULT_RIGHT_PANEL_WIDTH,
     previewFile: snapshot.previewFile,
     browserUrl: snapshot.browserUrl
   };

@@ -1,9 +1,9 @@
 import {
-  FolderOpenIcon as FolderOpen,
-  PlusIcon as Plus,
-  PuzzlePieceIcon as PuzzlePiece,
-  TrashIcon as Trash2
-} from "@phosphor-icons/react";
+  FolderOpenOutlineIcon,
+  PlusIcon,
+  PuzzlePieceOutlineIcon,
+  TrashIcon
+} from "@/assets/file-type-icons";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -85,7 +85,7 @@ export function PluginsSection() {
           className={cn("w-fit", softBlueButtonClassName)}
           onClick={() => setImportOpen(true)}
         >
-          <Plus className="size-4" />
+          <PlusIcon className="size-4" />
           {t("settings.plugins.import")}
         </Button>
       </SettingBlock>
@@ -152,7 +152,7 @@ export function PluginsSection() {
             }
           }}
         >
-          <FolderOpen className="size-4" />
+          <FolderOpenOutlineIcon className="size-4" />
           {t("settings.plugins.openDir")}
         </Button>
       </SettingBlock>
@@ -466,7 +466,7 @@ function PluginDetailDialog(props: { name: string | null; onClose(): void }) {
                 className="text-muted-foreground hover:text-error-deep"
                 onClick={() => void confirmUninstall()}
               >
-                <Trash2 className="size-3.5" />
+                <TrashIcon className="size-3.5" />
                 {t("settings.plugins.uninstall")}
               </Button>
             ) : null}
@@ -685,7 +685,7 @@ function ImportPluginDialog(props: { open: boolean; onOpenChange(open: boolean):
               disabled={!localPath || busy}
               onClick={() => void install({ path: localPath })}
             >
-              <PuzzlePiece className="size-3.5" />
+              <PuzzlePieceOutlineIcon className="size-3.5" />
               {busy ? t("settings.plugins.importing") : t("settings.plugins.import")}
             </Button>
           </div>

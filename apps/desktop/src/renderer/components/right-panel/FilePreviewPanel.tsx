@@ -1,23 +1,26 @@
 import {
-  ArrowClockwiseIcon as RefreshCw,
-  ArrowLeftIcon as ArrowLeft,
-  ArrowRightIcon as ArrowRight,
-  ArrowSquareOutIcon as ExternalLink,
-  CheckIcon,
-  CircleNotchIcon as Loader2,
+  ArrowLeftIcon,
+  ArrowTopRightIcon,
+  CheckMediumIcon,
   CopyIcon,
-  FileTextIcon as FileText,
-  MagnifyingGlassMinusIcon as ZoomOut,
-  MagnifyingGlassPlusIcon as ZoomIn,
-  TextAlignLeftIcon as WrapText,
-  WarningCircleIcon as WarningCircle
-} from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { bundledLanguages, codeToTokensWithThemes, type BundledLanguage } from "shiki";
+  MinusIcon,
+  PlusIcon,
+  RefreshIcon,
+  TextDocumentGrayIcon,
+  UndoIcon,
+  WarningCircleIcon
+} from "@/assets/file-type-icons";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { CodePreviewLines } from "@/components/CodePreviewLines";
 import {
-  normalizeCodeLanguage,
   resolveFileTypeIcon
 } from "@/lib/code-language-icons";
+import {
+  codePreviewInlineStyle,
+  normalizeCodePreviewText,
+  splitCodePreviewLines,
+  useShikiHighlight
+} from "@/lib/code-highlight";
 import {
   Tooltip,
   TooltipContent,
@@ -59,29 +62,6 @@ type PreviewState =
 
 const ICON_BUTTON =
   "flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
-
-const SHIKI_THEMES = { light: "github-light", dark: "github-dark" } as const;
-const SHIKI_LANGUAGE_ALIASES: Record<string, string> = {
-  cjs: "javascript",
-  js: "javascript",
-  jsx: "jsx",
-  mjs: "javascript",
-  ts: "typescript",
-  tsx: "tsx",
-  yml: "yaml"
-};
-
-type HighlightTokenVariant = {
-  color?: string;
-  fontStyle?: number;
-};
-
-type HighlightToken = {
-  content: string;
-  variants?: Record<string, HighlightTokenVariant | undefined>;
-};
-
-type HighlightLine = HighlightToken[];
 
 export function FilePreviewPanel() {
   const { t } = useTranslation();
@@ -263,7 +243,7 @@ export function FilePreviewPanel() {
     if (preview.status === "loading" || (path && preview.status === "idle")) {
       return (
         <div className="flex h-full items-center justify-center">
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          <RefreshIcon className="size-5 animate-spin text-muted-foreground" />
         </div>
       );
     }
@@ -311,7 +291,7 @@ export function FilePreviewPanel() {
               onClick={() => setRefreshKey((value) => value + 1)}
               className={ICON_BUTTON}
             >
-              <RefreshCw className="size-3.5" />
+              <RefreshIcon className="size-3.5" />
             </button>
             <button
               type="button"
@@ -319,7 +299,7 @@ export function FilePreviewPanel() {
               onClick={() => void openSystem(info.path)}
               className={ICON_BUTTON}
             >
-              <ExternalLink className="size-3.5" />
+              <ArrowTopRightIcon className="size-3.5" />
             </button>
           </div>
         </header>
@@ -400,7 +380,7 @@ function PreviewFailure(props: {
   const { t } = useTranslation();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-caption text-muted-foreground">
-      <WarningCircle className="size-5 text-warning" />
+      <WarningCircleIcon className="size-5 text-warning" />
       <div className="space-y-1">
         <p className="text-foreground">{props.title}</p>
         {props.path ? <p className="break-all font-mono text-micro">{props.path}</p> : null}
@@ -422,13 +402,15 @@ function PreviewFailure(props: {
 }
 
 function CodePreview({ text, extension }: { text: string; extension: string }) {
-  const [wrap, setWrap] = useState(false);
+  const settings = useAppStore((state) => state.codePreviewSettings);
+  const [wrapOverride, setWrapOverride] = useState<boolean | undefined>();
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const displayText = useMemo(() => normalizeCodePreviewText(text), [text]);
   const plainLines = useMemo(() => splitCodePreviewLines(displayText), [displayText]);
-  const highlight = useShikiHighlight(displayText, extension);
+  const highlight = useShikiHighlight(displayText, extension, settings, "FilePreviewPanel");
   const language = highlight.language;
+  const wrap = wrapOverride ?? settings.wrapLongLines;
 
   useEffect(
     () => () => {
@@ -436,6 +418,10 @@ function CodePreview({ text, extension }: { text: string; extension: string }) {
     },
     []
   );
+
+  useEffect(() => {
+    setWrapOverride(undefined);
+  }, [settings.wrapLongLines]);
 
   const handleCopy = async () => {
     try {
@@ -449,7 +435,14 @@ function CodePreview({ text, extension }: { text: string; extension: string }) {
   };
 
   return (
-    <div className="relative h-full min-h-0 bg-canvas" data-language={language} data-testid="file-code-preview">
+    <div
+      className="relative h-full min-h-0 bg-canvas"
+      data-code-font-size={settings.fontSize}
+      data-code-line-numbers="true"
+      data-language={language}
+      data-testid="file-code-preview"
+      style={codePreviewInlineStyle(settings)}
+    >
       <div className="absolute right-3 top-2 z-10 flex items-center gap-1 rounded-sm bg-canvas/85 p-0.5 backdrop-blur">
         <TooltipProvider delayDuration={300}>
           <Tooltip>
@@ -459,9 +452,9 @@ function CodePreview({ text, extension }: { text: string; extension: string }) {
                 className={ICON_BUTTON}
                 aria-label={wrap ? "关闭自动换行" : "自动换行"}
                 aria-pressed={wrap}
-                onClick={() => setWrap((v) => !v)}
+                onClick={() => setWrapOverride((value) => !(value ?? settings.wrapLongLines))}
               >
-                <WrapText className="size-3.5" />
+                <UndoIcon className="size-3.5" />
               </button>
             </TooltipTrigger>
             <TooltipContent>{wrap ? "关闭自动换行" : "自动换行"}</TooltipContent>
@@ -475,7 +468,7 @@ function CodePreview({ text, extension }: { text: string; extension: string }) {
                 onClick={() => void handleCopy()}
               >
                 {copied ? (
-                  <CheckIcon className="size-3.5" weight="bold" />
+                  <CheckMediumIcon className="size-3.5" />
                 ) : (
                   <CopyIcon className="size-3.5" />
                 )}
@@ -486,13 +479,14 @@ function CodePreview({ text, extension }: { text: string; extension: string }) {
         </TooltipProvider>
       </div>
       <div
-        className={cn("h-full overflow-auto py-3 pl-4 pr-20 font-mono text-[12.5px] leading-5", wrap && "overflow-x-hidden")}
+        className={cn("h-full overflow-auto py-3 pl-4 pr-20 font-mono text-[var(--cxb-code-font-size,12px)] leading-[var(--cxb-code-line-height,20px)]", wrap && "overflow-x-hidden")}
         data-code-wrap={wrap ? "true" : "false"}
       >
         <pre className={cn("m-0", wrap && "whitespace-pre-wrap break-all")}>
           <code>
             <CodePreviewLines
               highlightedLines={highlight.lines}
+              lineNumbers={true}
               plainLines={plainLines}
               wrap={wrap}
             />
@@ -501,126 +495,6 @@ function CodePreview({ text, extension }: { text: string; extension: string }) {
       </div>
     </div>
   );
-}
-
-function useShikiHighlight(text: string, extension: string): { language: string; lines?: HighlightLine[] } {
-  const shikiLanguage = useMemo(() => resolveShikiLanguage(extension), [extension]);
-  const displayLanguage = shikiLanguage ?? normalizeCodeLanguage(extension);
-  const [lines, setLines] = useState<HighlightLine[] | undefined>();
-
-  useEffect(() => {
-    if (!shikiLanguage) {
-      setLines(undefined);
-      return;
-    }
-    let cancelled = false;
-    setLines(undefined);
-    void codeToTokensWithThemes(text, {
-      lang: shikiLanguage,
-      themes: SHIKI_THEMES
-    }).then(
-      (tokens) => {
-        if (!cancelled) {
-          setLines(tokens as HighlightLine[]);
-        }
-      },
-      (error) => {
-        if (!cancelled) {
-          console.warn("[FilePreviewPanel] 代码高亮失败，回退纯文本预览", {
-            extension,
-            language: shikiLanguage,
-            error: error instanceof Error ? error.message : String(error)
-          });
-          setLines(undefined);
-        }
-      }
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [extension, shikiLanguage, text]);
-
-  return { language: displayLanguage, lines };
-}
-
-function CodePreviewLines({
-  highlightedLines,
-  plainLines,
-  wrap
-}: {
-  highlightedLines?: HighlightLine[];
-  plainLines: string[];
-  wrap: boolean;
-}) {
-  return (
-    <>
-      {plainLines.map((plainLine, index) => (
-        <span key={index} className={cn("flex", !wrap && "min-w-max")}>
-          <span className="mr-4 inline-block w-6 flex-none select-none text-right text-[13px] text-muted-foreground/50">
-            {index + 1}
-          </span>
-          <span className={cn("min-h-5 min-w-0 flex-1", wrap ? "whitespace-pre-wrap break-all" : "whitespace-pre")}>
-            <CodePreviewLine highlightedLine={highlightedLines?.[index]} plainLine={plainLine} />
-          </span>
-        </span>
-      ))}
-    </>
-  );
-}
-
-function CodePreviewLine({
-  highlightedLine,
-  plainLine
-}: {
-  highlightedLine?: HighlightLine;
-  plainLine: string;
-}) {
-  if (!highlightedLine) {
-    return plainLine || " ";
-  }
-  if (highlightedLine.length === 0) {
-    return " ";
-  }
-  return (
-    <>
-      {highlightedLine.map((token, index) => (
-        <span key={index} className="cxb-shiki-token" style={shikiTokenStyle(token)}>
-          {token.content}
-        </span>
-      ))}
-    </>
-  );
-}
-
-function shikiTokenStyle(token: HighlightToken): CSSProperties {
-  const light = token.variants?.light;
-  const dark = token.variants?.dark;
-  const fontStyle = light?.fontStyle ?? dark?.fontStyle ?? 0;
-  return {
-    "--cxb-shiki-light": light?.color ?? "inherit",
-    "--cxb-shiki-dark": dark?.color ?? light?.color ?? "inherit",
-    fontStyle: fontStyle & 1 ? "italic" : undefined,
-    fontWeight: fontStyle & 2 ? 600 : undefined,
-    textDecorationLine: fontStyle & 4 ? "underline" : undefined
-  } as CSSProperties;
-}
-
-function resolveShikiLanguage(extension: string): BundledLanguage | undefined {
-  const normalized = normalizeCodeLanguage(extension);
-  const candidate = SHIKI_LANGUAGE_ALIASES[normalized] ?? normalized;
-  return isBundledLanguage(candidate) ? candidate : undefined;
-}
-
-function isBundledLanguage(language: string): language is BundledLanguage {
-  return Object.prototype.hasOwnProperty.call(bundledLanguages, language);
-}
-
-function normalizeCodePreviewText(text: string): string {
-  return text.replace(/\r\n?/g, "\n");
-}
-
-function splitCodePreviewLines(text: string): string[] {
-  return text.split("\n");
 }
 
 function MarkdownPreview({ text }: { text: string }) {
@@ -840,7 +714,7 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
           onClick={() => setState((current) => ({ ...current, page: Math.max(1, current.page - 1) }))}
           className={ICON_BUTTON}
         >
-          <ArrowLeft className="size-3.5" />
+          <ArrowLeftIcon className="size-3.5" />
         </button>
         <span className="px-2 font-mono text-micro text-muted-foreground">
           {state.page} / {state.pageCount}
@@ -854,7 +728,7 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
           }
           className={ICON_BUTTON}
         >
-          <ArrowRight className="size-3.5" />
+          <ArrowLeftIcon className="size-3.5 rotate-180" />
         </button>
         <span className="mx-1 h-4 w-px bg-border" />
         <button
@@ -863,7 +737,7 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
           onClick={() => setState((current) => ({ ...current, scale: Math.max(0.6, current.scale - 0.15) }))}
           className={ICON_BUTTON}
         >
-          <ZoomOut className="size-3.5" />
+          <MinusIcon className="size-3.5" />
         </button>
         <button
           type="button"
@@ -871,7 +745,7 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
           onClick={() => setState((current) => ({ ...current, scale: Math.min(2.4, current.scale + 0.15) }))}
           className={ICON_BUTTON}
         >
-          <ZoomIn className="size-3.5" />
+          <PlusIcon className="size-3.5" />
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto bg-canvas-soft-2 p-4">
@@ -1162,7 +1036,7 @@ function PptxPreview({
   if (state.status === "error") {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-caption text-muted-foreground">
-        <WarningCircle className="size-5 text-warning" />
+        <WarningCircleIcon className="size-5 text-warning" />
         <div className="max-w-[360px] space-y-1">
           <p className="text-foreground">PPTX 内嵌预览失败</p>
           <p>{`${t("rightPanel.fileLoadFailed")}：${state.error ?? ""}`}</p>
@@ -1188,7 +1062,7 @@ function PptxPreview({
           onClick={() => void goToSlide(state.page - 1)}
           className={ICON_BUTTON}
         >
-          <ArrowLeft className="size-3.5" />
+          <ArrowLeftIcon className="size-3.5" />
         </button>
         <span className="px-2 font-mono text-micro text-muted-foreground">
           {state.status === "ready" ? `${state.page} / ${state.pageCount}` : "PPTX"}
@@ -1200,7 +1074,7 @@ function PptxPreview({
           onClick={() => void goToSlide(state.page + 1)}
           className={ICON_BUTTON}
         >
-          <ArrowRight className="size-3.5" />
+          <ArrowLeftIcon className="size-3.5 rotate-180" />
         </button>
         <span className="mx-1 h-4 w-px bg-border" />
         <button
@@ -1210,7 +1084,7 @@ function PptxPreview({
           onClick={() => void setZoom(state.zoom - 10)}
           className={ICON_BUTTON}
         >
-          <ZoomOut className="size-3.5" />
+          <MinusIcon className="size-3.5" />
         </button>
         <span className="w-12 text-center font-mono text-micro text-muted-foreground">
           {state.status === "ready" ? `${state.zoom}%` : ""}
@@ -1222,13 +1096,13 @@ function PptxPreview({
           onClick={() => void setZoom(state.zoom + 10)}
           className={ICON_BUTTON}
         >
-          <ZoomIn className="size-3.5" />
+          <PlusIcon className="size-3.5" />
         </button>
       </div>
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto bg-canvas-soft-2 px-4 py-4">
         {state.status === "loading" ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-canvas-soft-2/80">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+            <RefreshIcon className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : null}
         <div ref={containerRef} className="mx-auto min-h-full w-full max-w-[1280px]" />
@@ -1252,7 +1126,7 @@ function ThumbnailFallback(props: {
         />
       ) : (
         <div className="flex size-20 items-center justify-center rounded-sm border bg-canvas-soft-2 text-muted-foreground">
-          <FileText className="size-8" />
+          <TextDocumentGrayIcon className="size-8" />
         </div>
       )}
       <div className="max-w-[360px] space-y-1 text-caption text-muted-foreground">
@@ -1273,7 +1147,7 @@ function ThumbnailFallback(props: {
 function CenteredLoader() {
   return (
     <div className="flex h-full items-center justify-center">
-      <Loader2 className="size-5 animate-spin text-muted-foreground" />
+      <RefreshIcon className="size-5 animate-spin text-muted-foreground" />
     </div>
   );
 }

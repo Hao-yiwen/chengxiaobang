@@ -6,7 +6,32 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolCall } from "@chengxiaobang/shared";
 import { ToolCallRow } from "../src/renderer/components/ToolCallRow";
 import { setupI18n } from "../src/renderer/i18n";
-import { resetAppStore } from "../src/renderer/store";
+import { DEFAULT_CODE_PREVIEW_SETTINGS } from "../src/renderer/lib/code-preview-settings";
+import { resetAppStore, useAppStore } from "../src/renderer/store";
+
+const shikiMock = vi.hoisted(() => ({
+  bundledLanguages: {
+    bash: {},
+    shell: {}
+  },
+  codeToTokensWithThemes: vi.fn(async (text: string) =>
+    text.replace(/\r\n?/g, "\n").split("\n").map((line) =>
+      line
+        ? [
+            {
+              content: line,
+              variants: {
+                light: { color: "#0969da" },
+                dark: { color: "#79c0ff" }
+              }
+            }
+          ]
+        : []
+    )
+  )
+}));
+
+vi.mock("shiki", () => shikiMock);
 
 beforeAll(() => {
   setupI18n("zh");
@@ -14,6 +39,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   resetAppStore();
+  shikiMock.codeToTokensWithThemes.mockClear();
 });
 
 function toolCall(partial: Partial<ToolCall>): ToolCall {
@@ -190,21 +216,57 @@ describe("ToolCallRow", () => {
     expect(codeBlocks).toHaveLength(2);
     expect(container.querySelectorAll(".tool-call-code-block [data-streamdown='code-block']")).toHaveLength(2);
     expect(screen.getAllByText("bash")).toHaveLength(2);
-    expect(screen.getAllByTitle("自动换行")).toHaveLength(2);
-    expect(screen.getAllByTitle("复制代码")).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "自动换行" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "复制代码" })).toHaveLength(2);
 
     expect(codeBlocks[0]).toHaveAttribute("data-code-wrap", "false");
-    fireEvent.click(screen.getAllByTitle("自动换行")[0]);
+    expect(codeBlocks[0]).toHaveAttribute("data-code-line-numbers", "false");
+    expect(codeBlocks[0]).toHaveAttribute("data-code-font-size", "12");
+    expect(codeBlocks[0].querySelector(".cxb-code-line-number")).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: "自动换行" })[0]);
     expect(codeBlocks[0]).toHaveAttribute("data-code-wrap", "true");
 
     expect(container.querySelector("pre.rounded-sm.bg-canvas-soft-2")).toBeNull();
 
-    const copyButtons = screen.getAllByTitle("复制代码");
+    const copyButtons = screen.getAllByRole("button", { name: "复制代码" });
     fireEvent.click(copyButtons[0]);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("ls -la"));
 
     fireEvent.click(copyButtons[1]);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("total 0"));
+  });
+
+  it("applies global code preview settings to expanded Bash details", async () => {
+    useAppStore.setState({
+      codePreviewSettings: {
+        ...DEFAULT_CODE_PREVIEW_SETTINGS,
+        darkTheme: "catppuccin-mocha",
+        fontSize: 15,
+        lightTheme: "catppuccin-latte",
+        wrapLongLines: true
+      }
+    });
+
+    const { container } = render(
+      <ToolCallRow
+        toolCall={toolCall({ name: "Bash", args: { command: "pnpm test" }, result: "ok" })}
+      />
+    );
+
+    fireEvent.click(screen.getByText("运行 pnpm test"));
+
+    const codeBlocks = container.querySelectorAll(".tool-call-code-block");
+    expect(codeBlocks[0]).toHaveAttribute("data-code-wrap", "true");
+    expect(codeBlocks[0]).toHaveAttribute("data-code-line-numbers", "false");
+    expect(codeBlocks[0]).toHaveAttribute("data-code-font-size", "15");
+    expect(codeBlocks[0].getAttribute("style")).toContain("font-size: 15px");
+    expect(codeBlocks[0].querySelector(".cxb-code-line-number")).toBeNull();
+    await waitFor(() =>
+      expect(shikiMock.codeToTokensWithThemes).toHaveBeenCalledWith("pnpm test", {
+        lang: "bash",
+        themes: { light: "catppuccin-latte", dark: "catppuccin-mocha" }
+      })
+    );
   });
 
   it("shows the full shell command before the command artifact when expanded", () => {

@@ -1,11 +1,10 @@
 import {
-  ArrowClockwiseIcon as RefreshCw,
-  ChatCenteredTextIcon as MessageSquareText,
-  CheckCircleIcon as CheckCircle,
-  CircleNotchIcon as Loader2,
-  PlusIcon as Plus,
-  WarningCircleIcon as WarningCircle
-} from "@phosphor-icons/react";
+  CheckCircleIcon,
+  CommentTextIcon,
+  PlusIcon,
+  RefreshIcon,
+  WarningCircleIcon
+} from "@/assets/file-type-icons";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ConnectPhoneTarget, Session } from "@chengxiaobang/shared";
@@ -423,7 +422,7 @@ function ConnectPhoneTabs(props: {
         onClick={props.onAddConnection}
         className="flex size-8 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Plus className="size-4" />
+        <PlusIcon className="size-4" />
       </button>
     </div>
   );
@@ -491,7 +490,7 @@ function BoundSessionsPanel(props: {
           <span className="truncate">{t("connectPhone.bindingsTitle")}</span>
         </h2>
         <Button type="button" variant="ghost" size="sm" onClick={props.onRefresh}>
-          <RefreshCw className="size-4" />
+          <RefreshIcon className="size-4" />
           {t("connectPhone.refreshBindings")}
         </Button>
       </div>
@@ -501,7 +500,7 @@ function BoundSessionsPanel(props: {
           data-testid={`${props.target}-binding-empty`}
         >
           <span className="flex size-10 items-center justify-center rounded-full border bg-background text-muted-foreground">
-            <MessageSquareText className="size-5" />
+            <CommentTextIcon className="size-5" />
           </span>
           <div>
             <div className="text-caption font-medium text-foreground">
@@ -522,7 +521,7 @@ function BoundSessionsPanel(props: {
               className="flex w-full min-w-0 items-center gap-3 rounded-sm border bg-background px-3 py-2.5 text-left transition-colors hover:bg-canvas-soft-2"
             >
               <span className="flex size-8 flex-none items-center justify-center rounded-xs bg-canvas-soft-2 text-muted-foreground">
-                <MessageSquareText className="size-4" />
+                <CommentTextIcon className="size-4" />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-caption font-medium text-foreground">
@@ -566,7 +565,7 @@ function QrSurface(props: {
     return (
       <QrStateFrame target={props.target}>
         <div className="grid justify-items-center gap-3 text-caption text-muted-foreground">
-          <Loader2 className="size-7 animate-spin" />
+          <RefreshIcon className="size-7 animate-spin" />
           <span>{t("connectPhone.installLoading")}</span>
         </div>
       </QrStateFrame>
@@ -577,7 +576,7 @@ function QrSurface(props: {
     return (
       <QrStateFrame target={props.target}>
         <div className="grid justify-items-center gap-3">
-          <CheckCircle className="size-10 text-success" />
+          <CheckCircleIcon className="size-10 text-success" />
           <div className="text-caption font-medium text-foreground">
             {t("connectPhone.connected")}
           </div>
@@ -600,7 +599,7 @@ function QrSurface(props: {
     return (
       <QrStateFrame target={props.target}>
         <div className="grid justify-items-center gap-3">
-          <WarningCircle className={cn("size-9", isExpired ? "text-muted-foreground" : "text-destructive")} />
+          <WarningCircleIcon className={cn("size-9", isExpired ? "text-muted-foreground" : "text-destructive")} />
           <div className="max-w-[220px] text-caption font-medium text-foreground">
             {props.install.error ||
               (isExpired ? t("connectPhone.installExpired") : t("connectPhone.installFailed"))}
@@ -614,7 +613,7 @@ function QrSurface(props: {
   return (
     <QrStateFrame target={props.target}>
       <div className="grid justify-items-center gap-3 text-caption text-muted-foreground">
-        <Loader2 className="size-7 animate-spin" />
+        <RefreshIcon className="size-7 animate-spin" />
         <span>{t("connectPhone.installLoading")}</span>
       </div>
     </QrStateFrame>
@@ -656,7 +655,7 @@ function RefreshButton({ onClick }: { onClick: () => void }) {
   const { t } = useTranslation();
   return (
     <Button type="button" size="sm" onClick={onClick}>
-      <RefreshCw className="size-4" />
+      <RefreshIcon className="size-4" />
       {t("connectPhone.installRefresh")}
     </Button>
   );

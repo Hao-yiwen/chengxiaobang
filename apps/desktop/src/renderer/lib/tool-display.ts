@@ -1,28 +1,28 @@
+import type { ComponentType } from "react";
 import {
-  AlarmIcon,
   BrainIcon,
-  ChatCircleDotsIcon,
-  ClockCountdownIcon,
+  ChatBubblesIcon,
+  ChecklistPlanIcon,
   ClockIcon,
-  FilePlusIcon,
-  FileTextIcon,
-  FilesIcon,
-  FolderOpenIcon,
-  FolderPlusIcon,
+  DocumentIcon,
+  EditPencilIcon,
+  FolderIcon,
+  FolderOpenOutlineIcon,
+  FoldersIcon,
   GitBranchIcon,
-  GitDiffIcon,
-  GlobeIcon,
-  ListChecksIcon,
-  MagnifyingGlassIcon,
-  PaperPlaneTiltIcon,
-  PencilSimpleIcon,
-  SparkleIcon,
-  TerminalWindowIcon,
-  WrenchIcon,
-  type Icon
-} from "@phosphor-icons/react";
+  GlobeOutlineIcon,
+  LabFlaskOutlineIcon,
+  PointerOutlineIcon,
+  PullRequestOpenIcon,
+  SearchIcon,
+  SkillIcon,
+  TerminalIcon,
+  type FileIconSvgProps
+} from "@/assets/file-type-icons";
 import { proposePlanArgsSchema, proposedPlanTitle, type ToolCall } from "@chengxiaobang/shared";
 import { shortenPath } from "./tool-call";
+
+type Icon = ComponentType<FileIconSvgProps>;
 
 /** 工具在折叠摘要中聚合的类别。 */
 export type ToolCategory =
@@ -39,35 +39,35 @@ export type ToolCategory =
   | "other";
 
 const TOOL_ICONS: Record<string, Icon> = {
-  Read: FileTextIcon,
-  Write: FilePlusIcon,
-  Edit: PencilSimpleIcon,
-  LS: FolderOpenIcon,
-  MakeDirectory: FolderPlusIcon,
-  Glob: FilesIcon,
-  Grep: MagnifyingGlassIcon,
-  Bash: TerminalWindowIcon,
-  BashStatus: TerminalWindowIcon,
-  BashCancel: TerminalWindowIcon,
+  Read: DocumentIcon,
+  Write: EditPencilIcon,
+  Edit: EditPencilIcon,
+  LS: FolderOpenOutlineIcon,
+  MakeDirectory: FolderIcon,
+  Glob: FoldersIcon,
+  Grep: SearchIcon,
+  Bash: TerminalIcon,
+  BashStatus: TerminalIcon,
+  BashCancel: TerminalIcon,
   GitStatus: GitBranchIcon,
-  GitDiff: GitDiffIcon,
-  WebFetch: GlobeIcon,
-  WebSearch: MagnifyingGlassIcon,
-  FeishuSendMessage: PaperPlaneTiltIcon,
-  ExitPlanMode: ListChecksIcon,
-  TodoRead: ListChecksIcon,
-  TodoWrite: ListChecksIcon,
-  AskUserQuestion: ChatCircleDotsIcon,
-  Skill: SparkleIcon,
-  ScheduleCreate: AlarmIcon,
+  GitDiff: PullRequestOpenIcon,
+  WebFetch: GlobeOutlineIcon,
+  WebSearch: SearchIcon,
+  FeishuSendMessage: PointerOutlineIcon,
+  ExitPlanMode: ChecklistPlanIcon,
+  TodoRead: ChecklistPlanIcon,
+  TodoWrite: ChecklistPlanIcon,
+  AskUserQuestion: ChatBubblesIcon,
+  Skill: SkillIcon,
+  ScheduleCreate: ClockIcon,
   ScheduleList: ClockIcon,
-  ScheduleCancel: ClockCountdownIcon,
+  ScheduleCancel: ClockIcon,
   Memory: BrainIcon,
-  OcrExtractText: FileTextIcon,
-  CreateSkill: SparkleIcon
+  OcrExtractText: DocumentIcon,
+  CreateSkill: SkillIcon
 };
 
-export const FALLBACK_TOOL_ICON: Icon = WrenchIcon;
+export const FALLBACK_TOOL_ICON: Icon = LabFlaskOutlineIcon;
 
 const warnedUnknownTools = new Set<string>();
 
@@ -116,17 +116,17 @@ export function toolCategory(name: string): ToolCategory {
 }
 
 const CATEGORY_ICONS: Record<ToolCategory, Icon> = {
-  read: FileTextIcon,
-  edit: PencilSimpleIcon,
-  search: MagnifyingGlassIcon,
-  command: TerminalWindowIcon,
-  web: GlobeIcon,
-  artifact: FilePlusIcon,
-  message: PaperPlaneTiltIcon,
-  plan: ListChecksIcon,
+  read: DocumentIcon,
+  edit: EditPencilIcon,
+  search: SearchIcon,
+  command: TerminalIcon,
+  web: GlobeOutlineIcon,
+  artifact: DocumentIcon,
+  message: PointerOutlineIcon,
+  plan: ChecklistPlanIcon,
   schedule: ClockIcon,
   memory: BrainIcon,
-  other: WrenchIcon
+  other: LabFlaskOutlineIcon
 };
 
 export function categoryIcon(category: ToolCategory): Icon {

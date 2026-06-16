@@ -1,4 +1,4 @@
-import { ArrowDownIcon as ArrowDown } from "@phosphor-icons/react";
+import { ArrowUpIcon } from "@/assets/file-type-icons";
 import { useTranslation } from "react-i18next";
 
 /** 用户离开最新内容时显示的回到底部浮动按钮。 */
@@ -12,7 +12,7 @@ export function ScrollToBottomButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       className="pointer-events-auto animate-scale-in rounded-full border bg-card p-2 text-muted-foreground shadow-overlay transition-colors hover:bg-muted hover:text-foreground"
     >
-      <ArrowDown className="size-4" />
+      <ArrowUpIcon className="size-4 rotate-180" />
     </button>
   );
 }

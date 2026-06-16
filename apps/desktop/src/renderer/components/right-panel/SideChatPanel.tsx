@@ -1,9 +1,9 @@
 import {
-  CheckIcon as Check,
-  CircleNotchIcon as Loader2,
-  NotePencilIcon as SquarePen,
-  XIcon as X
-} from "@phosphor-icons/react";
+  CheckMediumIcon,
+  ComposeIcon,
+  RefreshIcon,
+  XMarkIcon
+} from "@/assets/file-type-icons";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createId } from "@chengxiaobang/shared";
@@ -217,7 +217,7 @@ export function SideChatPanel() {
           onClick={() => dispatch({ type: "reset" })}
           className="flex items-center gap-1.5 rounded-xs px-2 py-1 text-micro text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
         >
-          <SquarePen className="size-3.5" />
+          <ComposeIcon className="size-3.5" />
           {t("rightPanel.chatNew")}
         </button>
       </div>
@@ -253,7 +253,7 @@ export function SideChatPanel() {
               <StreamingMarkdown text={state.streamText} className="min-w-0 max-w-full" />
             ) : null}
             {state.running && !state.streamText && !pendingTool ? (
-              <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              <RefreshIcon className="size-4 animate-spin text-muted-foreground" />
             ) : null}
           </div>
         )}
@@ -271,7 +271,7 @@ export function SideChatPanel() {
                   size="sm"
                   onClick={() => void getApiClient()?.approve(pendingTool.id, { approved: true })}
                 >
-                  <Check className="size-4" />
+                  <CheckMediumIcon className="size-4" />
                   {t("chat.run")}
                 </Button>
                 <Button
@@ -279,7 +279,7 @@ export function SideChatPanel() {
                   variant="outline"
                   onClick={() => void getApiClient()?.approve(pendingTool.id, { approved: false })}
                 >
-                  <X className="size-4" />
+                  <XMarkIcon className="size-4" />
                   {t("chat.reject")}
                 </Button>
               </div>

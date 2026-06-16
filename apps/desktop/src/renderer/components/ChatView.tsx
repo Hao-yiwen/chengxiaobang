@@ -1,11 +1,10 @@
 import {
-  ArchiveIcon as Archive,
-  ArrowClockwiseIcon as RefreshCw,
-  CaretDownIcon as ChevronDown,
-  FileIcon as FileAttachment,
-  FileImageIcon as FileImage,
-  XIcon as X
-} from "@phosphor-icons/react";
+  ArchiveBoxIcon,
+  ChevronIcon,
+  FileIcon,
+  RefreshIcon,
+  XMarkIcon
+} from "@/assets/file-type-icons";
 import {
   memo,
   useCallback,
@@ -436,7 +435,7 @@ export function ChatView() {
           <ReasoningPanel text={thinking} streaming startedAt={thinkingStartedAt} />
         ) : null}
         {streamText ? (
-          <div className="mb-5 animate-msg-in self-stretch">
+          <div className="mb-4 animate-msg-in self-stretch">
             <AssistantMarkdownWithArtifacts text={streamText} streaming />
           </div>
         ) : null}
@@ -497,6 +496,11 @@ export function ChatView() {
             data-testid="chat-tail-spacer"
             aria-hidden="true"
             className="flex-none self-stretch"
+          />
+          <div
+            data-testid="chat-bottom-gap"
+            aria-hidden="true"
+            className="h-4 flex-none self-stretch"
           />
           <div ref={bottomRef} />
         </div>
@@ -588,7 +592,7 @@ function RunErrorNotice({
       data-testid="run-error-notice"
       className="mb-3 flex items-start gap-2 self-stretch rounded-sm border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive"
     >
-      <X className="mt-0.5 size-3.5 flex-none" />
+      <XMarkIcon className="mt-0.5 size-3.5 flex-none" />
       <div className="min-w-0 flex-1">
         <p className="break-words font-mono text-micro">{notice.message}</p>
         {canRetry ? (
@@ -597,7 +601,7 @@ function RunErrorNotice({
             onClick={onRetry}
             className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-sm border border-destructive/30 bg-background px-2.5 text-caption font-medium text-destructive transition-colors hover:border-destructive/50 hover:bg-destructive/10"
           >
-            <RefreshCw className="size-3.5 flex-none" />
+            <RefreshIcon className="size-3.5 flex-none" />
             <span>{t("chat.retryFailedRun")}</span>
           </button>
         ) : null}
@@ -685,7 +689,7 @@ const MessageBubble = memo(function MessageBubble({
   // Assistant turns render as plain left-aligned content — no avatar, no name —
   // with the persisted reasoning panel (if any) sitting above the answer.
   return (
-    <div className="group/msg mb-5 animate-msg-in self-stretch">
+    <div className="group/msg mb-4 animate-msg-in self-stretch">
       {!hideReasoning && message.reasoning ? (
         <ReasoningPanel text={message.reasoning} durationMs={message.reasoningMs} />
       ) : null}
@@ -841,7 +845,7 @@ function UserMessageAttachment({ attachment }: { attachment: MessageAttachment }
     );
   }
 
-  const Icon = isImage ? FileImage : FileAttachment;
+  const Icon = FileIcon;
   return (
     <button
       type="button"
@@ -882,14 +886,14 @@ function CompactionCard({ message }: { message: Message }) {
         onClick={() => setOpen((value) => !value)}
         className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-muted/70"
       >
-        <Archive className="size-4 flex-none text-muted-foreground" />
+        <ArchiveBoxIcon className="size-4 flex-none text-muted-foreground" />
         <span className="min-w-0 flex-1">
           <span className="block text-caption font-medium">{t("chat.compactionTitle")}</span>
           <span className="block truncate text-micro text-muted-foreground">
             {t("chat.compactionHint")}
           </span>
         </span>
-        <ChevronDown
+        <ChevronIcon
           className={cn(
             "size-4 flex-none text-muted-foreground transition-transform",
             open && "rotate-180"

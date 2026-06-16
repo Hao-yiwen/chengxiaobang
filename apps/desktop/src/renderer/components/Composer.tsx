@@ -1,20 +1,19 @@
 import {
-  ArrowUpIcon as ArrowUp,
-  CaretDownIcon as ChevronDown,
-  CheckIcon as Check,
-  FilePlusIcon as FilePlus,
-  FileTextIcon as FileText,
-  FolderDashedIcon as FolderDashed,
-  FolderIcon as Folder,
-  FolderOpenIcon as FolderOpen,
-  ListChecksIcon as ListChecks,
-  LockKeyIcon as LockKeyhole,
-  MagnifyingGlassIcon as Search,
-  PlusIcon as Plus,
-  ShieldCheckIcon as ShieldCheck,
-  SparkleIcon as Sparkles,
-  SquareIcon as Square
-} from "@phosphor-icons/react";
+  ArrowUpIcon,
+  CheckMediumIcon,
+  ChecklistPlanIcon,
+  ChevronIcon,
+  CircleOutlineIcon,
+  DocumentIcon,
+  FolderIcon,
+  FolderOpenOutlineIcon,
+  HandPointerIcon,
+  PlusIcon,
+  SearchIcon,
+  ShieldAlertIcon,
+  ShieldTerminalIcon,
+  SkillIcon
+} from "@/assets/file-type-icons";
 import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -884,7 +883,7 @@ export function Composer() {
                   onClick={() => insertSlashCommand(command)}
                 >
                   <span className="flex size-6 flex-none items-center justify-center rounded-sm bg-canvas-soft-2 text-muted-foreground">
-                    <Sparkles className="size-3.5" />
+                    <SkillIcon className="size-3.5" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-mono text-body-sm font-medium leading-tight text-foreground">
@@ -927,7 +926,7 @@ export function Composer() {
                   onClick={() => insertFileReference(path)}
                 >
                   <span className="flex size-6 flex-none items-center justify-center rounded-sm bg-canvas-soft-2 text-muted-foreground">
-                    <FileText className="size-3.5" />
+                    <DocumentIcon className="size-3.5 text-muted-foreground" />
                   </span>
                   <span className="min-w-0 flex-1 truncate font-mono text-body-sm">{path}</span>
                   <span className="flex-none rounded-sm bg-canvas-soft-2 px-1.5 py-0.5 text-micro font-medium text-muted-foreground">
@@ -950,12 +949,12 @@ export function Composer() {
               title={t("composer.addContext")}
               className="size-8 flex-none rounded-sm text-foreground hover:bg-canvas-soft-2"
             >
-              <Plus className="size-[19px]" />
+              <PlusIcon className="size-[19px]" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-[200px]">
             <DropdownMenuItem onSelect={() => setPlanMode(!planMode)}>
-              <ListChecks className="size-4 text-muted-foreground" />
+              <ChecklistPlanIcon className="size-4 text-muted-foreground" />
               <span className="flex-1">{t("composer.planModeFull")}</span>
               <Switch
                 checked={planMode}
@@ -965,16 +964,16 @@ export function Composer() {
               />
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void addContext()}>
-              <FilePlus className="size-4 text-muted-foreground" />
+              <DocumentIcon className="size-4 text-muted-foreground" />
               {t("composer.addFile")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => openSkills(true)}>
-              <Sparkles className="size-4 text-muted-foreground" />
+              <SkillIcon className="size-4 text-muted-foreground" />
               {t("skills.addCustom")}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => openSkills(false)}>
-              <Sparkles className="size-4 text-muted-foreground" />
+              <SkillIcon className="size-4 text-muted-foreground" />
               {t("skills.manage")}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -994,11 +993,11 @@ export function Composer() {
               size="sm"
               className="h-8 min-w-0 max-w-[150px] shrink gap-1.5 rounded-sm px-2.5 text-micro font-normal text-foreground hover:bg-canvas-soft-2"
             >
-              <Folder className="size-4" />
+              <FolderIcon className="size-4" />
               <span className="min-w-0 flex-1 truncate">
                 {activeProject?.name ?? t("composer.conversationMode")}
               </span>
-              <ChevronDown className="size-3.5 flex-none" />
+              <ChevronIcon className="size-3.5 flex-none" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -1009,7 +1008,7 @@ export function Composer() {
             {/* 搜索框：阻断键盘冒泡，避免触发菜单自带的首字母定位 */}
             <div className="px-1 pb-1.5" onKeyDown={(event) => event.stopPropagation()}>
               <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   autoFocus
                   value={projectQuery}
@@ -1026,9 +1025,9 @@ export function Composer() {
                     key={project.id}
                     onSelect={() => setActiveProjectId(project.id)}
                   >
-                    <Folder className="size-4 text-muted-foreground" />
+                    <FolderIcon className="size-4 text-muted-foreground" />
                     <span className="flex-1 truncate">{project.name}</span>
-                    <Check
+                    <CheckMediumIcon
                       className={cn(
                         "size-4",
                         project.id === activeProject?.id ? "opacity-100" : "opacity-0"
@@ -1045,7 +1044,7 @@ export function Composer() {
             <DropdownMenuSeparator />
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
-                <Plus className="size-4 text-muted-foreground" />
+                <PlusIcon className="size-4 text-muted-foreground" />
                 {t("composer.addProject")}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
@@ -1055,19 +1054,19 @@ export function Composer() {
                     setBlankDialogOpen(true);
                   }}
                 >
-                  <Plus className="size-4 text-muted-foreground" />
+                  <PlusIcon className="size-4 text-muted-foreground" />
                   {t("composer.createBlankProject")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => void openFolder()}>
-                  <FolderOpen className="size-4 text-muted-foreground" />
+                  <FolderOpenOutlineIcon className="size-4 text-muted-foreground" />
                   {t("composer.useExistingFolder")}
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuItem onSelect={() => setActiveProjectId(undefined)}>
-              <FolderDashed className="size-4 text-muted-foreground" />
+              <FolderOpenOutlineIcon className="size-4 text-muted-foreground" />
               <span className="flex-1 truncate">{t("composer.noProject")}</span>
-              <Check className={cn("size-4", activeProject ? "opacity-0" : "opacity-100")} />
+              <CheckMediumIcon className={cn("size-4", activeProject ? "opacity-0" : "opacity-100")} />
             </DropdownMenuItem>
           </DropdownMenuContent>
           </DropdownMenu>
@@ -1080,7 +1079,7 @@ export function Composer() {
             onClick={() => setPlanMode(false)}
             className="flex h-8 flex-none items-center gap-1.5 rounded-sm px-2.5 text-micro font-normal text-link transition-colors hover:bg-link/10"
           >
-            <ListChecks className="size-4" />
+            <ChecklistPlanIcon className="size-4" />
             {t("composer.planModeFull")}
           </button>
         ) : null}
@@ -1097,11 +1096,11 @@ export function Composer() {
               )}
             >
               {accessMode === "full_access" ? (
-                <ShieldCheck className="size-4" />
+                <ShieldAlertIcon className="size-4" />
               ) : accessMode === "smart_approval" ? (
-                <Sparkles className="size-4" />
+                <ShieldTerminalIcon className="size-4" />
               ) : (
-                <LockKeyhole className="size-4" />
+                <HandPointerIcon className="size-4" />
               )}
               {t(
                 accessMode === "full_access"
@@ -1110,7 +1109,7 @@ export function Composer() {
                     ? "permission.smartApproval"
                     : "permission.approval"
               )}
-              <ChevronDown className="size-3.5" />
+              <ChevronIcon className="size-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-[280px]">
@@ -1118,7 +1117,7 @@ export function Composer() {
               className="items-start gap-2.5 py-2.5"
               onSelect={() => void selectAccessMode("approval")}
             >
-              <LockKeyhole
+              <HandPointerIcon
                 className={cn(
                   "mt-0.5 size-4 flex-none",
                   ACCESS_MODE_TONES.approval.menuIcon
@@ -1130,7 +1129,7 @@ export function Composer() {
                   {t("permission.approvalDesc")}
                 </span>
               </span>
-              <Check
+              <CheckMediumIcon
                 className={cn(
                   "mt-0.5 size-4 flex-none",
                   ACCESS_MODE_TONES.approval.check,
@@ -1142,7 +1141,7 @@ export function Composer() {
               className="items-start gap-2.5 py-2.5"
               onSelect={() => void selectAccessMode("smart_approval")}
             >
-              <Sparkles
+              <ShieldTerminalIcon
                 className={cn(
                   "mt-0.5 size-4 flex-none",
                   ACCESS_MODE_TONES.smart_approval.menuIcon
@@ -1154,7 +1153,7 @@ export function Composer() {
                   {t("permission.smartApprovalDesc")}
                 </span>
               </span>
-              <Check
+              <CheckMediumIcon
                 className={cn(
                   "mt-0.5 size-4 flex-none",
                   ACCESS_MODE_TONES.smart_approval.check,
@@ -1166,7 +1165,7 @@ export function Composer() {
               className="items-start gap-2.5 py-2.5"
               onSelect={() => void selectAccessMode("full_access")}
             >
-              <ShieldCheck
+              <ShieldAlertIcon
                 className={cn(
                   "mt-0.5 size-4 flex-none",
                   ACCESS_MODE_TONES.full_access.menuIcon
@@ -1178,7 +1177,7 @@ export function Composer() {
                   {t("permission.fullAccessDesc")}
                 </span>
               </span>
-              <Check
+              <CheckMediumIcon
                 className={cn(
                   "mt-0.5 size-4 flex-none",
                   ACCESS_MODE_TONES.full_access.check,
@@ -1213,7 +1212,7 @@ export function Composer() {
             className="h-8 min-w-0 max-w-[220px] shrink gap-1.5 rounded-sm px-2.5 text-micro font-normal text-foreground hover:bg-canvas-soft-2"
           >
             <span className="min-w-0 truncate">{t("composer.selectModel")}</span>
-            <ChevronDown className="size-3.5 flex-none" />
+            <ChevronIcon className="size-3.5 flex-none" />
           </Button>
         ) : (
           <DropdownMenu>
@@ -1230,7 +1229,7 @@ export function Composer() {
                     · {reasoningModeSummary(composerT, selectedModelOption, selectedReasoningMode)}
                   </span>
                 ) : null}
-                <ChevronDown className="size-3.5 flex-none" />
+                <ChevronIcon className="size-3.5 flex-none" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[200px]">
@@ -1251,7 +1250,7 @@ export function Composer() {
                     <DropdownMenuSub key={`${provider.id}:${option.id}`}>
                       <DropdownMenuSubTrigger hideChevron>
                         <span className="flex-1 truncate">{modelOptionLabel(option)}</span>
-                        <Check
+                        <CheckMediumIcon
                           className={cn(
                             "size-4 flex-none",
                             isSelected ? "opacity-100" : "opacity-0"
@@ -1267,7 +1266,7 @@ export function Composer() {
                               onSelect={() => pickComposerModel(provider, option.id, mode)}
                             >
                               <span className="flex-1">{reasoningModeLabel(composerT, mode)}</span>
-                              <Check
+                              <CheckMediumIcon
                                 className={cn(
                                   "size-4 flex-none",
                                   activeReasoning === mode ? "opacity-100" : "opacity-0"
@@ -1284,7 +1283,7 @@ export function Composer() {
                                 ? t("settings.providers.reasoningAlwaysOn")
                                 : t("composer.selectModel")}
                             </span>
-                            <Check
+                            <CheckMediumIcon
                               className={cn(
                                 "size-4 flex-none",
                                 isSelected ? "opacity-100" : "opacity-0"
@@ -1308,7 +1307,7 @@ export function Composer() {
             title={t("composer.stop")}
             onClick={() => void abortRun()}
           >
-            <Square className="size-3.5 fill-current" />
+            <CircleOutlineIcon className="size-3.5 fill-current" />
           </Button>
         ) : currentComposerRunning ? (
           <Button
@@ -1317,7 +1316,7 @@ export function Composer() {
             title={awaitingAskUser ? t("composer.send") : t("composer.queueSend")}
             onClick={() => void submit()}
           >
-            <ArrowUp className="size-[18px]" />
+            <ArrowUpIcon className="size-[18px]" />
           </Button>
         ) : (
           <Button
@@ -1327,7 +1326,7 @@ export function Composer() {
             disabled={!canSend}
             onClick={() => void submit()}
           >
-            <ArrowUp className="size-[18px]" />
+            <ArrowUpIcon className="size-[18px]" />
           </Button>
         )}
       </div>

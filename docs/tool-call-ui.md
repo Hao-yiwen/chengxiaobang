@@ -130,7 +130,7 @@ StreamEvent(tool_call)
 
 | 文件 | 角色 |
 |---|---|
-| `renderer/lib/tool-display.ts` | **纯函数**:`toolIcon`(23 个内置工具 → Phosphor 图标,兜底 Wrench + 一次性 debug 日志)、`toolCategory`/`categoryIcon`(10 个聚合类别)、`toolLineLabel`(人话描述 i18n key + 已截断参数)、`toolGroupSummary`(按类别首现顺序聚合计数)、`truncateEnd` |
+| `renderer/lib/tool-display.ts` | **纯函数**:`toolIcon`(23 个内置工具 → 内置语义图标,兜底图标 + 一次性 debug 日志)、`toolCategory`/`categoryIcon`(10 个聚合类别)、`toolLineLabel`(人话描述 i18n key + 已截断参数)、`toolGroupSummary`(按类别首现顺序聚合计数)、`truncateEnd` |
 | `renderer/lib/timeline.ts` | `groupTimelineItems` / `isGroupableToolCall` / `GroupedTimelineItem` |
 | `renderer/lib/artifact.ts` | `isDeliverableToolCall`(新提取,不看 status) |
 | `renderer/components/ToolCallLine.tsx` | 轻量单行:图标 + 描述 + 行尾状态(running→spinner / 待批准文案 / 失败红字 / 完成时长),可展开 result/diff,文件预览按钮 |

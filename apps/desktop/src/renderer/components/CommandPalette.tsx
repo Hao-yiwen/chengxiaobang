@@ -1,7 +1,7 @@
 import {
-  ArrowBendDownLeftIcon as CornerDownLeft,
-  ChatCircleIcon as MessageSquare
-} from "@phosphor-icons/react";
+  ArrowLeftIcon,
+  ChatBubbleIcon
+} from "@/assets/file-type-icons";
 import type { SessionSearchResult } from "@chengxiaobang/shared";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -117,7 +117,7 @@ export function CommandPalette() {
                 setPaletteOpen(false);
               }}
             >
-              <MessageSquare className="text-muted-foreground" />
+              <ChatBubbleIcon className="text-muted-foreground" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{result.session.title}</span>
                 {result.matchType === "content" ? (
@@ -132,7 +132,7 @@ export function CommandPalette() {
                 </span>
               ) : null}
               <CommandShortcut>
-                <CornerDownLeft className="size-3.5" />
+                <ArrowLeftIcon className="size-3.5" />
               </CommandShortcut>
             </CommandItem>
           ))}

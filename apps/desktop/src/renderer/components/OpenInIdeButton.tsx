@@ -1,4 +1,4 @@
-import { CaretDownIcon as ChevronDown } from "@phosphor-icons/react";
+import { ChevronIcon } from "@/assets/file-type-icons";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { InstalledProjectOpener } from "../global";
@@ -135,7 +135,7 @@ export function OpenInIdeButton() {
               className="block size-5 rounded-sm bg-canvas-soft-2 shadow-hairline"
             />
           )}
-          <ChevronDown className="size-3.5 text-body" />
+          <ChevronIcon className="size-3.5 text-body" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

@@ -4,6 +4,7 @@ import React from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/App";
+import { DEFAULT_CODE_PREVIEW_SETTINGS } from "../src/renderer/lib/code-preview-settings";
 import {
   extensionOf,
   previewDescriptorForKind,
@@ -449,9 +450,9 @@ async function clickArtifactButton(name: string): Promise<void> {
 
 function fileTreeIconSvg(path: string): string {
   const button = screen.getByTitle(path);
-  const image = button.querySelector("img");
-  expect(image).not.toBeNull();
-  return decodeURIComponent(image?.getAttribute("src") ?? "");
+  const icon = button.querySelector("svg.cxb-svg-icon");
+  expect(icon).not.toBeNull();
+  return icon?.outerHTML ?? "";
 }
 
 function fileTreeGuides(path: string): HTMLElement[] {
@@ -1214,6 +1215,15 @@ describe("right panel", () => {
   it("highlights JavaScript project files in the file preview panel", async () => {
     const jsText = "const value = 1;\nconsole.log(value);";
     installPreviewBridge({ kind: "code", text: jsText });
+    useAppStore.setState({
+      codePreviewSettings: {
+        ...DEFAULT_CODE_PREVIEW_SETTINGS,
+        darkTheme: "github-dark-high-contrast",
+        fontSize: 14,
+        lightTheme: "github-light-high-contrast",
+        wrapLongLines: true
+      }
+    });
     const listProjectDirectory = vi.fn(async () => [
       { name: "app.js", path: "src/app.js", type: "file" } satisfies ProjectFileEntry
     ]);
@@ -1230,14 +1240,19 @@ describe("right panel", () => {
     await waitFor(() =>
       expect(shikiMock.codeToTokensWithThemes).toHaveBeenCalledWith(jsText, {
         lang: "javascript",
-        themes: { light: "github-light", dark: "github-dark" }
+        themes: { light: "github-light-high-contrast", dark: "github-dark-high-contrast" }
       })
     );
     expect(preview).toHaveAttribute("data-language", "javascript");
+    expect(preview).toHaveAttribute("data-code-line-numbers", "true");
+    expect(preview).toHaveAttribute("data-code-font-size", "14");
+    expect(preview.getAttribute("style")).toContain("font-size: 14px");
+    expect(preview.querySelector("[data-code-wrap]")).toHaveAttribute("data-code-wrap", "true");
+    expect(preview.querySelector(".cxb-code-line-number")).toHaveTextContent("1");
     expect(preview.querySelector('[data-streamdown="code-block"]')).toBeNull();
     expect(within(preview).getByText("const value = 1;")).toHaveClass("cxb-shiki-token");
-    expect(within(preview).getByText("1")).toBeInTheDocument();
-    expect(within(preview).getByLabelText("自动换行")).toBeInTheDocument();
+    expect(preview).toHaveTextContent("const value = 1;");
+    expect(within(preview).getByRole("button", { name: "关闭自动换行" })).toBeInTheDocument();
     expect(within(preview).getByLabelText("复制文件内容")).toBeInTheDocument();
   });
 

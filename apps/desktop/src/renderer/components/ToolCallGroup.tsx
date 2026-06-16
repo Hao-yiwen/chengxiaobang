@@ -1,7 +1,7 @@
 import {
-  CaretDownIcon as ChevronDown,
-  CircleNotchIcon as Loader2
-} from "@phosphor-icons/react";
+  ChevronIcon,
+  RefreshIcon
+} from "@/assets/file-type-icons";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ToolCall } from "@chengxiaobang/shared";
@@ -47,7 +47,7 @@ export function ToolCallGroup({ toolCalls, onOpenFile }: ToolCallGroupProps) {
         className="flex max-w-full items-center gap-1.5 text-caption font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         {active ? (
-          <Loader2 className="size-3.5 flex-none animate-spin" />
+          <RefreshIcon className="size-3.5 flex-none animate-spin" />
         ) : (
           <HeadIcon className="size-3.5 flex-none" />
         )}
@@ -60,7 +60,7 @@ export function ToolCallGroup({ toolCalls, onOpenFile }: ToolCallGroupProps) {
             {t("chat.toolGroup.failed", { count: failedCount })}
           </span>
         ) : null}
-        <ChevronDown
+        <ChevronIcon
           className={cn(
             "size-3.5 flex-none transition-transform duration-200",
             !open && "-rotate-90"

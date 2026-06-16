@@ -1,11 +1,11 @@
 import {
-  ArrowClockwiseIcon as RefreshCw,
-  CheckCircleIcon as CheckCircle,
-  DownloadSimpleIcon as Download,
-  RocketLaunchIcon as Rocket,
-  WarningCircleIcon as WarningCircle,
-  XIcon as X
-} from "@phosphor-icons/react";
+  CheckCircleIcon,
+  DownloadIcon,
+  LightningBoltIcon,
+  RefreshIcon,
+  WarningCircleIcon,
+  XMarkIcon
+} from "@/assets/file-type-icons";
 import type { TFunction } from "i18next";
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
@@ -109,7 +109,7 @@ export function UpdateCenter() {
               }}
               className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
             >
-              <X className="size-3.5" />
+              <XMarkIcon className="size-3.5" />
             </button>
           </div>
           {state.status === "downloading" ? (
@@ -133,9 +133,9 @@ export function UpdateCenter() {
                 variant={viewModel.action === "retry" ? "outline" : "default"}
                 onClick={() => void runAction(viewModel.action!)}
               >
-                {viewModel.action === "download" ? <Download className="size-4" /> : null}
-                {viewModel.action === "install" ? <Rocket className="size-4" /> : null}
-                {viewModel.action === "retry" ? <RefreshCw className="size-4" /> : null}
+                {viewModel.action === "download" ? <DownloadIcon className="size-4" /> : null}
+                {viewModel.action === "install" ? <LightningBoltIcon className="size-4" /> : null}
+                {viewModel.action === "retry" ? <RefreshIcon className="size-4" /> : null}
                 {viewModel.actionLabel}
               </Button>
             </div>
@@ -178,7 +178,7 @@ function buildUpdateViewModel(
     return {
       title: t("updates.availableTitle", { version: state.availableVersion }),
       description: t("updates.availableDesc", { current: state.currentVersion }),
-      icon: Download,
+      icon: DownloadIcon,
       iconClassName: "bg-link-bg-soft text-link",
       action: "download",
       actionLabel: t("updates.download")
@@ -188,7 +188,7 @@ function buildUpdateViewModel(
     return {
       title: t("updates.downloadingTitle"),
       description: t("updates.downloadingDesc", { version: state.availableVersion }),
-      icon: Download,
+      icon: DownloadIcon,
       iconClassName: "bg-canvas-soft-2 text-foreground"
     };
   }
@@ -196,7 +196,7 @@ function buildUpdateViewModel(
     return {
       title: t("updates.downloadedTitle"),
       description: t("updates.downloadedDesc", { version: state.availableVersion }),
-      icon: CheckCircle,
+      icon: CheckCircleIcon,
       iconClassName: "bg-link-bg-soft text-link",
       action: "install",
       actionLabel: t("updates.install")
@@ -206,7 +206,7 @@ function buildUpdateViewModel(
     return {
       title: t("updates.notAvailableTitle"),
       description: t("updates.notAvailableDesc", { current: state.currentVersion }),
-      icon: CheckCircle,
+      icon: CheckCircleIcon,
       iconClassName: "bg-canvas-soft-2 text-muted-foreground"
     };
   }
@@ -214,7 +214,7 @@ function buildUpdateViewModel(
     return {
       title: t("updates.disabledTitle"),
       description: state.error ?? t("updates.disabledDesc"),
-      icon: WarningCircle,
+      icon: WarningCircleIcon,
       iconClassName: "bg-warning-soft text-warning-deep"
     };
   }
@@ -222,7 +222,7 @@ function buildUpdateViewModel(
     return {
       title: t("updates.errorTitle"),
       description: state.error ?? t("updates.errorDesc"),
-      icon: WarningCircle,
+      icon: WarningCircleIcon,
       iconClassName: "bg-error-soft text-error-deep",
       action: "retry",
       actionLabel: t("updates.retry")
@@ -231,7 +231,7 @@ function buildUpdateViewModel(
   return {
     title: t("updates.checkingTitle"),
     description: t("updates.checkingDesc"),
-    icon: RefreshCw,
+    icon: RefreshIcon,
     iconClassName: "bg-canvas-soft-2 text-muted-foreground"
   };
 }

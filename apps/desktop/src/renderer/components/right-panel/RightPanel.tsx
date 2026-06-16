@@ -1,5 +1,15 @@
-import { ArrowLeftIcon as ArrowLeft, XIcon as X } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  ArrowLeftIcon,
+  XMarkIcon
+} from "@/assets/file-type-icons";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties
+} from "react";
 import { useTranslation } from "react-i18next";
 import { BrowserPanel } from "./BrowserPanel";
 import { ChangesPanel } from "./ChangesPanel";
@@ -9,6 +19,7 @@ import { SideChatPanel } from "./SideChatPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { cn } from "@/lib/utils";
 import { getApiClient, selectActiveProject, useAppStore, type RightPanelMode } from "@/store";
+import { visibleRightPanelWidth } from "@/store/helpers/right-panel";
 
 type RightPanelLabelKey =
   | "rightPanel.changes"
@@ -59,6 +70,8 @@ export function RightPanel() {
   const [rendered, setRendered] = useState(open);
   const [expanded, setExpanded] = useState(open);
   const [resizing, setResizing] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
   const projectId = project?.id;
   const gitRepoStatus = projectId ? gitRepoStatusByProject[projectId] : undefined;
   const checkingGitRepo = Boolean(
@@ -138,20 +151,43 @@ export function RightPanel() {
     return () => clearTimeout(timer);
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!rendered) {
+      return;
+    }
+    const parent = panelRef.current?.parentElement;
+    if (!parent) {
+      return;
+    }
+    const updateContainerWidth = () => {
+      setContainerWidth(parent.getBoundingClientRect().width);
+    };
+    updateContainerWidth();
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(updateContainerWidth);
+    resizeObserver?.observe(parent);
+    window.addEventListener("resize", updateContainerWidth);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateContainerWidth);
+    };
+  }, [rendered]);
+
   if (!rendered) {
     return null;
   }
 
   const title = mode ? t(TITLE_KEYS[mode]) : t("rightPanel.menuTitle");
+  const visualWidth = visibleRightPanelWidth(width, containerWidth);
   const panelStyle = {
-    "--right-panel-width": `${width}px`,
+    "--right-panel-width": `${visualWidth}px`,
     width: expanded ? "var(--right-panel-width)" : "0px"
   } as CSSProperties & { "--right-panel-width": string };
 
   function onResizeStart(event: React.PointerEvent<HTMLDivElement>): void {
     event.preventDefault();
     const startX = event.clientX;
-    const startWidth = width;
+    const startWidth = visualWidth;
     // 拖拽中关闭宽度过渡,否则面板会延迟跟手。
     setResizing(true);
     const onMove = (move: PointerEvent) =>
@@ -166,6 +202,7 @@ export function RightPanel() {
 
   return (
     <aside
+      ref={panelRef}
       data-testid="right-panel"
       style={panelStyle}
       className={cn(
@@ -195,7 +232,7 @@ export function RightPanel() {
                 onClick={() => openRightPanel(null)}
                 className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
-                <ArrowLeft className="size-4" />
+                <ArrowLeftIcon className="size-4" />
               </button>
             ) : null}
             <h2 className="truncate font-mono text-mono-label uppercase text-foreground">
@@ -208,7 +245,7 @@ export function RightPanel() {
             onClick={closeRightPanel}
             className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            <X className="size-4" />
+            <XMarkIcon className="size-4" />
           </button>
         </header>
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden">

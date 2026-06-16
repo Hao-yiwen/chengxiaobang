@@ -1,12 +1,15 @@
+import type { ComponentType } from "react";
 import {
-  FileCodeIcon as FileCode2,
-  FileTextIcon as FileText,
-  FlaskIcon as FlaskConical,
-  PresentationChartIcon as Presentation,
-  type Icon
-} from "@phosphor-icons/react";
+  AppWindowIcon,
+  CodeIcon,
+  DocumentIcon,
+  LabFlaskOutlineIcon,
+  type FileIconSvgProps
+} from "@/assets/file-type-icons";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/store";
+
+type Icon = ComponentType<FileIconSvgProps>;
 
 /**
  * Quick-start task chips shown on the empty home screen. Each starter is a
@@ -17,10 +20,10 @@ const STARTERS: {
   key: "ppt" | "doc" | "explain" | "test";
   icon: Icon;
 }[] = [
-  { key: "ppt", icon: Presentation },
-  { key: "doc", icon: FileText },
-  { key: "explain", icon: FileCode2 },
-  { key: "test", icon: FlaskConical }
+  { key: "ppt", icon: AppWindowIcon },
+  { key: "doc", icon: DocumentIcon },
+  { key: "explain", icon: CodeIcon },
+  { key: "test", icon: LabFlaskOutlineIcon }
 ];
 
 export function HomeStarters() {
@@ -43,7 +46,7 @@ export function HomeStarters() {
           onClick={() => pick(t(`home.starters.${key}Prompt` as const))}
           className="inline-flex items-center gap-1.5 rounded-pill border border-border bg-card px-3.5 py-1.5 text-caption text-foreground transition-colors hover:border-hairline-strong hover:bg-canvas-soft-2"
         >
-          <Icon className="size-3.5 flex-none stroke-[1.75]" />
+          <Icon className="size-3.5 flex-none text-muted-foreground stroke-[1.75]" />
           {t(`home.starters.${key}Title` as const)}
         </button>
       ))}

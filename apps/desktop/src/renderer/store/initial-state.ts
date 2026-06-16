@@ -21,6 +21,7 @@ import type {
   WechatStatus
 } from "@chengxiaobang/shared";
 import { DEFAULT_LOCALE, type Locale } from "../i18n";
+import { DEFAULT_CODE_PREVIEW_SETTINGS } from "../lib/code-preview-settings";
 import { normalizeOnboardingProfile, type OnboardingProfile } from "../../common/profile";
 import { DEFAULT_RIGHT_PANEL_WIDTH } from "./helpers/right-panel";
 import type {
@@ -126,6 +127,7 @@ export const initialState =  {
   skillsAddRequested: false,
   plugins: [] as PluginSummary[],
   theme: "system" as Theme,
+  codePreviewSettings: DEFAULT_CODE_PREVIEW_SETTINGS,
   locale: DEFAULT_LOCALE as Locale,
   clientReady: false
 };

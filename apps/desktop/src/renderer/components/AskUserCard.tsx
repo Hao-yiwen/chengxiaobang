@@ -1,8 +1,7 @@
 import {
-  CaretLeftIcon as CaretLeft,
-  CaretRightIcon as CaretRight,
-  InfoIcon
-} from "@phosphor-icons/react";
+  ChevronRightIcon,
+  InfoCircleIcon
+} from "@/assets/file-type-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -383,7 +382,7 @@ export function AskUserCard({ toolCall, onDecide, resolved }: AskUserCardProps) 
                   title={t("chat.askUser.previousQuestion")}
                   className="flex size-7 items-center justify-center rounded-full transition-colors hover:bg-canvas-soft-2 hover:text-foreground disabled:pointer-events-none disabled:opacity-35"
                 >
-                  <CaretLeft className="size-4" />
+                  <ChevronRightIcon className="size-4 rotate-180" />
                 </button>
                 <span className="min-w-10 text-center text-caption font-medium tabular-nums">
                   {pager}
@@ -396,7 +395,7 @@ export function AskUserCard({ toolCall, onDecide, resolved }: AskUserCardProps) 
                   title={t("chat.askUser.nextQuestion")}
                   className="flex size-7 items-center justify-center rounded-full transition-colors hover:bg-canvas-soft-2 hover:text-foreground disabled:pointer-events-none disabled:opacity-35"
                 >
-                  <CaretRight className="size-4" />
+                  <ChevronRightIcon className="size-4" />
                 </button>
               </div>
             ) : null}
@@ -451,7 +450,7 @@ export function AskUserCard({ toolCall, onDecide, resolved }: AskUserCardProps) 
         <p className="min-w-0 text-caption text-muted-foreground">
           {parsed.success ? (
             <span className="inline-flex min-w-0 items-center gap-2">
-              <InfoIcon className="size-3.5 flex-none text-foreground" />
+              <InfoCircleIcon className="size-3.5 flex-none text-foreground" />
               <span className="truncate">
                 {missing.size > 0
                   ? t("chat.askUser.missing", { count: missing.size })
@@ -466,7 +465,7 @@ export function AskUserCard({ toolCall, onDecide, resolved }: AskUserCardProps) 
           <button
             type="button"
             onClick={skip}
-            className="h-8 rounded-md border border-border bg-card px-3.5 text-caption text-foreground shadow-hairline transition-colors hover:bg-canvas-soft-2"
+            className="inline-flex h-8 min-w-[3.5rem] flex-none items-center justify-center whitespace-nowrap rounded-md border border-border bg-card px-3.5 text-caption leading-none text-foreground shadow-hairline transition-colors hover:bg-canvas-soft-2"
           >
             {t("chat.askUser.skip")}
           </button>
@@ -474,7 +473,7 @@ export function AskUserCard({ toolCall, onDecide, resolved }: AskUserCardProps) 
             <button
               type="button"
               onClick={submitAnswers}
-              className="h-8 rounded-md bg-primary px-3.5 text-caption font-medium text-primary-foreground transition-opacity hover:opacity-90"
+              className="inline-flex h-8 min-w-[3.5rem] flex-none items-center justify-center whitespace-nowrap rounded-md bg-primary px-3.5 text-caption font-medium leading-none text-primary-foreground shadow-hairline transition-colors hover:bg-primary/90"
             >
               {t("chat.askUser.continue")}
             </button>
