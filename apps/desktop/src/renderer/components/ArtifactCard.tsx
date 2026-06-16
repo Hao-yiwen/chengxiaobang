@@ -1,8 +1,51 @@
-import { ArrowTopRightIcon } from "@/assets/file-type-icons";
+import type { ComponentType } from "react";
+import {
+  AppWindowIcon,
+  ArrowTopRightIcon,
+  AudioWaveformIcon,
+  DefaultIcon,
+  ExcelDocumentIcon,
+  FileIcon,
+  ImageFileColorIcon,
+  PdfIcon,
+  PowerpointFileRedIcon,
+  WordDocumentFileIcon,
+  type FileIconSvgProps
+} from "@/assets/file-type-icons";
 import { useTranslation } from "react-i18next";
 import type { Artifact } from "@/lib/artifact";
-import { iconForKind } from "@/lib/file-icon";
+import { resolveFileTypeIcon } from "@/lib/code-language-icons";
 import { useAppStore } from "@/store";
+
+type ArtifactCardIcon = ComponentType<FileIconSvgProps>;
+
+const ARTIFACT_CARD_ICON: Record<Artifact["kind"], ArtifactCardIcon> = {
+  code: DefaultIcon,
+  markdown: DefaultIcon,
+  json: DefaultIcon,
+  html: DefaultIcon,
+  pdf: PdfIcon,
+  image: ImageFileColorIcon,
+  audio: AudioWaveformIcon,
+  video: AppWindowIcon,
+  spreadsheet: ExcelDocumentIcon,
+  docx: WordDocumentFileIcon,
+  presentation: PowerpointFileRedIcon,
+  text: FileIcon,
+  unsupported: FileIcon
+};
+
+function iconForArtifactCard(artifact: Artifact): ArtifactCardIcon {
+  if (
+    artifact.kind === "code" ||
+    artifact.kind === "markdown" ||
+    artifact.kind === "json" ||
+    artifact.kind === "html"
+  ) {
+    return resolveFileTypeIcon(artifact.path);
+  }
+  return ARTIFACT_CARD_ICON[artifact.kind];
+}
 
 /**
  * 生成物卡片：无论是 HTML、PDF、Office 还是媒体，都统一进入右侧文件预览工作台。
@@ -10,7 +53,7 @@ import { useAppStore } from "@/store";
 export function ArtifactCard({ artifact }: { artifact: Artifact }) {
   const { t } = useTranslation();
   const openArtifact = useAppStore((state) => state.openArtifact);
-  const Icon = iconForKind(artifact.kind);
+  const Icon = iconForArtifactCard(artifact);
   return (
     <button
       type="button"

@@ -47,7 +47,7 @@ export function ReasoningPanel({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="flex items-center gap-1.5 text-caption text-muted-foreground transition-colors hover:text-foreground"
       >
         <ReasoningBrainThinkingIcon className="size-3.5 flex-none" />
         <span className={cn(streaming && "shimmer-text")}>{header}</span>

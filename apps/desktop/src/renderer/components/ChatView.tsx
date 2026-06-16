@@ -656,7 +656,7 @@ const MessageBubble = memo(function MessageBubble({
         data-message-id={message.id}
         className="group/msg mb-5 flex max-w-[78%] animate-msg-in flex-col items-end self-end"
       >
-        <div className="max-w-full rounded-lg bg-bubble-user px-4 py-2.5 text-foreground">
+        <div className="max-w-full rounded-lg rounded-tr-none border border-border bg-canvas-soft-2 px-5 py-2.5 text-foreground">
           {attachments.length > 0 ? <UserMessageAttachments attachments={attachments} /> : null}
           {message.content.trim() ? (
             <div

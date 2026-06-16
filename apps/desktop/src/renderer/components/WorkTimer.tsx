@@ -1,4 +1,4 @@
-import { ChevronIcon } from "@/assets/file-type-icons";
+import { ChevronRightIcon } from "@/assets/file-type-icons";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TurnTiming } from "@/lib/timeline";
@@ -61,8 +61,8 @@ export function WorkTimer({
           className="flex cursor-pointer items-center gap-2 text-body-xs text-muted-foreground"
         >
           <span>{header}</span>
-          <ChevronIcon
-            className={cn("size-4 transition-transform duration-200", open ? "" : "-rotate-90")}
+          <ChevronRightIcon
+            className={cn("size-3.5 transition-transform duration-200", open && "rotate-90")}
           />
         </button>
       ) : (

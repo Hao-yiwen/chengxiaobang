@@ -89,14 +89,15 @@ function SidebarRow(props: {
       aria-current={props.active ? "page" : undefined}
       onClick={props.onClick}
       className={cn(
-        "flex h-8 w-full flex-none items-center gap-2 rounded-sm px-2.5 text-left text-body-xs text-foreground transition-colors hover:bg-surface-hover",
+        "flex w-full flex-none items-center rounded-sm text-left text-foreground transition-colors hover:bg-surface-hover",
+        props.compactLabel ? "h-7 gap-1.5 px-2 text-body-sm" : "h-8 gap-2 px-2.5 text-body-xs",
         props.active && "bg-surface-hover font-medium"
       )}
     >
       <span className="flex size-4 flex-none items-center justify-center [&_svg]:size-4 [&_svg]:stroke-[1.75]">
         {props.icon}
       </span>
-      <span className={cn("truncate", props.compactLabel && "text-[15px]")}>{props.label}</span>
+      <span className="truncate">{props.label}</span>
     </button>
   );
 }

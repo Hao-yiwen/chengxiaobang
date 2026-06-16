@@ -785,7 +785,7 @@ describe("Composer 计划模式（＋下拉 Switch + 标记）", () => {
     fireEvent.click(await screen.findByText("计划模式"));
 
     expect(useAppStore.getState().planMode).toBe(true);
-    // 开启后，「对话」右侧出现蓝色「计划模式」标记（点击可关闭）。
+    // 开启后，「对话」右侧出现灰色「计划模式」标记（点击可关闭）。
     expect(await screen.findByTitle("关闭计划模式")).toBeInTheDocument();
 
     const input = screen.getByLabelText("输入消息");

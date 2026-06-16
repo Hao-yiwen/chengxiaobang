@@ -18,6 +18,7 @@ import { OpenInIdeButton } from "./components/OpenInIdeButton";
 import { RightPanel } from "./components/right-panel/RightPanel";
 import { RightPanelSwitch } from "./components/right-panel/RightPanelSwitch";
 import { SettingsView } from "./components/SettingsView";
+import { SessionActionsMenu } from "./components/SessionActionsMenu";
 import { SessionDebugButton } from "./components/SessionDebugButton";
 import { SetupDialog } from "./components/SetupDialog";
 import { Sidebar, SidebarToggle } from "./components/Sidebar";
@@ -238,9 +239,12 @@ export function App(props: { client?: ApiClient }) {
                           headerInset && "pl-[124px]"
                         )}
                       >
-                        <span className="max-w-[60%] truncate font-mono text-mono-label uppercase text-body">
-                          {activeSession?.title ?? ""}
-                        </span>
+                        <div className="flex min-w-0 max-w-[60%] items-center gap-1.5 [-webkit-app-region:no-drag]">
+                          <span className="min-w-0 truncate font-mono text-mono-label uppercase text-body">
+                            {activeSession?.title ?? ""}
+                          </span>
+                          {activeSession ? <SessionActionsMenu session={activeSession} /> : null}
+                        </div>
                       </header>
                       {/* chat-layout-scope 提供 @container 查询基准，relative 为浮动面板提供定位参照。
                           内层 px-12 包裹 ChatView 与 Composer，两列共用同一横向内距，从源头消除宽度差异。 */}

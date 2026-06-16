@@ -748,7 +748,7 @@ export function Composer() {
   return (
     <div
       data-testid="composer-shell"
-      className="relative w-full rounded-xl border border-border bg-card transition-colors focus-within:border-form-focus"
+      className="relative w-full rounded-xl border border-border bg-card transition-colors focus-within:border-hairline-strong/40"
     >
       {queuedRuns.length > 0 ? (
         <QueuedRunStack
@@ -960,7 +960,7 @@ export function Composer() {
                 checked={planMode}
                 aria-hidden
                 tabIndex={-1}
-                className="pointer-events-none data-[state=checked]:bg-link"
+                className="pointer-events-none data-[state=checked]:bg-hairline-strong"
               />
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void addContext()}>
@@ -1077,7 +1077,7 @@ export function Composer() {
             type="button"
             title={t("composer.planModeOff")}
             onClick={() => setPlanMode(false)}
-            className="flex h-8 flex-none items-center gap-1.5 rounded-sm px-2.5 text-micro font-normal text-link transition-colors hover:bg-link/10"
+            className="flex h-8 flex-none items-center gap-1.5 rounded-sm px-2.5 text-micro font-normal text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
           >
             <ChecklistPlanIcon className="size-4" />
             {t("composer.planModeFull")}

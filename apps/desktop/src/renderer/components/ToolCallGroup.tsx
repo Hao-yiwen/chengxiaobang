@@ -44,7 +44,7 @@ export function ToolCallGroup({ toolCalls, onOpenFile }: ToolCallGroupProps) {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex max-w-full items-center gap-1.5 text-caption font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="flex max-w-full items-center gap-1.5 text-caption text-muted-foreground transition-colors hover:text-foreground"
       >
         {active ? (
           <RefreshIcon className="size-3.5 flex-none animate-spin" />

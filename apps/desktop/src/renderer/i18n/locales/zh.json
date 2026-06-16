@@ -44,6 +44,25 @@
     "skills": "技能",
     "connectPhone": "连接手机"
   },
+  "sessionMenu": {
+    "open": "打开对话操作菜单",
+    "pin": "置顶对话",
+    "unpin": "取消置顶对话",
+    "rename": "重命名对话",
+    "openSideChat": "打开侧边聊天",
+    "copy": "复制",
+    "copyTitle": "复制标题",
+    "copyMarkdown": "复制对话 Markdown",
+    "copyFailed": "复制失败",
+    "branch": "分支",
+    "branchLastMessage": "从最后一条消息分支",
+    "branchLastUserMessage": "从最后一条用户消息分支",
+    "renameDialogTitle": "重命名对话",
+    "renameDialogDescription": "修改后的标题会同步到左侧对话列表。",
+    "renameInputLabel": "对话标题",
+    "cancel": "取消",
+    "save": "保存"
+  },
   "confirmDialog": {
     "cancel": "取消",
     "confirm": "确认"

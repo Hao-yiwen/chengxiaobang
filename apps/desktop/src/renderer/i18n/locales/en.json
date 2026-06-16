@@ -44,6 +44,25 @@
     "skills": "Skills",
     "connectPhone": "Connect phone"
   },
+  "sessionMenu": {
+    "open": "Open conversation actions menu",
+    "pin": "Pin conversation",
+    "unpin": "Unpin conversation",
+    "rename": "Rename conversation",
+    "openSideChat": "Open side chat",
+    "copy": "Copy",
+    "copyTitle": "Copy title",
+    "copyMarkdown": "Copy conversation Markdown",
+    "copyFailed": "Copy failed",
+    "branch": "Branch",
+    "branchLastMessage": "Branch from last message",
+    "branchLastUserMessage": "Branch from last user message",
+    "renameDialogTitle": "Rename conversation",
+    "renameDialogDescription": "The new title will also appear in the sidebar.",
+    "renameInputLabel": "Conversation title",
+    "cancel": "Cancel",
+    "save": "Save"
+  },
   "confirmDialog": {
     "cancel": "Cancel",
     "confirm": "Confirm"

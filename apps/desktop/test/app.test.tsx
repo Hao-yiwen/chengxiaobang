@@ -135,6 +135,46 @@ async function selectDeepSeekForHome(): Promise<void> {
   });
 }
 
+function createSessionFixture(overrides: Partial<Session> = {}): Session {
+  return {
+    id: "session_actions",
+    projectId: null,
+    title: "菜单对话",
+    providerId: provider.id,
+    accessMode: "approval",
+    createdAt: "2026-06-16T00:00:00.000Z",
+    updatedAt: "2026-06-16T00:00:01.000Z",
+    ...overrides
+  };
+}
+
+function createMessageFixture(overrides: Partial<Message> = {}): Message {
+  return {
+    id: "msg_actions_user",
+    sessionId: "session_actions",
+    role: "user",
+    content: "请总结这个改动",
+    createdAt: "2026-06-16T00:00:02.000Z",
+    ...overrides
+  };
+}
+
+function openMenuSubmenu(label: string): HTMLElement {
+  const trigger = screen.getByText(label).closest("[role='menuitem']");
+  if (!trigger) {
+    throw new Error(`未找到菜单子项：${label}`);
+  }
+  fireEvent.pointerMove(trigger, { pointerType: "mouse" });
+  fireEvent.mouseEnter(trigger);
+  fireEvent.keyDown(trigger, { key: "ArrowRight" });
+  return trigger as HTMLElement;
+}
+
+async function openSessionActionsMenu(): Promise<void> {
+  const trigger = await screen.findByRole("button", { name: "打开对话操作菜单" });
+  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: "mouse" });
+}
+
 describe("App", () => {
   it("renders home composer and model presets", async () => {
     const client = createClient();
@@ -435,6 +475,167 @@ describe("App", () => {
 
     unmount();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the session actions menu only in the active chat header", async () => {
+    const client = createClient();
+
+    const { unmount } = render(<App client={client} />);
+
+    expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开对话操作菜单" })).not.toBeInTheDocument();
+
+    unmount();
+
+    const session = createSessionFixture();
+    useAppStore.setState({ view: "chat", activeSessionId: session.id });
+
+    render(
+      <App
+        client={createClient({
+          listSessions: vi.fn(async () => [session])
+        })}
+      />
+    );
+
+    expect(await screen.findByRole("button", { name: "打开对话操作菜单" })).toBeInTheDocument();
+  });
+
+  it("pins, renames and opens side chat from the session actions menu", async () => {
+    let currentSession = createSessionFixture();
+    const updateSession = vi.fn(async (_id: string, input: { title?: string; pinned?: boolean }) => {
+      currentSession = {
+        ...currentSession,
+        ...(input.title ? { title: input.title } : {}),
+        ...(input.pinned === true ? { pinnedAt: "2026-06-16T00:00:03.000Z" } : {})
+      };
+      if (input.pinned === false) {
+        const { pinnedAt: _pinnedAt, ...unpinnedSession } = currentSession;
+        currentSession = unpinnedSession;
+      }
+      return currentSession;
+    });
+    const client = createClient({
+      listSessions: vi.fn(async () => [currentSession]),
+      updateSession: updateSession as never
+    });
+
+    useAppStore.setState({ view: "chat", activeSessionId: currentSession.id });
+    render(<App client={client} />);
+
+    await openSessionActionsMenu();
+    fireEvent.click(await screen.findByText("置顶对话"));
+
+    await waitFor(() =>
+      expect(updateSession).toHaveBeenCalledWith(currentSession.id, { pinned: true })
+    );
+
+    await openSessionActionsMenu();
+    fireEvent.click(await screen.findByText("重命名对话"));
+    fireEvent.change(await screen.findByLabelText("对话标题"), {
+      target: { value: "新的菜单标题" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(updateSession).toHaveBeenLastCalledWith(currentSession.id, {
+        title: "新的菜单标题"
+      })
+    );
+
+    await openSessionActionsMenu();
+    fireEvent.click(await screen.findByText("打开侧边聊天"));
+
+    expect(useAppStore.getState()).toMatchObject({
+      rightPanelOpen: true,
+      rightPanelMode: "chat"
+    });
+  });
+
+  it("copies the active conversation as Markdown from the session actions menu", async () => {
+    const session = createSessionFixture();
+    const messages: Message[] = [
+      createMessageFixture(),
+      createMessageFixture({
+        id: "msg_actions_assistant",
+        role: "assistant",
+        content: "已经完成菜单实现",
+        createdAt: "2026-06-16T00:00:03.000Z"
+      })
+    ];
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true
+    });
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      listMessages: vi.fn(async () => messages)
+    });
+
+    useAppStore.setState({ view: "chat", activeSessionId: session.id });
+    render(<App client={client} />);
+
+    await openSessionActionsMenu();
+    openMenuSubmenu("复制");
+    fireEvent.click(await screen.findByText("复制对话 Markdown"));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const markdown = writeText.mock.calls[0]?.[0];
+    expect(markdown).toContain("# 菜单对话");
+    expect(markdown).toContain("请总结这个改动");
+    expect(markdown).toContain("已经完成菜单实现");
+  });
+
+  it("disables session branching while running and forks after the run settles", async () => {
+    const session = createSessionFixture();
+    const userMessage = createMessageFixture();
+    const assistantMessage = createMessageFixture({
+      id: "msg_actions_assistant",
+      role: "assistant",
+      content: "我已经处理完。",
+      createdAt: "2026-06-16T00:00:03.000Z"
+    });
+    const forkedSession = createSessionFixture({
+      id: "session_actions_fork",
+      title: "菜单对话（分支）"
+    });
+    const forkSession = vi.fn(async () => forkedSession);
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      listMessages: vi.fn(async (sessionId: string) =>
+        sessionId === forkedSession.id ? [userMessage] : [userMessage, assistantMessage]
+      ),
+      forkSession: forkSession as never
+    });
+
+    useAppStore.setState({ view: "chat", activeSessionId: session.id });
+    render(<App client={client} />);
+    expect(await screen.findByText("我已经处理完。")).toBeInTheDocument();
+
+    await act(async () => {
+      useAppStore.setState({ isRunning: true });
+    });
+
+    await openSessionActionsMenu();
+    openMenuSubmenu("分支");
+    expect((await screen.findByText("从最后一条消息分支")).closest("[role='menuitem']")).toHaveAttribute(
+      "data-disabled"
+    );
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByText("从最后一条消息分支")).not.toBeInTheDocument());
+
+    await act(async () => {
+      useAppStore.setState({ isRunning: false });
+    });
+
+    await openSessionActionsMenu();
+    openMenuSubmenu("分支");
+    fireEvent.click(await screen.findByText("从最后一条用户消息分支"));
+
+    await waitFor(() =>
+      expect(forkSession).toHaveBeenCalledWith(session.id, userMessage.id)
+    );
   });
 
   it("restores the latest persisted session and messages", async () => {
