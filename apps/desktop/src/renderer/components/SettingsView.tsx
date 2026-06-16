@@ -8,10 +8,12 @@ import {
   LaptopIcon as Laptop,
   MagnifyingGlassIcon as Search,
   MoonIcon as Moon,
+  PuzzlePieceIcon as Puzzle,
   SlidersHorizontalIcon as SlidersHorizontal,
   SparkleIcon as Sparkles,
   StackIcon as Boxes,
   SunIcon as Sun,
+  TerminalWindowIcon as Terminal,
   TranslateIcon as Languages,
   TrashIcon as Trash2,
   type Icon
@@ -35,7 +37,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CommandsSection } from "@/components/settings/CommandsSection";
 import { OptionCard } from "@/components/settings/OptionCard";
+import { PluginsSection } from "@/components/settings/PluginsSection";
 import { SectionShell, SettingBlock } from "@/components/settings/SectionShell";
 import { UsageStatsSection } from "@/components/settings/UsageStatsSection";
 import { WebSearchSection } from "@/components/settings/WebSearchSection";
@@ -53,6 +57,8 @@ type SectionId =
   | "providers"
   | "usage"
   | "skills"
+  | "plugins"
+  | "commands"
   | "webSearch";
 
 interface NavDef {
@@ -63,6 +69,8 @@ interface NavDef {
     | "settings.nav.providers"
     | "settings.nav.usage"
     | "settings.nav.skills"
+    | "settings.nav.plugins"
+    | "settings.nav.commands"
     | "settings.nav.webSearch";
   icon: Icon;
   groupKey: "settings.groupPersonal" | "settings.groupModel" | "settings.groupIntegrations";
@@ -81,6 +89,8 @@ const NAV_DEFS: NavDef[] = [
   { id: "providers", labelKey: "settings.nav.providers", icon: Boxes, groupKey: "settings.groupModel" },
   { id: "usage", labelKey: "settings.nav.usage", icon: ChartBar, groupKey: "settings.groupModel" },
   { id: "skills", labelKey: "settings.nav.skills", icon: Sparkles, groupKey: "settings.groupModel" },
+  { id: "plugins", labelKey: "settings.nav.plugins", icon: Puzzle, groupKey: "settings.groupModel" },
+  { id: "commands", labelKey: "settings.nav.commands", icon: Terminal, groupKey: "settings.groupModel" },
   { id: "webSearch", labelKey: "settings.nav.webSearch", icon: Globe, groupKey: "settings.groupIntegrations" }
 ];
 
@@ -201,6 +211,8 @@ export function SettingsView() {
           {section === "providers" ? <ProvidersSection /> : null}
           {section === "usage" ? <UsageStatsSection /> : null}
           {section === "skills" ? <SkillsSection /> : null}
+          {section === "plugins" ? <PluginsSection /> : null}
+          {section === "commands" ? <CommandsSection /> : null}
           {section === "webSearch" ? <WebSearchSection /> : null}
         </div>
       </div>
@@ -686,52 +698,10 @@ function ProvidersSection() {
 
 export function SkillsSection() {
   const { t } = useTranslation();
-  const slashCommands = useAppStore(useShallow((state) => state.slashCommands));
-  const refreshSlashCommands = useAppStore((state) => state.refreshSlashCommands);
   const setNotice = useAppStore((state) => state.setNotice);
-
-  useEffect(() => {
-    void refreshSlashCommands();
-  }, [refreshSlashCommands]);
-
-  const sourceLabel: Record<string, string> = {
-    builtin: t("composer.slashSource.builtin"),
-    global: t("composer.slashSource.global"),
-    project: t("composer.slashSource.project"),
-    market: t("composer.slashSource.market")
-  };
 
   return (
     <SectionShell title={t("settings.skills.title")}>
-      <SettingBlock
-        title={t("settings.skills.listTitle")}
-        description={t("settings.skills.listDesc")}
-      >
-        <div data-testid="settings-skills-list" className="divide-y rounded-sm border bg-background">
-          {slashCommands.length === 0 ? (
-            <div className="px-4 py-4 text-caption text-muted-foreground">
-              {t("settings.skills.empty")}
-            </div>
-          ) : (
-            slashCommands.map((command) => (
-              <div key={command.id} className="flex items-start gap-3 px-4 py-3">
-                <span className="mt-0.5 rounded-xs bg-muted px-1.5 py-0.5 font-mono text-micro text-foreground">
-                  {command.name}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-caption text-muted-foreground">
-                    {command.description || t("composer.slashNoDescription")}
-                  </div>
-                </div>
-                <span className="flex-none text-micro text-muted-slate">
-                  {sourceLabel[command.source] ?? command.source}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-      </SettingBlock>
-
       <SettingBlock
         title={t("settings.skills.manageTitle")}
         description={t("settings.skills.manageDesc")}

@@ -166,3 +166,36 @@ export function isOfficePreviewKind(kind: PreviewKind): boolean {
 export function previewReadLimitForKind(kind: PreviewKind): number {
   return isTextualPreviewKind(kind) ? TEXT_PREVIEW_MAX_BYTES : BINARY_PREVIEW_MAX_BYTES;
 }
+
+// 从 Markdown 链接的 href 中识别“可在右侧预览的本地文件引用”。
+// - http(s)/mailto/tel 等网络链接返回 null（仍按外链处理，由系统浏览器打开）；
+// - 显式拒绝 javascript:/vbscript:/data:/blob: 等危险或不可预览的协议；
+// - 支持 file:// 前缀（剥离后按本地路径处理），并对百分号编码做一次解码；
+// - 仅当是绝对路径，或带已知可预览扩展名时，才认定为本地文件。
+// 命中返回规整后的路径，否则返回 null。
+export function localFilePathFromHref(href: string): string | null {
+  const raw = href.trim();
+  if (!raw) {
+    return null;
+  }
+  if (/^(https?|mailto|tel):/i.test(raw)) {
+    return null;
+  }
+  if (/^(javascript|vbscript|data|blob):/i.test(raw)) {
+    return null;
+  }
+  let path = raw.replace(/^file:\/\//i, "");
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // 解码失败时保留原始字符串，避免因非法转义序列抛错
+  }
+  path = path.trim();
+  if (!path || path.startsWith("#") || path.startsWith("?")) {
+    return null;
+  }
+  if (isAbsolutePathLike(path) || previewKindForPath(path) !== "unsupported") {
+    return path;
+  }
+  return null;
+}

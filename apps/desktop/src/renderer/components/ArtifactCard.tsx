@@ -1,36 +1,8 @@
-import {
-  ArrowUpRightIcon as ArrowUpRight,
-  FileAudioIcon as FileAudio,
-  FileCodeIcon as FileCode,
-  FileDocIcon as FileDoc,
-  FileHtmlIcon as FileHtml,
-  FileImageIcon as FileImage,
-  FilePdfIcon as FilePdf,
-  FilePptIcon as FilePpt,
-  FileTextIcon as FileText,
-  FileVideoIcon as FileVideo,
-  FileXlsIcon as FileSpreadsheet,
-  type Icon
-} from "@phosphor-icons/react";
+import { ArrowUpRightIcon as ArrowUpRight } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import type { Artifact } from "@/lib/artifact";
+import { iconForKind } from "@/lib/file-icon";
 import { useAppStore } from "@/store";
-
-const KIND_ICON: Partial<Record<Artifact["kind"], Icon>> = {
-  code: FileCode,
-  markdown: FileText,
-  json: FileCode,
-  html: FileHtml,
-  pdf: FilePdf,
-  image: FileImage,
-  audio: FileAudio,
-  video: FileVideo,
-  spreadsheet: FileSpreadsheet,
-  docx: FileDoc,
-  presentation: FilePpt,
-  text: FileText,
-  unsupported: FileText
-};
 
 /**
  * 生成物卡片：无论是 HTML、PDF、Office 还是媒体，都统一进入右侧文件预览工作台。
@@ -38,7 +10,7 @@ const KIND_ICON: Partial<Record<Artifact["kind"], Icon>> = {
 export function ArtifactCard({ artifact }: { artifact: Artifact }) {
   const { t } = useTranslation();
   const openArtifact = useAppStore((state) => state.openArtifact);
-  const Icon = KIND_ICON[artifact.kind] ?? FileText;
+  const Icon = iconForKind(artifact.kind);
   return (
     <button
       type="button"

@@ -141,10 +141,10 @@ export function OpenInIdeButton() {
       <DropdownMenuContent
         align="end"
         sideOffset={6}
-        className="w-[248px] rounded-xl border border-border bg-canvas p-2 shadow-modal"
+        className="w-[200px] rounded-lg border border-border bg-canvas p-1.5 shadow-modal"
       >
         {openers.length === 0 ? (
-          <DropdownMenuItem disabled className="h-10 text-body">
+          <DropdownMenuItem disabled className="h-8 text-sm text-body">
             {loading
               ? t("ide.detecting")
               : desktopBridgeReady
@@ -155,20 +155,20 @@ export function OpenInIdeButton() {
           openers.map((opener) => (
             <DropdownMenuItem
               key={opener.id}
-              className="h-11 cursor-pointer gap-3 rounded-lg px-2.5 text-[15px] text-ink"
+              className="h-8 cursor-pointer gap-2.5 rounded-md px-2 text-sm text-ink"
               onSelect={() => void openWith(opener)}
             >
               {opener.iconDataUrl ? (
                 <img
                   src={opener.iconDataUrl}
                   alt=""
-                  className="size-7 rounded-md object-contain"
+                  className="size-[18px] shrink-0 rounded object-contain"
                   draggable={false}
                 />
               ) : (
                 <span
                   aria-hidden
-                  className="block size-7 rounded-md bg-canvas-soft-2 shadow-hairline"
+                  className="block size-[18px] shrink-0 rounded bg-canvas-soft-2 shadow-hairline"
                 />
               )}
               <span className="truncate">{opener.name}</span>

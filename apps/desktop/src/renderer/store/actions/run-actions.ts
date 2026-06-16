@@ -480,6 +480,8 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           isRunning: true,
           view: "chat",
           activeRunClientRequestId: clientRequestId,
+          // 轮次「已工作」实时计时起点：乐观启动即记录，run_started 用 ?? 保留此值避免回跳。
+          activeRunStartedAt: Date.now(),
           progressPanelOpen: false
         });
         try {
@@ -527,6 +529,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             progressPanelAutoOpenedRunId: undefined,
             activeRunModel: undefined,
             activeRunLastAssistant: undefined,
+            activeRunStartedAt: undefined,
             pendingTool: undefined,
             runningTool: undefined,
             toolActivity: undefined,
@@ -869,6 +872,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
               streamText: "",
               thinking: "",
               thinkingStartedAt: undefined,
+              activeRunStartedAt: undefined,
               notice: event.error,
               ...(current.activeRunId && current.activeSessionId
                 ? clearRunRunning(current, current.activeRunId, current.activeSessionId)
@@ -893,6 +897,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
               activeRunModel: runModel,
               view: "chat",
               isRunning: true,
+              activeRunStartedAt: get().activeRunStartedAt ?? Date.now(),
               ...markRunRunning(state, event.runId, event.sessionId),
               ...(runModel ? { lastRunModel: runModel } : {})
             }));
@@ -967,6 +972,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
               streamText: "",
               thinking: "",
               thinkingStartedAt: undefined,
+              activeRunStartedAt: undefined,
               ...(sessionId
                 ? {
                     runHistory: upsertRunHistory(

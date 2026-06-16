@@ -1,16 +1,17 @@
 export interface DiffLine {
   type: "context" | "added" | "removed";
   text: string;
+  oldLineNumber?: number;
+  newLineNumber?: number;
+  hunk?: boolean;
 }
 
-/** Above this many DP cells, fall back to all-removed-then-all-added. */
+/** 超过这个 DP 单元数后，降级为先全删再全增，避免 UI 被大 diff 卡住。 */
 const MAX_LCS_CELLS = 100_000;
 
 /**
- * Line-level diff via LCS, for presenting Edit/Write changes.
- * Replacements emit removed lines before added ones. Inputs large enough to
- * make the O(n·m) table expensive degrade to a correct (if blunt)
- * removed+added presentation instead of hanging the UI.
+ * 基于 LCS 的行级 diff，用于展示 Edit / Write 工具结果。
+ * 替换会先展示删除行再展示新增行；过大的输入会降级成较粗但正确的展示。
  */
 export function diffLines(oldText: string, newText: string): DiffLine[] {
   const oldLines = splitLines(oldText);

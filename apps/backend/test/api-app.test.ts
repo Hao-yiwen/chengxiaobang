@@ -534,6 +534,117 @@ describe("createApp", () => {
     await expect(feishuConfigService.getAppSecret(body.config)).resolves.toBe("qr-secret");
   });
 
+  it("starts and completes generic connect-phone QR flows for WeChat and Feishu", async () => {
+    const { FeishuConfigService } = await import("../src/feishu/feishu-config-service");
+    const { FeishuInstallService } = await import("../src/feishu/feishu-install-service");
+    const { FeishuService } = await import("../src/feishu/feishu-service");
+    const { WechatConfigService } = await import("../src/wechat/wechat-config-service");
+    const { WechatService } = await import("../src/wechat/wechat-service");
+    const { FakeFeishuBridge } = await import("./helpers/fake-feishu-bridge");
+    const { FakeWechatBridge } = await import("./helpers/fake-wechat-bridge");
+    const feishuBridge = new FakeFeishuBridge();
+    const wechatBridge = new FakeWechatBridge();
+    const feishuConfigService = new FeishuConfigService(store, secrets);
+    const wechatConfigService = new WechatConfigService(store);
+    const feishuInstallService = new FeishuInstallService({
+      fetch: vi.fn(async (_url: string, init?: RequestInit) => {
+        const params = new URLSearchParams(String(init?.body ?? ""));
+        if (params.get("action") === "begin") {
+          return new Response(
+            JSON.stringify({
+              verification_uri_complete: "https://open.feishu.cn/page/cli?user_code=QR-CODE",
+              device_code: "device-api",
+              user_code: "QR-CODE",
+              interval: 3,
+              expires_in: 120
+            }),
+            { headers: { "content-type": "application/json" } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            client_id: "cli_qr",
+            client_secret: "qr-secret",
+            user_info: { tenant_brand: "feishu" }
+          }),
+          { headers: { "content-type": "application/json" } }
+        );
+      }) as never
+    });
+    const runner = new AgentRunner(store, secrets);
+    const feishuService = new FeishuService({
+      configService: feishuConfigService,
+      store,
+      runner,
+      bridgeFactory: () => feishuBridge
+    });
+    const wechatService = new WechatService({
+      configService: wechatConfigService,
+      store,
+      runner,
+      bridge: wechatBridge
+    });
+    const connectPhoneApp = createTestApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner,
+      feishuConfigService,
+      feishuInstallService,
+      feishuService,
+      wechatConfigService,
+      wechatService
+    });
+
+    const wechatStarted = await connectPhoneApp(
+      jsonRequest("/api/settings/connect-phone/install/start", "POST", { target: "wechat" })
+    );
+    expect(wechatStarted.status).toBe(200);
+    await expect(wechatStarted.json()).resolves.toMatchObject({
+      ok: true,
+      target: "wechat",
+      deviceCode: "wechat-device"
+    });
+    const wechatPolled = await connectPhoneApp(
+      jsonRequest("/api/settings/connect-phone/install/poll", "POST", {
+        target: "wechat",
+        deviceCode: "wechat-device"
+      })
+    );
+    const wechatBody = await wechatPolled.json();
+    expect(wechatBody).toMatchObject({
+      done: true,
+      target: "wechat",
+      config: { accountId: "wechat_account", sessionKey: "wechat_session" },
+      status: { status: "connected", accountId: "wechat_account" }
+    });
+    expect(wechatBridge.startedAccountId).toBe("wechat_account");
+
+    const feishuStarted = await connectPhoneApp(
+      jsonRequest("/api/settings/connect-phone/install/start", "POST", { target: "feishu" })
+    );
+    expect(feishuStarted.status).toBe(200);
+    await expect(feishuStarted.json()).resolves.toMatchObject({
+      ok: true,
+      target: "feishu",
+      deviceCode: "device-api",
+      interval: 3
+    });
+    const feishuPolled = await connectPhoneApp(
+      jsonRequest("/api/settings/connect-phone/install/poll", "POST", {
+        target: "feishu",
+        deviceCode: "device-api"
+      })
+    );
+    const feishuBody = await feishuPolled.json();
+    expect(feishuBody).toMatchObject({
+      done: true,
+      target: "feishu",
+      config: { appId: "cli_qr", appSecretRef: "memory:feishu" },
+      status: { status: "connected" }
+    });
+    expect(JSON.stringify(feishuBody)).not.toContain("qr-secret");
+  });
+
   it("serves, saves and tests the web search config without exposing the API Key", async () => {
     const { WebSearchConfigService } = await import(
       "../src/web-search/web-search-config-service"
@@ -579,6 +690,36 @@ describe("createApp", () => {
   });
 
   it("reports feishu routes as unavailable when not wired", async () => {
+    const connectWechatStart = await app(
+      jsonRequest("/api/settings/connect-phone/install/start", "POST", { target: "wechat" })
+    );
+    expect(connectWechatStart.status).toBe(200);
+    await expect(connectWechatStart.json()).resolves.toEqual({
+      ok: false,
+      target: "wechat",
+      message: "微信连接服务不可用"
+    });
+    const connectFeishuStart = await app(
+      jsonRequest("/api/settings/connect-phone/install/start", "POST", { target: "feishu" })
+    );
+    expect(connectFeishuStart.status).toBe(200);
+    await expect(connectFeishuStart.json()).resolves.toEqual({
+      ok: false,
+      target: "feishu",
+      message: "飞书扫码安装服务不可用"
+    });
+    const connectWechatPoll = await app(
+      jsonRequest("/api/settings/connect-phone/install/poll", "POST", {
+        target: "wechat",
+        deviceCode: "missing"
+      })
+    );
+    expect(connectWechatPoll.status).toBe(200);
+    await expect(connectWechatPoll.json()).resolves.toEqual({
+      done: false,
+      target: "wechat",
+      error: "微信连接服务不可用"
+    });
     const response = await app(
       new Request("http://local/api/settings/feishu", { method: "GET" })
     );
@@ -597,6 +738,15 @@ describe("createApp", () => {
       new Request("http://local/api/settings/feishu/status", { method: "GET" })
     );
     await expect(status.json()).resolves.toEqual({ status: { status: "disconnected" } });
+    const wechat = await app(
+      new Request("http://local/api/settings/wechat", { method: "GET" })
+    );
+    expect(wechat.status).toBe(404);
+    await expect(wechat.json()).resolves.toEqual({ error: "微信服务不可用" });
+    const wechatStatus = await app(
+      new Request("http://local/api/settings/wechat/status", { method: "GET" })
+    );
+    await expect(wechatStatus.json()).resolves.toEqual({ status: { status: "disconnected" } });
     const webSearch = await app(
       new Request("http://local/api/settings/web-search", { method: "GET" })
     );

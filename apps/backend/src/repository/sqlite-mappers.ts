@@ -62,6 +62,9 @@ export function mapSession(row: Row): Session {
     ...(row.feishu_chat_id === null || row.feishu_chat_id === undefined
       ? {}
       : { feishuChatId: String(row.feishu_chat_id) }),
+    ...(row.wechat_chat_id === null || row.wechat_chat_id === undefined
+      ? {}
+      : { wechatChatId: String(row.wechat_chat_id) }),
     ...(row.pinned_at === null || row.pinned_at === undefined
       ? {}
       : { pinnedAt: String(row.pinned_at) }),

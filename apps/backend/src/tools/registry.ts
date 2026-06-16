@@ -9,6 +9,7 @@ import { createMemoryTools } from "./memory-tools";
 import { createSkillTools } from "./skill-tools";
 import { createOcrTools, type OcrToolRuntime } from "./ocr-tools";
 import type { SkillMarketService } from "./skill-market-service";
+import { isMcpToolName } from "../mcp/mcp-tool-bridge";
 
 export type PlanPhase = "none" | "draft" | "execute";
 
@@ -46,11 +47,12 @@ const READ_ONLY_TOOLS = new Set<string>([
 const DRAFT_EXTRA_TOOLS = new Set<string>(["ExitPlanMode", "AskUserQuestion", "Skill", "Memory"]);
 
 export function requiresApproval(name: string): boolean {
-  return MUTATING_TOOLS.has(name);
+  return MUTATING_TOOLS.has(name) || isMcpToolName(name);
 }
 
 export function isMutatingTool(name: string): boolean {
-  return MUTATING_TOOLS.has(name);
+  // 外部 MCP server 的工具可能产生任意副作用，一律按需审批，不依赖其自报的能力。
+  return MUTATING_TOOLS.has(name) || isMcpToolName(name);
 }
 
 /** 计划模式下按阶段裁剪模型可见工具；飞书/headless 通道隐藏会阻塞的计划/提问工具。 */
@@ -98,6 +100,8 @@ export function createAgentTools(
         skillMarketService?: SkillMarketService;
         /** OCR 工具运行时；提供后注册按需 OCR 只读工具。 */
         ocr?: OcrToolRuntime;
+        /** 已就绪的 MCP 桥接工具；由 McpManager.getToolsForWorkspace 提供，并入工具集合。 */
+        mcpTools?: AgentTool<any>[];
       }
 ): AgentTool<any>[] {
   const options =
@@ -113,7 +117,8 @@ export function createAgentTools(
     ...(options.memoryDir ? createMemoryTools(options.memoryDir) : []),
     ...(options.skillMarketService
       ? createSkillTools({ skillMarketService: options.skillMarketService })
-      : [])
+      : []),
+    ...(options.mcpTools ?? [])
   ];
 }
 

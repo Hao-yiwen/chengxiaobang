@@ -21,6 +21,7 @@ import {
   RIGHT_PANEL_FILE_WIDTH,
   RIGHT_PANEL_MAX_WIDTH,
   RIGHT_PANEL_MIN_WIDTH,
+  RIGHT_PANEL_REVIEW_WIDTH,
   rememberRightPanel
 } from "../helpers/right-panel";
 import { selectActiveProject, selectActiveSession } from "../selectors";
@@ -247,6 +248,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           streamText: "",
           thinking: "",
           thinkingStartedAt: undefined,
+          activeRunStartedAt: undefined,
           events: [],
           toolActivity: undefined,
           runningTool: undefined,
@@ -284,7 +286,22 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         }),
       openRightPanel: (mode) =>
         set((state) => {
-          const patch: RightPanelPatch = { rightPanelOpen: true, rightPanelMode: mode };
+          const targetWidth =
+            mode === "changes"
+              ? RIGHT_PANEL_REVIEW_WIDTH
+              : mode === "files"
+                ? RIGHT_PANEL_FILE_WIDTH
+                : undefined;
+          const patch: RightPanelPatch = {
+            rightPanelOpen: true,
+            rightPanelMode: mode,
+            ...(targetWidth ? { rightPanelWidth: Math.max(state.rightPanelWidth, targetWidth) } : {})
+          };
+          console.info("[store] 打开右侧面板", {
+            mode,
+            targetWidth,
+            nextWidth: patch.rightPanelWidth ?? state.rightPanelWidth
+          });
           return {
             ...patch,
             rightPanelBySession: rememberRightPanel(state, undefined, patch)

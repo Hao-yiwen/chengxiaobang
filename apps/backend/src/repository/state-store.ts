@@ -46,6 +46,7 @@ export interface CreateSessionInput {
   parentSessionId?: string;
   forkMessageId?: string;
   feishuChatId?: string;
+  wechatChatId?: string;
 }
 
 export interface CreateMessageInput {
@@ -180,6 +181,8 @@ export interface StateStore {
   getSession(id: string): Promise<Session | undefined>;
   /** The session bound to a Feishu chat, if one exists (one session per chat). */
   findSessionByFeishuChatId(chatId: string): Promise<Session | undefined>;
+  /** 微信联系人绑定的会话（一位联系人对应一个会话）。 */
+  findSessionByWechatChatId(chatId: string): Promise<Session | undefined>;
   createSession(input: CreateSessionInput): Promise<Session>;
   updateSession(id: string, input: UpdateSessionInput): Promise<Session>;
   /** 置顶/取消置顶会话。只写 pinned_at，不更新 updated_at（避免扰动列表排序）。 */

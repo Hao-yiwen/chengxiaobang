@@ -7,8 +7,8 @@ import { build } from "esbuild";
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = dirname(here);
 
-// 内置技能与市场技能都随 dist 分发；市场技能默认不激活，由技能市场按需启用。
-for (const dirName of ["skills", "skills-market"]) {
+// 内置技能、市场技能、内置插件都随 dist 分发；市场技能与插件默认不激活，按需启用。
+for (const dirName of ["skills", "skills-market", "plugins"]) {
   const source = join(packageRoot, dirName);
   const target = join(packageRoot, "dist", dirName);
   if (!existsSync(source)) {
@@ -17,7 +17,11 @@ for (const dirName of ["skills", "skills-market"]) {
   await rm(target, { recursive: true, force: true });
   await mkdir(target, { recursive: true });
   await copyNonTypeScriptAssets(source, target);
-  await bundleRunnableScripts(source, target, source);
+  // 内置/市场技能的 scripts/*.ts 需 esbuild 成 .mjs；插件是自带成品（含已 bundle 的 MCP
+  // server.js），原样复制即可，不要再 esbuild 它们的源码。
+  if (dirName !== "plugins") {
+    await bundleRunnableScripts(source, target, source);
+  }
   console.log(`[chengxiaobang] built ${dirName} -> ${target}`);
 }
 

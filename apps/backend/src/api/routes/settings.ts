@@ -1,8 +1,11 @@
 import { Hono } from "hono";
 import {
+  connectPhoneInstallPollInputSchema,
+  connectPhoneInstallStartInputSchema,
   feishuConfigInputSchema,
   feishuInstallPollInputSchema,
   feishuInstallStartInputSchema,
+  normalizeConnectPhoneStartResult,
   providerInputSchema,
   usageStatsSchema,
   webSearchConfigInputSchema
@@ -11,6 +14,68 @@ import type { AppContext } from "../context";
 
 export function settingsRoutes(context: AppContext): Hono {
   const app = new Hono();
+
+  app.post("/connect-phone/install/start", async (c) => {
+    const input = connectPhoneInstallStartInputSchema.parse(await c.req.json());
+    console.info("[settings-routes] 生成连接手机扫码连接", { target: input.target });
+    if (input.target === "wechat") {
+      if (!context.wechatService) {
+        return c.json({ ok: false, target: "wechat", message: "微信连接服务不可用" });
+      }
+      return c.json(await context.wechatService.startInstall());
+    }
+    if (!context.feishuInstallService) {
+      return c.json({ ok: false, target: input.target, message: "飞书扫码安装服务不可用" });
+    }
+    const domain = input.target;
+    return c.json(
+      normalizeConnectPhoneStartResult(input.target, await context.feishuInstallService.start(domain))
+    );
+  });
+
+  app.post("/connect-phone/install/poll", async (c) => {
+    const input = connectPhoneInstallPollInputSchema.parse(await c.req.json());
+    console.debug("[settings-routes] 轮询连接手机扫码连接", {
+      target: input.target,
+      deviceCodePrefix: input.deviceCode.slice(0, 8)
+    });
+    if (input.target === "wechat") {
+      if (!context.wechatService) {
+        return c.json({ done: false, target: "wechat", error: "微信连接服务不可用" });
+      }
+      const result = await context.wechatService.pollInstall(input.deviceCode);
+      if (!result.done) {
+        return c.json({ ...result, target: "wechat" });
+      }
+      const { config, status } = await context.wechatService.saveInstallAndRestart(result);
+      return c.json({ done: true, target: "wechat", config, status });
+    }
+
+    if (!context.feishuInstallService || !context.feishuConfigService || !context.feishuService) {
+      return c.json({ done: false, target: input.target, error: "飞书服务不可用" });
+    }
+    const result = await context.feishuInstallService.poll(input.deviceCode);
+    if (!result.done) {
+      return c.json({ ...result, target: input.target });
+    }
+
+    const current = await context.feishuConfigService.load();
+    const config = await context.feishuConfigService.save({
+      enabled: true,
+      appId: result.appId,
+      appSecret: result.appSecret,
+      domain: result.domain,
+      fullAccess: current.fullAccess
+    });
+    await context.feishuService.restart();
+    const status = context.feishuService.getStatus();
+    console.info("[settings-routes] 连接手机飞书扫码连接已保存并重启", {
+      appId: config.appId,
+      domain: config.domain,
+      status: status.status
+    });
+    return c.json({ done: true, target: config.domain, config, status });
+  });
 
   app.get("/feishu", async (c) => {
     if (!context.feishuConfigService) {
@@ -75,6 +140,19 @@ export function settingsRoutes(context: AppContext): Hono {
   app.get("/feishu/status", (c) => {
     return c.json({
       status: context.feishuService?.getStatus() ?? { status: "disconnected" }
+    });
+  });
+
+  app.get("/wechat", async (c) => {
+    if (!context.wechatConfigService) {
+      return c.json({ error: "微信服务不可用" }, 404);
+    }
+    return c.json({ config: await context.wechatConfigService.load() });
+  });
+
+  app.get("/wechat/status", (c) => {
+    return c.json({
+      status: context.wechatService?.getStatus() ?? { status: "disconnected" }
     });
   });
 

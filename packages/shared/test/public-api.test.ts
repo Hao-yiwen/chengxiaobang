@@ -6,10 +6,13 @@ import { describe, expect, it } from "vitest";
 import {
   accessModeSchema,
   activeRunSnapshotSchema,
+  connectPhoneInstallPollResultSchema,
+  connectPhoneInstallStartInputSchema,
   DEFAULT_CONTEXT_COMPACT_THRESHOLD_RATIO,
   DEFAULT_MAX_TOOL_ITERATIONS,
   defaultFeishuConfig,
   defaultProviders,
+  defaultWechatConfig,
   defaultWebSearchConfig,
   contextCompactThresholdTokens,
   estimateProviderModelCostUsd,
@@ -146,6 +149,21 @@ describe("shared public API", () => {
       domain: "feishu",
       fullAccess: false
     });
+    expect(defaultWechatConfig()).toEqual({
+      enabled: false,
+      accountId: ""
+    });
+    expect(connectPhoneInstallStartInputSchema.parse({ target: "wechat" })).toEqual({
+      target: "wechat"
+    });
+    expect(
+      connectPhoneInstallPollResultSchema.parse({
+        done: true,
+        target: "wechat",
+        config: { enabled: true, accountId: "wechat_account" },
+        status: { status: "connected", accountId: "wechat_account" }
+      }).target
+    ).toBe("wechat");
     expect(defaultWebSearchConfig()).toEqual({ enabled: false });
     expect(
       providerInputSchema.parse({

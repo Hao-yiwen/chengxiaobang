@@ -758,6 +758,18 @@ async function createWindow(): Promise<void> {
     return { ok: true, path: dir };
   });
 
+  trustedIpc.handle("open-plugins-dir", async () => {
+    const dir = join(homedir(), ".chengxiaobang", "plugins");
+    await mkdir(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    if (error) {
+      console.warn(`[main] 打开插件目录失败 path=${dir}: ${error}`);
+      return { ok: false, path: dir, error };
+    }
+    console.info(`[main] 已打开插件目录 path=${dir}`);
+    return { ok: true, path: dir };
+  });
+
   trustedIpc.handle("open-log-dir", async () => {
     const dir = defaultLogDir();
     await mkdir(dir, { recursive: true });

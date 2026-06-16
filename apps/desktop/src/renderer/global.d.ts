@@ -174,6 +174,7 @@ declare global {
         name: string
       ): Promise<{ ok: boolean; path?: string; name?: string; error?: string }>;
       openSkillsDir?(): Promise<{ ok: boolean; path: string }>;
+      openPluginsDir?(): Promise<{ ok: boolean; path?: string; error?: string }>;
       openLogDir?(): Promise<{ ok: boolean; path?: string; error?: string }>;
       openProviderConfig?(): Promise<{ ok: boolean; path?: string; error?: string }>;
       saveProfile?(profile: OnboardingProfile): Promise<SaveProfileResult>;

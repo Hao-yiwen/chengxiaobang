@@ -20,6 +20,8 @@ export const sessionSchema = z.object({
   forkMessageId: z.string().min(1).optional(),
   /** Set on sessions driven by a Feishu chat (one session per chat). */
   feishuChatId: z.string().min(1).optional(),
+  /** 微信联系人驱动的会话（一位联系人对应一个会话）。 */
+  wechatChatId: z.string().min(1).optional(),
   /** 会话级模型记忆；为空时使用 provider.model。 */
   model: z.string().min(1).optional(),
   /** 会话级推理模式记忆；为空时不覆盖 provider/平台默认。 */

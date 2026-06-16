@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
@@ -29,6 +30,8 @@ type CategoryFilter = "all" | SkillCategory;
 
 const CATEGORY_FILTERS: CategoryFilter[] = ["all", "coding", "office", "other"];
 const softBluePillClassName = "border-soft-blue-border bg-soft-blue-surface text-soft-blue-foreground";
+// 插件来源用品牌紫做小型状态标记，与 builtin(绿)/market·custom(蓝) 区分。
+const violetPillClassName = "border-violet/20 bg-violet/10 text-violet";
 const softBlueButtonClassName =
   "border border-soft-blue-border bg-soft-blue-surface text-soft-blue-foreground hover:border-soft-blue hover:bg-soft-blue-surface-hover hover:text-soft-blue-strong [&_svg]:text-soft-blue-foreground hover:[&_svg]:text-soft-blue-strong";
 
@@ -180,7 +183,9 @@ function SkillSourceBadge(props: { skill: Pick<SkillSummary, "source"> }) {
   const badgeClassName =
     props.skill.source === "builtin"
       ? "border-emerald-500/20 bg-emerald-50 text-emerald-700"
-      : softBluePillClassName;
+      : props.skill.source === "plugin"
+        ? violetPillClassName
+        : softBluePillClassName;
 
   return (
     <Badge
@@ -261,6 +266,7 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
   const confirmDialog = useConfirmDialog();
   const { skill, mine, compact = false } = props;
   const setSkillEnabled = useAppStore((state) => state.setSkillEnabled);
+  const setSkillDisabled = useAppStore((state) => state.setSkillDisabled);
   const deleteCustomSkill = useAppStore((state) => state.deleteCustomSkill);
   const setNotice = useAppStore((state) => state.setNotice);
   const [busy, setBusy] = useState(false);
@@ -320,6 +326,35 @@ function SkillActionButton(props: { skill: SkillSummary; mine?: boolean; compact
     }
     console.debug("[skills-view] 用户确认切换市场技能", { name: skill.name, enabled });
     await run(() => setSkillEnabled(skill.name, enabled));
+  }
+
+  if (skill.source === "plugin") {
+    // 插件技能随插件整包启停，这里只做「单项停用/恢复」；enabled=false 即已停用。
+    return (
+      <span
+        className="flex items-center gap-2"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        {skill.pluginName ? (
+          <span className="truncate text-micro text-violet" title={skill.pluginName}>
+            {t("skills.fromPlugin", { name: skill.pluginName })}
+          </span>
+        ) : null}
+        <Switch
+          checked={skill.enabled}
+          disabled={busy}
+          aria-label={t(skill.enabled ? "skills.disablePlugin" : "skills.enablePlugin")}
+          onCheckedChange={(checked) => {
+            console.debug("[skills-view] 切换插件技能停用态", {
+              name: skill.name,
+              enabled: checked
+            });
+            void run(() => setSkillDisabled(skill.name, !checked));
+          }}
+        />
+      </span>
+    );
   }
 
   if (skill.source === "builtin") {

@@ -134,6 +134,48 @@ export function createSettingsActions(set: AppStoreSet, get: AppStoreGet): Parti
         }
       },
 
+      async loadConnectPhoneConfig() {
+        if (!apiClientRef.current) {
+          return;
+        }
+        try {
+          const [feishuConfig, feishuStatus, wechatConfig, wechatStatus] = await Promise.all([
+            apiClientRef.current.getFeishuConfig(),
+            apiClientRef.current.getFeishuStatus(),
+            apiClientRef.current.getWechatConfig?.(),
+            apiClientRef.current.getWechatStatus?.()
+          ]);
+          set({
+            feishuConfig,
+            feishuStatus,
+            ...(wechatConfig ? { wechatConfig } : {}),
+            ...(wechatStatus ? { wechatStatus } : {})
+          });
+        } catch (error) {
+          console.warn("加载连接手机配置失败", error);
+        }
+      },
+
+      async startConnectPhoneInstall(input) {
+        if (!apiClientRef.current?.startConnectPhoneInstall) {
+          return { ok: false, target: input.target, message: "连接手机扫码服务不可用" };
+        }
+        return apiClientRef.current.startConnectPhoneInstall(input);
+      },
+
+      async pollConnectPhoneInstall(input) {
+        if (!apiClientRef.current?.pollConnectPhoneInstall) {
+          return { done: false, target: input.target, error: "连接手机扫码服务不可用" };
+        }
+        const result = await apiClientRef.current.pollConnectPhoneInstall(input);
+        if (result.done && result.target === "wechat") {
+          set({ wechatConfig: result.config, wechatStatus: result.status });
+        } else if (result.done) {
+          set({ feishuConfig: result.config, feishuStatus: result.status });
+        }
+        return result;
+      },
+
       async loadWebSearchConfig() {
         if (!apiClientRef.current?.getWebSearchConfig) {
           return;
@@ -278,12 +320,109 @@ export function createSettingsActions(set: AppStoreSet, get: AppStoreGet): Parti
         await get().refreshSlashCommands(get().activeProjectId);
       },
 
+      async setSkillDisabled(name, disabled) {
+        if (!apiClientRef.current?.setSkillDisabled) {
+          return;
+        }
+        console.info("[store] 切换插件技能停用态", { name, disabled });
+        const skills = await apiClientRef.current.setSkillDisabled(name, disabled);
+        set({ skills });
+        // 技能即 / 命令：停用集合变化后命令面板需要同步。
+        await get().refreshSlashCommands(get().activeProjectId);
+      },
+
+      async setCommandDisabled(name, disabled) {
+        if (!apiClientRef.current?.setCommandDisabled) {
+          return;
+        }
+        console.info("[store] 切换插件命令停用态", { name, disabled });
+        const { commands } = await apiClientRef.current.setCommandDisabled(
+          name,
+          disabled,
+          get().activeProjectId
+        );
+        set({ slashCommands: commands });
+      },
+
+      async loadPlugins() {
+        if (!apiClientRef.current?.listPlugins) {
+          return;
+        }
+        try {
+          set({ plugins: await apiClientRef.current.listPlugins() });
+        } catch (error) {
+          console.warn("[store] 加载插件列表失败", error);
+        }
+      },
+
+      async getPluginDetail(name) {
+        if (!apiClientRef.current?.getPluginDetail) {
+          return undefined;
+        }
+        try {
+          return await apiClientRef.current.getPluginDetail(name);
+        } catch (error) {
+          console.warn("[store] 加载插件详情失败", { name, error });
+          return undefined;
+        }
+      },
+
+      async installPlugin(input) {
+        if (!apiClientRef.current?.installPlugin) {
+          return;
+        }
+        console.info("[store] 安装插件", { path: input.path, url: input.url });
+        await apiClientRef.current.installPlugin(input);
+        // 插件携带技能/命令：安装后连锁刷新三处清单。
+        await get().loadPlugins();
+        await get().loadSkills();
+        await get().refreshSlashCommands(get().activeProjectId);
+      },
+
+      async uninstallPlugin(name) {
+        if (!apiClientRef.current?.uninstallPlugin) {
+          return;
+        }
+        console.info("[store] 卸载插件", { name });
+        const ok = await apiClientRef.current.uninstallPlugin(name);
+        if (!ok) {
+          return;
+        }
+        await get().loadPlugins();
+        await get().loadSkills();
+        await get().refreshSlashCommands(get().activeProjectId);
+      },
+
+      async setPluginEnabled(name, enabled) {
+        if (!apiClientRef.current?.setPluginEnabled) {
+          return;
+        }
+        console.info("[store] 启停插件", { name, enabled });
+        const plugins = await apiClientRef.current.setPluginEnabled(name, enabled);
+        set({ plugins });
+        // 启停插件会增删其携带的技能与命令，连锁刷新。
+        await get().loadSkills();
+        await get().refreshSlashCommands(get().activeProjectId);
+      },
+
+      async setPluginConfig(name, values) {
+        if (!apiClientRef.current?.setPluginConfig) {
+          return undefined;
+        }
+        console.info("[store] 更新插件配置", { name, keys: Object.keys(values) });
+        const detail = await apiClientRef.current.setPluginConfig(name, values);
+        // 概要里的 hasConfig/contributions 可能随配置变化，刷新插件清单。
+        await get().loadPlugins();
+        return detail;
+      },
+
       clearRunState() {
         set({
           isRunning: false,
           streamText: "",
           thinking: "",
           thinkingStartedAt: undefined,
+          activeRunStartedAt: undefined,
           events: [],
           toolActivity: undefined,
           runningTool: undefined,

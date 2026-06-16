@@ -954,6 +954,37 @@ describe("SqliteStateStore", () => {
     await store.close();
   });
 
+  it("binds sessions to wechat contacts and finds them by chat id", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const session = await store.createSession({
+      projectId: null,
+      title: "微信 · 小王",
+      accessMode: "approval",
+      wechatChatId: "wx_user1"
+    });
+
+    expect(session.wechatChatId).toBe("wx_user1");
+    await expect(store.findSessionByWechatChatId("wx_user1")).resolves.toMatchObject({
+      id: session.id,
+      title: "微信 · 小王"
+    });
+    await expect(store.findSessionByWechatChatId("wx_other")).resolves.toBeUndefined();
+
+    await store.updateSession(session.id, { accessMode: "full_access" });
+    await expect(store.findSessionByWechatChatId("wx_user1")).resolves.toMatchObject({
+      id: session.id
+    });
+
+    const plain = await store.createSession({
+      projectId: null,
+      title: "普通会话",
+      accessMode: "approval"
+    });
+    expect(plain).not.toHaveProperty("wechatChatId");
+    await store.close();
+  });
+
   it("round-trips key-value settings across restarts", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);

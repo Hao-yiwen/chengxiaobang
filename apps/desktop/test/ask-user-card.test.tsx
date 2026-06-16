@@ -216,6 +216,38 @@ describe("AskUserCard", () => {
     });
   });
 
+  it("多题模式从已回答当前题继续到下一题时不提前显示未答错误", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const onDecide = vi.fn();
+    render(
+      <AskUserCard
+        toolCall={askToolCall({
+          questions: [
+            { question: "第一个？", options: ["方案 A", "方案 B"] },
+            { question: "第二个？", options: ["方案 C", "方案 D"] }
+          ]
+        })}
+        onDecide={onDecide}
+      />
+    );
+
+    fireEvent.click(screen.getByText("方案 A"));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+    expect(screen.getByText("第二个？")).toBeInTheDocument();
+    expect(screen.queryByText("这个问题还没有回答")).not.toBeInTheDocument();
+    expect(onDecide).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(screen.getByText("这个问题还没有回答")).toBeInTheDocument();
+    expect(onDecide).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      "[AskUserCard] 当前题未回答，已阻止继续",
+      expect.objectContaining({ questionIndex: 1, toolCallId: "tool_ask" })
+    );
+  });
+
   it("多题模式会阻止未答完的提交并跳回首个缺失题", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const onDecide = vi.fn();

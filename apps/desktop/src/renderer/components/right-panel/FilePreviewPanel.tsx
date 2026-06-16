@@ -12,12 +12,12 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { Project, ProjectFileEntry } from "@chengxiaobang/shared";
 import pdfjsModuleUrl from "pdfjs-dist/build/pdf.min.mjs?url";
 import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import type { PptxViewer as PptxViewerInstance } from "@aiden0z/pptx-renderer";
 import { Markdown } from "@/components/Markdown";
+import { ProjectFileTree } from "./ProjectFileTree";
 import {
   BINARY_PREVIEW_MAX_BYTES,
   TEXT_PREVIEW_MAX_BYTES,
@@ -205,75 +205,102 @@ export function FilePreviewPanel() {
     }
   }
 
-  if (preview.status === "loading" || (path && preview.status === "idle")) {
+  function openProjectFile(relativePath: string): void {
+    console.info("[FilePreviewPanel] 从常驻项目文件树打开预览", {
+      projectId: project?.id,
+      path: relativePath
+    });
+    openFilePreview(relativePath);
+  }
+
+  const content = renderPreviewContent();
+  if (project) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+      <div className="flex h-full min-h-0">
+        <section className="min-w-0 flex-1 overflow-hidden">{content}</section>
+        <ProjectFileTree
+          project={project}
+          selectedPath={path}
+          onOpenFile={openProjectFile}
+          onPickFile={window.chengxiaobang?.pickFiles ? () => void pickFile() : undefined}
+          className="w-[288px] flex-none border-l"
+        />
       </div>
     );
   }
 
-  if (preview.status === "idle") {
-    return project ? (
-      <ProjectFileBrowser project={project} onPickFile={pickFile} />
-    ) : (
-      <EmptyPreview onPickFile={pickFile} />
-    );
-  }
+  return content;
 
-  if (preview.status === "error") {
+  function renderPreviewContent(): ReactNode {
+    if (preview.status === "loading" || (path && preview.status === "idle")) {
+      return (
+        <div className="flex h-full items-center justify-center">
+          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
+
+    if (preview.status === "idle") {
+      return <EmptyPreview onPickFile={pickFile} projectMode={Boolean(project)} />;
+    }
+
+    if (preview.status === "error") {
+      return (
+        <PreviewFailure
+          title={preview.name ?? t("rightPanel.files")}
+          path={preview.path}
+          message={`${t("rightPanel.fileLoadFailed")}${preview.error ? `：${preview.error}` : ""}`}
+          onPickFile={pickFile}
+          onOpenSystem={preview.path ? () => void openSystem(preview.path as string) : undefined}
+        />
+      );
+    }
+
+    const { info } = preview;
     return (
-      <PreviewFailure
-        title={preview.name ?? t("rightPanel.files")}
-        path={preview.path}
-        message={`${t("rightPanel.fileLoadFailed")}${preview.error ? `：${preview.error}` : ""}`}
-        onPickFile={pickFile}
-        onOpenSystem={preview.path ? () => void openSystem(preview.path as string) : undefined}
-      />
-    );
-  }
-
-  const { info } = preview;
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-none items-start justify-between gap-3 border-b px-4 py-2.5">
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <FileText className="size-4 flex-none text-muted-foreground" />
-            <p className="truncate font-mono text-micro font-medium">{info.name}</p>
+      <div className="flex h-full min-h-0 flex-col">
+        <header className="flex flex-none items-start justify-between gap-3 border-b px-4 py-2.5">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <FileText className="size-4 flex-none text-muted-foreground" />
+              <p className="truncate font-mono text-micro font-medium">{info.name}</p>
+            </div>
+            <p
+              className="mt-1 truncate font-mono text-micro text-muted-foreground"
+              title={info.path}
+            >
+              {info.path}
+            </p>
+            <p className="mt-1 font-mono text-micro text-muted-slate">
+              {info.label} · {formatBytes(info.size)}
+              {preview.truncated ? ` · ${t("rightPanel.fileTruncated")}` : ""}
+            </p>
           </div>
-          <p className="mt-1 truncate font-mono text-micro text-muted-foreground" title={info.path}>
-            {info.path}
-          </p>
-          <p className="mt-1 font-mono text-micro text-muted-slate">
-            {info.label} · {formatBytes(info.size)}
-            {preview.truncated ? ` · ${t("rightPanel.fileTruncated")}` : ""}
-          </p>
+          <div className="flex flex-none items-center gap-1">
+            <button
+              type="button"
+              title={t("rightPanel.refresh")}
+              onClick={() => setRefreshKey((value) => value + 1)}
+              className={ICON_BUTTON}
+            >
+              <RefreshCw className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              title={t("rightPanel.openExternal")}
+              onClick={() => void openSystem(info.path)}
+              className={ICON_BUTTON}
+            >
+              <ExternalLink className="size-3.5" />
+            </button>
+          </div>
+        </header>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <PreviewBody state={preview} onOpenSystem={() => void openSystem(info.path)} />
         </div>
-        <div className="flex flex-none items-center gap-1">
-          <button
-            type="button"
-            title={t("rightPanel.refresh")}
-            onClick={() => setRefreshKey((value) => value + 1)}
-            className={ICON_BUTTON}
-          >
-            <RefreshCw className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            title={t("rightPanel.openExternal")}
-            onClick={() => void openSystem(info.path)}
-            className={ICON_BUTTON}
-          >
-            <ExternalLink className="size-3.5" />
-          </button>
-        </div>
-      </header>
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <PreviewBody state={preview} onOpenSystem={() => void openSystem(info.path)} />
       </div>
-    </div>
-  );
+    );
+  }
 }
 
 function PreviewBody(props: {
@@ -323,11 +350,17 @@ function PreviewBody(props: {
   }
 }
 
-function EmptyPreview({ onPickFile }: { onPickFile: () => void }) {
+function EmptyPreview({
+  onPickFile,
+  projectMode = false
+}: {
+  onPickFile: () => void;
+  projectMode?: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-caption text-muted-foreground">
-      <p>{t("rightPanel.filesEmpty")}</p>
+      <p>{t(projectMode ? "rightPanel.filesChooseFromTree" : "rightPanel.filesEmpty")}</p>
       {window.chengxiaobang?.pickFiles ? (
         <button
           type="button"
@@ -337,174 +370,6 @@ function EmptyPreview({ onPickFile }: { onPickFile: () => void }) {
           <FolderOpen className="size-3.5" />
           {t("rightPanel.pickFile")}
         </button>
-      ) : null}
-    </div>
-  );
-}
-
-function ProjectFileBrowser(props: { project: Project; onPickFile: () => void }) {
-  const { t } = useTranslation();
-  const listProjectDirectory = useAppStore((state) => state.listProjectDirectory);
-  const openFilePreview = useAppStore((state) => state.openFilePreview);
-  const [entriesByDirectory, setEntriesByDirectory] = useState<Record<string, ProjectFileEntry[]>>(
-    {}
-  );
-  const [expandedDirectories, setExpandedDirectories] = useState<Record<string, true>>({
-    ".": true
-  });
-  const [loadingDirectories, setLoadingDirectories] = useState<Record<string, true>>({});
-  const [error, setError] = useState<string | undefined>();
-
-  const loadDirectory = useCallback(
-    async (directory: string) => {
-      console.debug("[FilePreviewPanel] 读取项目文件目录", {
-        projectId: props.project.id,
-        directory
-      });
-      setLoadingDirectories((current) => ({ ...current, [directory]: true }));
-      setError(undefined);
-      try {
-        const entries = await listProjectDirectory(directory);
-        console.info("[FilePreviewPanel] 项目文件目录读取完成", {
-          projectId: props.project.id,
-          directory,
-          count: entries.length
-        });
-        setEntriesByDirectory((current) => ({ ...current, [directory]: entries }));
-      } catch (loadError) {
-        const message = loadError instanceof Error ? loadError.message : String(loadError);
-        console.warn("[FilePreviewPanel] 项目文件目录读取失败", {
-          projectId: props.project.id,
-          directory,
-          error: message
-        });
-        setError(message);
-      } finally {
-        setLoadingDirectories((current) => {
-          const next = { ...current };
-          delete next[directory];
-          return next;
-        });
-      }
-    },
-    [listProjectDirectory, props.project.id]
-  );
-
-  useEffect(() => {
-    setEntriesByDirectory({});
-    setExpandedDirectories({ ".": true });
-    void loadDirectory(".");
-  }, [loadDirectory, props.project.id, props.project.path]);
-
-  function toggleDirectory(entry: ProjectFileEntry): void {
-    const isExpanded = Boolean(expandedDirectories[entry.path]);
-    console.debug("[FilePreviewPanel] 切换项目文件目录展开状态", {
-      projectId: props.project.id,
-      path: entry.path,
-      expanded: !isExpanded
-    });
-    setExpandedDirectories((current) => {
-      const next = { ...current };
-      if (isExpanded) {
-        delete next[entry.path];
-      } else {
-        next[entry.path] = true;
-      }
-      return next;
-    });
-    if (!isExpanded && !entriesByDirectory[entry.path]) {
-      void loadDirectory(entry.path);
-    }
-  }
-
-  function openProjectFile(entry: ProjectFileEntry): void {
-    console.info("[FilePreviewPanel] 从项目文件列表打开预览", {
-      projectId: props.project.id,
-      path: entry.path
-    });
-    openFilePreview(entry.path);
-  }
-
-  const rootEntries = entriesByDirectory["."] ?? [];
-  const rootLoading = Boolean(loadingDirectories["."]) && rootEntries.length === 0;
-
-  const renderEntry = (entry: ProjectFileEntry, depth: number): ReactNode => {
-    const isDirectory = entry.type === "directory";
-    const isExpanded = Boolean(expandedDirectories[entry.path]);
-    const children = entriesByDirectory[entry.path] ?? [];
-    const loading = Boolean(loadingDirectories[entry.path]);
-    const paddingLeft = 12 + depth * 14;
-
-    return (
-      <div key={entry.path}>
-        <button
-          type="button"
-          onClick={() => (isDirectory ? toggleDirectory(entry) : openProjectFile(entry))}
-          className="flex h-8 w-full min-w-0 items-center gap-2 rounded-xs pr-2 text-left text-caption text-foreground transition-colors hover:bg-muted"
-          style={{ paddingLeft }}
-        >
-          {isDirectory ? (
-            <FolderOpen className="size-3.5 flex-none text-muted-foreground" />
-          ) : (
-            <FileText className="size-3.5 flex-none text-muted-foreground" />
-          )}
-          <span className="min-w-0 flex-1 truncate font-mono text-micro">{entry.name}</span>
-          {loading ? <Loader2 className="size-3 animate-spin text-muted-foreground" /> : null}
-        </button>
-        {isDirectory && isExpanded
-          ? children.map((child) => renderEntry(child, depth + 1))
-          : null}
-      </div>
-    );
-  };
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex-none border-b px-4 py-3">
-        <p className="text-caption font-medium text-foreground">{t("rightPanel.projectFilesTitle")}</p>
-        <p
-          className="mt-1 truncate font-mono text-micro text-muted-foreground"
-          title={props.project.path}
-        >
-          {props.project.path}
-        </p>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto p-2">
-        {rootLoading ? (
-          <div className="flex h-full items-center justify-center">
-            <Loader2 className="size-4 animate-spin text-muted-foreground" />
-          </div>
-        ) : error ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-caption text-muted-foreground">
-            <WarningCircle className="size-5 text-warning" />
-            <p>{`${t("rightPanel.projectFilesLoadFailed")}：${error}`}</p>
-            <button
-              type="button"
-              onClick={() => void loadDirectory(".")}
-              className="rounded-sm border bg-card px-3 py-1.5 text-micro text-foreground transition-colors hover:bg-muted"
-            >
-              {t("rightPanel.refresh")}
-            </button>
-          </div>
-        ) : rootEntries.length > 0 ? (
-          rootEntries.map((entry) => renderEntry(entry, 0))
-        ) : (
-          <div className="flex h-full items-center justify-center px-4 text-center text-caption text-muted-foreground">
-            {t("rightPanel.projectFilesEmpty")}
-          </div>
-        )}
-      </div>
-      {window.chengxiaobang?.pickFiles ? (
-        <div className="flex-none border-t px-4 py-3">
-          <button
-            type="button"
-            onClick={() => void props.onPickFile()}
-            className="flex items-center gap-1.5 rounded-sm border bg-card px-3 py-1.5 text-micro text-foreground transition-colors hover:bg-muted"
-          >
-            <FolderOpen className="size-3.5" />
-            {t("rightPanel.pickFile")}
-          </button>
-        </div>
       ) : null}
     </div>
   );

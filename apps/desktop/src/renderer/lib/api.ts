@@ -3,6 +3,10 @@ import type {
   AppEvent,
   ApprovalDecision,
   ActiveRunSnapshot,
+  ConnectPhoneInstallPollInput,
+  ConnectPhoneInstallPollResult,
+  ConnectPhoneInstallStartInput,
+  ConnectPhoneInstallStartResult,
   FeishuConfig,
   FeishuConfigInput,
   FeishuInstallPollInput,
@@ -13,6 +17,10 @@ import type {
   GitChangesResult,
   GitInfo,
   Message,
+  PluginConfigValues,
+  PluginDetail,
+  PluginInstallInput,
+  PluginSummary,
   Project,
   ProjectFileEntry,
   ProviderConfig,
@@ -41,7 +49,9 @@ import type {
   ToolCall,
   UsageStats,
   WebSearchConfig,
-  WebSearchConfigInput
+  WebSearchConfigInput,
+  WechatConfig,
+  WechatStatus
 } from "@chengxiaobang/shared";
 
 type EventSubscriptionOptions = {
@@ -107,6 +117,26 @@ export interface ApiClient {
   /** 手动创建自定义技能。 */
   createCustomSkill?(input: SkillCreateInput): Promise<SkillSummary>;
   deleteCustomSkill?(name: string): Promise<boolean>;
+  /** 停用/恢复一个插件来源的技能（kind=skill），返回更新后的完整技能清单。 */
+  setSkillDisabled?(name: string, disabled: boolean): Promise<SkillSummary[]>;
+  /** 停用/恢复一个插件来源的提示词命令（kind=prompt_template），返回更新后的命令清单。 */
+  setCommandDisabled?(
+    name: string,
+    disabled: boolean,
+    projectId?: string
+  ): Promise<{ commands: SlashCommand[]; diagnostics: SlashCommandDiagnostic[] }>;
+  /** 插件页：已安装 + 内置插件的统一清单。 */
+  listPlugins?(): Promise<PluginSummary[]>;
+  /** 单个插件的详情（manifest、资源清单、配置字段与当前值），详情弹窗用。 */
+  getPluginDetail?(name: string): Promise<PluginDetail>;
+  /** 安装插件：本地目录/zip 绝对路径或 GitHub 链接，二选一。 */
+  installPlugin?(input: PluginInstallInput): Promise<PluginSummary>;
+  /** 卸载一个已安装插件（内置插件不可卸载）。 */
+  uninstallPlugin?(name: string): Promise<boolean>;
+  /** 启停插件，返回更新后的完整插件清单。 */
+  setPluginEnabled?(name: string, enabled: boolean): Promise<PluginSummary[]>;
+  /** 更新插件 userConfig 取值，返回更新后的插件详情。 */
+  setPluginConfig?(name: string, values: PluginConfigValues): Promise<PluginDetail>;
   listProviders(): Promise<ProviderConfig[]>;
   saveProvider(input: ProviderInput): Promise<ProviderConfig>;
   deleteProvider(id: string): Promise<boolean>;
@@ -129,6 +159,14 @@ export interface ApiClient {
   startFeishuInstall?(input: FeishuInstallStartInput): Promise<FeishuInstallStartResult>;
   pollFeishuInstall?(input: FeishuInstallPollInput): Promise<FeishuInstallPollResult>;
   getFeishuStatus(): Promise<FeishuStatus>;
+  startConnectPhoneInstall?(
+    input: ConnectPhoneInstallStartInput
+  ): Promise<ConnectPhoneInstallStartResult>;
+  pollConnectPhoneInstall?(
+    input: ConnectPhoneInstallPollInput
+  ): Promise<ConnectPhoneInstallPollResult>;
+  getWechatConfig?(): Promise<WechatConfig>;
+  getWechatStatus?(): Promise<WechatStatus>;
   getWebSearchConfig?(): Promise<WebSearchConfig>;
   saveWebSearchConfig?(input: WebSearchConfigInput): Promise<WebSearchConfig>;
   testWebSearchConfig?(): Promise<void>;
@@ -465,6 +503,68 @@ export async function createApiClient(): Promise<ApiClient> {
         )
       ).deleted;
     },
+    async setSkillDisabled(name, disabled) {
+      console.info("[api] 切换插件技能停用态", { name, disabled });
+      return (
+        await request<{ skills: SkillSummary[] }>(
+          `/api/skills/${encodeURIComponent(name)}/disabled`,
+          { method: "PUT", body: JSON.stringify({ disabled }) }
+        )
+      ).skills;
+    },
+    async setCommandDisabled(name, disabled, projectId) {
+      console.info("[api] 切换插件命令停用态", { name, disabled, projectId });
+      const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+      return request<{ commands: SlashCommand[]; diagnostics: SlashCommandDiagnostic[] }>(
+        `/api/slash-commands/${encodeURIComponent(name)}/disabled${query}`,
+        { method: "PUT", body: JSON.stringify({ disabled }) }
+      );
+    },
+    async listPlugins() {
+      return (await request<{ plugins: PluginSummary[] }>("/api/plugins")).plugins;
+    },
+    async getPluginDetail(name) {
+      return (
+        await request<{ plugin: PluginDetail }>(
+          `/api/plugins/detail/${encodeURIComponent(name)}`
+        )
+      ).plugin;
+    },
+    async installPlugin(input) {
+      console.info("[api] 安装插件", { path: input.path, url: input.url });
+      return (
+        await request<{ plugin: PluginSummary }>("/api/plugins/install", {
+          method: "POST",
+          body: JSON.stringify(input)
+        })
+      ).plugin;
+    },
+    async uninstallPlugin(name) {
+      console.info("[api] 卸载插件", { name });
+      return (
+        await request<{ uninstalled: boolean }>(`/api/plugins/${encodeURIComponent(name)}`, {
+          method: "DELETE"
+        })
+      ).uninstalled;
+    },
+    async setPluginEnabled(name, enabled) {
+      console.info("[api] 启停插件", { name, enabled });
+      return (
+        await request<{ plugins: PluginSummary[] }>(
+          `/api/plugins/${encodeURIComponent(name)}/enabled`,
+          { method: "PUT", body: JSON.stringify({ enabled }) }
+        )
+      ).plugins;
+    },
+    async setPluginConfig(name, values) {
+      console.info("[api] 更新插件配置", { name, keys: Object.keys(values) });
+      return (
+        await request<{ plugin: PluginDetail }>(
+          `/api/plugins/${encodeURIComponent(name)}/config`,
+          { method: "PUT", body: JSON.stringify({ values }) }
+        )
+      ).plugin;
+    },
     async listProviders() {
       return (await request<{ providers: ProviderConfig[] }>("/api/settings/providers"))
         .providers;
@@ -552,6 +652,24 @@ export async function createApiClient(): Promise<ApiClient> {
     },
     async getFeishuStatus() {
       return (await request<{ status: FeishuStatus }>("/api/settings/feishu/status")).status;
+    },
+    async startConnectPhoneInstall(input) {
+      return request<ConnectPhoneInstallStartResult>("/api/settings/connect-phone/install/start", {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+    },
+    async pollConnectPhoneInstall(input) {
+      return request<ConnectPhoneInstallPollResult>("/api/settings/connect-phone/install/poll", {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+    },
+    async getWechatConfig() {
+      return (await request<{ config: WechatConfig }>("/api/settings/wechat")).config;
+    },
+    async getWechatStatus() {
+      return (await request<{ status: WechatStatus }>("/api/settings/wechat/status")).status;
     },
     async getWebSearchConfig() {
       return (await request<{ config: WebSearchConfig }>("/api/settings/web-search")).config;

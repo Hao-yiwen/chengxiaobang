@@ -1658,4 +1658,89 @@ describe("App", () => {
     // 单轮耗时仍可持久化，但聊天正文下方不再展示耗时脚注。
     expect(screen.queryByText("用时 3 秒")).not.toBeInTheDocument();
   });
+
+  it("lists plugins and toggles a plugin on the Plugins settings section", async () => {
+    const setPluginEnabled = vi.fn(async () => [
+      {
+        name: "feishu-suite",
+        version: "1.2.0",
+        description: "飞书办公套件插件",
+        source: "installed" as const,
+        enabled: false,
+        hasConfig: false,
+        contributions: { skills: 2, commands: 1, mcpServers: 0, hooks: 0 }
+      }
+    ]);
+    const client = createClient({
+      listPlugins: vi.fn(async () => [
+        {
+          name: "feishu-suite",
+          version: "1.2.0",
+          description: "飞书办公套件插件",
+          source: "installed" as const,
+          enabled: true,
+          hasConfig: false,
+          contributions: { skills: 2, commands: 1, mcpServers: 0, hooks: 0 }
+        }
+      ]),
+      getPluginDetail: vi.fn() as never,
+      setPluginEnabled
+    });
+
+    render(<App client={client} />);
+    fireEvent.click(await screen.findByText("设置"));
+    fireEvent.click(await screen.findByText("插件"));
+
+    // 已安装插件卡片渲染出来，带名称与贡献计数。
+    const card = await screen.findByTestId("plugin-card-installed-feishu-suite");
+    expect(within(card).getByText("feishu-suite")).toBeInTheDocument();
+    expect(within(card).getByText("飞书办公套件插件")).toBeInTheDocument();
+
+    // 卡片上的启停开关命中 setPluginEnabled(name, false)。
+    fireEvent.click(within(card).getByRole("switch"));
+    await waitFor(() => expect(setPluginEnabled).toHaveBeenCalledWith("feishu-suite", false));
+  });
+
+  it("shows plugin-sourced commands and disables them on the Commands settings section", async () => {
+    const setCommandDisabled = vi.fn(async () => ({
+      commands: [],
+      diagnostics: []
+    }));
+    const client = createClient({
+      listSlashCommands: vi.fn(async () => ({
+        commands: [
+          {
+            id: "plugin:feishu-suite:/report",
+            name: "/report",
+            kind: "prompt_template" as const,
+            description: "生成周报",
+            source: "plugin" as const,
+            insertText: "/report ",
+            pluginName: "feishu-suite",
+            argumentHint: "[范围]",
+            enabled: true
+          }
+        ],
+        diagnostics: []
+      })),
+      setCommandDisabled
+    });
+
+    render(<App client={client} />);
+    fireEvent.click(await screen.findByText("设置"));
+    fireEvent.click(await screen.findByText("命令"));
+
+    const list = await screen.findByTestId("settings-commands-list");
+    expect(within(list).getByText("/report")).toBeInTheDocument();
+    expect(within(list).getByText("生成周报")).toBeInTheDocument();
+    expect(within(list).getByText("[范围]")).toBeInTheDocument();
+    // 来源标签显示「来自 {pluginName}」。
+    expect(within(list).getByText("来自 feishu-suite")).toBeInTheDocument();
+
+    // 插件来源的提示词命令带开关，关闭后命中 setCommandDisabled(name, true, projectId?)。
+    fireEvent.click(within(list).getByRole("switch"));
+    await waitFor(() =>
+      expect(setCommandDisabled).toHaveBeenCalledWith("report", true, undefined)
+    );
+  });
 });

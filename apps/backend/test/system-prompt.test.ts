@@ -60,4 +60,37 @@ describe("buildSystemPrompt", () => {
     expect(viaFeishu).toContain("不要调用 FeishuSendMessage 重复发送你的回复");
     expect(viaFeishu).not.toContain("<artifacts>");
   });
+
+  it("注入 ZCode 骨架段：Harness、代码与协作规范、上下文管理、安全段", () => {
+    const prompt = buildSystemPrompt({ workspacePath: "/w", accessMode: "approval" });
+    expect(prompt).toContain("# Harness");
+    expect(prompt).toContain("<system-reminder>");
+    expect(prompt).toContain("文件路径:行号");
+    expect(prompt).toContain("# 代码与协作规范");
+    expect(prompt).toContain("# 上下文管理");
+    expect(prompt).toContain("# 环境信息");
+    expect(prompt).toContain("CTF");
+  });
+
+  it("环境信息段：environment 提供时含 Git/Shell/操作系统/模型与 Git 快照", () => {
+    const base = buildSystemPrompt({ workspacePath: "/w", accessMode: "approval" });
+    expect(base).not.toContain("是否 Git 仓库");
+
+    const withEnv = buildSystemPrompt({
+      workspacePath: "/w",
+      accessMode: "approval",
+      environment: {
+        isGitRepo: true,
+        shell: "zsh",
+        osVersion: "darwin 25.5.0 arm64",
+        model: "glm-test",
+        gitStatus: "这是对话开始时的 Git 状态快照，对话过程中不会更新。\n当前分支: main"
+      }
+    });
+    expect(withEnv).toContain("是否 Git 仓库: 是");
+    expect(withEnv).toContain("Shell: zsh");
+    expect(withEnv).toContain("操作系统: darwin 25.5.0 arm64");
+    expect(withEnv).toContain("当前驱动模型: glm-test");
+    expect(withEnv).toContain("当前分支: main");
+  });
 });

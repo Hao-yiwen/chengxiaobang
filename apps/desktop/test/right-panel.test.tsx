@@ -389,8 +389,14 @@ function installPreviewBridge(options: {
 
 /** Opens the panel via the toggle and enters a tool page from the menu. */
 async function openPane(name: string): Promise<void> {
-  fireEvent.click(await screen.findByTitle("打开侧边面板"));
-  fireEvent.click(await screen.findByRole("button", { name }));
+  const toggle = await screen.findByTitle("打开侧边面板");
+  await act(async () => {
+    fireEvent.click(toggle);
+  });
+  const button = await screen.findByRole("button", { name });
+  await act(async () => {
+    fireEvent.click(button);
+  });
 }
 
 async function selectSession(title: string): Promise<void> {
@@ -536,9 +542,8 @@ describe("right panel", () => {
     expect(useAppStore.getState().rightPanelMode).toBeNull();
     expect(screen.queryByTestId("right-panel")).not.toBeInTheDocument();
     expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
-    expect(await screen.findByText("执行清单")).toBeInTheDocument();
+    expect(screen.getByText("运行中")).toBeInTheDocument();
     expect(screen.getByText("共享契约完成")).toBeInTheDocument();
-    expect(screen.getByText("完成")).toBeInTheDocument();
   });
 
   it("shows historical todo progress after loading a completed session", async () => {
@@ -581,7 +586,7 @@ describe("right panel", () => {
     expect(useAppStore.getState().progressPanelOpen).toBe(false);
     expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
     expect(screen.getByText("最近清单")).toBeInTheDocument();
-    expect(screen.getByText("执行清单")).toBeInTheDocument();
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
     expect(screen.getByText("项目结构读取完成")).toBeInTheDocument();
   });
 
@@ -617,9 +622,82 @@ describe("right panel", () => {
     await selectSession("项目对话");
 
     expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
-    expect(screen.getByText("执行清单")).toBeInTheDocument();
+    expect(screen.getByText("最近清单")).toBeInTheDocument();
     expect(screen.getByText("1 / 1")).toBeInTheDocument();
     expect(screen.getByText("页面已完成")).toBeInTheDocument();
+  });
+
+  it("collapses and expands the completed todo group", async () => {
+    const client = createClient();
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.handleRunEvent(
+        { type: "run_started", runId: "run_todo", sessionId: session.id },
+        { force: true }
+      );
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall(
+            "todo_1",
+            "TodoWrite",
+            todoArgs([
+              { content: "共享契约完成", status: "completed" },
+              { content: "接入右侧面板", status: "in_progress" }
+            ])
+          )
+        },
+        { force: true }
+      );
+    });
+
+    expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
+    const toggle = screen.getByText("已完成 1 项").closest("button") as HTMLButtonElement;
+    // 默认展开：已完成项可见。
+    expect(screen.getByText("共享契约完成")).toBeInTheDocument();
+    // 收起后已完成项隐藏，进行中项仍在。
+    fireEvent.click(toggle);
+    expect(screen.queryByText("共享契约完成")).not.toBeInTheDocument();
+    expect(screen.getByText("接入右侧面板")).toBeInTheDocument();
+    // 再次展开恢复。
+    fireEvent.click(toggle);
+    expect(screen.getByText("共享契约完成")).toBeInTheDocument();
+  });
+
+  it("shows an all-done footer when the active run finishes its todo", async () => {
+    const client = createClient();
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.handleRunEvent(
+        { type: "run_started", runId: "run_todo", sessionId: session.id },
+        { force: true }
+      );
+      store.handleRunEvent(
+        {
+          type: "tool_call",
+          runId: "run_todo",
+          toolCall: todoToolCall(
+            "todo_1",
+            "TodoWrite",
+            todoArgs([{ content: "全部搞定", status: "completed" }])
+          )
+        },
+        { force: true }
+      );
+    });
+
+    expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
+    expect(screen.getByText("全部完成")).toBeInTheDocument();
+    expect(screen.getByText("已完成 1 / 1")).toBeInTheDocument();
   });
 
   it("treats the latest empty TodoWrite snapshot as cleared progress", async () => {
@@ -807,8 +885,8 @@ describe("right panel", () => {
     });
 
     expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
-    expect(screen.getByText("当前运行")).toBeInTheDocument();
-    expect(screen.getByText("执行清单")).toBeInTheDocument();
+    expect(screen.getByText("运行中")).toBeInTheDocument();
+    expect(screen.getByText("开始执行")).toBeInTheDocument();
   });
 
   it("keeps progress updates in the floating panel without opening the right panel", async () => {
@@ -1005,7 +1083,7 @@ describe("right panel", () => {
     expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "终端" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "文件预览" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "变更" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "审查" })).not.toBeInTheDocument();
   });
 
   it("hides changes for a non-git project but keeps project tools", async () => {
@@ -1025,7 +1103,7 @@ describe("right panel", () => {
     expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
     await waitFor(() => expect(getGitInfo).toHaveBeenCalledWith(project.id));
-    expect(screen.queryByRole("button", { name: "变更" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "审查" })).not.toBeInTheDocument();
   });
 
   it("lists active project files in the file preview panel and opens them with project context", async () => {
@@ -1232,11 +1310,65 @@ describe("right panel", () => {
 
     fireEvent.click(await screen.findByTitle("打开侧边面板"));
 
-    expect(await screen.findByRole("button", { name: "变更" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "审查" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "终端" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "文件预览" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
+  });
+
+  it("opens a review workspace with diff and a persistent project file tree", async () => {
+    const rootEntries: ProjectFileEntry[] = [
+      { name: "src", path: "src", type: "directory" },
+      { name: "README.md", path: "README.md", type: "file" }
+    ];
+    const srcEntries: ProjectFileEntry[] = [
+      { name: "a.ts", path: "src/a.ts", type: "file" }
+    ];
+    const getGitInfo = vi.fn(async () => ({ isRepo: true }));
+    const getGitChanges = vi.fn(async () => ({
+      isRepo: true,
+      files: [
+        {
+          path: "src/a.ts",
+          status: " M",
+          diff: [
+            "diff --git a/src/a.ts b/src/a.ts",
+            "--- a/src/a.ts",
+            "+++ b/src/a.ts",
+            "@@ -1 +1 @@",
+            "-old line",
+            "+new line"
+          ].join("\n")
+        },
+        {
+          path: "README.md",
+          status: "??",
+          diff: "+intro"
+        }
+      ]
+    }));
+    const listProjectDirectory = vi.fn(async (projectId: string, path = ".") => {
+      if (projectId !== project.id) {
+        return [];
+      }
+      return path === "src" ? srcEntries : rootEntries;
+    });
+    const client = createClient({ getGitInfo, getGitChanges, listProjectDirectory });
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+    await openPane("审查");
+
+    expect(await screen.findByText("src/a.ts")).toBeInTheDocument();
+    expect(screen.getByText("+2")).toBeInTheDocument();
+    expect(screen.getByText("-1")).toBeInTheDocument();
+    expect(screen.getByText("new line")).toBeInTheDocument();
+    expect(screen.getByText("old line")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("筛选文件…")).toBeInTheDocument();
+    expect(listProjectDirectory).toHaveBeenCalledWith(project.id, ".");
+    expect(listProjectDirectory).toHaveBeenCalledWith(project.id, "src");
   });
 
   it("returns to the menu when switching from a project-only panel to a conversation", async () => {
@@ -1259,7 +1391,7 @@ describe("right panel", () => {
     expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "终端" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "文件预览" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "变更" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "审查" })).not.toBeInTheDocument();
   });
 
   it("hides the panel toggle on the home view", async () => {

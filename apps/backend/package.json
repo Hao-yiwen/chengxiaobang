@@ -15,17 +15,21 @@
     "@earendil-works/pi-agent-core": "0.78.1",
     "@earendil-works/pi-ai": "0.78.1",
     "@larksuiteoapi/node-sdk": "1.66.1",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@tencent-weixin/openclaw-weixin": "2.4.3",
+    "adm-zip": "^0.5.16",
     "croner": "^10.0.1",
     "docx": "^9.7.1",
     "exceljs": "^4.4.0",
     "hono": "^4.12.25",
-    "js-yaml": "4.1.0",
     "js-tiktoken": "^1.0.21",
+    "js-yaml": "4.1.0",
     "pptxgenjs": "^4.0.1",
     "sql.js": "1.13.0",
     "zod": "4.2.0"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/sql.js": "1.4.9",
     "esbuild": "0.27.7"
   }

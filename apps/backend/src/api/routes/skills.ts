@@ -5,6 +5,7 @@ import { SkillMarketError } from "../../tools/skill-market-service";
 import type { AppContext } from "../context";
 
 const marketToggleSchema = z.object({ enabled: z.boolean() });
+const disabledToggleSchema = z.object({ disabled: z.boolean() });
 
 export function skillRoutes(context: AppContext): Hono {
   const app = new Hono();
@@ -94,6 +95,17 @@ export function skillRoutes(context: AppContext): Hono {
       }
       throw error;
     }
+  });
+
+  // 单项停用/恢复插件来源技能（写入 skills.disabled 黑名单），返回刷新后的技能列表。
+  app.put("/:name/disabled", async (c) => {
+    if (!context.skillMarketService) {
+      return c.json({ error: "技能市场服务不可用" }, 404);
+    }
+    const name = c.req.param("name");
+    const { disabled } = disabledToggleSchema.parse(await c.req.json());
+    const skills = await context.skillMarketService.setSkillDisabled(name, disabled);
+    return c.json({ skills });
   });
 
   return app;

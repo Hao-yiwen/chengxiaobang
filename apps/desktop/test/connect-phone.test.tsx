@@ -3,7 +3,16 @@ import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FeishuConfig, FeishuStatus, ProviderConfig, Session } from "@chengxiaobang/shared";
+import type {
+  ConnectPhoneInstallStartInput,
+  ConnectPhoneInstallPollResult,
+  FeishuConfig,
+  FeishuStatus,
+  ProviderConfig,
+  Session,
+  WechatConfig,
+  WechatStatus
+} from "@chengxiaobang/shared";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
@@ -27,6 +36,12 @@ const connectedFeishuConfig: FeishuConfig = {
   fullAccess: false
 };
 
+const connectedWechatConfig: WechatConfig = {
+  enabled: true,
+  accountId: "wechat_account",
+  sessionKey: "wechat_session"
+};
+
 function session(overrides: Partial<Session>): Session {
   return {
     id: "session_1",
@@ -38,6 +53,31 @@ function session(overrides: Partial<Session>): Session {
     updatedAt: "2026-06-15T09:00:00.000Z",
     ...overrides
   };
+}
+
+function qrStart(input: ConnectPhoneInstallStartInput) {
+  return {
+    ok: true as const,
+    target: input.target,
+    url:
+      input.target === "wechat"
+        ? "data:image/png;base64,ZmFrZQ=="
+        : "https://open.feishu.cn/page/cli?user_code=QR-CODE",
+    deviceCode: `${input.target}-device`,
+    userCode: "",
+    interval: 3,
+    expiresIn: 120
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }
 
 function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
@@ -72,16 +112,13 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
       })
     ),
     saveFeishuConfig: vi.fn() as never,
-    startFeishuInstall: vi.fn(async () => ({
-      ok: true,
-      url: "https://open.feishu.cn/page/cli?user_code=QR-CODE",
-      deviceCode: "device-qr",
-      userCode: "QR-CODE",
-      interval: 3,
-      expiresIn: 120
-    })),
+    startFeishuInstall: vi.fn() as never,
     pollFeishuInstall: vi.fn(async () => ({ done: false })),
     getFeishuStatus: vi.fn(async (): Promise<FeishuStatus> => ({ status: "disconnected" })),
+    getWechatConfig: vi.fn(async (): Promise<WechatConfig> => ({ enabled: false, accountId: "" })),
+    getWechatStatus: vi.fn(async (): Promise<WechatStatus> => ({ status: "disconnected" })),
+    startConnectPhoneInstall: vi.fn(async (input) => qrStart(input)),
+    pollConnectPhoneInstall: vi.fn(async (input) => ({ done: false, target: input.target })),
     listTasks: vi.fn(async () => []),
     updateTask: vi.fn() as never,
     deleteTask: vi.fn(async () => true),
@@ -107,42 +144,49 @@ afterEach(() => {
 async function openConnectPhone(client: ApiClient): Promise<void> {
   render(<App client={client} />);
   await waitFor(() => expect(client.listProjects).toHaveBeenCalled());
-  fireEvent.click(screen.getByRole("button", { name: "连接飞书" }));
-  await screen.findAllByText("连接飞书");
+  fireEvent.click(
+    screen.queryByRole("button", { name: "连接手机" }) ??
+      screen.getByRole("button", { name: "连接飞书" })
+  );
+  await screen.findByTestId("connect-phone-panel");
 }
 
 describe("ConnectPhoneView", () => {
-  it("auto-generates a Feishu QR code when no connection is configured", async () => {
-    const startFeishuInstall = vi.fn(async () => ({
-      ok: true,
-      url: "https://open.feishu.cn/page/cli?user_code=QR-CODE",
-      deviceCode: "device-qr",
-      userCode: "QR-CODE",
-      interval: 3,
-      expiresIn: 120
-    }));
-    const client = createClient({ startFeishuInstall: startFeishuInstall as never });
+  it("shows WeChat by default and automatically generates a WeChat QR", async () => {
+    const startConnectPhoneInstall = vi.fn(async (input: ConnectPhoneInstallStartInput) => qrStart(input));
+    const client = createClient({ startConnectPhoneInstall });
 
     await openConnectPhone(client);
 
-    expect(screen.getByTestId("connect-phone-feishu-panel")).toHaveClass("rounded-sm", "border");
-    await waitFor(() => expect(startFeishuInstall).toHaveBeenCalledWith({ domain: "feishu" }));
-    expect(screen.getByText("用飞书扫码授权后，程小帮会自动完成绑定，并在桌面端接收来自手机的消息。")).toBeInTheDocument();
-    expect(screen.getByText("扫码快连")).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "绑定列表" })).not.toBeInTheDocument();
-    expect(screen.getByTestId("feishu-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
-    expect(screen.getByTestId("feishu-qr-frame")).toBeInTheDocument();
-    expect(screen.getByAltText("手机飞书聊天页插画")).toBeInTheDocument();
-    expect(screen.queryByText(/秒后过期/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "刷新" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("connect-phone-panel")).toHaveClass("rounded-sm", "border");
+    expect(screen.getByRole("button", { name: "微信" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "飞书 / Lark" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("用微信或飞书扫码连接程小帮，在手机里继续对话与触发任务。")).toBeInTheDocument();
+    expect(screen.getByText("微信扫码连接")).toBeInTheDocument();
+    expect(screen.getByAltText("手机微信聊天页插画")).toBeInTheDocument();
+
+    await waitFor(() => expect(startConnectPhoneInstall).toHaveBeenCalledWith({ target: "wechat" }));
+    expect(screen.getByTestId("wechat-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
+    expect(screen.getByTestId("connect-phone-qr-frame")).toBeInTheDocument();
     expect(screen.queryByLabelText("App ID")).not.toBeInTheDocument();
-    expect(screen.queryByText("展开手动配置")).not.toBeInTheDocument();
     expect(screen.queryByText("允许完全访问")).not.toBeInTheDocument();
-    expect(screen.queryByText("Lark（国际版）")).not.toBeInTheDocument();
   });
 
-  it("shows the binding list by default when a connection and bound sessions exist", async () => {
-    const startFeishuInstall = vi.fn();
+  it("can switch to Feishu / Lark and generate the Feishu QR path", async () => {
+    const startConnectPhoneInstall = vi.fn(async (input: ConnectPhoneInstallStartInput) => qrStart(input));
+    const client = createClient({ startConnectPhoneInstall });
+
+    await openConnectPhone(client);
+    fireEvent.click(screen.getByRole("button", { name: "飞书 / Lark" }));
+
+    await waitFor(() => expect(startConnectPhoneInstall).toHaveBeenCalledWith({ target: "feishu" }));
+    expect(screen.getByText("飞书 / Lark 扫码连接")).toBeInTheDocument();
+    expect(screen.getByTestId("feishu-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
+    expect(screen.getByAltText("手机飞书聊天页插画")).toBeInTheDocument();
+  });
+
+  it("shows the Feishu binding list by default when only Feishu is configured", async () => {
+    const startConnectPhoneInstall = vi.fn();
     const bound = session({
       id: "session_feishu",
       title: "飞书 · 张三",
@@ -156,52 +200,56 @@ describe("ConnectPhoneView", () => {
       listSessions: vi.fn(async () => [bound, plain]),
       getFeishuConfig: vi.fn(async () => connectedFeishuConfig),
       getFeishuStatus: vi.fn(async () => ({ status: "connected" }) satisfies FeishuStatus),
-      startFeishuInstall: startFeishuInstall as never
+      startConnectPhoneInstall: startConnectPhoneInstall as never
     });
 
     await openConnectPhone(client);
 
     const bindingList = await screen.findByTestId("feishu-binding-list");
-    expect(bindingList).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "飞书 / Lark" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("tab", { name: "绑定列表" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "扫码连接" })).toHaveAttribute("aria-selected", "false");
     expect(within(bindingList).getByText("飞书 · 张三")).toBeInTheDocument();
     expect(within(bindingList).queryByText("普通会话")).not.toBeInTheDocument();
-    expect(startFeishuInstall).not.toHaveBeenCalled();
+    expect(startConnectPhoneInstall).not.toHaveBeenCalled();
 
     fireEvent.click(within(bindingList).getByText("飞书 · 张三"));
     await waitFor(() => expect(client.listMessages).toHaveBeenCalledWith("session_feishu"));
   });
 
-  it("shows an empty binding list for an existing connection without bound sessions", async () => {
-    const startFeishuInstall = vi.fn();
+  it("shows WeChat bound sessions when WeChat is configured", async () => {
+    const startConnectPhoneInstall = vi.fn(async (input: ConnectPhoneInstallStartInput) => qrStart(input));
+    const bound = session({
+      id: "session_wechat",
+      title: "微信 · 小王",
+      wechatChatId: "wx_user1"
+    });
+    const feishu = session({
+      id: "session_feishu",
+      title: "飞书 · 张三",
+      feishuChatId: "oc_chat1"
+    });
     const client = createClient({
-      getFeishuConfig: vi.fn(async () => connectedFeishuConfig),
-      getFeishuStatus: vi.fn(async () => ({ status: "connected" }) satisfies FeishuStatus),
-      startFeishuInstall: startFeishuInstall as never
+      listSessions: vi.fn(async () => [bound, feishu]),
+      getWechatConfig: vi.fn(async () => connectedWechatConfig),
+      getWechatStatus: vi.fn(async () => ({ status: "connected" }) satisfies WechatStatus),
+      startConnectPhoneInstall
     });
 
     await openConnectPhone(client);
 
-    expect(await screen.findByTestId("feishu-binding-empty")).toBeInTheDocument();
-    expect(screen.getByText("暂无绑定会话")).toBeInTheDocument();
-    expect(screen.getByText("在飞书里私聊机器人，或在群聊里 @ 机器人，绑定会话会自动出现在这里。")).toBeInTheDocument();
-    expect(startFeishuInstall).not.toHaveBeenCalled();
+    const bindingList = await screen.findByTestId("wechat-binding-list");
+    expect(screen.getByRole("button", { name: "微信" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(bindingList).getByText("微信 · 小王")).toBeInTheDocument();
+    expect(within(bindingList).queryByText("飞书 · 张三")).not.toBeInTheDocument();
+    expect(startConnectPhoneInstall).not.toHaveBeenCalled();
   });
 
-  it("uses the plus button to add a new connection from the binding tab", async () => {
-    const startFeishuInstall = vi.fn(async () => ({
-      ok: true,
-      url: "https://open.feishu.cn/page/cli?user_code=PLUS",
-      deviceCode: "device-plus",
-      userCode: "PLUS",
-      interval: 3,
-      expiresIn: 120
-    }));
+  it("uses the plus button to add a new Feishu connection from the binding tab", async () => {
+    const startConnectPhoneInstall = vi.fn(async (input: ConnectPhoneInstallStartInput) => qrStart(input));
     const client = createClient({
       getFeishuConfig: vi.fn(async () => connectedFeishuConfig),
       getFeishuStatus: vi.fn(async () => ({ status: "connected" }) satisfies FeishuStatus),
-      startFeishuInstall: startFeishuInstall as never
+      startConnectPhoneInstall
     });
 
     await openConnectPhone(client);
@@ -209,112 +257,110 @@ describe("ConnectPhoneView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "新增连接" }));
 
-    await waitFor(() => expect(startFeishuInstall).toHaveBeenCalledWith({ domain: "feishu" }));
+    await waitFor(() => expect(startConnectPhoneInstall).toHaveBeenCalledWith({ target: "feishu" }));
     expect(screen.getByRole("tab", { name: "扫码连接" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("feishu-qr-frame")).toBeInTheDocument();
+    expect(await screen.findByTestId("connect-phone-qr-frame")).toBeInTheDocument();
   });
 
-  it("refreshes the QR code when the plus button is clicked on the scan tab", async () => {
-    const startFeishuInstall = vi.fn(async () => ({
-      ok: true,
-      url: "https://open.feishu.cn/page/cli?user_code=PLUS",
-      deviceCode: "device-plus",
-      userCode: "PLUS",
-      interval: 3,
-      expiresIn: 120
-    }));
-    const client = createClient({
-      getFeishuConfig: vi.fn(async () => connectedFeishuConfig),
-      getFeishuStatus: vi.fn(async () => ({ status: "connected" }) satisfies FeishuStatus),
-      startFeishuInstall: startFeishuInstall as never
-    });
-
-    await openConnectPhone(client);
-    await screen.findByTestId("feishu-binding-empty");
-
-    fireEvent.click(screen.getByRole("button", { name: "新增连接" }));
-    await waitFor(() => expect(startFeishuInstall).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole("button", { name: "新增连接" }));
-
-    await waitFor(() => expect(startFeishuInstall).toHaveBeenCalledTimes(2));
-  });
-
-  it("returns to the binding list after a successful install", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+  it("returns to the binding list after a successful WeChat install", async () => {
     const listSessions = vi.fn(async () => []);
-    const startFeishuInstall = vi.fn(async () => ({
-      ok: true,
-      url: "https://open.feishu.cn/page/cli?user_code=QR-CODE",
-      deviceCode: "device-success",
-      userCode: "QR-CODE",
-      interval: 3,
-      expiresIn: 120
-    }));
-    const pollFeishuInstall = vi.fn(async () => ({
-      done: true,
-      config: {
-        enabled: true,
-        appId: "cli_scan",
-        appSecretRef: "memory:feishu",
-        domain: "lark",
-        fullAccess: false
-      } satisfies FeishuConfig,
-      status: { status: "connected" } satisfies FeishuStatus
+    const startConnectPhoneInstall = vi.fn(async (input: ConnectPhoneInstallStartInput) => qrStart(input));
+    const pollConnectPhoneInstall = vi.fn(async () => ({
+      done: true as const,
+      target: "wechat" as const,
+      config: connectedWechatConfig,
+      status: { status: "connected", accountId: "wechat_account" } satisfies WechatStatus
     }));
     const client = createClient({
       listSessions,
-      startFeishuInstall: startFeishuInstall as never,
-      pollFeishuInstall: pollFeishuInstall as never
+      startConnectPhoneInstall,
+      pollConnectPhoneInstall
     });
 
     await openConnectPhone(client);
-    await act(async () => {
-      await Promise.resolve();
+
+    await waitFor(() => expect(pollConnectPhoneInstall).toHaveBeenCalledWith({
+      target: "wechat",
+      deviceCode: "wechat-device"
+    }));
+    expect(await screen.findByTestId("wechat-binding-empty")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "绑定列表" })).toHaveAttribute("aria-selected", "true");
+    expect(listSessions).toHaveBeenCalled();
+  });
+
+  it("keeps a stale WeChat poll from replacing success with an expired QR error", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const firstPoll = deferred<ConnectPhoneInstallPollResult>();
+    const secondPoll = deferred<ConnectPhoneInstallPollResult>();
+    const startConnectPhoneInstall = vi.fn(async (input: ConnectPhoneInstallStartInput) => qrStart(input));
+    const pollConnectPhoneInstall = vi
+      .fn<NonNullable<ApiClient["pollConnectPhoneInstall"]>>()
+      .mockImplementationOnce(async () => firstPoll.promise)
+      .mockImplementationOnce(async () => secondPoll.promise);
+    const client = createClient({
+      startConnectPhoneInstall,
+      pollConnectPhoneInstall
     });
-    expect(startFeishuInstall).toHaveBeenCalledWith({ domain: "feishu" });
-    expect(screen.getByTestId("feishu-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
-    expect(screen.getByTestId("feishu-qr-frame")).toBeInTheDocument();
+
+    await openConnectPhone(client);
+    await waitFor(() => expect(pollConnectPhoneInstall).toHaveBeenCalledTimes(1));
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
+    await waitFor(() => expect(pollConnectPhoneInstall).toHaveBeenCalledTimes(2));
 
-    expect(pollFeishuInstall).toHaveBeenCalledWith({ deviceCode: "device-success" });
-    expect(await screen.findByTestId("feishu-binding-empty")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "绑定列表" })).toHaveAttribute("aria-selected", "true");
-    expect(listSessions).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      firstPoll.resolve({
+        done: true,
+        target: "wechat",
+        config: connectedWechatConfig,
+        status: { status: "connected", accountId: "wechat_account" } satisfies WechatStatus
+      });
+      await firstPoll.promise;
+    });
+    expect(await screen.findByTestId("wechat-binding-empty")).toBeInTheDocument();
+
+    await act(async () => {
+      secondPoll.resolve({
+        done: false,
+        target: "wechat",
+        error: "扫码状态已过期，请重新生成二维码"
+      });
+      await secondPoll.promise;
+    });
+
+    expect(screen.getByTestId("wechat-binding-empty")).toBeInTheDocument();
+    expect(screen.queryByText("扫码状态已过期，请重新生成二维码")).not.toBeInTheDocument();
   });
 
   it("marks the QR code as expired and allows retry", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const startFeishuInstall = vi.fn(async () => ({
-      ok: true,
-      url: "https://open.feishu.cn/page/cli?user_code=EXP",
+    const startConnectPhoneInstall = vi.fn(async (input: ConnectPhoneInstallStartInput) => ({
+      ...qrStart(input),
       deviceCode: "device-expired",
-      userCode: "EXP",
-      interval: 30,
       expiresIn: 1
     }));
-    const client = createClient({ startFeishuInstall: startFeishuInstall as never });
+    const client = createClient({ startConnectPhoneInstall });
 
     await openConnectPhone(client);
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByTestId("feishu-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
-    expect(screen.getByTestId("feishu-qr-frame")).toBeInTheDocument();
+    expect(screen.getByTestId("wechat-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
+    expect(screen.getByTestId("connect-phone-qr-frame")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "刷新" })).not.toBeInTheDocument();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
 
-    expect(screen.getByTestId("feishu-qr-frame")).toBeInTheDocument();
+    expect(screen.getByTestId("connect-phone-qr-frame")).toBeInTheDocument();
     expect(screen.queryByText("二维码已过期")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "刷新" }));
     await act(async () => {
       await Promise.resolve();
     });
-    expect(startFeishuInstall).toHaveBeenCalledTimes(2);
+    expect(startConnectPhoneInstall).toHaveBeenCalledTimes(2);
   });
 });

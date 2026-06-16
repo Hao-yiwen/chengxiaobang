@@ -1,0 +1,8 @@
+{
+  "name": "skill-creator",
+  "version": "0.1.0",
+  "description": "创建、编辑并迭代本地 ZCode 技能。",
+  "author": { "name": "Z.ai" },
+  "license": "MIT",
+  "skills": "skills"
+}

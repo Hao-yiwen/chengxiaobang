@@ -69,6 +69,9 @@ import { buildAgentMessages } from "./history";
 import { RunEventTranslator } from "./pi-events";
 import { ProjectApprovalTrustService } from "./project-approval-trust";
 import { buildSystemPrompt } from "./system-prompt";
+import { collectEnvironmentContext } from "./environment-context";
+import { buildProjectInstructionMessage, findInstructionFile } from "./project-instructions";
+import { buildContextReminderMessage, buildReminderMessage } from "./system-reminders";
 import {
   compactableMessages,
   compactSessionHistory,
@@ -323,7 +326,8 @@ export class AgentRunner {
       ...createScheduleTools({
         store: this.store,
         sessionId: session.id,
-        ...(session.feishuChatId ? { feishuChatId: session.feishuChatId } : {})
+        ...(session.feishuChatId ? { feishuChatId: session.feishuChatId } : {}),
+        ...(session.wechatChatId ? { wechatChatId: session.wechatChatId } : {})
       })
     ];
     const availableTools = selectAgentTools(tools, {
@@ -331,6 +335,11 @@ export class AgentRunner {
       viaFeishu,
       headless: false
     }).map(toAgentDebugTool);
+    const environment = await collectEnvironmentContext({
+      workspacePath,
+      ...(session.model ? { model: session.model } : {})
+    });
+    const leadingMessages = await this.buildLeadingMessages({ workspacePath, skills });
     const systemPrompt = buildSystemPrompt({
       workspacePath,
       accessMode: session.accessMode,
@@ -339,7 +348,7 @@ export class AgentRunner {
       headless: false,
       planMode,
       ...(planMode && planSnapshot ? { planSnapshot } : {}),
-      skills,
+      environment,
       ...(await this.memoryPromptInput())
     });
 
@@ -357,7 +366,10 @@ export class AgentRunner {
         ? { compactedUpToMessageId: session.compactedUpToMessageId }
         : {}),
       systemPrompt,
-      modelMessages: buildAgentMessages(rows, session.compactedUpToMessageId),
+      modelMessages: [
+        ...leadingMessages,
+        ...buildAgentMessages(rows, session.compactedUpToMessageId)
+      ],
       messages: rows.map(toClientMessage),
       runs,
       toolCalls,
@@ -419,9 +431,16 @@ export class AgentRunner {
       ...createScheduleTools({
         store: this.store,
         sessionId: session.id,
-        ...(session.feishuChatId ? { feishuChatId: session.feishuChatId } : {})
+        ...(session.feishuChatId ? { feishuChatId: session.feishuChatId } : {}),
+        ...(session.wechatChatId ? { wechatChatId: session.wechatChatId } : {})
       })
     ];
+    const environment = await collectEnvironmentContext({
+      workspacePath,
+      model: provider.model,
+      includeGitStatus: false
+    });
+    const leadingMessages = await this.buildLeadingMessages({ workspacePath, skills });
     const usage = buildContextUsageReport({
       sessionId: session.id,
       provider,
@@ -433,10 +452,13 @@ export class AgentRunner {
         headless: false,
         planMode,
         planSnapshot,
-        skills,
+        environment,
         ...(await this.memoryPromptInput())
       }),
-      messages: buildAgentMessages(rows, session.compactedUpToMessageId),
+      messages: [
+        ...leadingMessages,
+        ...buildAgentMessages(rows, session.compactedUpToMessageId)
+      ],
       tools: selectAgentTools(tools, { planPhase, viaFeishu, headless: false }),
       sessionCostCny,
       compactedUpToMessageId: session.compactedUpToMessageId
@@ -656,7 +678,8 @@ export class AgentRunner {
         ...createScheduleTools({
           store: this.store,
           sessionId: activeSession.id,
-          ...(activeSession.feishuChatId ? { feishuChatId: activeSession.feishuChatId } : {})
+          ...(activeSession.feishuChatId ? { feishuChatId: activeSession.feishuChatId } : {}),
+          ...(activeSession.wechatChatId ? { wechatChatId: activeSession.wechatChatId } : {})
         })
       ];
       const planSnapshot = planMode
@@ -669,6 +692,11 @@ export class AgentRunner {
           ? "execute"
           : "draft"
         : "none";
+      const environment = await collectEnvironmentContext({
+        workspacePath,
+        model: provider.model
+      });
+      const leadingMessages = await this.buildLeadingMessages({ workspacePath, skills });
       const systemPrompt = buildSystemPrompt({
         workspacePath,
         accessMode: input.accessMode,
@@ -677,7 +705,7 @@ export class AgentRunner {
         headless,
         planMode,
         planSnapshot,
-        skills,
+        environment,
         ...(await this.memoryPromptInput())
       });
 
@@ -745,6 +773,7 @@ export class AgentRunner {
         enableOcrTool,
         modelInputModalities,
         systemPrompt,
+        leadingMessages,
         initialUsage: autoCompact.usage,
         compactedUpToMessageId:
           autoCompact.compactedUpToMessageId ?? activeSession.compactedUpToMessageId,
@@ -863,6 +892,52 @@ export class AgentRunner {
       console.warn(`[agent-runner] 读取记忆目录快照失败 dir=${this.memoryDir}:`, error);
       return { memory: {} };
     }
+  }
+
+  /**
+   * 读取项目级指令（AGENTS.md 优先，缺失再用 CLAUDE.md），构造一条不落库的
+   * user system-reminder 消息注入对话最前；读取失败只降级为不注入，绝不中断 run。
+   */
+  private async loadProjectInstructionMessage(
+    workspacePath: string
+  ): Promise<PiMessage | undefined> {
+    try {
+      const file = await findInstructionFile(workspacePath);
+      if (!file) {
+        return undefined;
+      }
+      console.info("[agent-runner] 注入项目指令到对话最前", {
+        filePath: file.filePath,
+        truncated: file.truncated
+      });
+      return buildProjectInstructionMessage(file);
+    } catch (error) {
+      console.warn("[agent-runner] 读取项目指令失败，已跳过", {
+        workspacePath,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return undefined;
+    }
+  }
+
+  /**
+   * 构造注入对话最前的「开场 SR 消息」：项目指令（AGENTS.md/CLAUDE.md，最高优先）
+   * 在前，可用技能清单的背景上下文在后。均为不落库消息，每个 run 重建。
+   */
+  private async buildLeadingMessages(input: {
+    workspacePath: string;
+    skills: Array<{ name: string; description: string }>;
+  }): Promise<PiMessage[]> {
+    const messages: PiMessage[] = [];
+    const projectInstruction = await this.loadProjectInstructionMessage(input.workspacePath);
+    if (projectInstruction) {
+      messages.push(projectInstruction);
+    }
+    const contextReminder = buildContextReminderMessage({ skills: input.skills });
+    if (contextReminder) {
+      messages.push(contextReminder);
+    }
+    return messages;
   }
 
   /** 会话第一条用户消息，重试时作为标题来源。 */
@@ -995,6 +1070,7 @@ export class AgentRunner {
     systemPrompt: string;
     initialUsage?: TokenUsage;
     compactedUpToMessageId?: string;
+    leadingMessages?: PiMessage[];
     controller: AbortController;
   }): AsyncGenerator<StreamEvent> {
     const queue = options.queue;
@@ -1111,7 +1187,10 @@ export class AgentRunner {
     };
     let currentAgentContext: AgentContext = {
       systemPrompt: options.systemPrompt,
-      messages: buildAgentMessages(rows, options.compactedUpToMessageId),
+      messages: [
+        ...(options.leadingMessages ?? []),
+        ...buildAgentMessages(rows, options.compactedUpToMessageId)
+      ],
       tools: selectAgentTools(options.tools, {
         planPhase: planPhase(),
         viaFeishu: options.viaFeishu,
@@ -1203,7 +1282,12 @@ export class AgentRunner {
               sessionId: options.sessionId
             });
           }
-          return drained.messages;
+          // 把本轮累积的动态软提醒(todo 空闲 / 工具异常)作为不落库的 SR 消息注入。
+          const reminderMessage = buildReminderMessage(translator.collectReminders());
+          if (!reminderMessage) {
+            return drained.messages;
+          }
+          return [...drained.messages, reminderMessage];
         }
       },
       translator.emit,

@@ -10,19 +10,52 @@ const LINE_STYLES: Record<DiffLine["type"], string> = {
 };
 
 /** Edit / Write 工具结果的逐行 diff 渲染。 */
-export function DiffView({ lines }: { lines: DiffLine[] }) {
+export function DiffView({
+  lines,
+  height = "inline"
+}: {
+  lines: DiffLine[];
+  height?: "inline" | "fill";
+}) {
   const { t } = useTranslation();
+  const showLineNumbers = lines.some(
+    (line) =>
+      line.hunk ||
+      line.oldLineNumber !== undefined ||
+      line.newLineNumber !== undefined
+  );
   return (
     <div
       aria-label={t("chat.diffView")}
-      className="max-h-[220px] overflow-auto border-t bg-background py-1 font-mono text-micro leading-relaxed"
+      className={cn(
+        "overflow-auto border-t bg-background py-1 font-mono text-micro leading-relaxed",
+        height === "fill" ? "h-full" : "max-h-[220px]"
+      )}
     >
       {lines.map((line, index) => (
-        <div key={index} className={cn("flex px-3", LINE_STYLES[line.type])}>
+        <div
+          key={index}
+          className={cn(
+            "flex px-3",
+            line.hunk ? "bg-canvas-soft-2 text-muted-foreground" : LINE_STYLES[line.type]
+          )}
+        >
+          {showLineNumbers ? (
+            <>
+              <span className="w-9 flex-none select-none pr-2 text-right text-muted-slate/70">
+                {line.oldLineNumber ?? ""}
+              </span>
+              <span className="w-9 flex-none select-none pr-2 text-right text-muted-slate/70">
+                {line.newLineNumber ?? ""}
+              </span>
+            </>
+          ) : null}
           <span className="w-4 flex-none select-none">
-            {line.type === "added" ? "+" : line.type === "removed" ? "-" : " "}
+            {line.hunk ? "" : line.type === "added" ? "+" : line.type === "removed" ? "-" : " "}
           </span>
-          <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{line.text}</span>
+          <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+            {line.text || " "}
+          </span>
         </div>
       ))}
     </div>

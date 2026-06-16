@@ -50,6 +50,17 @@ const session: Session = {
   updatedAt: "2026-06-11T00:00:00.000Z"
 };
 
+describe("sessionSchema", () => {
+  it("接受微信绑定会话字段", () => {
+    expect(
+      sessionSchema.parse({
+        ...session,
+        wechatChatId: "wx_user1"
+      }).wechatChatId
+    ).toBe("wx_user1");
+  });
+});
+
 const toolCall: ToolCall = {
   id: "tc_1",
   runId: "run_1",

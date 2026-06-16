@@ -121,14 +121,14 @@ describe("Markdown", () => {
     const code = container.querySelector('[data-streamdown="code-block-body"] code');
     expect(code?.getAttribute("class") ?? "").not.toContain("counter");
 
-    fireEvent.click(screen.getByTitle("自动换行"));
-    expect(screen.getByTitle("关闭自动换行")).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "自动换行" }));
+    expect(screen.getByRole("button", { name: "关闭自动换行" })).toHaveAttribute("aria-pressed", "true");
     expect(shell).toHaveAttribute("data-code-wrap", "true");
 
-    fireEvent.click(screen.getByTitle("复制代码"));
+    fireEvent.click(screen.getByRole("button", { name: "复制代码" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("const x = 1")));
-    expect(await screen.findByTitle("复制代码")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "复制代码" })).toBeInTheDocument();
   });
 
   it("renders bash fences with the rewritten code block chrome", () => {
@@ -136,8 +136,8 @@ describe("Markdown", () => {
 
     expect(container.querySelector(".cxb-code-block-shell")).not.toBeNull();
     expect(screen.getByText("bash")).toBeInTheDocument();
-    expect(screen.getByTitle("自动换行")).toBeInTheDocument();
-    expect(screen.getByTitle("复制代码")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "自动换行" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "复制代码" })).toBeInTheDocument();
     expect(screen.queryByTitle("下载文件")).not.toBeInTheDocument();
   });
 
@@ -147,8 +147,8 @@ describe("Markdown", () => {
 
     expect(container.querySelector(".cxb-code-block-shell")).not.toBeNull();
     expect(screen.getByText("text")).toBeInTheDocument();
-    expect(screen.getByTitle("自动换行")).toBeInTheDocument();
-    expect(screen.getByTitle("复制代码")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "自动换行" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "复制代码" })).toBeInTheDocument();
     expect(container.querySelector(".cxb-code-block-shell pre")?.textContent).toBe(codeText);
     expect(container.querySelector('[data-streamdown="code-block"][data-language=""]')).toBeNull();
   });
@@ -201,7 +201,7 @@ describe("Markdown", () => {
     });
     expect(screen.getByText("mermaid")).toBeInTheDocument();
     expect(screen.getByTitle("下载图表")).toBeInTheDocument();
-    expect(screen.getByTitle("复制代码")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "复制代码" })).toBeInTheDocument();
     expect(screen.getByTitle("全屏查看")).toBeInTheDocument();
   });
 });

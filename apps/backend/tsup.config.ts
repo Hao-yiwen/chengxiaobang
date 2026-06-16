@@ -13,10 +13,12 @@ export default defineConfig({
     "sql.js",
     "@earendil-works/pi-ai",
     "@earendil-works/pi-agent-core",
+    "@modelcontextprotocol/sdk",
     "pptxgenjs",
     "docx",
     "exceljs",
     "@larksuiteoapi/node-sdk",
+    "@tencent-weixin/openclaw-weixin",
     "hono",
     "js-yaml",
     "js-tiktoken"

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { gitStatusKind, unifiedDiffToLines } from "../src/renderer/lib/git-diff";
+import {
+  gitChangeStats,
+  gitStatusKind,
+  unifiedDiffToLines
+} from "../src/renderer/lib/git-diff";
 
 describe("unifiedDiffToLines", () => {
   it("maps diff body lines and drops headers", () => {
@@ -15,10 +19,10 @@ describe("unifiedDiffToLines", () => {
       "\\ No newline at end of file"
     ].join("\n");
     expect(unifiedDiffToLines(diff)).toEqual([
-      { type: "context", text: "@@ -1,2 +1,2 @@" },
-      { type: "context", text: "context line" },
-      { type: "removed", text: "removed line" },
-      { type: "added", text: "added line" }
+      { type: "context", text: "@@ -1,2 +1,2 @@", hunk: true },
+      { type: "context", text: "context line", oldLineNumber: 1, newLineNumber: 1 },
+      { type: "removed", text: "removed line", oldLineNumber: 2 },
+      { type: "added", text: "added line", newLineNumber: 2 }
     ]);
   });
 
@@ -27,6 +31,25 @@ describe("unifiedDiffToLines", () => {
       { type: "added", text: "alpha" },
       { type: "added", text: "beta" }
     ]);
+  });
+});
+
+describe("gitChangeStats", () => {
+  it("counts added and removed content lines without diff headers", () => {
+    expect(
+      gitChangeStats([
+        {
+          diff: [
+            "--- a/a.ts",
+            "+++ b/a.ts",
+            "@@ -1 +1,2 @@",
+            "-old",
+            "+new",
+            "+next"
+          ].join("\n")
+        }
+      ])
+    ).toEqual({ additions: 2, deletions: 1 });
   });
 });
 

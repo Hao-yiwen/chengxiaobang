@@ -12,10 +12,11 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
+  type ReactNode
 } from "react";
 import { useTranslation } from "react-i18next";
-import type { Message, MessageAttachment, RunRecord, StreamEvent, ToolCall } from "@chengxiaobang/shared";
+import type { Message, MessageAttachment, ToolCall } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { AssistantMarkdownWithArtifacts } from "@/components/AssistantMarkdownWithArtifacts";
 import { ArtifactFloatingPanel } from "@/components/ArtifactFloatingPanel";
@@ -28,85 +29,20 @@ import { ScrollToBottomButton } from "@/components/ScrollToBottomButton";
 import { ToolActivityStatus } from "@/components/ToolActivityStatus";
 import { ToolCallGroup } from "@/components/ToolCallGroup";
 import { ToolCallRow } from "@/components/ToolCallRow";
+import { WorkTimer } from "@/components/WorkTimer";
 import { parseArtifactDeclarations } from "@/lib/artifact";
 import { anchorScrollTop, contentTop, isNearBottom, tailSpacerHeight } from "@/lib/scroll";
 import {
-  derivePlanView,
-  groupTimelineItems,
-  timelineItems,
-  type GroupedTimelineItem,
-  type PlanView
+  chatViewTimelineItems,
+  failedRunNotices,
+  groupTurns,
+  type ChatBlock,
+  type ChatViewTimelineRenderItem,
+  type FailedRunNotice,
+  type TurnBlock
 } from "@/lib/timeline";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
-
-type PlanTimelineItem = { kind: "plan"; at: string; plan: PlanView };
-type ChatViewTimelineItem = GroupedTimelineItem | PlanTimelineItem;
-type FailedRunNotice = {
-  id: string;
-  message: string;
-  at: string;
-  persisted: boolean;
-};
-type RunErrorTimelineItem = { kind: "run-error"; at: string; notice: FailedRunNotice };
-
-type ChatViewTimelineRenderItem = ChatViewTimelineItem | RunErrorTimelineItem;
-
-const FAILED_RUN_FALLBACK = "运行失败，但未记录错误详情";
-
-function isFailedRunEndEvent(
-  event: StreamEvent
-): event is Extract<StreamEvent, { type: "run_end" }> & { status: "failed" } {
-  return event.type === "run_end" && event.status === "failed";
-}
-
-function chatViewTimelineItems(
-  messages: Message[],
-  toolCalls: ToolCall[],
-  failedNotices: FailedRunNotice[],
-  activeRunId?: string
-): ChatViewTimelineRenderItem[] {
-  const groupedItems = groupTimelineItems(timelineItems(messages, toolCalls));
-  const chronologicalItems: ChatViewTimelineRenderItem[] = [
-    ...groupedItems,
-    ...failedNotices.map((notice) => ({
-      kind: "run-error" as const,
-      at: notice.at,
-      notice
-    }))
-  ].sort((left, right) => left.at.localeCompare(right.at));
-  const result: ChatViewTimelineRenderItem[] = [];
-
-  for (const item of chronologicalItems) {
-    if (item.kind === "run-error") {
-      result.push(item);
-      continue;
-    }
-    if (
-      item.kind === "tool" &&
-      (item.toolCall.name === "TodoRead" || item.toolCall.name === "TodoWrite")
-    ) {
-      continue;
-    }
-    if (item.kind === "tool" && item.toolCall.name === "ExitPlanMode") {
-      const plan = derivePlanView(
-        toolCalls.filter((toolCall) => toolCall.name === "ExitPlanMode"),
-        { activeRunId }
-      );
-      const visiblePlan =
-        plan?.anchor.id === item.toolCall.id
-          ? plan
-          : derivePlanView([item.toolCall], { activeRunId });
-      if (visiblePlan) {
-        result.push({ kind: "plan", at: item.at, plan: visiblePlan });
-      }
-      continue;
-    }
-    result.push(item);
-  }
-
-  return result;
-}
 
 function toolCallsWithPendingPlan(toolCalls: ToolCall[], pendingTool?: ToolCall): ToolCall[] {
   if (!pendingTool || pendingTool.name !== "ExitPlanMode") {
@@ -120,28 +56,6 @@ function toolCallsWithPendingPlan(toolCalls: ToolCall[], pendingTool?: ToolCall)
     runId: pendingTool.runId
   });
   return [...toolCalls, pendingTool];
-}
-
-function failedRunNotices(runs: RunRecord[], events: StreamEvent[]): FailedRunNotice[] {
-  const persisted = runs
-    .filter((run) => run.status === "failed")
-    .map((run) => ({
-      id: run.id,
-      message: run.error ?? FAILED_RUN_FALLBACK,
-      at: run.updatedAt,
-      persisted: true
-    }));
-  const persistedIds = new Set(persisted.map((notice) => notice.id));
-  const live = events
-    .filter(isFailedRunEndEvent)
-    .filter((event) => !persistedIds.has(event.runId))
-    .map((event, index) => ({
-      id: `live-${event.runId}-${index}`,
-      message: event.error ?? FAILED_RUN_FALLBACK,
-      at: "\uffff",
-      persisted: false
-    }));
-  return [...persisted, ...live].sort((left, right) => left.at.localeCompare(right.at));
 }
 
 function canRetryFailedNotice(
@@ -169,7 +83,8 @@ export function ChatView() {
     events,
     runHistory,
     isRunning,
-    activeRunId
+    activeRunId,
+    activeRunStartedAt
   } = useAppStore(
     useShallow((state) => ({
       messages: state.messages,
@@ -183,7 +98,8 @@ export function ChatView() {
       events: state.events,
       runHistory: state.runHistory,
       isRunning: state.isRunning,
-      activeRunId: state.activeRunId
+      activeRunId: state.activeRunId,
+      activeRunStartedAt: state.activeRunStartedAt
     }))
   );
   const openFilePreview = useAppStore((state) => state.openFilePreview);
@@ -255,6 +171,21 @@ export function ChatView() {
     () => lastVisibleActionMessageId(items, activeRunAssistantIds),
     [activeRunAssistantIds, items]
   );
+  // 把扁平时间线按轮次分组，每个 AI 轮次包一层「已工作」折叠头。nowMs 只作活跃轮缺起点时的
+  // 兜底，不进 deps（否则每帧重算）；折叠头实时刷新由 WorkTimer 内部 interval 局部驱动。
+  const blocks = useMemo(
+    () =>
+      groupTurns(items, {
+        isRunning,
+        activeRunId,
+        activeRunAssistantIds,
+        activeRunStartedAt,
+        nowMs: Date.now()
+      }),
+    [items, isRunning, activeRunId, activeRunAssistantIds, activeRunStartedAt]
+  );
+  // 运行中但还没有活跃轮（如 user 消息回显前的瞬间）时，运行中临时块需要兜底挂末尾，避免丢失。
+  const hasActiveTurn = blocks.some((block) => block.kind === "turn" && block.active);
 
   // Resize the tail spacer to keep the anchored message's scroll position
   // reachable, and recompute nearBottom (content can grow without a scroll
@@ -402,9 +333,113 @@ export function ChatView() {
     []
   );
 
+  // 运行中临时块兜底挂末尾时记一笔，便于排查「活跃轮判定异常导致思考/工具状态错位」。
+  useEffect(() => {
+    if (
+      !hasActiveTurn &&
+      (showActivityStatus || showWaiting || Boolean(thinking) || Boolean(streamText))
+    ) {
+      console.debug("[ChatView] 运行中暂无活跃轮承载临时块，已兜底挂末尾", { activeRunId });
+    }
+  }, [hasActiveTurn, showActivityStatus, showWaiting, thinking, streamText, activeRunId]);
+
+  // 单个时间线 item 的渲染分支（与原扁平渲染一致）；index 为其在全局 items 的下标，供
+  // shouldHideMessageActions 等依赖全局位置的逻辑使用。
+  const renderTimelineItem = (
+    item: ChatViewTimelineRenderItem,
+    index: number,
+    options?: { hideReasoning?: boolean }
+  ): ReactNode => {
+    if (item.kind === "message") {
+      const hideActions = shouldHideMessageActions(item, index, items, activeRunAssistantIds);
+      return (
+        <MessageBubble
+          key={`message-${item.message.id}`}
+          message={item.message}
+          isLastAssistant={item.message.id === lastAssistantId}
+          hideActions={hideActions}
+          showActionsByDefault={item.message.id === lastActionMessageId}
+          hideReasoning={options?.hideReasoning}
+        />
+      );
+    }
+    if (item.kind === "run-error") {
+      return (
+        <RunErrorNotice
+          key={`run-error-${item.notice.id}`}
+          notice={item.notice}
+          canRetry={canRetryFailedNotice(item.notice, messages, isRunning)}
+          onRetry={() => {
+            console.info("[ChatView] 用户点击失败运行重试", {
+              noticeId: item.notice.id,
+              persisted: item.notice.persisted
+            });
+            void regenerateLast();
+          }}
+        />
+      );
+    }
+    if (item.kind === "plan") {
+      return (
+        <PlanCard
+          key={`plan-${item.plan.anchor.id}`}
+          markdown={item.plan.state.markdown}
+          status={item.plan.status}
+        />
+      );
+    }
+    if (item.kind === "tool-group") {
+      return (
+        <ToolCallGroup
+          key={`group-${item.toolCalls[0].id}`}
+          toolCalls={item.toolCalls}
+          onOpenFile={openFilePreview}
+        />
+      );
+    }
+    return (
+      <ToolCallRow
+        key={`tool-${item.toolCall.id}`}
+        toolCall={item.toolCall}
+        onOpenFile={openFilePreview}
+      />
+    );
+  };
+
+  // 运行中的临时块（思考流 / 流式文本 / 工具活动 / 等待），只挂到活跃轮折叠体尾部。
+  const runtimeTail =
+    thinking || streamText || showActivityStatus || showWaiting ? (
+      <>
+        {thinking ? (
+          <ReasoningPanel text={thinking} streaming startedAt={thinkingStartedAt} />
+        ) : null}
+        {streamText ? (
+          <div className="mb-5 animate-msg-in self-stretch">
+            <AssistantMarkdownWithArtifacts text={streamText} streaming />
+          </div>
+        ) : null}
+        {showActivityStatus ? (
+          <ToolActivityStatus
+            toolActivity={toolActivity}
+            runningTool={runningTool}
+            className="mb-6 self-stretch"
+          />
+        ) : null}
+        {showWaiting ? (
+          <div className="mb-6 flex items-center gap-2 self-stretch text-caption text-muted-foreground">
+            <span className="size-3 flex-none animate-pulse rounded-full bg-foreground" />
+            <span className="shimmer-text">{t("chat.waiting")}</span>
+          </div>
+        ) : null}
+      </>
+    ) : null;
+
   return (
     // 滚动区铺满主区域；内容列由共享布局左偏，和底部输入列保持同一个锚点。
     <div className="chat-layout-scope relative flex min-h-0 w-full flex-1 flex-col">
+      {/* 为竖直滚动条预留固定槽位：内容超一屏出现滚动条时不再挤占内容宽度、
+          也不随滚动条出现/消失（含右侧面板展开导致宽度变化时）而回流抖动，
+          与审批区、右侧面板等其他滚动区的处理保持一致。 */}
       <div
         ref={scrollRef}
         data-testid="chat-scroll"
@@ -414,98 +449,27 @@ export function ChatView() {
             setNearBottom(isNearBottom(el));
           }
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-12"
+        className="min-h-0 flex-1 overflow-y-auto px-12 [scrollbar-gutter:stable]"
       >
         <div
           ref={contentColumnRef}
           data-testid="chat-content-column"
           className="chat-primary-column relative flex flex-col py-5"
         >
-          {items.map((item, index) => {
-            if (item.kind === "message") {
-              const hideActions = shouldHideMessageActions(
-                item,
-                index,
-                items,
-                activeRunAssistantIds
-              );
-              return (
-                <MessageBubble
-                  key={`message-${item.message.id}`}
-                  message={item.message}
-                  isLastAssistant={item.message.id === lastAssistantId}
-                  hideActions={hideActions}
-                  showActionsByDefault={item.message.id === lastActionMessageId}
-                />
-              );
-            }
-            if (item.kind === "run-error") {
-              return (
-                <RunErrorNotice
-                  key={`run-error-${item.notice.id}`}
-                  notice={item.notice}
-                  canRetry={canRetryFailedNotice(item.notice, messages, isRunning)}
-                  onRetry={() => {
-                    console.info("[ChatView] 用户点击失败运行重试", {
-                      noticeId: item.notice.id,
-                      persisted: item.notice.persisted
-                    });
-                    void regenerateLast();
-                  }}
-                />
-              );
-            }
-            if (item.kind === "plan") {
-              return (
-                <PlanCard
-                  key={`plan-${item.plan.anchor.id}`}
-                  markdown={item.plan.state.markdown}
-                  status={item.plan.status}
-                />
-              );
-            }
-            if (item.kind === "tool-group") {
-              return (
-                <ToolCallGroup
-                  key={`group-${item.toolCalls[0].id}`}
-                  toolCalls={item.toolCalls}
-                  onOpenFile={openFilePreview}
-                />
-              );
-            }
-            return (
-              <ToolCallRow
-                key={`tool-${item.toolCall.id}`}
-                toolCall={item.toolCall}
-                onOpenFile={openFilePreview}
+          {blocks.map((block) =>
+            block.kind === "standalone" ? (
+              renderTimelineItem(block.item, block.index)
+            ) : (
+              <TurnView
+                key={block.key}
+                block={block}
+                renderItem={renderTimelineItem}
+                runtimeTail={block.active ? runtimeTail : null}
               />
-            );
-          })}
+            )
+          )}
 
-          {thinking ? (
-            <ReasoningPanel text={thinking} streaming startedAt={thinkingStartedAt} />
-          ) : null}
-
-          {streamText ? (
-            <div className="mb-5 animate-msg-in self-stretch">
-              <AssistantMarkdownWithArtifacts text={streamText} streaming />
-            </div>
-          ) : null}
-
-          {showActivityStatus ? (
-            <ToolActivityStatus
-              toolActivity={toolActivity}
-              runningTool={runningTool}
-              className="mb-6 self-stretch"
-            />
-          ) : null}
-
-          {showWaiting ? (
-            <div className="mb-6 flex items-center gap-2 self-stretch text-caption text-muted-foreground">
-              <span className="size-3 flex-none animate-pulse rounded-full bg-foreground" />
-              <span className="shimmer-text">{t("chat.waiting")}</span>
-            </div>
-          ) : null}
+          {!hasActiveTurn ? runtimeTail : null}
 
           <div
             ref={spacerRef}
@@ -538,6 +502,50 @@ export function ChatView() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * 一个 AI 轮次的渲染：user 消息在折叠头外、上方；中间过程 + 运行中临时块进 WorkTimer 折叠体；
+ * 最终答复在折叠头外、下方。WorkTimer 的 key 随 active 翻转重挂，实现「运行结束自动折叠」。
+ */
+function TurnView({
+  block,
+  renderItem,
+  runtimeTail
+}: {
+  block: TurnBlock;
+  renderItem: (
+    item: ChatViewTimelineRenderItem,
+    index: number,
+    options?: { hideReasoning?: boolean }
+  ) => ReactNode;
+  runtimeTail: ReactNode;
+}) {
+  // 最终答复自带的「思考过程」也收进折叠头：折叠体里补一个它的 reasoning 面板（时间上在中间过程之后），
+  // 答复正文用 hideReasoning 渲染、留在折叠头外。
+  const answerMessage = block.answer?.item.message;
+  const answerReasoning = answerMessage?.reasoning ? (
+    <ReasoningPanel text={answerMessage.reasoning} durationMs={answerMessage.reasoningMs} />
+  ) : null;
+  const collapsible =
+    block.intermediate.length > 0 || Boolean(answerReasoning) || Boolean(runtimeTail);
+  return (
+    <>
+      {block.user ? renderItem(block.user.item, block.user.index) : null}
+      <WorkTimer
+        key={block.active ? `${block.key}-live` : `${block.key}-settled`}
+        timing={block.timing}
+        collapsible={collapsible}
+      >
+        {block.intermediate.map((member) => renderItem(member.item, member.index))}
+        {answerReasoning}
+        {runtimeTail}
+      </WorkTimer>
+      {block.answer
+        ? renderItem(block.answer.item, block.answer.index, { hideReasoning: true })
+        : null}
+    </>
   );
 }
 
@@ -579,12 +587,15 @@ const MessageBubble = memo(function MessageBubble({
   message,
   isLastAssistant = false,
   hideActions = false,
-  showActionsByDefault = false
+  showActionsByDefault = false,
+  hideReasoning = false
 }: {
   message: Message;
   isLastAssistant?: boolean;
   hideActions?: boolean;
   showActionsByDefault?: boolean;
+  /** 折叠头外的最终答复传 true：它的思考过程改由 TurnView 收进折叠体，正文这里只渲染内容。 */
+  hideReasoning?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const editAndResend = useAppStore((state) => state.editAndResend);
@@ -651,7 +662,7 @@ const MessageBubble = memo(function MessageBubble({
   // with the persisted reasoning panel (if any) sitting above the answer.
   return (
     <div className="group/msg mb-5 animate-msg-in self-stretch">
-      {message.reasoning ? (
+      {!hideReasoning && message.reasoning ? (
         <ReasoningPanel text={message.reasoning} durationMs={message.reasoningMs} />
       ) : null}
       <AssistantMarkdownWithArtifacts text={message.content} messageId={message.id} />

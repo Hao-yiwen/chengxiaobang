@@ -4,22 +4,24 @@ import {
   CheckCircleIcon as CheckCircle,
   CircleNotchIcon as Loader2,
   PlusIcon as Plus,
-  QrCodeIcon as QrCode,
   WarningCircleIcon as WarningCircle
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { Session } from "@chengxiaobang/shared";
+import type { ConnectPhoneTarget, Session } from "@chengxiaobang/shared";
 import { QRCodeSVG } from "qrcode.react";
 import feishuLogoUrl from "../../../assets/feishu-logo.png";
 import connectPhoneIllustrationUrl from "../../../assets/connect-phone-illustration.png";
+import connectWechatIllustrationUrl from "../../../assets/connect-wechat-illustration.png";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
 const MIN_INSTALL_POLL_MS = 3000;
 const QR_VISIBLE_TTL_SECONDS = 10 * 60;
+const CONNECT_TARGETS = ["wechat", "feishu"] as const satisfies readonly ConnectPhoneTarget[];
 
+type ConnectTarget = (typeof CONNECT_TARGETS)[number];
 type ConnectPhoneTab = "bindings" | "scan";
 
 type InstallState = {
@@ -36,34 +38,37 @@ const INITIAL_INSTALL_STATE: InstallState = {
   error: ""
 };
 
-/** 手机连接页：未连接时扫码，已连接后管理飞书绑定会话。 */
+/** 手机连接页：选择微信或飞书/Lark，扫码后在桌面端管理绑定会话。 */
 export function ConnectPhoneView() {
   const { t } = useTranslation();
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
   const sessions = useAppStore((state) => state.sessions);
   const feishuConfig = useAppStore((state) => state.feishuConfig);
+  const wechatConfig = useAppStore((state) => state.wechatConfig);
   const loadData = useAppStore((state) => state.loadData);
-  const loadFeishuConfig = useAppStore((state) => state.loadFeishuConfig);
+  const loadConnectPhoneConfig = useAppStore((state) => state.loadConnectPhoneConfig);
   const selectSession = useAppStore((state) => state.selectSession);
-  const startFeishuInstall = useAppStore((state) => state.startFeishuInstall);
-  const pollFeishuInstall = useAppStore((state) => state.pollFeishuInstall);
+  const startConnectPhoneInstall = useAppStore((state) => state.startConnectPhoneInstall);
+  const pollConnectPhoneInstall = useAppStore((state) => state.pollConnectPhoneInstall);
 
-  const [activeTab, setActiveTab] = useState<ConnectPhoneTab>("bindings");
+  const [activeTarget, setActiveTarget] = useState<ConnectTarget>("wechat");
+  const [activeTab, setActiveTab] = useState<ConnectPhoneTab>("scan");
   const [configLoaded, setConfigLoaded] = useState(false);
   const [install, setInstall] = useState<InstallState>(INITIAL_INSTALL_STATE);
   const installPollTimerRef = useRef<number | undefined>(undefined);
   const installExpiryTimerRef = useRef<number | undefined>(undefined);
   const installAttemptRef = useRef(0);
-  const autoInstallStartedRef = useRef(false);
-  const configuredLogRef = useRef(false);
+  const autoInstallKeyRef = useRef<string | undefined>(undefined);
   const headerInset = !sidebarOpen && window.chengxiaobang?.platform === "darwin";
-  const isConfigured = Boolean(feishuConfig?.enabled && feishuConfig.appId.trim());
-  const boundSessions = sessions.filter((session) => session.feishuChatId);
+  const isConfigured = isTargetConfigured(activeTarget, { feishuConfig, wechatConfig });
+  const boundSessions = sessions.filter((session) => isSessionBoundToTarget(session, activeTarget));
+  const illustrationUrl =
+    activeTarget === "wechat" ? connectWechatIllustrationUrl : connectPhoneIllustrationUrl;
 
   useEffect(() => {
     let disposed = false;
-    console.debug("[connect-phone] 进入连接飞书页，加载飞书连接状态");
-    void loadFeishuConfig().finally(() => {
+    console.debug("[connect-phone] 进入连接手机页，加载连接状态");
+    void loadConnectPhoneConfig().finally(() => {
       if (!disposed) {
         setConfigLoaded(true);
       }
@@ -76,27 +81,57 @@ export function ConnectPhoneView() {
   }, []);
 
   useEffect(() => {
-    if (!configLoaded) {
+    if (!configLoaded || activeTarget !== "wechat") {
       return;
     }
-    if (isConfigured) {
-      if (!configuredLogRef.current) {
-        configuredLogRef.current = true;
-        console.info("[connect-phone] 已有飞书连接，默认展示绑定列表", {
-          boundCount: boundSessions.length
-        });
-        setActiveTab("bindings");
-      }
-      return;
+    const wechatConfigured = isTargetConfigured("wechat", { feishuConfig, wechatConfig });
+    const feishuConfigured = isTargetConfigured("feishu", { feishuConfig, wechatConfig });
+    if (!wechatConfigured && feishuConfigured) {
+      console.info("[connect-phone] 检测到已有飞书连接，默认切到飞书管理");
+      setActiveTarget("feishu");
     }
-    if (autoInstallStartedRef.current) {
-      return;
-    }
-    autoInstallStartedRef.current = true;
-    console.debug("[connect-phone] 未发现飞书连接，自动生成二维码");
-    void startInstall();
+  }, [activeTarget, configLoaded, feishuConfig, wechatConfig]);
+
+  useEffect(() => {
+    cancelInstallAttempt();
+    autoInstallKeyRef.current = undefined;
+    setInstall(INITIAL_INSTALL_STATE);
+    setActiveTab(isConfigured ? "bindings" : "scan");
+    console.info("[connect-phone] 切换连接平台", {
+      target: activeTarget,
+      configured: isConfigured
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [configLoaded, isConfigured]);
+  }, [activeTarget, isConfigured]);
+
+  useEffect(() => {
+    if (activeTab === "scan") {
+      return;
+    }
+    cancelInstallAttempt();
+    autoInstallKeyRef.current = undefined;
+    setInstall(INITIAL_INSTALL_STATE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!configLoaded || isConfigured || activeTab !== "scan" || install.status !== "idle") {
+      return;
+    }
+    const wechatConfigured = isTargetConfigured("wechat", { feishuConfig, wechatConfig });
+    const feishuConfigured = isTargetConfigured("feishu", { feishuConfig, wechatConfig });
+    if (activeTarget === "wechat" && !wechatConfigured && feishuConfigured) {
+      return;
+    }
+    const autoInstallKey = `${activeTarget}:${isConfigured ? "bound" : "new"}`;
+    if (autoInstallKeyRef.current === autoInstallKey) {
+      return;
+    }
+    autoInstallKeyRef.current = autoInstallKey;
+    console.info("[connect-phone] 自动生成扫码二维码", { target: activeTarget });
+    void startInstall(activeTarget);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, activeTarget, configLoaded, feishuConfig, install.status, isConfigured, wechatConfig]);
 
   function clearInstallTimers(): void {
     if (installPollTimerRef.current !== undefined) {
@@ -114,27 +149,41 @@ export function ConnectPhoneView() {
     clearInstallTimers();
   }
 
+  function selectTarget(target: ConnectTarget): void {
+    if (target === activeTarget) {
+      return;
+    }
+    setActiveTarget(target);
+  }
+
   function addConnection(): void {
-    console.info("[connect-phone] 点击新增飞书连接", { activeTab });
+    console.info("[connect-phone] 点击新增连接", { target: activeTarget, activeTab });
     setActiveTab("scan");
-    void startInstall();
+    void startInstall(activeTarget);
+  }
+
+  function selectTab(tab: ConnectPhoneTab): void {
+    setActiveTab(tab);
+    if (tab === "scan") {
+      void startInstall(activeTarget);
+    }
   }
 
   function refreshBindings(): void {
-    console.debug("[connect-phone] 刷新飞书绑定列表");
+    console.debug("[connect-phone] 刷新绑定列表", { target: activeTarget });
     void loadData();
   }
 
   function openBoundSession(sessionId: string): void {
-    console.info("[connect-phone] 打开飞书绑定会话", { sessionId });
+    console.info("[connect-phone] 打开绑定会话", { target: activeTarget, sessionId });
     void selectSession(sessionId);
   }
 
-  async function startInstall(): Promise<void> {
+  async function startInstall(target: ConnectTarget): Promise<void> {
     if (install.status === "loading") {
       return;
     }
-    console.info("[connect-phone] 开始生成飞书二维码");
+    console.info("[connect-phone] 开始生成扫码二维码", { target });
     clearInstallTimers();
     const attempt = installAttemptRef.current + 1;
     installAttemptRef.current = attempt;
@@ -142,12 +191,12 @@ export function ConnectPhoneView() {
 
     let started;
     try {
-      started = await startFeishuInstall({ domain: "feishu" });
+      started = await startConnectPhoneInstall({ target });
     } catch (error) {
       if (attempt !== installAttemptRef.current) {
         return;
       }
-      console.warn("[connect-phone] 生成飞书二维码异常", { error });
+      console.warn("[connect-phone] 生成扫码二维码异常", { target, error });
       setInstall({
         ...INITIAL_INSTALL_STATE,
         status: "error",
@@ -160,7 +209,7 @@ export function ConnectPhoneView() {
       return;
     }
     if (!started.ok) {
-      console.warn("[connect-phone] 生成飞书二维码失败", { message: started.message });
+      console.warn("[connect-phone] 生成扫码二维码失败", { target, message: started.message });
       setInstall({
         ...INITIAL_INSTALL_STATE,
         status: "error",
@@ -178,7 +227,8 @@ export function ConnectPhoneView() {
 
     const visibleTtlSeconds = Math.max(1, Math.min(started.expiresIn, QR_VISIBLE_TTL_SECONDS));
     installExpiryTimerRef.current = window.setTimeout(() => {
-      console.info("[connect-phone] 飞书二维码已过期，显示覆盖刷新按钮", {
+      console.info("[connect-phone] 二维码已过期，显示刷新按钮", {
+        target,
         visibleTtlSeconds,
         platformExpiresIn: started.expiresIn
       });
@@ -188,7 +238,7 @@ export function ConnectPhoneView() {
           ? {
               ...current,
               status: "expired",
-              error: t("settings.feishu.installExpired")
+              error: t("connectPhone.installExpired")
             }
           : current
       );
@@ -196,39 +246,40 @@ export function ConnectPhoneView() {
 
     const poll = async (): Promise<void> => {
       try {
-        const result = await pollFeishuInstall({ deviceCode: started.deviceCode });
+        const result = await pollConnectPhoneInstall({ target, deviceCode: started.deviceCode });
         if (attempt !== installAttemptRef.current) {
           return;
         }
         if (result.done) {
-          console.info("[connect-phone] 飞书扫码连接成功", {
-            appId: result.config.appId,
+          console.info("[connect-phone] 扫码连接成功", {
+            target: result.target,
             status: result.status.status
           });
-          clearInstallTimers();
+          cancelInstallAttempt();
           setInstall((current) => ({
             ...current,
             status: "success",
             error: ""
           }));
           setActiveTab("bindings");
+          void loadConnectPhoneConfig();
           void loadData();
           return;
         }
         if (result.error) {
-          console.warn("[connect-phone] 飞书连接轮询失败", { error: result.error });
+          console.warn("[connect-phone] 扫码连接轮询失败", { target, error: result.error });
           cancelInstallAttempt();
           setInstall((current) => ({
             ...current,
             status: "error",
-            error: result.error ?? t("settings.feishu.installFailed")
+            error: result.error ?? t("connectPhone.installFailed")
           }));
         }
       } catch (error) {
         if (attempt !== installAttemptRef.current) {
           return;
         }
-        console.warn("[connect-phone] 飞书连接轮询异常", { error });
+        console.warn("[connect-phone] 扫码连接轮询异常", { target, error });
         cancelInstallAttempt();
         setInstall((current) => ({
           ...current,
@@ -242,6 +293,9 @@ export function ConnectPhoneView() {
       () => void poll(),
       Math.max(started.interval * 1000, MIN_INSTALL_POLL_MS)
     );
+    if (target === "wechat") {
+      void poll();
+    }
   }
 
   const showTabbedManagement = configLoaded && isConfigured;
@@ -266,19 +320,25 @@ export function ConnectPhoneView() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-12 py-8">
-        <div className="mx-auto grid max-w-[1040px] items-center gap-12 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <div className="rounded-sm border bg-background p-5" data-testid="connect-phone-feishu-panel">
+        <div className="mx-auto grid max-w-[1040px] items-center gap-12 lg:grid-cols-[336px_minmax(0,1fr)]">
+          <div className="rounded-sm border bg-background p-5" data-testid="connect-phone-panel">
+            <ConnectTargetSelector activeTarget={activeTarget} onSelect={selectTarget} />
             {showTabbedManagement ? (
               <ConnectPhoneTabs
                 activeTab={activeTab}
-                onSelect={setActiveTab}
+                onSelect={selectTab}
                 onAddConnection={addConnection}
               />
             ) : null}
             {showScanPanel ? (
-              <ScanPanel install={install} onRefresh={() => void startInstall()} />
+              <ScanPanel
+                target={activeTarget}
+                install={install}
+                onRefresh={() => void startInstall(activeTarget)}
+              />
             ) : (
               <BoundSessionsPanel
+                target={activeTarget}
                 sessions={boundSessions}
                 onRefresh={refreshBindings}
                 onOpenSession={openBoundSession}
@@ -287,14 +347,52 @@ export function ConnectPhoneView() {
           </div>
 
           <img
-            src={connectPhoneIllustrationUrl}
-            alt={t("connectPhone.illustrationAlt")}
-            className="hidden max-h-[calc(100vh-140px)] w-full max-w-[560px] select-none justify-self-center object-contain lg:block"
+            src={illustrationUrl}
+            alt={
+              activeTarget === "wechat"
+                ? t("connectPhone.wechatIllustrationAlt")
+                : t("connectPhone.feishuIllustrationAlt")
+            }
+            className={cn(
+              "hidden max-h-[calc(100vh-140px)] w-full max-w-[560px] select-none justify-self-center object-contain lg:block",
+              activeTarget === "wechat" && "scale-[0.965]"
+            )}
             draggable={false}
           />
         </div>
       </div>
     </section>
+  );
+}
+
+function ConnectTargetSelector(props: {
+  activeTarget: ConnectTarget;
+  onSelect: (target: ConnectTarget) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="mb-5 grid grid-cols-2 gap-2" role="group" aria-label={t("connectPhone.platformLabel")}>
+      {CONNECT_TARGETS.map((target) => {
+        const active = props.activeTarget === target;
+        return (
+          <button
+            key={target}
+            type="button"
+            aria-pressed={active}
+            onClick={() => props.onSelect(target)}
+            className={cn(
+              "flex h-10 items-center justify-center gap-2 rounded-sm border px-3 text-caption font-medium transition-colors",
+              active
+                ? "border-foreground bg-foreground text-background"
+                : "border-border bg-background text-muted-foreground hover:bg-canvas-soft-2 hover:text-foreground"
+            )}
+          >
+            <ProviderIcon target={target} className="size-4" />
+            {t(target === "wechat" ? "connectPhone.wechatTitle" : "connectPhone.feishuTitle")}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -350,40 +448,46 @@ function TabButton(props: { active: boolean; label: string; onClick: () => void 
   );
 }
 
-function ScanPanel({ install, onRefresh }: { install: InstallState; onRefresh: () => void }) {
+function ScanPanel(props: {
+  target: ConnectTarget;
+  install: InstallState;
+  onRefresh: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <>
       <h2 className="mb-5 flex items-center justify-center gap-2 text-center text-body-sm font-medium text-foreground">
-        <img
-          src={feishuLogoUrl}
-          alt=""
-          aria-hidden="true"
-          className="size-[20px] flex-none object-contain"
-        />
-        {t("connectPhone.qrTitle")}
+        <ProviderIcon target={props.target} className="size-[20px]" />
+        {t(props.target === "wechat" ? "connectPhone.wechatQrTitle" : "connectPhone.feishuQrTitle")}
       </h2>
-      <QrSurface install={install} onRefresh={onRefresh} />
+      <QrSurface
+        target={props.target}
+        install={props.install}
+        onRefresh={props.onRefresh}
+      />
+      <p className="mx-auto mt-4 max-w-[246px] text-center text-caption leading-relaxed text-muted-foreground">
+        {t(props.target === "wechat" ? "connectPhone.wechatScanHint" : "connectPhone.feishuScanHint")}
+      </p>
     </>
   );
 }
 
 function BoundSessionsPanel(props: {
+  target: ConnectTarget;
   sessions: Session[];
   onRefresh: () => void;
   onOpenSession: (sessionId: string) => void;
 }) {
   const { t } = useTranslation();
+  const emptyHint =
+    props.target === "wechat"
+      ? t("connectPhone.wechatBindingsEmptyHint")
+      : t("connectPhone.feishuBindingsEmptyHint");
   return (
-    <div data-testid="feishu-binding-panel">
+    <div data-testid={`${props.target}-binding-panel`}>
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="flex min-w-0 items-center gap-2 text-body-sm font-medium text-foreground">
-          <img
-            src={feishuLogoUrl}
-            alt=""
-            aria-hidden="true"
-            className="size-[20px] flex-none object-contain"
-          />
+          <ProviderIcon target={props.target} className="size-[20px]" />
           <span className="truncate">{t("connectPhone.bindingsTitle")}</span>
         </h2>
         <Button type="button" variant="ghost" size="sm" onClick={props.onRefresh}>
@@ -394,7 +498,7 @@ function BoundSessionsPanel(props: {
       {props.sessions.length === 0 ? (
         <div
           className="flex min-h-[246px] flex-col items-center justify-center gap-3 rounded-sm border border-dashed bg-canvas-soft-2 px-4 text-center"
-          data-testid="feishu-binding-empty"
+          data-testid={`${props.target}-binding-empty`}
         >
           <span className="flex size-10 items-center justify-center rounded-full border bg-background text-muted-foreground">
             <MessageSquareText className="size-5" />
@@ -404,12 +508,12 @@ function BoundSessionsPanel(props: {
               {t("connectPhone.bindingsEmptyTitle")}
             </div>
             <p className="mt-1 max-w-[240px] text-caption leading-relaxed text-muted-foreground">
-              {t("connectPhone.bindingsEmptyHint")}
+              {emptyHint}
             </p>
           </div>
         </div>
       ) : (
-        <div className="space-y-2" data-testid="feishu-binding-list">
+        <div className="space-y-2" data-testid={`${props.target}-binding-list`}>
           {props.sessions.map((session) => (
             <button
               key={session.id}
@@ -425,7 +529,11 @@ function BoundSessionsPanel(props: {
                   {session.title}
                 </span>
                 <span className="mt-0.5 block truncate text-micro text-muted-foreground">
-                  {t("connectPhone.boundSessionHint")}
+                  {t(
+                    props.target === "wechat"
+                      ? "connectPhone.wechatBoundSessionHint"
+                      : "connectPhone.feishuBoundSessionHint"
+                  )}
                 </span>
               </span>
               <span className="flex-none text-micro font-medium text-link">
@@ -439,81 +547,85 @@ function BoundSessionsPanel(props: {
   );
 }
 
-function QrSurface({ install, onRefresh }: { install: InstallState; onRefresh: () => void }) {
+function QrSurface(props: {
+  target: ConnectTarget;
+  install: InstallState;
+  onRefresh: () => void;
+}) {
   const { t } = useTranslation();
 
-  if (install.status === "showing" && install.url) {
+  if (props.install.status === "showing" && props.install.url) {
     return (
-      <QrStateFrame>
-        <QrFrame url={install.url} expired={false} onRefresh={onRefresh} />
+      <QrStateFrame target={props.target}>
+        <QrFrame url={props.install.url} expired={false} onRefresh={props.onRefresh} />
       </QrStateFrame>
     );
   }
 
-  if (install.status === "loading") {
+  if (props.install.status === "loading") {
     return (
-      <QrStateFrame>
+      <QrStateFrame target={props.target}>
         <div className="grid justify-items-center gap-3 text-caption text-muted-foreground">
           <Loader2 className="size-7 animate-spin" />
-          <span>{t("settings.feishu.installLoading")}</span>
+          <span>{t("connectPhone.installLoading")}</span>
         </div>
       </QrStateFrame>
     );
   }
 
-  if (install.status === "success") {
+  if (props.install.status === "success") {
     return (
-      <QrStateFrame>
+      <QrStateFrame target={props.target}>
         <div className="grid justify-items-center gap-3">
           <CheckCircle className="size-10 text-success" />
           <div className="text-caption font-medium text-foreground">
-            {t("settings.feishu.status.connected")}
+            {t("connectPhone.connected")}
           </div>
-          <RefreshButton onClick={onRefresh} />
+          <RefreshButton onClick={props.onRefresh} />
         </div>
       </QrStateFrame>
     );
   }
 
-  if (install.status === "expired" && install.url) {
+  if (props.install.status === "expired" && props.install.url) {
     return (
-      <QrStateFrame>
-        <QrFrame url={install.url} expired onRefresh={onRefresh} />
+      <QrStateFrame target={props.target}>
+        <QrFrame url={props.install.url} expired onRefresh={props.onRefresh} />
       </QrStateFrame>
     );
   }
 
-  if (install.status === "expired" || install.status === "error") {
-    const isExpired = install.status === "expired";
+  if (props.install.status === "expired" || props.install.status === "error") {
+    const isExpired = props.install.status === "expired";
     return (
-      <QrStateFrame>
+      <QrStateFrame target={props.target}>
         <div className="grid justify-items-center gap-3">
           <WarningCircle className={cn("size-9", isExpired ? "text-muted-foreground" : "text-destructive")} />
           <div className="max-w-[220px] text-caption font-medium text-foreground">
-            {install.error ||
-              (isExpired ? t("settings.feishu.installExpired") : t("settings.feishu.installFailed"))}
+            {props.install.error ||
+              (isExpired ? t("connectPhone.installExpired") : t("connectPhone.installFailed"))}
           </div>
-          <RefreshButton onClick={onRefresh} />
+          <RefreshButton onClick={props.onRefresh} />
         </div>
       </QrStateFrame>
     );
   }
 
   return (
-    <QrStateFrame>
-      <div className="grid justify-items-center gap-4">
-        <QrCode className="size-10 text-muted-foreground" />
-        <RefreshButton onClick={onRefresh} />
+    <QrStateFrame target={props.target}>
+      <div className="grid justify-items-center gap-3 text-caption text-muted-foreground">
+        <Loader2 className="size-7 animate-spin" />
+        <span>{t("connectPhone.installLoading")}</span>
       </div>
     </QrStateFrame>
   );
 }
 
-function QrStateFrame({ children }: { children: ReactNode }) {
+function QrStateFrame({ target, children }: { target: ConnectTarget; children: ReactNode }) {
   return (
     <div
       className="mx-auto flex size-[246px] items-center justify-center text-center"
-      data-testid="feishu-qr-surface"
+      data-testid={`${target}-qr-surface`}
     >
       {children}
     </div>
@@ -521,10 +633,15 @@ function QrStateFrame({ children }: { children: ReactNode }) {
 }
 
 function QrFrame(props: { url: string; expired: boolean; onRefresh: () => void }) {
+  const isImage = props.url.startsWith("data:image/");
   return (
-    <div className="relative size-[246px] rounded-sm border bg-background p-3 shadow-subtle" data-testid="feishu-qr-frame">
+    <div className="relative size-[246px] rounded-sm border bg-background p-3 shadow-subtle" data-testid="connect-phone-qr-frame">
       <div className={cn(props.expired && "opacity-20")}>
-        <QRCodeSVG value={props.url} size={220} marginSize={1} />
+        {isImage ? (
+          <img src={props.url} alt="" className="size-[220px] object-contain" />
+        ) : (
+          <QRCodeSVG value={props.url} size={220} marginSize={1} />
+        )}
       </div>
       {props.expired ? (
         <div className="absolute inset-0 flex items-center justify-center rounded-sm bg-background/75 backdrop-blur-[1px]">
@@ -540,7 +657,50 @@ function RefreshButton({ onClick }: { onClick: () => void }) {
   return (
     <Button type="button" size="sm" onClick={onClick}>
       <RefreshCw className="size-4" />
-      {t("settings.feishu.installRefresh")}
+      {t("connectPhone.installRefresh")}
     </Button>
   );
+}
+
+function ProviderIcon({ target, className }: { target: ConnectTarget; className?: string }) {
+  if (target === "wechat") {
+    return <WechatIcon className={className} />;
+  }
+  return <img src={feishuLogoUrl} alt="" aria-hidden="true" className={cn("object-contain", className)} />;
+}
+
+function WechatIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+      <path
+        d="M10.2 5.1C6.3 5.1 3.1 7.6 3.1 10.8c0 1.8 1 3.4 2.6 4.5l-.6 2.1 2.4-1.2c.8.2 1.7.4 2.7.4 3.9 0 7.1-2.6 7.1-5.8s-3.2-5.7-7.1-5.7Z"
+        fill="#18C26E"
+      />
+      <path
+        d="M14.4 10.4c3.3 0 6 2.1 6 4.8 0 1.5-.8 2.8-2.1 3.7l.5 1.7-2-1c-.7.2-1.5.3-2.4.3-3.3 0-6-2.1-6-4.7 0-2.7 2.7-4.8 6-4.8Z"
+        fill="#35D98A"
+      />
+      <circle cx="7.9" cy="10.3" r="0.75" fill="white" />
+      <circle cx="12.1" cy="10.3" r="0.75" fill="white" />
+      <circle cx="12.6" cy="14.9" r="0.62" fill="white" />
+      <circle cx="16.2" cy="14.9" r="0.62" fill="white" />
+    </svg>
+  );
+}
+
+function isTargetConfigured(
+  target: ConnectTarget,
+  input: {
+    feishuConfig?: { enabled: boolean; appId: string };
+    wechatConfig?: { enabled: boolean; accountId: string };
+  }
+): boolean {
+  if (target === "wechat") {
+    return Boolean(input.wechatConfig?.enabled && input.wechatConfig.accountId.trim());
+  }
+  return Boolean(input.feishuConfig?.enabled && input.feishuConfig.appId.trim());
+}
+
+function isSessionBoundToTarget(session: Session, target: ConnectTarget): boolean {
+  return target === "wechat" ? Boolean(session.wechatChatId) : Boolean(session.feishuChatId);
 }

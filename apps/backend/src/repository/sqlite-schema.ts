@@ -166,6 +166,7 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
   ensureColumn(connection, "sessions", "parent_session_id", "text");
   ensureColumn(connection, "sessions", "fork_message_id", "text");
   ensureColumn(connection, "sessions", "feishu_chat_id", "text");
+  ensureColumn(connection, "sessions", "wechat_chat_id", "text");
   ensureColumn(connection, "sessions", "model", "text");
   ensureColumn(connection, "sessions", "reasoning_mode", "text");
   ensureColumn(connection, "providers", "reasoning_mode", "text");

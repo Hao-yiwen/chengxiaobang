@@ -20,6 +20,7 @@ import type {
   SlashCommandSource
 } from "@chengxiaobang/shared";
 import { builtinResourceRoot } from "../paths";
+import { loadPluginCommands } from "./plugin-commands";
 
 export interface SlashCommandLookup {
   prompt: string;
@@ -29,6 +30,12 @@ export interface SlashCommandLookup {
 interface LoadedResource {
   kind: "prompt_template" | "skill";
   source: SlashCommandSource;
+  /** plugin 来源时的归属插件名。 */
+  pluginName?: string;
+  /** 插件命令的参数提示（来自 commands/*.md 的 argument-hint）。 */
+  argumentHint?: string;
+  /** 被单项停用：仍出现在 list（供 UI 重新启用），但不进入模型可见清单/命令展开。 */
+  disabled?: boolean;
   template?: PromptTemplate;
   skill?: Skill;
 }
@@ -92,16 +99,27 @@ export const builtinSlashCommands: SlashCommand[] = [
   }
 ];
 
+type PluginRootsProvider = () => Promise<Array<{ pluginName: string; root: string }>>;
+
 export interface SlashCommandServiceOptions {
   /** 随应用分发的市场技能目录；默认 builtin 根旁的 skills-market。 */
   marketRoot?: string;
   /** 已激活市场技能名集合；未注入时市场技能一律不加载。 */
   enabledMarketSkills?: () => Promise<Set<string>>;
+  /** 已启用插件根目录回调；未注入时不加载任何插件资源。 */
+  enabledPluginRoots?: PluginRootsProvider;
+  /** 被单项停用的插件技能名集合回调（黑名单），命中者从模型可见清单/展开中剔除。 */
+  disabledSkills?: () => Promise<Set<string>>;
+  /** 被单项停用的插件命令名集合回调（黑名单），命中者从命令展开中剔除。 */
+  disabledCommands?: () => Promise<Set<string>>;
 }
 
 export class SlashCommandService {
   private readonly marketRoot: string;
   private readonly enabledMarketSkills?: () => Promise<Set<string>>;
+  private readonly enabledPluginRoots?: PluginRootsProvider;
+  private readonly disabledSkills?: () => Promise<Set<string>>;
+  private readonly disabledCommands?: () => Promise<Set<string>>;
 
   constructor(
     private readonly globalRoot = join(homedir(), ".chengxiaobang"),
@@ -110,6 +128,9 @@ export class SlashCommandService {
   ) {
     this.marketRoot = options.marketRoot ?? join(builtinResourceRoot(), "skills-market");
     this.enabledMarketSkills = options.enabledMarketSkills;
+    this.enabledPluginRoots = options.enabledPluginRoots;
+    this.disabledSkills = options.disabledSkills;
+    this.disabledCommands = options.disabledCommands;
   }
 
   async list(project?: Project): Promise<{
@@ -131,7 +152,10 @@ export class SlashCommandService {
     }
     const diagnostics: SlashCommandDiagnostic[] = [];
     const resources = await this.loadResources(project, diagnostics);
-    const resource = findResource(resources, parsed.name);
+    const resource = findResource(
+      resources.filter((entry) => !entry.disabled),
+      parsed.name
+    );
     if (!resource) {
       return { prompt, matched: false };
     }
@@ -232,6 +256,7 @@ export class SlashCommandService {
       }
     }
     resources.push(...(await this.loadMarketSkills(diagnostics)));
+    resources.push(...(await this.loadPluginResources(diagnostics)));
     return resources;
   }
 
@@ -273,6 +298,75 @@ export class SlashCommandService {
     } finally {
       await env.cleanup();
     }
+  }
+
+  /** 已启用插件提供的技能与命令；被黑名单标记的仍列出但标 disabled（供 UI 重新启用）。 */
+  private async loadPluginResources(
+    diagnostics: SlashCommandDiagnostic[]
+  ): Promise<LoadedResource[]> {
+    if (!this.enabledPluginRoots) {
+      return [];
+    }
+    const roots = await this.enabledPluginRoots();
+    if (roots.length === 0) {
+      return [];
+    }
+    const [disabledSkills, disabledCommands] = await Promise.all([
+      this.disabledSkills ? this.disabledSkills() : Promise.resolve(new Set<string>()),
+      this.disabledCommands ? this.disabledCommands() : Promise.resolve(new Set<string>())
+    ]);
+    const resources: LoadedResource[] = [];
+    for (const { pluginName, root } of roots) {
+      const env = new SlashCommandExecutionEnv({ cwd: root });
+      try {
+        const skillResult = await loadSkills(env, ["skills"]);
+        resources.push(
+          ...skillResult.skills.map((skill) => ({
+            kind: "skill" as const,
+            source: "plugin" as const,
+            pluginName,
+            disabled: disabledSkills.has(skill.name),
+            skill
+          }))
+        );
+        diagnostics.push(
+          ...skillResult.diagnostics.map((diagnostic) => ({
+            type: "warning" as const,
+            message: diagnostic.message,
+            path: diagnostic.path,
+            source: "plugin" as const
+          }))
+        );
+      } catch (error) {
+        console.warn("[slash-command-service] 加载插件技能失败", {
+          pluginName,
+          root,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      } finally {
+        await env.cleanup();
+      }
+      try {
+        const commands = await loadPluginCommands(root);
+        resources.push(
+          ...commands.map((command) => ({
+            kind: "prompt_template" as const,
+            source: "plugin" as const,
+            pluginName,
+            argumentHint: command.argumentHint,
+            disabled: disabledCommands.has(command.template.name),
+            template: command.template
+          }))
+        );
+      } catch (error) {
+        console.warn("[slash-command-service] 加载插件命令失败", {
+          pluginName,
+          root,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+    return resources;
   }
 }
 
@@ -388,7 +482,8 @@ function modelVisibleSkills(resources: LoadedResource[]): SkillResource[] {
     (resource): resource is SkillResource =>
       resource.kind === "skill" &&
       resource.skill !== undefined &&
-      resource.skill.disableModelInvocation !== true
+      resource.skill.disableModelInvocation !== true &&
+      resource.disabled !== true
   );
 }
 
@@ -413,12 +508,17 @@ function resourceToCommand(resource: LoadedResource): SlashCommand {
   const rawName = resourceName(resource);
   const name = `/${rawName}`;
   return {
-    id: `${resource.source}:${resource.kind}:${rawName}`,
+    id: resource.pluginName
+      ? `plugin:${resource.pluginName}:${resource.kind}:${rawName}`
+      : `${resource.source}:${resource.kind}:${rawName}`,
     name,
     kind: resource.kind,
     description: resource.template?.description ?? resource.skill?.description ?? "",
     source: resource.source,
-    insertText: `${name} `
+    insertText: `${name} `,
+    ...(resource.pluginName ? { pluginName: resource.pluginName } : {}),
+    ...(resource.argumentHint ? { argumentHint: resource.argumentHint } : {}),
+    ...(resource.source === "plugin" ? { enabled: !resource.disabled } : {})
   };
 }
 
@@ -436,9 +536,12 @@ function compareCommands(a: SlashCommand, b: SlashCommand): number {
 
 function sourceRank(source: SlashCommandSource): number {
   if (source === "project") {
-    return 3;
+    return 4;
   }
   if (source === "global") {
+    return 3;
+  }
+  if (source === "plugin") {
     return 2;
   }
   if (source === "market") {

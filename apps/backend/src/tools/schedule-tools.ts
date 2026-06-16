@@ -46,6 +46,8 @@ export interface ScheduleToolRuntime {
   sessionId: string;
   /** 飞书绑定会话不支持创建（执行结果不会回发飞书，会成为静默黑洞）。 */
   feishuChatId?: string;
+  /** 微信绑定会话不支持创建（执行结果不会回发微信，会成为静默黑洞）。 */
+  wechatChatId?: string;
 }
 
 /** 本地时间字符串，给模型/用户复述用。 */
@@ -77,11 +79,12 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
       "创建定时任务：kind=once 用带时区 ISO 时间 run_at 创建一次性任务；kind=recurring 用 5 字段 cron 创建周期任务。具体某天某时执行一次不要用 cron 表达。",
     parameters: createParams,
     execute: async (_toolCallId, params) => {
-      if (runtime.feishuChatId) {
+      if (runtime.feishuChatId || runtime.wechatChatId) {
+        const channel = runtime.wechatChatId ? "微信" : "飞书";
         console.warn(
-          `[schedule-tools] 飞书会话拒绝创建定时任务 sessionId=${runtime.sessionId}`
+          `[schedule-tools] ${channel}会话拒绝创建定时任务 sessionId=${runtime.sessionId}`
         );
-        throw new Error("飞书会话暂不支持定时任务（执行结果无法回发飞书），请在桌面端会话中创建。");
+        throw new Error(`${channel}会话暂不支持定时任务（执行结果无法回发${channel}），请在桌面端会话中创建。`);
       }
 
       if (params.kind === "once") {

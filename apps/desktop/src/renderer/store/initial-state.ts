@@ -3,6 +3,7 @@ import type {
   FeishuConfig,
   FeishuStatus,
   Message,
+  PluginSummary,
   ProviderConfig,
   Project,
   ReasoningMode,
@@ -15,7 +16,9 @@ import type {
   TokenUsage,
   ToolActivity,
   ToolCall,
-  WebSearchConfig
+  WebSearchConfig,
+  WechatConfig,
+  WechatStatus
 } from "@chengxiaobang/shared";
 import { DEFAULT_LOCALE, type Locale } from "../i18n";
 import { normalizeOnboardingProfile, type OnboardingProfile } from "../../common/profile";
@@ -70,6 +73,7 @@ export const initialState =  {
   streamText: "",
   thinking: "",
   thinkingStartedAt: undefined as number | undefined,
+  activeRunStartedAt: undefined as number | undefined,
   events: [] as StreamEvent[],
   toolActivity: undefined as ToolActivity | undefined,
   runningTool: undefined as ToolCall | undefined,
@@ -114,10 +118,13 @@ export const initialState =  {
   terminalRunning: false,
   feishuConfig: undefined as FeishuConfig | undefined,
   feishuStatus: undefined as FeishuStatus | undefined,
+  wechatConfig: undefined as WechatConfig | undefined,
+  wechatStatus: undefined as WechatStatus | undefined,
   webSearchConfig: undefined as WebSearchConfig | undefined,
   tasks: [] as ScheduledTask[],
   skills: [] as SkillSummary[],
   skillsAddRequested: false,
+  plugins: [] as PluginSummary[],
   theme: "system" as Theme,
   locale: DEFAULT_LOCALE as Locale,
   clientReady: false

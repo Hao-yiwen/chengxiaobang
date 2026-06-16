@@ -130,6 +130,20 @@ export function AskUserCard({ toolCall, onDecide, resolved }: AskUserCardProps) 
     });
   };
 
+  const markMissing = (questionIndex: number) => {
+    setMissing((current) => {
+      const next = new Set(current);
+      next.add(questionIndex);
+      return next;
+    });
+    setHighlight(null);
+    console.warn("[AskUserCard] 当前题未回答，已阻止继续", {
+      toolCallId: toolCall.id,
+      runId: toolCall.runId,
+      questionIndex
+    });
+  };
+
   const setQuestionOption = (questionIndex: number, optionIndex: number) => {
     const question = questions[questionIndex];
     if (!question) {
@@ -215,6 +229,27 @@ export function AskUserCard({ toolCall, onDecide, resolved }: AskUserCardProps) 
   };
 
   const submitAnswers = () => {
+    if (!currentQuestion) {
+      return;
+    }
+    const currentAnswer = questionAnswer(currentQuestion, draftFor(currentQuestionIndex));
+    if (!currentAnswer) {
+      markMissing(currentQuestionIndex);
+      return;
+    }
+    clearMissing(currentQuestionIndex);
+    if (isMultiQuestion && currentQuestionIndex < questions.length - 1) {
+      const nextIndex = currentQuestionIndex + 1;
+      console.debug("[AskUserCard] 当前题已回答，继续到下一题", {
+        toolCallId: toolCall.id,
+        runId: toolCall.runId,
+        from: currentQuestionIndex,
+        to: nextIndex
+      });
+      setCurrentQuestionIndex(nextIndex);
+      setHighlight(null);
+      return;
+    }
     const answer = buildAnswer();
     if (answer) {
       submitAnswer(answer);

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@zcode/ios-simulator-plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "main": "./dist/mcp/server.js",
+  "types": "./dist/mcp/server.d.ts",
+  "scripts": {
+    "build": "tsc && node scripts/build-mcp.mjs",
+    "clean": "node ../../scripts/clean-dist.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run test"
+  },
+  "exports": {
+    "./mcp": {
+      "types": "./dist/mcp/server.d.ts",
+      "import": "./dist/mcp/server.js"
+    }
+  },
+  "bin": {
+    "ios-simulator-mcp": "./dist/mcp/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.5"
+  }
+}

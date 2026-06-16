@@ -133,6 +133,7 @@ export function settledSessionHistoryPatch(
           streamText: "",
           thinking: "",
           thinkingStartedAt: undefined,
+          activeRunStartedAt: undefined,
           events: [],
           ...pauseRunQueue(state, sessionId),
           ...clearSessionRunTracking(state, sessionId)
@@ -183,6 +184,9 @@ export function activeRunRecoveryPatch(
     activeRunModel: state.activeRunId === snapshot.run.id ? state.activeRunModel : undefined,
     activeRunLastAssistant:
       state.activeRunId === snapshot.run.id ? state.activeRunLastAssistant : undefined,
+    // 同 run 恢复保留本地计时起点；异 run 清空，让 groupTurns 回退到 user.createdAt。
+    activeRunStartedAt:
+      state.activeRunId === snapshot.run.id ? state.activeRunStartedAt : undefined,
     toolActivity: undefined,
     streamText: "",
     thinking: "",

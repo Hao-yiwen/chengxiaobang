@@ -30,6 +30,11 @@ import { requiresApproval } from "../tools/registry";
 import { normalizeDecision, type ApprovalQueue } from "./approval-queue";
 import type { AsyncEventQueue } from "./async-queue";
 import type { ProjectApprovalTrustService } from "./project-approval-trust";
+import {
+  TODO_IDLE_REMINDER,
+  buildRepeatedToolReminder,
+  buildToolOverloadReminder
+} from "./system-reminders";
 
 const REJECTED_RESULT = "用户拒绝执行该操作";
 const REJECTED_MODEL_HINT = "用户拒绝执行该操作。请考虑其他方式或向用户说明。";
@@ -45,6 +50,15 @@ const TOOL_ACTIVITY_PREVIEW_KEYS = [
   "skill"
 ] as const;
 const TOOL_ACTIVITY_PREVIEW_MAX = 120;
+
+/** 连续以相同参数重复调用同一工具，达到此次数注入一次软提醒。 */
+const REPEATED_TOOL_THRESHOLD = 3;
+/** 单个 run 工具调用数达到 maxToolIterations 的此比例时，注入一次过载软提醒。 */
+const TOOL_OVERLOAD_RATIO = 0.7;
+/** todo 自上次 TodoWrite 起经过此轮数仍有未完成项，触发空闲提醒。 */
+const TODO_REMINDER_AFTER_TURNS = 6;
+/** 两次 todo 空闲提醒之间至少间隔此轮数，避免刷屏。 */
+const TODO_REMINDER_GAP_TURNS = 6;
 
 function answerText(answer: AskUserAnswer): string {
   return askUserAnswerText(answer);
@@ -86,6 +100,17 @@ export class RunEventTranslator {
   private turnStartedAt?: number;
   private reasoningStartedAt?: number;
   private reasoningMs?: number;
+  // 动态软提醒（todo 空闲 / 工具异常）状态。pendingReminders 由每轮的
+  // collectReminders 取走并清空，合成不落库的 system-reminder 消息注入下一轮。
+  private toolCallsInRun = 0;
+  private lastToolSignature?: string;
+  private repeatedToolCount = 0;
+  private repeatToolReminded = false;
+  private overloadReminded = false;
+  private lastTodoWriteTurn = 0;
+  private hasActiveTodos = false;
+  private lastTodoReminderTurn = Number.NEGATIVE_INFINITY;
+  private readonly pendingReminders: string[] = [];
 
   constructor(
     private readonly options: {
@@ -114,6 +139,64 @@ export class RunEventTranslator {
 
   isPlanConfirmed(): boolean {
     return Boolean(this.options.planConfirmed);
+  }
+
+  /**
+   * 取走本轮应注入的动态软提醒文案并清空待发队列；同时按轮次判断 todo 空闲提醒。
+   * 由 agent-runner 在每轮 getSteeringMessages 调用，合成不落库的 SR 消息。
+   */
+  collectReminders(): string[] {
+    const reminders = this.pendingReminders.splice(0);
+    if (
+      this.hasActiveTodos &&
+      this.turnCount - this.lastTodoWriteTurn >= TODO_REMINDER_AFTER_TURNS &&
+      this.turnCount - this.lastTodoReminderTurn >= TODO_REMINDER_GAP_TURNS
+    ) {
+      reminders.push(TODO_IDLE_REMINDER);
+      this.lastTodoReminderTurn = this.turnCount;
+      console.info("[pi-events] 触发 todo 空闲软提醒", {
+        runId: this.options.runId,
+        turnCount: this.turnCount,
+        lastTodoWriteTurn: this.lastTodoWriteTurn
+      });
+    }
+    return reminders;
+  }
+
+  /** 统计工具调用，识别重复调用 / 调用过载 / todo 更新，产出软提醒。 */
+  private trackToolForReminders(toolName: string, args: Record<string, unknown>): void {
+    this.toolCallsInRun += 1;
+    const signature = `${toolName}:${JSON.stringify(args)}`;
+    if (signature === this.lastToolSignature) {
+      this.repeatedToolCount += 1;
+    } else {
+      this.lastToolSignature = signature;
+      this.repeatedToolCount = 1;
+      this.repeatToolReminded = false;
+    }
+    if (this.repeatedToolCount >= REPEATED_TOOL_THRESHOLD && !this.repeatToolReminded) {
+      this.pendingReminders.push(buildRepeatedToolReminder(toolName, this.repeatedToolCount));
+      this.repeatToolReminded = true;
+      console.info("[pi-events] 触发重复工具调用软提醒", {
+        runId: this.options.runId,
+        toolName,
+        count: this.repeatedToolCount
+      });
+    }
+    const overloadAt = Math.max(1, Math.round(this.options.maxToolIterations * TOOL_OVERLOAD_RATIO));
+    if (this.toolCallsInRun >= overloadAt && !this.overloadReminded) {
+      this.pendingReminders.push(buildToolOverloadReminder(this.toolCallsInRun));
+      this.overloadReminded = true;
+      console.info("[pi-events] 触发工具调用过载软提醒", {
+        runId: this.options.runId,
+        toolCalls: this.toolCallsInRun,
+        overloadAt
+      });
+    }
+    if (toolName === "TodoWrite") {
+      this.lastTodoWriteTurn = this.turnCount;
+      this.hasActiveTodos = hasUnfinishedTodos(args);
+    }
   }
 
   /** The AgentEventSink passed to runAgentLoopContinue. */
@@ -413,6 +496,7 @@ export class RunEventTranslator {
     };
     this.toolCalls.set(toolCallId, toolCall);
     await this.options.store.insertToolCall(toolCall);
+    this.trackToolForReminders(toolName, normalizedArgs);
     console.info("[pi-events] 工具执行开始", {
       runId: this.options.runId,
       modelToolCallId: toolCallId,
@@ -749,6 +833,18 @@ function encodeToolCallIdPart(value: string): string {
 
 function normalizeArgs(args: unknown): Record<string, unknown> {
   return typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+}
+
+/** TodoWrite 的 args.todos 中是否还有未完成项，用于决定是否需要 todo 空闲提醒。 */
+function hasUnfinishedTodos(args: Record<string, unknown>): boolean {
+  const todos = (args as { todos?: unknown }).todos;
+  if (!Array.isArray(todos)) {
+    return false;
+  }
+  return todos.some((todo) => {
+    const status = (todo as { status?: unknown })?.status;
+    return typeof status === "string" && status !== "completed";
+  });
 }
 
 function previewToolArgs(args: unknown): ToolActivityArgsPreview {

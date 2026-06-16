@@ -6,9 +6,10 @@ export type SkillCategory = z.infer<typeof skillCategorySchema>;
 
 /**
  * 技能来源：builtin 随应用内置且始终激活；market 随应用分发、由用户按需激活；
- * custom 是用户经 GitHub 链接导入或手动创建、落在 ~/.chengxiaobang/skills 的技能。
+ * custom 是用户经 GitHub 链接导入或手动创建、落在 ~/.chengxiaobang/skills 的技能；
+ * plugin 由已启用插件提供（随插件整包启停，可在技能页单项停用）。
  */
-export const skillSourceSchema = z.enum(["builtin", "market", "custom"]);
+export const skillSourceSchema = z.enum(["builtin", "market", "custom", "plugin"]);
 export type SkillSource = z.infer<typeof skillSourceSchema>;
 
 /** 技能页的单行条目：市场目录与「我的技能」共用这一形状。 */
@@ -17,8 +18,10 @@ export const skillSummarySchema = z.object({
   description: z.string(),
   category: skillCategorySchema,
   source: skillSourceSchema,
-  /** builtin 恒为 true；market 由激活状态决定；custom 安装即激活。 */
-  enabled: z.boolean()
+  /** builtin 恒为 true；market 由激活状态决定；custom 安装即激活；plugin 随插件启停且可单项停用。 */
+  enabled: z.boolean(),
+  /** 当 source 为 plugin 时提供该技能所属插件名，用于 UI 标注来源与跳转插件页。 */
+  pluginName: z.string().optional()
 });
 export type SkillSummary = z.infer<typeof skillSummarySchema>;
 

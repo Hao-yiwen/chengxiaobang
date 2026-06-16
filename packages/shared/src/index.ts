@@ -1,4 +1,5 @@
 export * from "./access-mode";
+export * from "./connect-phone";
 export * from "./debug";
 export * from "./feishu";
 export * from "./git";
@@ -6,6 +7,7 @@ export * from "./message";
 export * from "./model";
 export * from "./model-catalog";
 export * from "./plan";
+export * from "./plugin";
 export * from "./project";
 export * from "./provider";
 export * from "./provider-catalog.generated";

@@ -1,7 +1,13 @@
-import { type CSSProperties, type ReactNode, useState } from "react";
-import { TextAlignLeftIcon as WrapText } from "@phosphor-icons/react";
-import { CodeBlock, CodeBlockCopyButton } from "streamdown";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { CheckIcon, CopyIcon, TextAlignLeftIcon as WrapText } from "@phosphor-icons/react";
+import { CodeBlock } from "streamdown";
 import { normalizeCodeLanguage, resolveCodeLanguageIcon } from "@/lib/code-language-icons";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export interface CodeBlockPanelProps {
@@ -29,21 +35,26 @@ export function CodeBlockPanel({
   const iconStyle: CodeBlockIconStyle = {
     "--cxb-code-language-icon": `url("${iconUrl}")`
   };
+  const wrapLabel = wrap ? "关闭自动换行" : "自动换行";
   const actions = (
-    <>
-      <button
-        type="button"
-        className="cxb-code-block-wrap-button"
-        data-streamdown="code-block-wrap-button"
-        aria-label={wrap ? "关闭自动换行" : "自动换行"}
-        aria-pressed={wrap}
-        title={wrap ? "关闭自动换行" : "自动换行"}
-        onClick={() => setWrap((value) => !value)}
-      >
-        <WrapText className="size-3.5" />
-      </button>
-      <CodeBlockCopyButton aria-label="复制代码" code={code} title="复制代码" />
-    </>
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="cxb-code-block-wrap-button"
+            data-streamdown="code-block-wrap-button"
+            aria-label={wrapLabel}
+            aria-pressed={wrap}
+            onClick={() => setWrap((value) => !value)}
+          >
+            <WrapText className="size-3" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{wrapLabel}</TooltipContent>
+      </Tooltip>
+      <CopyButton code={code} />
+    </TooltipProvider>
   );
 
   return (
@@ -108,4 +119,54 @@ function PlainTextCodeBlock({
 
 function trimTrailingNewlines(value: string): string {
   return value.replace(/[\r\n]+$/g, "");
+}
+
+function CopyButton({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+      }
+    },
+    []
+  );
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+      }
+      resetTimerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error("[CodeBlock] 复制代码到剪贴板失败", {
+        codeLength: code.length,
+        error
+      });
+    }
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="cxb-code-block-copy-button"
+          aria-label="复制代码"
+          onClick={handleCopy}
+        >
+          {copied ? (
+            <CheckIcon className="size-3" weight="bold" />
+          ) : (
+            <CopyIcon className="size-3" />
+          )}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{copied ? "已复制" : "复制代码"}</TooltipContent>
+    </Tooltip>
+  );
 }

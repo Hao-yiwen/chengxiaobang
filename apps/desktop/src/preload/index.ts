@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld("chengxiaobang", {
     ipcRenderer.invoke("open-project-in-app", appPath, targetPath),
   createProjectFolder: (name: string) => ipcRenderer.invoke("create-project-folder", name),
   openSkillsDir: () => ipcRenderer.invoke("open-skills-dir"),
+  openPluginsDir: () => ipcRenderer.invoke("open-plugins-dir"),
   openLogDir: () => ipcRenderer.invoke("open-log-dir"),
   openProviderConfig: () => ipcRenderer.invoke("open-provider-config"),
   saveProfile: (profile: unknown) => ipcRenderer.invoke("profile:save", profile),

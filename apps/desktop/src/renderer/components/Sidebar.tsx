@@ -817,8 +817,11 @@ function SessionRow(props: SessionRowProps) {
               props.active ? "font-medium text-foreground" : "text-foreground"
             )}
           >
-            {props.session.feishuChatId ? (
-              <span className="flex-none text-muted-slate" title={t("sidebar.feishuSession")}>
+            {props.session.feishuChatId || props.session.wechatChatId ? (
+              <span
+                className="flex-none text-muted-slate"
+                title={t(props.session.wechatChatId ? "sidebar.wechatSession" : "sidebar.feishuSession")}
+              >
                 <MessageSquareText className="size-3.5" />
               </span>
             ) : null}

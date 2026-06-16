@@ -370,6 +370,7 @@ describe("AgentRunner", () => {
       calls[1].context.messages
         .filter((message) => message.role === "user")
         .map((message) => String(message.content))
+        .filter((content) => !content.startsWith("<system-reminder>"))
     ).toEqual(["第一句话", "补充一", "补充二"]);
     const messages = await store.listMessages(started.sessionId);
     expect(messages.map((message) => message.content)).toContain("补充一");
@@ -671,7 +672,9 @@ describe("AgentRunner", () => {
     }
 
     expect(calls[0].model.input).toEqual(["text", "image"]);
-    const userContext = calls[0].context.messages.find((message) => message.role === "user");
+    const userContext = calls[0].context.messages.find(
+      (message) => message.role === "user" && Array.isArray(message.content)
+    );
     expect(userContext?.content).toEqual([
       { type: "text", text: "识别这张图" },
       { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" }
@@ -725,7 +728,10 @@ describe("AgentRunner", () => {
       }
     }
 
-    const userContext = calls[0].context.messages.find((message) => message.role === "user");
+    const userContext = calls[0].context.messages.find(
+      (message) =>
+        message.role === "user" && !String(message.content).startsWith("<system-reminder>")
+    );
     expect(userContext?.content).toContain("/tmp/cxb/screenshot.png");
     expect(userContext?.content).not.toContain("OCR 识别文字");
     expect(userEvent?.message.content).toBe("这个图片展示了什么？");
@@ -1609,8 +1615,11 @@ describe("AgentRunner", () => {
 
     expect(calls).toHaveLength(2);
     expect(calls[0].context.systemPrompt).toContain("对话压缩器");
-    expect(calls[1].context.messages[0]?.role).toBe("user");
-    expect(String(calls[1].context.messages[0]?.content)).toContain("【此前对话的摘要】");
+    const summaryMessage = calls[1].context.messages.find(
+      (message) =>
+        message.role === "user" && String(message.content).includes("【此前对话的摘要】")
+    );
+    expect(summaryMessage).toBeDefined();
     expect(
       events.some(
         (event) =>

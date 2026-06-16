@@ -617,7 +617,8 @@
     overflow: hidden;
     border-radius: 8px;
     border-color: rgb(var(--border));
-    background: rgb(var(--canvas));
+    /* !important 覆盖 streamdown 在 utilities 层的 bg-sidebar(#fafafa),保证代码块纯白 */
+    background: rgb(var(--canvas)) !important;
     padding: 0;
     box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.025);
   }
@@ -646,8 +647,8 @@
 
   .cxb-code-block-shell [data-streamdown="code-block-header"] span::before {
     display: inline-block;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     flex: none;
     background-image: var(--cxb-code-language-icon);
     background-position: center;
@@ -675,10 +676,10 @@
   }
 
   .cxb-code-block-wrap-button,
-  .cxb-code-block-shell [data-streamdown="code-block-copy-button"] {
+  .cxb-code-block-shell .cxb-code-block-copy-button {
     display: inline-flex;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     align-items: center;
     justify-content: center;
     border-radius: 6px;
@@ -690,7 +691,7 @@
 
   .cxb-code-block-wrap-button:hover,
   .cxb-code-block-wrap-button[aria-pressed="true"],
-  .cxb-code-block-shell [data-streamdown="code-block-copy-button"]:hover {
+  .cxb-code-block-shell .cxb-code-block-copy-button:hover {
     background: rgb(var(--canvas-soft-2));
     color: rgb(var(--foreground));
   }
@@ -699,7 +700,8 @@
     overflow-x: auto;
     border: 0;
     border-radius: 0;
-    background: rgb(var(--canvas));
+    /* !important 覆盖 streamdown 在 utilities 层的 bg-background(#fafafa),保证代码块纯白 */
+    background: rgb(var(--canvas)) !important;
     padding: 10px 14px 12px;
     font-size: 12.5px;
     line-height: 20px;
@@ -736,7 +738,7 @@
     overflow: hidden;
     border-radius: 8px;
     border-color: rgb(var(--border));
-    background: rgb(var(--canvas));
+    background: transparent;
     padding: 0;
     box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.025);
   }
@@ -750,7 +752,7 @@
     overflow-x: auto;
     border: 0;
     border-radius: 0;
-    background: rgb(var(--canvas));
+    background: transparent;
   }
 
   .markdown-streamdown [data-streamdown="table"] {
@@ -770,7 +772,7 @@
   }
 
   .markdown-streamdown [data-streamdown="table-header"] {
-    background: rgb(var(--canvas));
+    background: transparent;
   }
 
   .markdown-streamdown [data-streamdown="table-header-cell"],

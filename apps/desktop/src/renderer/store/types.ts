@@ -3,6 +3,10 @@ import type {
   AccessMode,
   AppEvent,
   ApprovalDecision,
+  ConnectPhoneInstallPollInput,
+  ConnectPhoneInstallPollResult,
+  ConnectPhoneInstallStartInput,
+  ConnectPhoneInstallStartResult,
   FeishuConfig,
   FeishuConfigInput,
   FeishuInstallPollInput,
@@ -12,6 +16,10 @@ import type {
   FeishuStatus,
   Message,
   MessageAttachment,
+  PluginConfigValues,
+  PluginDetail,
+  PluginInstallInput,
+  PluginSummary,
   Project,
   ProjectFileEntry,
   ProviderConfig,
@@ -33,7 +41,9 @@ import type {
   ToolActivity,
   ToolCall,
   WebSearchConfig,
-  WebSearchConfigInput
+  WebSearchConfigInput,
+  WechatConfig,
+  WechatStatus
 } from "@chengxiaobang/shared";
 import type { PreviewKind } from "../../common/file-preview";
 import type { OnboardingPrimaryUse, OnboardingProfile } from "../../common/profile";
@@ -178,6 +188,8 @@ export interface AppState {
   thinking: string;
   // 当前轮 reasoning 流开始时间（epoch ms），用于实时计时；完成后的 reasoning 会落在 message.reasoning。
   thinkingStartedAt?: number;
+  // 当前活跃 run 起点（epoch ms），跨多条中间消息保持到 run_end，用于轮次「已工作」实时计时。
+  activeRunStartedAt?: number;
   events: StreamEvent[];
   toolActivity?: ToolActivity;
   runningTool?: ToolCall;
@@ -222,6 +234,8 @@ export interface AppState {
   // 飞书集成（瞬态；打开对应设置区时加载）
   feishuConfig?: FeishuConfig;
   feishuStatus?: FeishuStatus;
+  wechatConfig?: WechatConfig;
+  wechatStatus?: WechatStatus;
   // 网络搜索集成（瞬态；打开对应设置页时加载）
   webSearchConfig?: WebSearchConfig;
   // 定时任务（瞬态；打开任务页时加载）
@@ -230,6 +244,8 @@ export interface AppState {
   skills: SkillSummary[];
   /** 一次性信号：从别处（如输入框加号）进入技能页时顺带打开「添加技能」弹窗。 */
   skillsAddRequested: boolean;
+  // plugins（瞬态；打开插件设置页时加载）
+  plugins: PluginSummary[];
   // 主题（持久化）
   theme: Theme;
   // 语言（持久化）
@@ -343,6 +359,9 @@ export interface AppState {
   startFeishuInstall(input: FeishuInstallStartInput): Promise<FeishuInstallStartResult>;
   pollFeishuInstall(input: FeishuInstallPollInput): Promise<FeishuInstallPollResult>;
   refreshFeishuStatus(): Promise<void>;
+  loadConnectPhoneConfig(): Promise<void>;
+  startConnectPhoneInstall(input: ConnectPhoneInstallStartInput): Promise<ConnectPhoneInstallStartResult>;
+  pollConnectPhoneInstall(input: ConnectPhoneInstallPollInput): Promise<ConnectPhoneInstallPollResult>;
   loadWebSearchConfig(): Promise<void>;
   saveWebSearchConfig(input: WebSearchConfigInput): Promise<void>;
   testWebSearchConfig(): Promise<void>;
@@ -359,6 +378,22 @@ export interface AppState {
   importSkillFromUrl(url: string): Promise<void>;
   createCustomSkill(input: SkillCreateInput): Promise<void>;
   deleteCustomSkill(name: string): Promise<void>;
+  /** 停用/恢复插件来源技能（kind=skill）；变更后刷新技能与命令清单。 */
+  setSkillDisabled(name: string, disabled: boolean): Promise<void>;
+  /** 停用/恢复插件来源提示词命令（kind=prompt_template）；变更后刷新命令清单。 */
+  setCommandDisabled(name: string, disabled: boolean): Promise<void>;
+  /** 拉取插件清单（已安装 + 内置），打开插件设置页时调用。 */
+  loadPlugins(): Promise<void>;
+  /** 拉取单个插件详情（manifest、资源清单、配置字段与当前值），用于详情弹窗。 */
+  getPluginDetail(name: string): Promise<PluginDetail | undefined>;
+  /** 安装插件（本地路径或 GitHub 链接）；成功后连锁刷新插件/技能/命令。 */
+  installPlugin(input: PluginInstallInput): Promise<void>;
+  /** 卸载已安装插件；成功后连锁刷新插件/技能/命令。 */
+  uninstallPlugin(name: string): Promise<void>;
+  /** 启停插件；成功后连锁刷新插件/技能/命令。 */
+  setPluginEnabled(name: string, enabled: boolean): Promise<void>;
+  /** 更新插件 userConfig 取值，返回更新后的详情供弹窗即时反映。 */
+  setPluginConfig(name: string, values: PluginConfigValues): Promise<PluginDetail | undefined>;
   clearRunState(): void;
 }
 

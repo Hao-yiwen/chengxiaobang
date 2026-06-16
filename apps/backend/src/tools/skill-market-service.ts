@@ -13,12 +13,19 @@ import { builtinResourceRoot } from "../paths";
 
 /** 激活的市场技能名集合，JSON 数组存 settings KV。 */
 const ENABLED_SETTING_KEY = "skills.enabledMarketSkills";
+/** 被单项停用的插件来源技能名集合（黑名单），JSON 数组存 settings KV。 */
+const DISABLED_SKILLS_KEY = "skills.disabled";
+/** 被单项停用的插件来源命令名集合（黑名单），JSON 数组存 settings KV。 */
+const DISABLED_COMMANDS_KEY = "commands.disabled";
 
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const SKILL_IMPORT_TIMEOUT_MS = 10_000;
 const SKILL_IMPORT_MAX_BYTES = 256 * 1024;
 
 type SettingsStore = Pick<StateStore, "getSetting" | "setSetting">;
+
+/** 已启用插件根目录回调；返回每个插件的名字与磁盘根，供技能聚合读取其 skills/。 */
+type PluginRootsProvider = () => Promise<Array<{ pluginName: string; root: string }>>;
 
 interface SkillFileMeta {
   name: string;
@@ -33,16 +40,20 @@ export interface SkillMarketServiceOptions {
   builtinRoot?: string;
   /** 自定义技能安装目录（即全局 skills 根，slash 服务会自动加载）。 */
   customRoot?: string;
+  /** 已启用插件根目录回调，用于把插件 skills/ 聚合进技能列表。 */
+  enabledPluginRoots?: PluginRootsProvider;
 }
 
 /**
  * 技能市场：内置技能只读展示，市场技能经 settings KV 记录激活集合，
- * 自定义技能安装到 ~/.chengxiaobang/skills（安装即被 SlashCommandService 拾取）。
+ * 自定义技能安装到 ~/.chengxiaobang/skills（安装即被 SlashCommandService 拾取）；
+ * 已启用插件提供的技能聚合进列表，可经 skills.disabled 黑名单单项停用。
  */
 export class SkillMarketService {
   private readonly marketRoot: string;
   private readonly builtinRoot: string;
   private readonly customRoot: string;
+  private readonly enabledPluginRoots?: PluginRootsProvider;
 
   constructor(
     private readonly store: SettingsStore,
@@ -51,19 +62,26 @@ export class SkillMarketService {
     this.marketRoot = options.marketRoot ?? join(builtinResourceRoot(), "skills-market");
     this.builtinRoot = options.builtinRoot ?? join(builtinResourceRoot(), "skills");
     this.customRoot = options.customRoot ?? join(homedir(), ".chengxiaobang", "skills");
+    this.enabledPluginRoots = options.enabledPluginRoots;
   }
 
   async list(): Promise<SkillSummary[]> {
-    const enabled = await this.enabledMarketSkillNames();
+    const [enabled, disabled, pluginRoots] = await Promise.all([
+      this.enabledMarketSkillNames(),
+      this.disabledSkillNames(),
+      this.pluginRoots()
+    ]);
     const [builtin, market, custom] = await Promise.all([
       readSkillDir(this.builtinRoot),
       readSkillDir(this.marketRoot),
       readSkillDir(this.customRoot)
     ]);
+    const plugin = await this.readPluginSkillSummaries(pluginRoots, disabled);
     return [
       ...builtin.map((meta) => toSummary(meta, "builtin", true)),
       ...market.map((meta) => toSummary(meta, "market", enabled.has(meta.name))),
-      ...custom.map((meta) => toSummary(meta, "custom", true))
+      ...custom.map((meta) => toSummary(meta, "custom", true)),
+      ...plugin
     ];
   }
 
@@ -95,6 +113,27 @@ export class SkillMarketService {
       const isEnabled = source === "market" ? enabled.has(name) : true;
       return {
         ...toSummary(hit, source, isEnabled),
+        content: stripFrontmatter(raw),
+        filePath
+      };
+    }
+    const disabled = await this.disabledSkillNames();
+    for (const { pluginName, root } of await this.pluginRoots()) {
+      const entries = await readSkillDir(join(root, "skills"));
+      const hit = entries.find((meta) => meta.name === name);
+      if (!hit) {
+        continue;
+      }
+      const filePath = join(root, "skills", hit.dirName, "SKILL.md");
+      let raw: string;
+      try {
+        raw = await readFile(filePath, "utf8");
+      } catch (error) {
+        console.warn(`[skill-market] 读取插件技能正文失败 path=${filePath}: ${String(error)}`);
+        return undefined;
+      }
+      return {
+        ...toSummary(hit, "plugin", !disabled.has(name), pluginName),
         content: stripFrontmatter(raw),
         filePath
       };
@@ -132,6 +171,59 @@ export class SkillMarketService {
     await this.store.setSetting(ENABLED_SETTING_KEY, JSON.stringify([...current].sort()));
     console.info(`[skill-market] ${enabled ? "激活" : "停用"}市场技能 name=${name}`);
     return this.list();
+  }
+
+  /** 被单项停用的插件来源技能名集合（SlashCommandService 据此从模型可见清单中剔除）。 */
+  async disabledSkillNames(): Promise<Set<string>> {
+    return parseNameSet(await this.store.getSetting(DISABLED_SKILLS_KEY), "停用技能集合");
+  }
+
+  /** 单项停用/恢复一个（通常是插件来源的）技能，写入 skills.disabled 黑名单。 */
+  async setSkillDisabled(name: string, disabled: boolean): Promise<SkillSummary[]> {
+    const current = await this.disabledSkillNames();
+    if (disabled) {
+      current.add(name);
+    } else {
+      current.delete(name);
+    }
+    await this.store.setSetting(DISABLED_SKILLS_KEY, JSON.stringify([...current].sort()));
+    console.info(`[skill-market] ${disabled ? "停用" : "启用"}技能 name=${name}`);
+    return this.list();
+  }
+
+  /** 被单项停用的插件来源命令名集合（SlashCommandService 据此从命令面板/展开中剔除）。 */
+  async disabledCommandNames(): Promise<Set<string>> {
+    return parseNameSet(await this.store.getSetting(DISABLED_COMMANDS_KEY), "停用命令集合");
+  }
+
+  /** 单项停用/恢复一个（通常是插件来源的）命令，写入 commands.disabled 黑名单。 */
+  async setCommandDisabled(name: string, disabled: boolean): Promise<void> {
+    const current = await this.disabledCommandNames();
+    if (disabled) {
+      current.add(name);
+    } else {
+      current.delete(name);
+    }
+    await this.store.setSetting(DISABLED_COMMANDS_KEY, JSON.stringify([...current].sort()));
+    console.info(`[skill-market] ${disabled ? "停用" : "启用"}命令 name=${name}`);
+  }
+
+  private async pluginRoots(): Promise<Array<{ pluginName: string; root: string }>> {
+    return this.enabledPluginRoots ? this.enabledPluginRoots() : [];
+  }
+
+  private async readPluginSkillSummaries(
+    roots: Array<{ pluginName: string; root: string }>,
+    disabled: Set<string>
+  ): Promise<SkillSummary[]> {
+    const summaries: SkillSummary[] = [];
+    for (const { pluginName, root } of roots) {
+      const skills = await readSkillDir(join(root, "skills"));
+      for (const meta of skills) {
+        summaries.push(toSummary(meta, "plugin", !disabled.has(meta.name), pluginName));
+      }
+    }
+    return summaries;
   }
 
   /** 经 GitHub 链接（或 SKILL.md 直链）导入自定义技能。 */
@@ -246,21 +338,37 @@ export class SkillMarketError extends Error {}
 function toSummary(
   meta: SkillFileMeta,
   source: SkillSummary["source"],
-  enabled: boolean
+  enabled: boolean,
+  pluginName?: string
 ): SkillSummary {
   return {
     name: meta.name,
     description: meta.description,
     category: meta.category,
     source,
-    enabled
+    enabled,
+    ...(pluginName ? { pluginName } : {})
   };
 }
 
-type SkillDirEntry = SkillFileMeta & { dirName: string };
+/** 把 settings KV 里的 JSON 字符串数组解析为名字集合；缺失或非法时按空集处理。 */
+function parseNameSet(raw: string | undefined, label: string): Set<string> {
+  if (!raw) {
+    return new Set();
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : []);
+  } catch (error) {
+    console.warn(`[skill-market] ${label}解析失败，按空集处理: ${String(error)}`);
+    return new Set();
+  }
+}
 
-/** 列出根目录下每个含合法 SKILL.md 的技能；目录缺失返回空。 */
-async function readSkillDir(root: string): Promise<SkillDirEntry[]> {
+export type SkillDirEntry = SkillFileMeta & { dirName: string };
+
+/** 列出根目录下每个含合法 SKILL.md 的技能；目录缺失返回空。供插件服务复用以列举插件 skills/。 */
+export async function readSkillDir(root: string): Promise<SkillDirEntry[]> {
   let entries;
   try {
     entries = await readdir(root, { withFileTypes: true });

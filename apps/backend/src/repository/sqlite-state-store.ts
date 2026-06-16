@@ -250,6 +250,13 @@ export class SqliteStateStore implements StateStore {
     ).map(mapSession)[0];
   }
 
+  async findSessionByWechatChatId(chatId: string): Promise<Session | undefined> {
+    return this.query(
+      "select * from sessions where wechat_chat_id = ? order by updated_at desc limit 1",
+      [chatId]
+    ).map(mapSession)[0];
+  }
+
   async getSetting(key: string): Promise<string | undefined> {
     const row = this.query("select value from settings where key = ?", [key])[0];
     return row === undefined ? undefined : String(row.value);
@@ -279,14 +286,15 @@ export class SqliteStateStore implements StateStore {
       ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
       ...(input.forkMessageId ? { forkMessageId: input.forkMessageId } : {}),
       ...(input.feishuChatId ? { feishuChatId: input.feishuChatId } : {}),
+      ...(input.wechatChatId ? { wechatChatId: input.wechatChatId } : {}),
       createdAt: timestamp,
       updatedAt: timestamp
     };
     this.run(
       `insert into sessions
        (id, project_id, title, provider_id, access_mode, model, reasoning_mode, parent_session_id,
-        fork_message_id, feishu_chat_id, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        fork_message_id, feishu_chat_id, wechat_chat_id, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         session.id,
         session.projectId,
@@ -298,6 +306,7 @@ export class SqliteStateStore implements StateStore {
         session.parentSessionId ?? null,
         session.forkMessageId ?? null,
         session.feishuChatId ?? null,
+        session.wechatChatId ?? null,
         session.createdAt,
         session.updatedAt
       ]

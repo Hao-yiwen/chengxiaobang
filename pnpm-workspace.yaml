@@ -8,5 +8,7 @@ allowBuilds:
   esbuild: true
   node-pty: true
   onnxruntime-node: true
+  openclaw: true
   protobufjs: true
   sharp: true
+  tree-sitter-bash: true

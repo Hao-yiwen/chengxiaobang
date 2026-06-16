@@ -19,6 +19,8 @@ import {
 } from "streamdown";
 import { CodeBlockPanel } from "@/components/CodeBlockPanel";
 import { ExternalUrlAnchor } from "@/components/ExternalUrlMenu";
+import { FileLinkAnchor } from "@/components/FileLinkAnchor";
+import { localFilePathFromHref } from "../../common/file-preview";
 import { cn } from "@/lib/utils";
 
 type MarkdownAstNode = {
@@ -155,6 +157,15 @@ const STREAMDOWN_PLUGINS: PluginConfig = {
 const STREAMDOWN_COMPONENTS: StreamdownProps["components"] = {
   a: ({ href, children, className, node: _node, ...props }) => {
     const url = typeof href === "string" ? href : "";
+    // 指向本地文件的链接渲染成行内文件链接，点击在右侧预览；其余仍作为外链处理
+    const filePath = localFilePathFromHref(url);
+    if (filePath) {
+      return (
+        <FileLinkAnchor path={filePath} className={className}>
+          {children}
+        </FileLinkAnchor>
+      );
+    }
     return (
       <ExternalUrlAnchor
         href={url}
@@ -173,6 +184,10 @@ const HTTP_URL_TRANSFORM: UrlTransform = (url, key, node) => {
     return url;
   }
   if (key === "href" && !/^https?:\/\//i.test(url)) {
+    // 指向本地文件的链接放行，交给 a 渲染器渲染成可点击的文件链接
+    if (localFilePathFromHref(url)) {
+      return url;
+    }
     console.warn("[Markdown] 已拦截非 HTTP(S) 链接", {
       url,
       tagName: node.tagName

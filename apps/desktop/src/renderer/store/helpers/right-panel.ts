@@ -15,8 +15,9 @@ import {
 import { restoreHomeModelSelection } from "./model-selection";
 
 export const RIGHT_PANEL_MIN_WIDTH = 300;
-export const RIGHT_PANEL_MAX_WIDTH = 720;
-export const RIGHT_PANEL_FILE_WIDTH = 480;
+export const RIGHT_PANEL_MAX_WIDTH = 960;
+export const RIGHT_PANEL_REVIEW_WIDTH = 760;
+export const RIGHT_PANEL_FILE_WIDTH = 760;
 export const DEFAULT_RIGHT_PANEL_WIDTH = 340;
 const LEGACY_DEFAULT_RIGHT_PANEL_WIDTH = 380;
 

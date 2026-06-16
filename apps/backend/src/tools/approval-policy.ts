@@ -1,6 +1,7 @@
 import { isAbsolute, win32 } from "node:path";
 import type { ToolCallApproval } from "@chengxiaobang/shared";
 import { isMutatingTool } from "./registry";
+import { isMcpToolName } from "../mcp/mcp-tool-bridge";
 import { isPathOutsideWorkspace } from "./workspace";
 
 export interface ToolApprovalAssessment {
@@ -25,6 +26,15 @@ export function assessToolApprovalRisk(
       risk: "low",
       requiresGate: false,
       reason: "只读工具可直接执行。"
+    };
+  }
+
+  if (isMcpToolName(toolName)) {
+    return {
+      risk: "high",
+      requiresGate: true,
+      smartVerdict: "ask_user",
+      reason: `外部 MCP 工具 ${toolName} 可能产生副作用，需要你确认。`
     };
   }
 
