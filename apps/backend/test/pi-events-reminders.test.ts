@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { StreamEvent } from "@chengxiaobang/shared";
 import { RunEventTranslator } from "../src/agent/pi-events";
 import { TODO_IDLE_REMINDER } from "../src/agent/system-reminders";
@@ -96,5 +96,115 @@ describe("RunEventTranslator 动态软提醒", () => {
     }
     expect(translator.collectReminders().length).toBeGreaterThan(0);
     expect(translator.collectReminders().length).toBe(0);
+  });
+});
+
+describe("RunEventTranslator reasoning 计时", () => {
+  it("没有 thinking_end 时遇到工具参数流就收口 reasoning 时长", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-16T00:00:00.000Z"));
+    try {
+      const persistedMessages: Array<Record<string, unknown>> = [];
+      const pushedEvents: StreamEvent[] = [];
+      const store = {
+        insertToolCall: async () => {},
+        updateToolCall: async (toolCall: unknown) => toolCall,
+        addMessage: async (message: Record<string, unknown>) => {
+          const persisted = {
+            id: `msg_${persistedMessages.length + 1}`,
+            createdAt: new Date().toISOString(),
+            ...message
+          };
+          persistedMessages.push(persisted);
+          return persisted;
+        }
+      } as unknown as StateStore;
+      const queue = {
+        push: (event: StreamEvent) => {
+          pushedEvents.push(event);
+        }
+      } as unknown as AsyncEventQueue<StreamEvent>;
+      const translator = new RunEventTranslator({
+        store,
+        queue,
+        approvals: {} as unknown as ApprovalQueue,
+        runId: "run_reasoning",
+        sessionId: "sess_reasoning",
+        projectId: null,
+        workspacePath: "/w",
+        accessMode: "full_access",
+        projectApprovalTrustService: {
+          isTrusted: async () => false
+        } as unknown as ProjectApprovalTrustService,
+        signal: new AbortController().signal,
+        model: "test-model",
+        maxToolIterations: 10
+      });
+
+      await translator.emit({ type: "message_start", message: { role: "assistant" } } as never);
+      await translator.emit({
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "thinking_delta",
+          contentIndex: 0,
+          delta: "先想清楚",
+          partial: { content: [{ type: "thinking", thinking: "先想清楚" }] }
+        }
+      } as never);
+      vi.advanceTimersByTime(4000);
+      await translator.emit({
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_start",
+          contentIndex: 1,
+          partial: {
+            content: [
+              { type: "thinking", thinking: "先想清楚" },
+              { type: "toolCall", id: "call_1", name: "Write", arguments: {} }
+            ]
+          }
+        }
+      } as never);
+      vi.advanceTimersByTime(30000);
+      await translator.emit({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "先想清楚" },
+            {
+              type: "toolCall",
+              id: "call_1",
+              name: "Write",
+              arguments: { file_path: "out.txt", content: "完整内容" }
+            }
+          ],
+          api: "openai-completions",
+          provider: "test",
+          model: "test-model",
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+          },
+          stopReason: "toolUse",
+          timestamp: Date.now()
+        }
+      } as never);
+
+      expect(persistedMessages[0]).toMatchObject({
+        role: "assistant",
+        reasoning: "先想清楚",
+        reasoningMs: 4000
+      });
+      expect(
+        pushedEvents.some((event) => event.type === "tool_activity" && event.activity.name === "Write")
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

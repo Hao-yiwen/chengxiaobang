@@ -10,6 +10,10 @@ import {
 } from "@chengxiaobang/shared";
 import type { AppContext } from "../context";
 import type { StoredMessage } from "../../repository/state-store";
+import {
+  copyForkedSessionWorkspace,
+  ForkWorkspaceCopyError
+} from "../session-workspace-copy";
 
 /** The payload column is model-context internals — never expose it to clients. */
 function toClientMessage({ payload: _payload, ...message }: StoredMessage): Message {
@@ -126,14 +130,62 @@ export function sessionRoutes(context: AppContext): Hono {
 
   app.post("/:sessionId/fork", async (c) => {
     const sessionId = c.req.param("sessionId");
-    if (!(await context.store.getSession(sessionId))) {
+    const sourceSession = await context.store.getSession(sessionId);
+    if (!sourceSession) {
       return c.json({ error: "会话不存在" }, 404);
     }
     const input = sessionForkInputSchema.parse(await c.req.json());
+    let forkSession: Session | undefined;
     try {
-      const session = await context.store.forkSession(sessionId, input.messageId);
-      return c.json({ session }, 201);
+      forkSession = await context.store.forkSession(sessionId, input.messageId);
+      const workspaceCopy = await copyForkedSessionWorkspace({
+        resolver: context.runner,
+        sourceSession,
+        forkSession
+      });
+      if (workspaceCopy.status === "copied") {
+        console.info("[sessions-route] 已复制派生会话工作区", {
+          sourceSessionId: sourceSession.id,
+          forkSessionId: forkSession.id,
+          method: workspaceCopy.method,
+          sourcePath: workspaceCopy.sourcePath,
+          targetPath: workspaceCopy.targetPath,
+          scannedBytes: workspaceCopy.scannedBytes,
+          scannedEntries: workspaceCopy.scannedEntries
+        });
+      } else {
+        console.debug("[sessions-route] 跳过派生会话工作区复制", {
+          sourceSessionId: sourceSession.id,
+          forkSessionId: forkSession.id,
+          reason: workspaceCopy.reason,
+          sourcePath: workspaceCopy.sourcePath,
+          targetPath: workspaceCopy.targetPath
+        });
+      }
+      return c.json({ session: forkSession }, 201);
     } catch (error) {
+      if (forkSession) {
+        let rolledBack = false;
+        try {
+          rolledBack = await context.store.deleteSession(forkSession.id);
+        } catch (rollbackError) {
+          console.error("[sessions-route] 回滚派生会话失败", {
+            sourceSessionId: sourceSession.id,
+            forkSessionId: forkSession.id,
+            error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+          });
+        }
+        console.error("[sessions-route] 派生会话工作区复制失败，已取消派生", {
+          sourceSessionId: sourceSession.id,
+          forkSessionId: forkSession.id,
+          rolledBack,
+          error: error instanceof Error ? error.message : String(error),
+          details: error instanceof ForkWorkspaceCopyError ? error.details : undefined
+        });
+        throw error instanceof ForkWorkspaceCopyError
+          ? error
+          : new Error("派生工作区复制失败，已取消派生");
+      }
       if (error instanceof Error && error.message === "消息不存在") {
         return c.json({ error: "消息不存在" }, 404);
       }

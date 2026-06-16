@@ -11,9 +11,11 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 export interface ScriptedToolCall {
   id: string;
   name: string;
-  arguments: Record<string, unknown>;
-  argumentDeltas?: Array<Record<string, unknown>>;
+  arguments: ScriptedToolArguments;
+  argumentDeltas?: ScriptedToolArguments[];
 }
+
+type ScriptedToolArguments = Record<string, unknown> | string;
 
 export interface ScriptedTurn {
   thinking?: string;
@@ -93,7 +95,7 @@ export function scriptedStreamFn(turns: ScriptedTurn[]): {
           stream.push({
             type: "toolcall_delta",
             contentIndex,
-            delta: JSON.stringify(args),
+            delta: typeof args === "string" ? args : JSON.stringify(args),
             partial: buildMessageWithToolArgs(model, turn, toolIndex, args)
           });
         }
@@ -169,7 +171,7 @@ function buildMessageWithToolArgs(
   model: Model<any>,
   turn: ScriptedTurn,
   toolIndex: number,
-  args: Record<string, unknown>
+  args: ScriptedToolArguments
 ): AssistantMessage {
   const nextToolCalls = (turn.toolCalls ?? []).map((toolCall, index) =>
     index === toolIndex ? { ...toolCall, arguments: args } : toolCall
@@ -181,5 +183,8 @@ function toPiToolCall(
   toolCall: ScriptedToolCall
 ): Extract<AssistantMessage["content"][number], { type: "toolCall" }> {
   const { argumentDeltas: _argumentDeltas, ...rest } = toolCall;
-  return { type: "toolCall", ...rest };
+  return { type: "toolCall", ...rest } as Extract<
+    AssistantMessage["content"][number],
+    { type: "toolCall" }
+  >;
 }

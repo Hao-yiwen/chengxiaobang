@@ -240,7 +240,7 @@ export function App(props: { client?: ApiClient }) {
                         )}
                       >
                         <div className="flex min-w-0 max-w-[60%] items-center gap-1.5 [-webkit-app-region:no-drag]">
-                          <span className="min-w-0 truncate font-mono text-mono-label uppercase text-body">
+                          <span className="min-w-0 truncate text-body-sm font-[500] text-foreground">
                             {activeSession?.title ?? ""}
                           </span>
                           {activeSession ? <SessionActionsMenu session={activeSession} /> : null}

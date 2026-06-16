@@ -124,6 +124,40 @@ describe("Markdown", () => {
     expect(open).toHaveBeenCalledWith("https://example.com/", "_blank", "noreferrer");
   });
 
+  it("renders relative workspace file links in tables without blocking them", () => {
+    const openFilePreview = vi.fn();
+    useAppStore.setState({ openFilePreview });
+    const markdown = [
+      "| 目的地 | 文件 | 页数 |",
+      "|:--|:--|:--|",
+      "| 新疆 | [新疆](新疆旅游全攻略.pptx) | 12 页 |",
+      "| 西藏 | [西藏](./西藏旅游全攻略.pptx) | 13 页 |",
+      "| 青海 | [青海](青海旅游全攻略.pptx) | 15 页 |"
+    ].join("\n");
+    const { container } = render(<Markdown text={markdown} />);
+
+    expect(container).not.toHaveTextContent("[blocked]");
+    expect(screen.getByRole("link", { name: "新疆" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "西藏" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: "青海" }));
+
+    expect(openFilePreview).toHaveBeenCalledWith("青海旅游全攻略.pptx");
+  });
+
+  it("uses the file name when a local file link has a generic label", () => {
+    const openFilePreview = vi.fn();
+    useAppStore.setState({ openFilePreview });
+    render(<Markdown text="[链接](青海旅游全攻略.pptx)" />);
+
+    expect(screen.queryByRole("link", { name: "链接" })).not.toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "青海旅游全攻略.pptx" });
+
+    fireEvent.click(link);
+
+    expect(openFilePreview).toHaveBeenCalledWith("青海旅游全攻略.pptx");
+  });
+
   it("does not linkify unsafe protocols, keeping the text visible", () => {
     render(<Markdown text="[x](javascript:alert)" />);
 
@@ -274,8 +308,10 @@ describe("Markdown", () => {
       expect(container.querySelector('[data-streamdown="mermaid-block"]')).not.toBeNull();
     });
     expect(screen.getByText("mermaid")).toBeInTheDocument();
-    expect(screen.getByTitle("下载图表")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "复制代码" })).toBeInTheDocument();
-    expect(screen.getByTitle("全屏查看")).toBeInTheDocument();
+    const copyButton = screen.getByRole("button", { name: "复制代码" });
+    expect(copyButton).toBeInTheDocument();
+    expect(copyButton).toHaveAttribute("title", "复制代码");
+    expect(screen.queryByTitle("下载图表")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("全屏查看")).not.toBeInTheDocument();
   });
 });

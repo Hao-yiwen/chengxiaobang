@@ -11,6 +11,7 @@
     "test/app-menu.test.ts",
     "test/backend-process.test.ts",
     "test/logging.test.ts",
+    "test/main-permissions.test.ts",
     "test/paths.test.ts",
     "test/terminal-session.test.ts",
     "test/update-service.test.ts"

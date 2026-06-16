@@ -427,6 +427,10 @@ async function openPane(name: string): Promise<void> {
   });
 }
 
+async function expandProjectFiles(): Promise<void> {
+  fireEvent.click(await screen.findByRole("button", { name: "展开项目文件" }));
+}
+
 async function selectSession(title: string): Promise<void> {
   const sidebar = within(await screen.findByTestId("app-sidebar"));
   const label = await sidebar.findByText(title);
@@ -962,7 +966,7 @@ describe("right panel", () => {
     expect(useAppStore.getState().rightPanelOpen).toBe(false);
     expect(screen.queryByTestId("right-panel")).not.toBeInTheDocument();
     expect(panel).toHaveClass("chat-progress-floating", "bg-card");
-    expect(panel).not.toHaveClass("shadow-overlay", "backdrop-blur-sm", "bg-card/95");
+    expect(panel).not.toHaveClass("shadow-stack", "shadow-overlay", "backdrop-blur-sm", "bg-card/95");
     expect(scrollRegion).toHaveClass("overflow-x-hidden", "[scrollbar-gutter:stable]");
 
     act(() => {
@@ -1182,6 +1186,12 @@ describe("right panel", () => {
     await selectSession("项目对话");
     await openPane("文件预览");
 
+    expect(screen.getByRole("button", { name: "展开项目文件" })).toBeInTheDocument();
+    expect(screen.queryByText("项目文件")).not.toBeInTheDocument();
+    expect(screen.queryByText("README.md")).not.toBeInTheDocument();
+    expect(listProjectDirectory).not.toHaveBeenCalled();
+
+    await expandProjectFiles();
     expect(await screen.findByText("项目文件")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /选择文件|rightPanel\.pickFile/u })).not.toBeInTheDocument();
     expect(bridge.pickFiles).not.toHaveBeenCalled();
@@ -1234,6 +1244,7 @@ describe("right panel", () => {
     await selectSession("项目对话");
     await openPane("文件预览");
 
+    await expandProjectFiles();
     fireEvent.click(await screen.findByText("app.js"));
 
     const preview = await screen.findByTestId("file-code-preview");
@@ -1269,6 +1280,7 @@ describe("right panel", () => {
     await selectSession("项目对话");
     await openPane("文件预览");
 
+    await expandProjectFiles();
     fireEvent.click(await screen.findByText("markdownish.js"));
 
     const preview = await screen.findByTestId("file-code-preview");
@@ -1353,6 +1365,20 @@ describe("right panel", () => {
         maxBytes: 524288
       }
     );
+  });
+
+  it("uses the updated PowerPoint icon in the floating artifact panel", async () => {
+    const client = createClient({
+      listMessages: vi.fn(async () => [artifactMessage("slides/demo.pptx")])
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+
+    const panel = await screen.findByTestId("artifact-floating-panel");
+    const artifactButton = within(panel).getByRole("button", { name: /demo\.pptx/u });
+
+    expect(artifactButton.querySelector("svg")?.outerHTML).toContain("cxb-powerpoint-file-red");
   });
 
   it("restores Write HTML tool artifacts in the floating artifact panel", async () => {

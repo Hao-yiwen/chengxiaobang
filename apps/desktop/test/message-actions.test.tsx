@@ -99,6 +99,28 @@ describe("MessageActions", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("答案是 42"));
   });
 
+  it("does not show copied feedback when clipboard writing is unavailable", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true
+    });
+    render(<App client={createClient()} />);
+    await screen.findByText("答案是 42");
+
+    const copyButtons = screen.getAllByRole("button", { name: "复制" });
+    fireEvent.click(copyButtons[1]);
+
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        "[clipboard] 复制失败：当前环境没有剪贴板写入能力",
+        expect.objectContaining({ textLength: 6 })
+      )
+    );
+    expect(screen.queryByRole("button", { name: "已复制" })).not.toBeInTheDocument();
+    warn.mockRestore();
+  });
+
   it("copies assistant answers without final artifact XML", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -174,6 +196,10 @@ describe("MessageActions", () => {
     expect(actionBars[2]).toHaveClass("opacity-0");
     expect(actionBars[3]).toHaveClass("opacity-100");
     expect(actionBars[3]).not.toHaveClass("opacity-0");
+    expect(screen.getAllByRole("button", { name: "编辑" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "从这条消息创建分支" })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.getByRole("textbox", { name: "编辑" })).toHaveValue("再问一个");
   });
 
   it("edits a user message and resends the edited content", async () => {
@@ -204,28 +230,89 @@ describe("MessageActions", () => {
     const branch: Session = {
       ...session,
       id: "session_2",
-      title: "历史对话（分支）",
+      title: "历史对话",
       parentSessionId: session.id,
-      forkMessageId: "u1"
+      forkMessageId: "a1",
+      forkPointMessageId: "a1_branch"
+    };
+    const branchUserMessage: Message = {
+      ...userMessage,
+      id: "u1_branch",
+      sessionId: branch.id
+    };
+    const branchAssistantMessage: Message = {
+      ...assistantMessage,
+      id: "a1_branch",
+      sessionId: branch.id
     };
     const forkSession = vi.fn(async () => branch);
     const listMessages = vi.fn(async (id: string) =>
-      id === "session_2" ? [userMessage] : [userMessage, assistantMessage]
+      id === "session_2"
+        ? [branchUserMessage, branchAssistantMessage]
+        : [userMessage, assistantMessage]
     );
     const client = createClient({ forkSession: forkSession as never, listMessages });
 
     render(<App client={client} />);
     await screen.findByText("答案是 42");
 
-    // One fork button per message; the first belongs to the user message.
-    fireEvent.click(screen.getAllByRole("button", { name: "从这条消息创建分支" })[0]);
+    expect(screen.getAllByRole("button", { name: "从这条消息创建分支" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "从这条消息创建分支" }));
 
-    await waitFor(() => expect(forkSession).toHaveBeenCalledWith("session_1", "u1"));
+    await waitFor(() => expect(forkSession).toHaveBeenCalledWith("session_1", "a1"));
     // The branch becomes the active session and shows up in the sidebar (and
     // chat header) with a branch indicator pointing at its parent.
-    expect((await screen.findAllByText("历史对话（分支）")).length).toBeGreaterThanOrEqual(1);
+    expect((await screen.findAllByText("历史对话")).length).toBeGreaterThanOrEqual(1);
     expect(await screen.findByTitle("从「历史对话」分支")).toBeInTheDocument();
+    expect(await screen.findByTestId("branch-fork-marker")).toHaveTextContent("从对话中派生");
     await waitFor(() => expect(listMessages).toHaveBeenCalledWith("session_2"));
+  });
+
+  it("shows the fork marker for legacy branch sessions without fork point metadata", async () => {
+    const legacyBranch: Session = {
+      ...session,
+      id: "session_legacy",
+      title: "历史对话",
+      parentSessionId: session.id,
+      forkMessageId: "a1",
+      createdAt: "2026-06-08T00:00:02.000Z",
+      updatedAt: "2026-06-08T00:00:03.000Z"
+    };
+    const branchUserMessage: Message = {
+      ...userMessage,
+      id: "u1_branch",
+      sessionId: legacyBranch.id
+    };
+    const branchAssistantMessage: Message = {
+      ...assistantMessage,
+      id: "a1_branch",
+      sessionId: legacyBranch.id
+    };
+    const laterUserMessage: Message = {
+      id: "u2_branch",
+      sessionId: legacyBranch.id,
+      role: "user",
+      content: "继续问题",
+      createdAt: "2026-06-08T00:00:03.000Z"
+    };
+    const listMessages = vi.fn(async (id: string) =>
+      id === legacyBranch.id
+        ? [branchUserMessage, branchAssistantMessage, laterUserMessage]
+        : [userMessage, assistantMessage]
+    );
+    const client = createClient({
+      listSessions: vi.fn(async () => [legacyBranch, session]),
+      listMessages
+    });
+
+    useAppStore.setState({ activeSessionId: legacyBranch.id });
+    render(<App client={client} />);
+
+    const marker = await screen.findByTestId("branch-fork-marker");
+    expect(marker).toHaveTextContent("从对话中派生");
+    expect(marker.compareDocumentPosition(await screen.findByText("继续问题"))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
   });
 
   it("hides regenerate, edit and fork while a run is active", async () => {
@@ -297,7 +384,7 @@ describe("MessageActions", () => {
     expect(await screen.findByText("HTML 已经生成。")).toBeInTheDocument();
     expect(screen.getAllByText("beautiful-page.html").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole("button", { name: "复制" })).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: "从这条消息创建分支" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "从这条消息创建分支" })).toHaveLength(1);
   });
 
   it("hides actions for interim assistant messages followed by another assistant answer", async () => {
@@ -324,6 +411,6 @@ describe("MessageActions", () => {
     expect(await screen.findByText("结构已规划好，共 12 页，分五大章节。现在写规格文件。")).toBeInTheDocument();
     expect(await screen.findByText("规格文件已经写完，页面结构和章节安排都整理好了。")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "复制" })).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: "从这条消息创建分支" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "从这条消息创建分支" })).toHaveLength(1);
   });
 });

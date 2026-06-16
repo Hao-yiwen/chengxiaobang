@@ -4,6 +4,7 @@ import {
   CheckMediumIcon,
   CopyIcon,
   MinusIcon,
+  PanelRightOutlineIcon,
   PlusIcon,
   RefreshIcon,
   TextDocumentGrayIcon,
@@ -71,6 +72,7 @@ export function FilePreviewPanel() {
   const project = useAppStore(selectActiveProject);
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [refreshKey, setRefreshKey] = useState(0);
+  const [projectFilesOpen, setProjectFilesOpen] = useState(false);
   const path = previewFile?.path;
   const previewContext = useMemo(
     () => ({
@@ -222,17 +224,48 @@ export function FilePreviewPanel() {
     openFilePreview(relativePath);
   }
 
+  function toggleProjectFilesOpen(open: boolean): void {
+    console.debug("[FilePreviewPanel] 切换项目文件树展开状态", {
+      projectId: project?.id,
+      open
+    });
+    setProjectFilesOpen(open);
+  }
+
   const content = renderPreviewContent();
   if (project) {
     return (
       <div className="flex h-full min-h-0">
         <section className="min-w-0 flex-1 overflow-hidden">{content}</section>
-        <ProjectFileTree
-          project={project}
-          selectedPath={path}
-          onOpenFile={openProjectFile}
-          className="w-[288px] flex-none border-l"
-        />
+        {projectFilesOpen ? (
+          <div className="relative w-[288px] flex-none border-l">
+            <ProjectFileTree
+              project={project}
+              selectedPath={path}
+              onOpenFile={openProjectFile}
+              className="h-full"
+            />
+            <button
+              type="button"
+              title={t("rightPanel.projectFilesCollapse")}
+              aria-label={t("rightPanel.projectFilesCollapse")}
+              onClick={() => toggleProjectFilesOpen(false)}
+              className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-xs bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <PanelRightOutlineIcon className="size-4" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            title={t("rightPanel.projectFilesExpand")}
+            aria-label={t("rightPanel.projectFilesExpand")}
+            onClick={() => toggleProjectFilesOpen(true)}
+            className="flex h-full w-10 flex-none items-start justify-center border-l bg-background px-1 py-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <PanelRightOutlineIcon className="size-4" />
+          </button>
+        )}
       </div>
     );
   }

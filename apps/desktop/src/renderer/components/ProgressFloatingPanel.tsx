@@ -100,7 +100,7 @@ export function ProgressFloatingPanel() {
     <aside
       data-testid="progress-floating-panel"
       aria-label={t("rightPanel.progress")}
-      className="chat-progress-floating pointer-events-auto rounded-xl border bg-card shadow-stack"
+      className="chat-progress-floating pointer-events-auto rounded-xl border bg-card"
     >
       <header className="flex flex-none items-center justify-between gap-2 border-b px-4 py-3">
         <span className="font-mono text-mono-label uppercase text-muted-foreground">

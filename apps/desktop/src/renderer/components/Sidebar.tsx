@@ -25,7 +25,12 @@ import {
   XMarkIcon
 } from "@/assets/file-type-icons";
 import { SettingOutlined } from "@ant-design/icons";
-import { useState, type ReactNode } from "react";
+import {
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode
+} from "react";
 import { useTranslation } from "react-i18next";
 import type { Project, Session } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
@@ -50,6 +55,16 @@ import { cn } from "@/lib/utils";
 import { useAppStore, type ProjectSortMode } from "@/store";
 
 type ProjectSessionGroup = { project: Project; sessions: Session[] };
+
+const DEFAULT_SIDEBAR_WIDTH = 272;
+const MIN_SIDEBAR_WIDTH = 240;
+
+function clampSidebarWidth(width: number): number {
+  if (!Number.isFinite(width)) {
+    return DEFAULT_SIDEBAR_WIDTH;
+  }
+  return Math.max(MIN_SIDEBAR_WIDTH, Math.round(width));
+}
 
 /** 左侧边栏的折叠/展开按钮：固定悬浮在窗口左上角，折叠前后位置不变。 */
 export function SidebarToggle() {
@@ -91,7 +106,7 @@ function SidebarRow(props: {
       className={cn(
         "flex w-full flex-none items-center rounded-sm text-left text-foreground transition-colors hover:bg-surface-hover",
         props.compactLabel ? "h-7 gap-1.5 px-2 text-body-sm" : "h-8 gap-2 px-2.5 text-body-xs",
-        props.active && "bg-surface-hover font-medium"
+        props.active && "bg-surface-hover font-[500]"
       )}
     >
       <span className="flex size-4 flex-none items-center justify-center [&_svg]:size-4 [&_svg]:stroke-[1.75]">
@@ -287,6 +302,8 @@ export function Sidebar() {
   const setProjectPinned = useAppStore((state) => state.setProjectPinned);
   const setProjectSortMode = useAppStore((state) => state.setProjectSortMode);
 
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [resizing, setResizing] = useState(false);
   const [editingId, setEditingId] = useState<string>();
   const [draftTitle, setDraftTitle] = useState("");
   const [editingProjectId, setEditingProjectId] = useState<string>();
@@ -496,19 +513,58 @@ export function Sidebar() {
     );
   }
 
+  const visualSidebarWidth = clampSidebarWidth(sidebarWidth);
+  const sidebarStyle = {
+    "--sidebar-width": `${visualSidebarWidth}px`,
+    width: sidebarOpen ? "var(--sidebar-width)" : "0px"
+  } as CSSProperties & { "--sidebar-width": string };
+
+  function onResizeStart(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (!sidebarOpen) {
+      return;
+    }
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = visualSidebarWidth;
+    let latestWidth = startWidth;
+    console.debug("[sidebar] 开始拖拽调整宽度", {
+      startWidth,
+      minWidth: MIN_SIDEBAR_WIDTH
+    });
+    setResizing(true);
+
+    const onMove = (move: globalThis.PointerEvent) => {
+      latestWidth = clampSidebarWidth(startWidth + (move.clientX - startX));
+      setSidebarWidth(latestWidth);
+    };
+    const onStop = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onStop);
+      window.removeEventListener("pointercancel", onStop);
+      setResizing(false);
+      console.debug("[sidebar] 结束拖拽调整宽度", { width: latestWidth });
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onStop, { once: true });
+    window.addEventListener("pointercancel", onStop, { once: true });
+  }
+
   return (
-    // 折叠 = 外层宽度动画收到 0；内容固定在 272px 的内层里，动画期间不会被压扁。
+    // 折叠 = 外层宽度动画收到 0；内容固定在当前宽度的内层里，动画期间不会被压扁。
     // 折叠态保持挂载以便展开动画，用 inert + aria-hidden 屏蔽交互与无障碍树。
     <aside
       data-testid="app-sidebar"
       aria-hidden={!sidebarOpen}
       inert={!sidebarOpen}
+      style={sidebarStyle}
       className={cn(
-        "h-full min-h-0 flex-none overflow-hidden bg-background transition-[width] duration-200 ease-out max-[840px]:hidden",
-        sidebarOpen ? "w-[272px] border-r border-border" : "w-0"
+        "relative h-full min-h-0 flex-none overflow-hidden bg-background max-[840px]:hidden",
+        !resizing && "transition-[width] duration-200 ease-out",
+        sidebarOpen && "border-r border-border"
       )}
     >
-      <div className="flex h-full w-[272px] min-h-0 flex-col px-3 pb-3">
+      <div className="flex h-full min-h-0 w-[var(--sidebar-width)] flex-col px-3 pb-3">
       {/* macOS hiddenInset 标题栏会占据左上角；这里预留一条空白，
           给系统按钮和悬浮的 SidebarToggle 留出位置。注意不能挂 app-region:drag——
           它会盖住折叠按钮并抢走点击（窗口拖拽由 .titlebar-drag 提供）。 */}
@@ -545,7 +601,7 @@ export function Sidebar() {
       <div className="relative -mx-1 mt-4 min-h-0 flex-1">
         <div
           data-scrollbar-hidden="true"
-          className="sidebar-scroll-area h-full min-h-0 overflow-y-auto px-1 pb-6"
+          className="sidebar-scroll-area h-full min-h-0 overflow-y-auto px-1 pb-6 font-normal"
         >
           {hasPinned ? (
             <>
@@ -606,6 +662,15 @@ export function Sidebar() {
           onClick={() => setView("settings")}
         />
       </div>
+      {sidebarOpen ? (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          title={t("sidebar.resize")}
+          onPointerDown={onResizeStart}
+          className="absolute right-0 top-0 z-10 h-full w-1.5 cursor-col-resize"
+        />
+      ) : null}
       </div>
     </aside>
   );
@@ -816,7 +881,7 @@ function SessionRow(props: SessionRowProps) {
             title={props.branchHint}
             className={cn(
               "flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden pr-7 text-left text-caption",
-              props.active ? "font-medium text-foreground" : "text-foreground"
+              props.active ? "font-[500] text-foreground" : "text-foreground"
             )}
           >
             {props.session.feishuChatId || props.session.wechatChatId ? (

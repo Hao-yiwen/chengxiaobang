@@ -138,10 +138,13 @@ export function truncateEnd(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-type ToolLineKey = `chat.toolLine.${
+type ToolLineName =
   | "Read"
+  | "ReadGeneric"
   | "Write"
+  | "WriteGeneric"
   | "Edit"
+  | "EditGeneric"
   | "LS"
   | "MakeDirectory"
   | "Glob"
@@ -165,7 +168,9 @@ type ToolLineKey = `chat.toolLine.${
   | "ScheduleCancel"
   | "Memory"
   | "OcrExtractText"
-  | "fallback"}`;
+  | "fallback";
+
+type ToolLineKey = `chat.toolLine.${ToolLineName}` | `chat.toolLineRunning.${ToolLineName}`;
 
 export interface ToolLineLabel {
   key: ToolLineKey;
@@ -177,46 +182,78 @@ function stringArg(args: ToolCall["args"], key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+type ToolLineNamespace = "chat.toolLine" | "chat.toolLineRunning";
+
+function labelKey(namespace: ToolLineNamespace, name: ToolLineName): ToolLineKey {
+  return `${namespace}.${name}`;
+}
+
 /** 工具调用的一行人话描述（i18n key + 已截断好的插值参数）。 */
 export function toolLineLabel(toolCall: ToolCall): ToolLineLabel {
+  return toolLineLabelInNamespace(toolCall, "chat.toolLine");
+}
+
+/** 运行中/准备中的工具描述，避免把正在执行的工具显示成完成态。 */
+export function toolLineRunningLabel(toolCall: ToolCall): ToolLineLabel {
+  return toolLineLabelInNamespace(toolCall, "chat.toolLineRunning");
+}
+
+function toolLineLabelInNamespace(
+  toolCall: ToolCall,
+  namespace: ToolLineNamespace
+): ToolLineLabel {
   const { name, args } = toolCall;
   switch (name) {
-    case "Read":
-    case "Write":
-    case "Edit":
-      return { key: `chat.toolLine.${name}`, params: { path: shortenPath(stringArg(args, "file_path") ?? ".") } };
+    case "Read": {
+      const path = stringArg(args, "file_path");
+      return path
+        ? { key: labelKey(namespace, "Read"), params: { path: shortenPath(path) } }
+        : { key: labelKey(namespace, "ReadGeneric") };
+    }
+    case "Write": {
+      const path = stringArg(args, "file_path");
+      return path
+        ? { key: labelKey(namespace, "Write"), params: { path: shortenPath(path) } }
+        : { key: labelKey(namespace, "WriteGeneric") };
+    }
+    case "Edit": {
+      const path = stringArg(args, "file_path");
+      return path
+        ? { key: labelKey(namespace, "Edit"), params: { path: shortenPath(path) } }
+        : { key: labelKey(namespace, "EditGeneric") };
+    }
     case "LS":
     case "MakeDirectory":
-      return { key: `chat.toolLine.${name}`, params: { path: shortenPath(stringArg(args, "path") ?? ".") } };
+      return { key: labelKey(namespace, name), params: { path: shortenPath(stringArg(args, "path") ?? ".") } };
     case "Glob":
-      return { key: "chat.toolLine.Glob", params: { pattern: truncateEnd(stringArg(args, "pattern") ?? "", 40) } };
+      return { key: labelKey(namespace, "Glob"), params: { pattern: truncateEnd(stringArg(args, "pattern") ?? "", 40) } };
     case "Grep":
-      return { key: "chat.toolLine.Grep", params: { query: truncateEnd(stringArg(args, "pattern") ?? "", 40) } };
+      return { key: labelKey(namespace, "Grep"), params: { query: truncateEnd(stringArg(args, "pattern") ?? "", 40) } };
     case "WebSearch":
-      return { key: "chat.toolLine.WebSearch", params: { query: truncateEnd(stringArg(args, "query") ?? "", 40) } };
+      return { key: labelKey(namespace, "WebSearch"), params: { query: truncateEnd(stringArg(args, "query") ?? "", 40) } };
     case "Bash":
       return {
-        key: "chat.toolLine.Bash",
+        key: labelKey(namespace, "Bash"),
         params: { command: truncateEnd((stringArg(args, "command") ?? "").replace(/\s+/g, " ").trim(), 60) }
       };
     case "WebFetch":
-      return { key: "chat.toolLine.WebFetch", params: { url: truncateEnd(stringArg(args, "url") ?? "", 60) } };
+      return { key: labelKey(namespace, "WebFetch"), params: { url: truncateEnd(stringArg(args, "url") ?? "", 60) } };
     case "ExitPlanMode":
       return {
-        key: "chat.toolLine.ExitPlanMode",
+        key: labelKey(namespace, "ExitPlanMode"),
         params: { title: truncateEnd(proposePlanLabel(args), 30) }
       };
     case "TodoWrite":
-      return { key: "chat.toolLine.TodoWrite" };
+      return { key: labelKey(namespace, "TodoWrite") };
     case "Skill":
-      return { key: "chat.toolLine.Skill", params: { name: stringArg(args, "skill") ?? "" } };
+      return { key: labelKey(namespace, "Skill"), params: { name: stringArg(args, "skill") ?? "" } };
     case "CreateSkill":
-      return { key: "chat.toolLine.CreateSkill", params: { name: stringArg(args, "name") ?? stringArg(args, "url") ?? "" } };
+      return { key: labelKey(namespace, "CreateSkill"), params: { name: stringArg(args, "name") ?? stringArg(args, "url") ?? "" } };
     case "ScheduleCreate":
-      return { key: "chat.toolLine.ScheduleCreate", params: { name: stringArg(args, "name") ?? "" } };
+      return { key: labelKey(namespace, "ScheduleCreate"), params: { name: stringArg(args, "name") ?? "" } };
     case "Memory":
       return {
-        key: "chat.toolLine.Memory",
+        key: labelKey(namespace, "Memory"),
         params: {
           path: shortenPath(stringArg(args, "path") ?? stringArg(args, "old_path") ?? "/memories")
         }
@@ -231,9 +268,9 @@ export function toolLineLabel(toolCall: ToolCall): ToolLineLabel {
     case "ScheduleList":
     case "ScheduleCancel":
     case "OcrExtractText":
-      return { key: `chat.toolLine.${name}` };
+      return { key: labelKey(namespace, name) };
     default:
-      return { key: "chat.toolLine.fallback", params: { name } };
+      return { key: labelKey(namespace, "fallback"), params: { name } };
   }
 }
 

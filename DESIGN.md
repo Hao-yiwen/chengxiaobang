@@ -1,7 +1,7 @@
 ---
 version: beta
 name: Vercel-developer-platform-theme
-description: A stark developer-platform interface built from near-white canvases, ink-near-black text, deliberate gray steps, subtle stacked elevation, system sans typography, and a hero-scale blue / teal / violet / pink / amber mesh gradient reserved for atmospheric moments.
+description: A stark developer-platform interface built from near-white canvases, ink-near-black text, deliberate gray steps, hairline boundaries, generous spacing, system sans typography, and a hero-scale blue / teal / violet / pink / amber mesh gradient reserved for atmospheric moments.
 
 colors:
   primary: "#171717"
@@ -194,7 +194,7 @@ components:
 
 **关键特征：**
 
-- 近白页面背景与纯白卡片，边界靠 `#ebebeb` hairline 和极弱 stacked shadow。
+- 近白页面背景与纯白卡片，边界靠 `#ebebeb` hairline、背景层级和留白；所有界面元素默认无阴影。
 - 近黑 `#171717` 是文字和主 CTA，而不是绿色、黄色或大面积彩色。
 - Vercel mesh gradient 是唯一装饰性视觉资产，只用于 hero 级或大背景级氛围。
 - 字体使用系统 sans 字体栈；macOS 上实际主要落到 San Francisco / SF Pro，技术层使用 JetBrains Mono / SF Mono。
@@ -287,17 +287,16 @@ components:
 - 卡片内部紧凑，区块之间留白更大。Vercel 的秩序感来自大间距与极细边界。
 - 桌面容器最大宽度可保持 1400px；聊天正文维持可读版心，不要横向铺满。
 
-## Elevation
+## 层级
 
-Vercel 的阴影是 stacked shadow：
+层级不通过投影表达。所有卡片、输入框、弹层、菜单、通知和浮动面板都默认无阴影，只用边框、背景、位置和留白建立视觉关系：
 
-- **hairline**：仅 inset 1px 边界。
-- **subtle**：1px / 2px 小阴影 + inset hairline。
-- **stack**：2px + 8px 弱阴影 + inset hairline。
-- **float**：适合较突出的卡片。
-- **modal / overlay**：弹层、菜单、通知。
+- **hairline**：真实 1px 边框或分隔线，不用 inset 伪边界。
+- **surface**：通过 `canvas`、`canvas-soft`、`canvas-soft-2` 和 `surface-hover` 区分层级。
+- **floating**：弹层、菜单、通知通过更高 `z-index`、hairline 边框和白底承载，不加投影。
+- **interaction**：hover、focus、selected 只改变边框、背景、文字或图标颜色，不加投影。
 
-不要使用单个大 blur 投影，不要彩色辉光，不要玻璃拟态。
+禁止使用阴影、彩色辉光、玻璃拟态或任何 blur 投影。
 
 ## Components
 
@@ -311,7 +310,7 @@ Vercel 的阴影是 stacked shadow：
 ### Cards
 
 - 默认卡片：白底、hairline、8px 半径。
-- 大卡片：白底、12px 半径、stacked shadow。
+- 大卡片：白底、12px 半径、hairline 边框、无阴影。
 - 代码/终端卡片：`primary` 近黑底，mono 文字，8px 半径。
 
 ### Inputs
@@ -332,7 +331,7 @@ Vercel 的阴影是 stacked shadow：
 - 用灰阶区分层级，不用暖黄色或绿色填充界面。
 - 链接、成功、信息态统一用 `link` 蓝。
 - 把 mesh gradient 留给大面积视觉氛围。
-- 使用 stacked shadow 与 hairline 组合建立深度。
+- 使用 hairline、灰阶背景和留白建立深度；不要使用阴影。
 - 代码、终端、路径、技术标签使用 mono。
 
 ## Don't

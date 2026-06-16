@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-/** Clipboard write with a transient "copied" flag for button feedback. */
+/** 写入剪贴板，成功后短暂展示「已复制」反馈。 */
 export function useCopy(resetMs = 1500): {
   copied: boolean;
   copy: (text: string) => Promise<void>;
@@ -8,12 +8,22 @@ export function useCopy(resetMs = 1500): {
   const [copied, setCopied] = useState(false);
 
   async function copy(text: string): Promise<void> {
+    const writeText = navigator.clipboard?.writeText;
+    if (!writeText) {
+      console.warn("[clipboard] 复制失败：当前环境没有剪贴板写入能力", {
+        textLength: text.length
+      });
+      return;
+    }
     try {
-      await navigator.clipboard?.writeText(text);
+      await writeText.call(navigator.clipboard, text);
       setCopied(true);
       window.setTimeout(() => setCopied(false), resetMs);
-    } catch {
-      // Clipboard unavailable or denied — fail silently rather than disrupt the chat.
+    } catch (error) {
+      console.warn("[clipboard] 复制到剪贴板失败", {
+        textLength: text.length,
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 

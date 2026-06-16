@@ -133,6 +133,7 @@
     "artifactName": "chengxiaobang-${version}-${os}-${arch}.${ext}",
     "files": [
       "dist/**/*",
+      "assets/onboarding-loading-startup.png",
       "package.json"
     ],
     "asarUnpack": [

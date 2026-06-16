@@ -15,7 +15,7 @@ import {
   shortenPath,
   toolCallDurationMs
 } from "@/lib/tool-call";
-import { toolIcon, toolLineLabel } from "@/lib/tool-display";
+import { toolIcon, toolLineLabel, toolLineRunningLabel } from "@/lib/tool-display";
 import { cn } from "@/lib/utils";
 
 /** 可在右侧预览面板打开 path 参数的文件类工具。 */
@@ -35,11 +35,11 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
   const [open, setOpen] = useState(false);
 
   const ToolIcon = toolIcon(toolCall.name);
-  const label = toolLineLabel(toolCall);
   const isRunning =
     toolCall.status === "running" ||
     toolCall.status === "pending_approval" ||
     toolCall.status === "pending_smart_approval";
+  const label = isRunning ? toolLineRunningLabel(toolCall) : toolLineLabel(toolCall);
   const isError = toolCall.status === "failed" || toolCall.status === "rejected";
   const filePath =
     onOpenFile &&

@@ -59,6 +59,9 @@ export function mapSession(row: Row): Session {
     ...(row.fork_message_id === null || row.fork_message_id === undefined
       ? {}
       : { forkMessageId: String(row.fork_message_id) }),
+    ...(row.fork_point_message_id === null || row.fork_point_message_id === undefined
+      ? {}
+      : { forkPointMessageId: String(row.fork_point_message_id) }),
     ...(row.feishu_chat_id === null || row.feishu_chat_id === undefined
       ? {}
       : { feishuChatId: String(row.feishu_chat_id) }),

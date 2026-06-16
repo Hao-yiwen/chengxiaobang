@@ -8,7 +8,8 @@ import {
   defaultProfilePath,
   devDockIconPath,
   preloadPath,
-  rendererIndexPath
+  rendererIndexPath,
+  startupSplashImageCandidates
 } from "../src/main/paths";
 
 describe("main process paths", () => {
@@ -29,6 +30,14 @@ describe("main process paths", () => {
 
   it("resolves the dev dock icon inside the app's build directory", () => {
     expect(devDockIconPath("/repo/apps/desktop")).toBe(join("/repo/apps/desktop", "build", "icon.png"));
+  });
+
+  it("resolves startup splash image candidates from onboarding art to fallback assets", () => {
+    expect(startupSplashImageCandidates("/repo/apps/desktop")).toEqual([
+      join("/repo/apps/desktop", "assets", "onboarding-loading-startup.png"),
+      join("/repo/apps/desktop", "assets", "onboarding-loading.png"),
+      join("/repo/apps/desktop", "build", "icon.png")
+    ]);
   });
 
   it("loads the CommonJS preload bundle from the sandboxed window", () => {

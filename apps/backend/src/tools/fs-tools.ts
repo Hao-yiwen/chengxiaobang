@@ -21,12 +21,12 @@ const readParams = Type.Object({
 });
 
 const writeParams = Type.Object({
-  file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径" }),
+  file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径；请优先生成该字段" }),
   content: Type.String({ description: "要写入的完整文本内容" })
 });
 
 const editParams = Type.Object({
-  file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径" }),
+  file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径；请优先生成该字段" }),
   old_string: Type.String({ description: "需要被替换的原文，必须逐字精确匹配" }),
   new_string: Type.String({ description: "替换后的新文本" }),
   replace_all: Type.Optional(Type.Boolean({ description: "默认 false；true 时替换所有匹配" }))
@@ -127,7 +127,8 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
   const writeTool: AgentTool<typeof writeParams> = {
     name: "Write",
     label: "写入文件",
-    description: "创建或完整覆盖工作目录或显式绝对路径中的一个文本文件，会自动创建父目录。",
+    description:
+      "创建或完整覆盖工作目录或显式绝对路径中的一个文本文件，会自动创建父目录。调用时优先生成 file_path，便于界面尽早展示正在写入的文件。",
     parameters: writeParams,
     execute: async (_id, params) => {
       const target = await resolveFsWritablePath(workspacePath, "Write", params.file_path, true);
@@ -140,7 +141,7 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
     name: "Edit",
     label: "编辑文件",
     description:
-      "对已有文本文件做精确字符串替换。默认 old_string 必须唯一匹配；replace_all=true 时替换全部匹配。",
+      "对已有文本文件做精确字符串替换。默认 old_string 必须唯一匹配；replace_all=true 时替换全部匹配。调用时优先生成 file_path，便于界面尽早展示正在编辑的文件。",
     parameters: editParams,
     execute: async (_id, params) => {
       if (params.old_string.length === 0) {

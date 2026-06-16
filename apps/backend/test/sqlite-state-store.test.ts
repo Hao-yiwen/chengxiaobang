@@ -1027,13 +1027,15 @@ describe("SqliteStateStore", () => {
 
     expect(fork.parentSessionId).toBe(source.id);
     expect(fork.forkMessageId).toBe(second.id);
-    expect(fork.title).toBe("原会话（分支）");
+    expect(fork.title).toBe("原会话");
     expect(fork.accessMode).toBe("full_access");
 
     const cloned = await store.listMessages(fork.id);
     expect(cloned.map((message) => message.content)).toEqual(["一", "二"]);
+    expect(fork.forkPointMessageId).toBe(cloned[1].id);
     // Fresh ids, preserved timestamps and reasoning fields.
     expect(cloned[0].id).not.toBe(first.id);
+    expect(cloned[1].id).not.toBe(second.id);
     expect(cloned[0].createdAt).toBe(first.createdAt);
     expect(cloned[1]).toMatchObject({ reasoning: "想了想", reasoningMs: 800 });
     // The compaction pointer is remapped to the cloned row's id.

@@ -45,6 +45,8 @@ export interface CreateSessionInput {
   reasoningMode?: ReasoningMode;
   parentSessionId?: string;
   forkMessageId?: string;
+  /** 派生会话内的锚点消息 id，用于前端标记派生位置。 */
+  forkPointMessageId?: string;
   feishuChatId?: string;
   wechatChatId?: string;
 }

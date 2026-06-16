@@ -183,13 +183,22 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           return;
         }
         const configuredProvider = firstConfiguredProvider(data.providers);
-        const shouldShowFirstRunOnboarding = !get().onboardingCompleted;
+        const onboardingCompleted = get().onboardingCompleted;
+        const onboardingDismissed = get().onboardingDismissed;
+        const shouldShowFirstRunOnboarding =
+          !configuredProvider && !onboardingCompleted && !onboardingDismissed;
         const firstRunOnboardingPatch = shouldShowFirstRunOnboarding
           ? ({ onboardingOpen: true, onboardingStep: "welcome" } as const)
           : {};
         if (shouldShowFirstRunOnboarding) {
           console.info("[store] 首次启动打开欢迎引导", {
             hasConfiguredProvider: Boolean(configuredProvider)
+          });
+        } else if (configuredProvider && !onboardingCompleted && !onboardingDismissed) {
+          console.info("[store] 跳过首次启动欢迎引导：已有可用模型配置", {
+            providerId: configuredProvider.id,
+            providerKind: configuredProvider.kind,
+            model: configuredProvider.model
           });
         }
         if (!configuredProvider) {

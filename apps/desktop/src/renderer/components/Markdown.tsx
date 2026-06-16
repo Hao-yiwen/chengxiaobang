@@ -19,10 +19,11 @@ import {
   type StreamdownTranslations,
   type UrlTransform
 } from "streamdown";
+import { CheckMediumIcon, CopyIcon as BuiltinCopyIcon } from "@/assets/file-type-icons";
 import { CodeBlockPanel } from "@/components/CodeBlockPanel";
 import { ExternalUrlAnchor } from "@/components/ExternalUrlMenu";
 import { FileLinkAnchor } from "@/components/FileLinkAnchor";
-import { localFilePathFromHref } from "../../common/file-preview";
+import { localFilePathFromHref, markdownLocalFileHrefFromPath } from "../../common/file-preview";
 import { useAppStore } from "@/store";
 import { rehypeNumericTables } from "@/lib/markdown-utils";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,7 @@ import { cn } from "@/lib/utils";
 type MarkdownAstNode = {
   type?: string;
   lang?: string | null;
+  url?: string;
   children?: MarkdownAstNode[];
 };
 
@@ -48,8 +50,26 @@ function visitMarkdownAst(node: MarkdownAstNode, visitor: (node: MarkdownAstNode
   node.children?.forEach((child) => visitMarkdownAst(child, visitor));
 }
 
+function remarkLocalFileLinks() {
+  return (tree: MarkdownAstNode) => {
+    visitMarkdownAst(tree, (node) => {
+      if (node.type !== "link" || typeof node.url !== "string") {
+        return;
+      }
+      const filePath = localFilePathFromHref(node.url);
+      if (!filePath) {
+        return;
+      }
+      // Streamdown 的安全插件会先拦截裸相对路径；包成内部 HTTPS href 后，
+      // 后续 a 渲染器再还原成工作区相对文件路径并打开右侧预览。
+      node.url = markdownLocalFileHrefFromPath(filePath);
+    });
+  };
+}
+
 const REMARK_PLUGINS: StreamdownProps["remarkPlugins"] = [
   ...Object.values(defaultRemarkPlugins),
+  remarkLocalFileLinks,
   remarkDefaultCodeLanguage,
   remarkBreaks
 ];
@@ -62,7 +82,12 @@ const REHYPE_PLUGINS: StreamdownProps["rehypePlugins"] = [
 const STREAMDOWN_CONTROLS: ControlsConfig = {
   code: false,
   table: false,
-  mermaid: { copy: true, download: true, fullscreen: true, panZoom: true }
+  mermaid: { copy: true, download: false, fullscreen: false, panZoom: false }
+};
+
+const STREAMDOWN_ICONS: StreamdownProps["icons"] = {
+  CheckIcon: CheckMediumIcon,
+  CopyIcon: BuiltinCopyIcon
 };
 
 const STREAMDOWN_TRANSLATIONS: Partial<StreamdownTranslations> = {
@@ -109,6 +134,9 @@ const STREAMDOWN_ANIMATION: StreamdownProps["animated"] = {
   sep: "word",
   stagger: 12
 };
+
+const MERMAID_PREVIEW_MAX_WIDTH = 1040;
+const MERMAID_PREVIEW_MAX_HEIGHT = 680;
 
 type MarkdownCodeProps = ComponentPropsWithoutRef<"code"> & {
   node?: unknown;
@@ -269,6 +297,119 @@ function useScrollOverflowDetection(containerRef: React.RefObject<HTMLDivElement
   }, [containerRef]);
 }
 
+function parseSvgLength(value: string | null) {
+  if (!value) return null;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getSvgIntrinsicSize(svg: SVGSVGElement) {
+  const viewBox = svg.getAttribute("viewBox")?.trim().split(/\s+/).map(Number);
+  if (viewBox && viewBox.length === 4 && viewBox.every(Number.isFinite) && viewBox[2] > 0 && viewBox[3] > 0) {
+    return { width: viewBox[2], height: viewBox[3] };
+  }
+
+  const width = parseSvgLength(svg.getAttribute("width"));
+  const height = parseSvgLength(svg.getAttribute("height"));
+  if (width && height) {
+    return { width, height };
+  }
+
+  return null;
+}
+
+function useMermaidAutoFit(containerRef: React.RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const root = container;
+
+    let frameId = 0;
+    const observed = new Set<Element>();
+    const resizeObserver = new ResizeObserver(() => scheduleFit());
+
+    function fitMermaid(mermaidRoot: HTMLElement) {
+      const svg = mermaidRoot.querySelector("svg");
+      if (!(svg instanceof SVGSVGElement)) return;
+
+      const intrinsicSize = getSvgIntrinsicSize(svg);
+      if (!intrinsicSize) return;
+
+      const availableWidth = Math.min(
+        MERMAID_PREVIEW_MAX_WIDTH,
+        Math.max(1, mermaidRoot.clientWidth || mermaidRoot.parentElement?.clientWidth || MERMAID_PREVIEW_MAX_WIDTH)
+      );
+      const scale = Math.min(
+        availableWidth / intrinsicSize.width,
+        MERMAID_PREVIEW_MAX_HEIGHT / intrinsicSize.height
+      );
+      const width = Math.max(1, Math.round(intrinsicSize.width * scale));
+      const height = Math.max(1, Math.round(intrinsicSize.height * scale));
+
+      mermaidRoot.style.setProperty("--cxb-mermaid-fit-width", `${width}px`);
+      mermaidRoot.style.setProperty("--cxb-mermaid-fit-height", `${height}px`);
+    }
+
+    function fitAllMermaid() {
+      root.querySelectorAll('[data-streamdown="mermaid"]').forEach((node) => {
+        if (node instanceof HTMLElement) {
+          fitMermaid(node);
+        }
+      });
+    }
+
+    function scheduleFit() {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        fitAllMermaid();
+      });
+    }
+
+    function observeMermaid(node: Element) {
+      if (observed.has(node)) return;
+      observed.add(node);
+      resizeObserver.observe(node);
+      const svg = node.querySelector("svg");
+      if (svg) {
+        resizeObserver.observe(svg);
+      }
+      scheduleFit();
+    }
+
+    root.querySelectorAll('[data-streamdown="mermaid"]').forEach(observeMermaid);
+
+    const mutationObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          if (node.matches('[data-streamdown="mermaid"]')) {
+            observeMermaid(node);
+          }
+          node.querySelectorAll('[data-streamdown="mermaid"]').forEach(observeMermaid);
+          if (node.matches("svg") || node.querySelector("svg")) {
+            scheduleFit();
+          }
+        }
+      }
+    });
+
+    mutationObserver.observe(root, { childList: true, subtree: true });
+    scheduleFit();
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      mutationObserver.disconnect();
+      resizeObserver.disconnect();
+      observed.clear();
+    };
+  }, [containerRef]);
+}
+
 function StreamingMarkdownBlock({ content, dir, ...props }: BlockProps) {
   if (!content.trim()) {
     return null;
@@ -299,6 +440,7 @@ function MarkdownStream({
     [codePreviewSettings.darkTheme, codePreviewSettings.lightTheme]
   );
   useScrollOverflowDetection(containerRef);
+  useMermaidAutoFit(containerRef);
 
   return (
     <div ref={containerRef} style={{ display: "contents" }}>
@@ -307,6 +449,7 @@ function MarkdownStream({
         dir="auto"
         className={cn("markdown-streamdown text-foreground", className)}
         controls={STREAMDOWN_CONTROLS}
+        icons={STREAMDOWN_ICONS}
         translations={STREAMDOWN_TRANSLATIONS}
         components={STREAMDOWN_COMPONENTS}
         urlTransform={HTTP_URL_TRANSFORM}

@@ -7,7 +7,12 @@ import { useTranslation } from "react-i18next";
 import type { ToolCall } from "@chengxiaobang/shared";
 import { ToolCallLine } from "@/components/ToolCallLine";
 import type { ArtifactKind } from "@/lib/artifact";
-import { categoryIcon, toolCategory, toolGroupSummary, toolLineLabel } from "@/lib/tool-display";
+import {
+  categoryIcon,
+  toolCategory,
+  toolGroupSummary,
+  toolLineRunningLabel
+} from "@/lib/tool-display";
 import { cn } from "@/lib/utils";
 
 interface ToolCallGroupProps {
@@ -37,7 +42,7 @@ export function ToolCallGroup({ toolCalls, onOpenFile }: ToolCallGroupProps) {
     .map((part) => t(`chat.toolGroup.${part.category}`, { count: part.count }))
     .join(" · ");
   const HeadIcon = categoryIcon(toolCategory(toolCalls[0].name));
-  const activeLabel = active ? toolLineLabel(active) : undefined;
+  const activeLabel = active ? toolLineRunningLabel(active) : undefined;
 
   return (
     <div className="mb-4 max-w-full self-stretch">

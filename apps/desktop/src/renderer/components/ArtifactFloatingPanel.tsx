@@ -1,12 +1,3 @@
-import type { ComponentType } from "react";
-import {
-  AppWindowIcon,
-  AudioWaveformIcon,
-  CodeIcon,
-  DocumentIcon,
-  FileIcon,
-  type FileIconSvgProps
-} from "@/assets/file-type-icons";
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -17,25 +8,8 @@ import {
   type CollectedArtifact,
   type CollectedArtifactDeclarations
 } from "@/lib/artifact";
+import { iconForPath } from "@/lib/file-icon";
 import { useAppStore } from "@/store";
-
-type Icon = ComponentType<FileIconSvgProps>;
-
-const KIND_ICON: Partial<Record<CollectedArtifact["kind"], Icon>> = {
-  code: CodeIcon,
-  markdown: CodeIcon,
-  json: CodeIcon,
-  html: CodeIcon,
-  pdf: DocumentIcon,
-  image: FileIcon,
-  audio: AudioWaveformIcon,
-  video: AppWindowIcon,
-  spreadsheet: DocumentIcon,
-  docx: DocumentIcon,
-  presentation: DocumentIcon,
-  text: DocumentIcon,
-  unsupported: FileIcon
-};
 
 const EMPTY_ARTIFACT_COLLECTION: CollectedArtifactDeclarations = {
   artifacts: [],
@@ -181,7 +155,7 @@ export function ArtifactFloatingPanel() {
       >
         <div className="flex flex-col gap-2">
           {collection.artifacts.map((artifact) => {
-            const Icon = KIND_ICON[artifact.kind] ?? FileIcon;
+            const Icon = iconForPath(artifact.path, artifact.kind);
             return (
               <button
                 key={artifact.path}
@@ -198,7 +172,7 @@ export function ArtifactFloatingPanel() {
                 className="flex w-full min-w-0 items-center gap-2.5 rounded-sm border bg-canvas px-2.5 py-2 text-left transition-colors hover:bg-canvas-soft-2"
               >
                 <span className="flex size-7 flex-none items-center justify-center rounded-xs bg-canvas-soft-2 text-muted-foreground">
-                  <Icon className="size-3.5" />
+                  <Icon className="size-4" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-caption font-medium text-foreground">

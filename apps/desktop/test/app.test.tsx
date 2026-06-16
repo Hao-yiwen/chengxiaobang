@@ -388,15 +388,19 @@ describe("App", () => {
     );
   });
 
-  it("shows the first-run guide once even when a provider already exists", async () => {
+  it("does not auto-open the first-run guide when a provider already exists", async () => {
     useAppStore.setState({ onboardingCompleted: false, onboardingStep: "welcome" });
     const client = createClient();
 
     const { unmount } = render(<App client={client} />);
 
-    expect(await screen.findByText("先认识一下你的工作方式")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "开始设置" }));
-    fireEvent.click(await screen.findByRole("button", { name: "下一步" }));
+    expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
+    expect(screen.queryByText("先认识一下你的工作方式")).not.toBeInTheDocument();
+    expect(useAppStore.getState().onboardingCompleted).toBe(false);
+
+    act(() => {
+      useAppStore.getState().openOnboarding("model");
+    });
 
     expect(await screen.findByTestId("onboarding-current-model")).toHaveTextContent(
       "DeepSeek · DeepSeek V4 Flash"
@@ -413,6 +417,44 @@ describe("App", () => {
 
     expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
     expect(screen.queryByText("先认识一下你的工作方式")).not.toBeInTheDocument();
+  });
+
+  it("does not auto-open the first-run guide again after the user closes it", async () => {
+    useAppStore.setState({
+      onboardingCompleted: false,
+      onboardingDismissed: false,
+      onboardingStep: "welcome"
+    });
+    const client = createClient({
+      listProviders: vi.fn(async () => [
+        {
+          ...provider,
+          apiKeyRef: undefined
+        }
+      ])
+    });
+
+    const { unmount } = render(<App client={client} />);
+
+    expect(await screen.findByText("先认识一下你的工作方式")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(useAppStore.getState().onboardingDismissed).toBe(true));
+    expect(useAppStore.getState().onboardingCompleted).toBe(false);
+    expect(
+      JSON.parse(window.localStorage.getItem("chengxiaobang.app") ?? "{}").state
+        .onboardingDismissed
+    ).toBe(true);
+    await waitFor(() =>
+      expect(screen.queryByText("先认识一下你的工作方式")).not.toBeInTheDocument()
+    );
+
+    unmount();
+    render(<App client={client} />);
+
+    expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
+    expect(screen.queryByText("先认识一下你的工作方式")).not.toBeInTheDocument();
+    expect(useAppStore.getState().onboardingCompleted).toBe(false);
   });
 
   it("opens the model step directly after completed onboarding when no provider is configured", async () => {
@@ -612,7 +654,7 @@ describe("App", () => {
     });
     const forkedSession = createSessionFixture({
       id: "session_actions_fork",
-      title: "菜单对话（分支）"
+      title: "菜单对话"
     });
     const forkSession = vi.fn(async () => forkedSession);
     const client = createClient({
@@ -1323,7 +1365,7 @@ describe("App", () => {
     resolveStream?.();
   });
 
-  it("shows a single preparing activity and then relies on the timeline tool row", async () => {
+  it("keeps the preparing and running tool visible in the work timeline", async () => {
     type StreamRunEvent = Parameters<ApiClient["streamRun"]>[1] extends (
       event: infer E
     ) => void
@@ -1341,10 +1383,26 @@ describe("App", () => {
       createdAt: "2026-06-13T00:00:00.000Z",
       updatedAt: "2026-06-13T00:00:01.000Z"
     };
+    const completedTool: ToolCall = {
+      ...runningTool,
+      status: "completed",
+      result: "已写入 out.txt",
+      updatedAt: "2026-06-13T00:00:02.000Z"
+    };
+    const reasoningMessage: Message = {
+      id: "msg_reasoning_tool",
+      sessionId: "session_1",
+      role: "assistant",
+      content: "",
+      reasoning: "先想清楚",
+      reasoningMs: 1000,
+      createdAt: "2026-06-13T00:00:00.900Z"
+    };
     const client = createClient({
       streamRun: vi.fn(async (_input, onEvent) => {
         emit = onEvent;
         onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+        onEvent({ type: "delta", channel: "thinking", runId: "run_1", delta: "先想清楚" });
         onEvent({
           type: "tool_activity",
           runId: "run_1",
@@ -1352,7 +1410,7 @@ describe("App", () => {
             contentIndex: 0,
             toolCallId: "tool_1",
             name: "Write",
-            argsPreview: { file_path: "out.txt" },
+            argsPreview: {},
             updatedAt: "2026-06-13T00:00:00.500Z"
           }
         });
@@ -1370,23 +1428,67 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByTitle("发送"));
 
+    const composerColumn = await screen.findByTestId("chat-composer-column");
+    const chatScroll = await screen.findByTestId("chat-scroll");
     await waitFor(() => {
-      const statuses = screen.getAllByTestId("tool-activity-status");
-      expect(statuses).toHaveLength(1);
-      expect(statuses[0]).toHaveTextContent("正在准备工具调用：写入 out.txt");
+      expect(within(chatScroll).getByText("写入文件中")).toBeInTheDocument();
+      expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
     });
+    expect(within(composerColumn).queryByTestId("tool-activity-status")).not.toBeInTheDocument();
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+    expect(within(chatScroll).getByText("写入文件中")).toBeInTheDocument();
+    expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
+    expect(within(composerColumn).queryByText(/写入文件中/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/思考中/)).not.toBeInTheDocument();
+    expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
+
+    act(() => {
+      emit?.({
+        type: "tool_activity",
+        runId: "run_1",
+        activity: {
+          contentIndex: 0,
+          toolCallId: "tool_1",
+          name: "Write",
+          argsPreview: { file_path: "out.txt" },
+          updatedAt: "2026-06-13T00:00:00.800Z"
+        }
+      });
+    });
+
+    await waitFor(() => {
+      expect(within(chatScroll).getByText("写入 out.txt 中")).toBeInTheDocument();
+      expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
+    });
+    expect(within(chatScroll).queryByText("写入文件中")).not.toBeInTheDocument();
+    expect(within(composerColumn).queryByText(/写入 out.txt 中/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/思考中/)).not.toBeInTheDocument();
     expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
 
     act(() => {
       emit?.({ type: "tool_call", runId: "run_1", toolCall: runningTool });
     });
 
-    await waitFor(() =>
-      expect(screen.queryByTestId("tool-activity-status")).not.toBeInTheDocument()
-    );
-    expect(screen.queryByText(/正在调用工具/)).not.toBeInTheDocument();
-    expect(screen.getByText("写入 out.txt")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(chatScroll).getByText("写入 out.txt 中")).toBeInTheDocument();
+      expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
+    });
+    expect(within(composerColumn).queryByText(/写入 out.txt/)).not.toBeInTheDocument();
     expect(screen.queryByText(/完整内容/)).not.toBeInTheDocument();
+
+    act(() => {
+      emit?.({ type: "message", runId: "run_1", message: reasoningMessage });
+      emit?.({ type: "tool_call", runId: "run_1", toolCall: completedTool });
+      emit?.({ type: "run_end", runId: "run_1", status: "completed" });
+    });
+
+    await waitFor(() => {
+      expect(within(chatScroll).queryByText("写入 out.txt 中")).not.toBeInTheDocument();
+      expect(within(chatScroll).getByText("写入 out.txt")).toBeInTheDocument();
+      expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
+    });
     resolveStream?.();
   });
 

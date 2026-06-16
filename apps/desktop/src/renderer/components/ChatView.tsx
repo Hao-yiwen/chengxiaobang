@@ -2,10 +2,12 @@ import {
   ArchiveBoxIcon,
   ChevronIcon,
   FileIcon,
+  GitBranchIcon,
   RefreshIcon,
   XMarkIcon
 } from "@/assets/file-type-icons";
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -15,7 +17,13 @@ import {
   type ReactNode
 } from "react";
 import { useTranslation } from "react-i18next";
-import type { Message, MessageAttachment, ToolCall } from "@chengxiaobang/shared";
+import type {
+  Message,
+  MessageAttachment,
+  Session,
+  ToolActivity,
+  ToolCall
+} from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { AssistantMarkdownWithArtifacts } from "@/components/AssistantMarkdownWithArtifacts";
 import { Markdown } from "@/components/Markdown";
@@ -23,7 +31,6 @@ import { MessageActions, MessageEditor } from "@/components/MessageActions";
 import { PlanCard } from "@/components/PlanCard";
 import { ReasoningPanel } from "@/components/ReasoningPanel";
 import { ScrollToBottomButton } from "@/components/ScrollToBottomButton";
-import { ToolActivityStatus } from "@/components/ToolActivityStatus";
 import { ToolCallGroup } from "@/components/ToolCallGroup";
 import { ToolCallRow } from "@/components/ToolCallRow";
 import { WorkTimer } from "@/components/WorkTimer";
@@ -55,6 +62,24 @@ function toolCallsWithPendingPlan(toolCalls: ToolCall[], pendingTool?: ToolCall)
   return [...toolCalls, pendingTool];
 }
 
+function toolActivityToTimelineTool(
+  activity: ToolActivity | undefined,
+  runId: string | undefined
+): ToolCall | undefined {
+  if (!activity?.name || !runId) {
+    return undefined;
+  }
+  return {
+    id: activity.toolCallId ?? `tool_activity_${runId}_${activity.contentIndex}`,
+    runId,
+    name: activity.name,
+    args: activity.argsPreview,
+    status: "running",
+    createdAt: activity.updatedAt,
+    updatedAt: activity.updatedAt
+  };
+}
+
 function canRetryFailedNotice(
   notice: FailedRunNotice,
   messages: Message[],
@@ -66,14 +91,91 @@ function canRetryFailedNotice(
   return !messages.some((message) => message.role === "user" && message.createdAt > notice.at);
 }
 
+function resolveForkMarkerBlockKey(
+  blocks: ChatBlock[],
+  messages: Message[],
+  session: Session | undefined
+): string | undefined {
+  if (!session?.parentSessionId) {
+    return undefined;
+  }
+  if (messages.length === 0 || messages.every((message) => message.sessionId !== session.id)) {
+    return undefined;
+  }
+  const explicitMessageId = session.forkPointMessageId;
+  if (explicitMessageId) {
+    const block = blocks.find((item) => blockContainsMessageId(item, explicitMessageId));
+    if (block) {
+      return block.key;
+    }
+    console.debug("[ChatView] 派生点消息不在当前时间线，尝试按创建时间回退", {
+      sessionId: session.id,
+      forkPointMessageId: explicitMessageId
+    });
+  }
+  const fallbackMessageId = fallbackForkPointMessageId(messages, session.createdAt);
+  if (!fallbackMessageId) {
+    console.debug("[ChatView] 派生会话缺少可定位的派生点", {
+      sessionId: session.id,
+      messageCount: messages.length
+    });
+    return undefined;
+  }
+  const block = blocks.find((item) => blockContainsMessageId(item, fallbackMessageId));
+  if (!block) {
+    console.debug("[ChatView] 派生点回退消息未进入渲染时间线", {
+      sessionId: session.id,
+      fallbackMessageId
+    });
+    return undefined;
+  }
+  return block.key;
+}
+
+function fallbackForkPointMessageId(
+  messages: Message[],
+  sessionCreatedAt: string
+): string | undefined {
+  const sessionCreatedMs = Date.parse(sessionCreatedAt);
+  if (!Number.isFinite(sessionCreatedMs)) {
+    return undefined;
+  }
+  let candidate: { id: string; createdMs: number } | undefined;
+  for (const message of messages) {
+    const createdMs = Date.parse(message.createdAt);
+    if (!Number.isFinite(createdMs) || createdMs > sessionCreatedMs) {
+      continue;
+    }
+    if (!candidate || createdMs >= candidate.createdMs) {
+      candidate = { id: message.id, createdMs };
+    }
+  }
+  return candidate?.id;
+}
+
+function blockContainsMessageId(block: ChatBlock, messageId: string): boolean {
+  if (block.kind === "standalone") {
+    return block.item.kind === "message" && block.item.message.id === messageId;
+  }
+  if (block.user?.item.message.id === messageId || block.answer?.item.message.id === messageId) {
+    return true;
+  }
+  return block.intermediate.some(
+    (member) => member.item.kind === "message" && member.item.message.id === messageId
+  );
+}
+
 export function ChatView() {
   const { t } = useTranslation();
   const {
+    sessions,
+    activeSessionId,
     messages,
     toolHistory,
     streamText,
     thinking,
     thinkingStartedAt,
+    thinkingDurationMs,
     pendingTool,
     toolActivity,
     runningTool,
@@ -84,11 +186,14 @@ export function ChatView() {
     activeRunStartedAt
   } = useAppStore(
     useShallow((state) => ({
+      sessions: state.sessions,
+      activeSessionId: state.activeSessionId,
       messages: state.messages,
       toolHistory: state.toolHistory,
       streamText: state.streamText,
       thinking: state.thinking,
       thinkingStartedAt: state.thinkingStartedAt,
+      thinkingDurationMs: state.thinkingDurationMs,
       pendingTool: state.pendingTool,
       toolActivity: state.toolActivity,
       runningTool: state.runningTool,
@@ -101,6 +206,10 @@ export function ChatView() {
   );
   const openFilePreview = useAppStore((state) => state.openFilePreview);
   const regenerateLast = useAppStore((state) => state.regenerateLast);
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.id === activeSessionId),
+    [activeSessionId, sessions]
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentColumnRef = useRef<HTMLDivElement>(null);
@@ -138,20 +247,20 @@ export function ChatView() {
     setScrollProgress({ visible: true, top, height });
   }, []);
 
+  const liveToolActivityCall = useMemo(
+    () => toolActivityToTimelineTool(toolActivity, activeRunId),
+    [toolActivity, activeRunId]
+  );
   const hasActiveTimelineTool = Boolean(runningTool);
-  const showActivityStatus =
-    isRunning &&
-    !streamText &&
-    !thinking &&
-    !pendingTool &&
-    !hasActiveTimelineTool &&
-    Boolean(toolActivity);
+  const hasToolActivity = Boolean(toolActivity);
+  const hasLiveThinking = Boolean(thinking);
+  const isStreamingThinking = hasLiveThinking && thinkingDurationMs === undefined;
   const showWaiting =
     isRunning &&
     !streamText &&
     !thinking &&
     !pendingTool &&
-    !showActivityStatus &&
+    !hasToolActivity &&
     !hasActiveTimelineTool;
 
   // Reasoning-only rows carry no actions, so the "last assistant" affordances
@@ -159,6 +268,7 @@ export function ChatView() {
   const lastAssistantId = [...messages]
     .reverse()
     .find((message) => message.role === "assistant" && message.content.trim().length > 0)?.id;
+  const lastUserMessageId = [...messages].reverse().find((message) => message.role === "user")?.id;
   const failedNotices = useMemo(
     () => failedRunNotices(runHistory, events),
     [runHistory, events]
@@ -201,6 +311,10 @@ export function ChatView() {
         nowMs: Date.now()
       }),
     [items, isRunning, activeRunId, activeRunAssistantIds, activeRunStartedAt]
+  );
+  const forkMarkerBlockKey = useMemo(
+    () => resolveForkMarkerBlockKey(blocks, messages, activeSession),
+    [activeSession, blocks, messages]
   );
   // 运行中但还没有活跃轮（如 user 消息回显前的瞬间）时，运行中临时块需要兜底挂末尾，避免丢失。
   const hasActiveTurn = blocks.some((block) => block.kind === "turn" && block.active);
@@ -358,11 +472,11 @@ export function ChatView() {
   useEffect(() => {
     if (
       !hasActiveTurn &&
-      (showActivityStatus || showWaiting || Boolean(thinking) || Boolean(streamText))
+      (showWaiting || hasLiveThinking || Boolean(streamText) || Boolean(liveToolActivityCall))
     ) {
       console.debug("[ChatView] 运行中暂无活跃轮承载临时块，已兜底挂末尾", { activeRunId });
     }
-  }, [hasActiveTurn, showActivityStatus, showWaiting, thinking, streamText, activeRunId]);
+  }, [hasActiveTurn, showWaiting, hasLiveThinking, streamText, liveToolActivityCall, activeRunId]);
 
   // 单个时间线 item 的渲染分支（与原扁平渲染一致）；index 为其在全局 items 的下标，供
   // shouldHideMessageActions 等依赖全局位置的逻辑使用。
@@ -378,6 +492,7 @@ export function ChatView() {
           key={`message-${item.message.id}`}
           message={item.message}
           isLastAssistant={item.message.id === lastAssistantId}
+          canEditUserMessage={item.message.id === lastUserMessageId}
           hideActions={hideActions}
           showActionsByDefault={item.message.id === lastActionMessageId}
           hideReasoning={options?.hideReasoning}
@@ -429,22 +544,23 @@ export function ChatView() {
 
   // 运行中的临时块（思考流 / 流式文本 / 工具活动 / 等待），只挂到活跃轮折叠体尾部。
   const runtimeTail =
-    thinking || streamText || showActivityStatus || showWaiting ? (
+    hasLiveThinking || streamText || liveToolActivityCall || showWaiting ? (
       <>
-        {thinking ? (
-          <ReasoningPanel text={thinking} streaming startedAt={thinkingStartedAt} />
+        {hasLiveThinking ? (
+          <ReasoningPanel
+            text={thinking}
+            streaming={isStreamingThinking}
+            startedAt={thinkingStartedAt}
+            durationMs={thinkingDurationMs}
+          />
         ) : null}
         {streamText ? (
           <div className="mb-4 animate-msg-in self-stretch">
             <AssistantMarkdownWithArtifacts text={streamText} streaming />
           </div>
         ) : null}
-        {showActivityStatus ? (
-          <ToolActivityStatus
-            toolActivity={toolActivity}
-            runningTool={runningTool}
-            className="mb-6 self-stretch"
-          />
+        {liveToolActivityCall ? (
+          <ToolCallRow toolCall={liveToolActivityCall} onOpenFile={openFilePreview} />
         ) : null}
         {showWaiting ? (
           <div className="mb-6 flex items-center gap-2 self-stretch text-caption text-muted-foreground">
@@ -476,18 +592,20 @@ export function ChatView() {
           data-testid="chat-content-column"
           className="chat-primary-column relative flex flex-col pt-5 pb-0"
         >
-          {blocks.map((block) =>
-            block.kind === "standalone" ? (
-              renderTimelineItem(block.item, block.index)
-            ) : (
-              <TurnView
-                key={block.key}
-                block={block}
-                renderItem={renderTimelineItem}
-                runtimeTail={block.active ? runtimeTail : null}
-              />
-            )
-          )}
+          {blocks.map((block) => (
+            <Fragment key={block.key}>
+              {block.kind === "standalone" ? (
+                renderTimelineItem(block.item, block.index)
+              ) : (
+                <TurnView
+                  block={block}
+                  renderItem={renderTimelineItem}
+                  runtimeTail={block.active ? runtimeTail : null}
+                />
+              )}
+              {forkMarkerBlockKey === block.key ? <BranchForkMarker /> : null}
+            </Fragment>
+          ))}
 
           {!hasActiveTurn ? runtimeTail : null}
 
@@ -529,6 +647,25 @@ export function ChatView() {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function BranchForkMarker() {
+  const { t } = useTranslation();
+  const label = t("chat.branchForkMarker");
+  return (
+    <div
+      data-testid="branch-fork-marker"
+      aria-label={label}
+      className="mb-7 mt-[10px] flex items-center self-stretch px-1 text-link"
+    >
+      <span aria-hidden="true" className="h-px flex-1 bg-hairline" />
+      <span className="mx-4 inline-flex min-w-0 items-center gap-1.5 text-caption font-normal text-link">
+        <GitBranchIcon className="size-4 flex-none" />
+        <span className="truncate">{label}</span>
+      </span>
+      <span aria-hidden="true" className="h-px flex-1 bg-hairline" />
     </div>
   );
 }
@@ -614,12 +751,14 @@ function RunErrorNotice({
 const MessageBubble = memo(function MessageBubble({
   message,
   isLastAssistant = false,
+  canEditUserMessage = false,
   hideActions = false,
   showActionsByDefault = false,
   hideReasoning = false
 }: {
   message: Message;
   isLastAssistant?: boolean;
+  canEditUserMessage?: boolean;
   hideActions?: boolean;
   showActionsByDefault?: boolean;
   /** 折叠头外的最终答复传 true：它的思考过程改由 TurnView 收进折叠体，正文这里只渲染内容。 */
@@ -637,7 +776,7 @@ const MessageBubble = memo(function MessageBubble({
   }
   const isUser = message.role === "user";
   if (isUser) {
-    if (editing) {
+    if (editing && canEditUserMessage) {
       return (
         <div data-message-id={message.id} className="mb-5 w-[min(560px,90%)] self-end">
           <MessageEditor
@@ -671,7 +810,7 @@ const MessageBubble = memo(function MessageBubble({
         </div>
         <MessageActions
           message={message}
-          onEdit={() => setEditing(true)}
+          onEdit={canEditUserMessage ? () => setEditing(true) : undefined}
           alwaysVisible={showActionsByDefault}
         />
       </div>
@@ -698,6 +837,7 @@ const MessageBubble = memo(function MessageBubble({
         <MessageActions
           message={message}
           isLastAssistant={isLastAssistant}
+          canFork
           copyContent={parsedAssistant?.cleanMarkdown}
           alwaysVisible={showActionsByDefault}
         />

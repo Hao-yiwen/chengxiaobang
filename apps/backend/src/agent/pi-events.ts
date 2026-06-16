@@ -213,6 +213,7 @@ export class RunEventTranslator {
       case "message_update": {
         const update = event.assistantMessageEvent;
         if (update.type === "text_delta") {
+          this.closeReasoningTimer();
           this.push({ type: "delta", runId: this.options.runId, channel: "text", delta: update.delta });
         } else if (update.type === "thinking_delta") {
           if (this.reasoningStartedAt === undefined) {
@@ -224,13 +225,14 @@ export class RunEventTranslator {
             channel: "thinking",
             delta: update.delta
           });
-        } else if (update.type === "thinking_end" && this.reasoningStartedAt !== undefined) {
-          this.reasoningMs = Date.now() - this.reasoningStartedAt;
+        } else if (update.type === "thinking_end") {
+          this.closeReasoningTimer();
         } else if (
           update.type === "toolcall_start" ||
           update.type === "toolcall_delta" ||
           update.type === "toolcall_end"
         ) {
+          this.closeReasoningTimer();
           this.onToolActivity(update);
         }
         return;
@@ -622,7 +624,8 @@ export class RunEventTranslator {
       modelToolCallId: toolCall?.id,
       toolCallId: appToolCallId,
       toolName: toolCall?.name,
-      previewKeys: Object.keys(argsPreview)
+      previewKeys: Object.keys(argsPreview),
+      argsPreview
     });
     this.push({
       type: "tool_activity",
@@ -726,6 +729,14 @@ export class RunEventTranslator {
 
   private sinceReasoningStart(): number {
     return this.reasoningStartedAt !== undefined ? Date.now() - this.reasoningStartedAt : 0;
+  }
+
+  private closeReasoningTimer(): void {
+    if (this.reasoningStartedAt === undefined) {
+      return;
+    }
+    this.reasoningMs ??= Date.now() - this.reasoningStartedAt;
+    this.reasoningStartedAt = undefined;
   }
 
   private async saveToolCall(modelToolCallId: string, toolCall: ToolCall): Promise<ToolCall> {
@@ -848,16 +859,73 @@ function hasUnfinishedTodos(args: Record<string, unknown>): boolean {
 }
 
 function previewToolArgs(args: unknown): ToolActivityArgsPreview {
-  const source = normalizeArgs(args);
   const preview: ToolActivityArgsPreview = {};
+  const source = normalizeArgs(args);
   for (const key of TOOL_ACTIVITY_PREVIEW_KEYS) {
-    const value = source[key];
+    const value =
+      typeof args === "string" ? readJsonStringField(args, key) : source[key];
     if (typeof value !== "string" || value.length === 0) {
       continue;
     }
     preview[key] = truncatePreview(value);
   }
   return preview;
+}
+
+function readJsonStringField(source: string, key: string): string | undefined {
+  const encodedKey = JSON.stringify(key);
+  let searchFrom = 0;
+  while (searchFrom < source.length) {
+    const keyIndex = source.indexOf(encodedKey, searchFrom);
+    if (keyIndex === -1) {
+      return undefined;
+    }
+    let cursor = keyIndex + encodedKey.length;
+    cursor = skipJsonWhitespace(source, cursor);
+    if (source[cursor] !== ":") {
+      searchFrom = keyIndex + encodedKey.length;
+      continue;
+    }
+    cursor = skipJsonWhitespace(source, cursor + 1);
+    if (source[cursor] !== "\"") {
+      searchFrom = keyIndex + encodedKey.length;
+      continue;
+    }
+    return readJsonStringValue(source, cursor);
+  }
+  return undefined;
+}
+
+function skipJsonWhitespace(source: string, cursor: number): number {
+  while (cursor < source.length && /\s/.test(source[cursor] ?? "")) {
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function readJsonStringValue(source: string, quoteIndex: number): string | undefined {
+  let escaped = false;
+  for (let index = quoteIndex + 1; index < source.length; index += 1) {
+    const char = source[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char !== "\"") {
+      continue;
+    }
+    try {
+      const value = JSON.parse(source.slice(quoteIndex, index + 1));
+      return typeof value === "string" ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 function truncatePreview(value: string): string {

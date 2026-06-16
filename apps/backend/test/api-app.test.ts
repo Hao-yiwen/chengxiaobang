@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -376,7 +376,14 @@ describe("createApp", () => {
     expect(missing.status).toBe(404);
   }, 20_000);
 
-  it("forks a session over HTTP", async () => {
+  it("forks a standalone session over HTTP and copies its workspace", async () => {
+    const sessionWorkspacePath = (sessionId: string) => join(dir, "sessions", sessionId);
+    const workspaceApp = createTestApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets, { sessionWorkspacePath }),
+      slashCommandService: new SlashCommandService(join(dir, "global"))
+    });
     const session = await store.createSession({
       projectId: null,
       title: "分支源",
@@ -384,27 +391,127 @@ describe("createApp", () => {
     });
     const first = await store.addMessage({ sessionId: session.id, role: "user", content: "一" });
     await store.addMessage({ sessionId: session.id, role: "assistant", content: "二" });
+    await mkdir(join(sessionWorkspacePath(session.id), "sub"), { recursive: true });
+    await writeFile(join(sessionWorkspacePath(session.id), "note.txt"), "hello");
+    await writeFile(join(sessionWorkspacePath(session.id), ".env"), "TOKEN=ok");
+    await writeFile(join(sessionWorkspacePath(session.id), "sub", "todo.md"), "- item");
 
-    const response = await app(
+    const response = await workspaceApp(
       jsonRequest(`/api/sessions/${session.id}/fork`, "POST", { messageId: first.id })
     );
     expect(response.status).toBe(201);
     const { session: fork } = (await response.json()) as {
-      session: { id: string; parentSessionId?: string };
+      session: { id: string; parentSessionId?: string; forkPointMessageId?: string };
     };
     expect(fork.parentSessionId).toBe(session.id);
 
-    const messages = await app(
+    await expect(readFile(join(sessionWorkspacePath(fork.id), "note.txt"), "utf8")).resolves.toBe(
+      "hello"
+    );
+    await expect(readFile(join(sessionWorkspacePath(fork.id), ".env"), "utf8")).resolves.toBe(
+      "TOKEN=ok"
+    );
+    await expect(
+      readFile(join(sessionWorkspacePath(fork.id), "sub", "todo.md"), "utf8")
+    ).resolves.toBe("- item");
+
+    const messages = await workspaceApp(
       new Request(`http://local/api/sessions/${fork.id}/messages`, { method: "GET" })
     );
     await expect(messages.json()).resolves.toMatchObject({
-      messages: [{ content: "一" }]
+      messages: [{ id: fork.forkPointMessageId, content: "一" }]
     });
 
-    const missing = await app(
+    const missing = await workspaceApp(
       jsonRequest("/api/sessions/nope/fork", "POST", { messageId: first.id })
     );
     expect(missing.status).toBe(404);
+  });
+
+  it("forks a standalone session when the source workspace is missing", async () => {
+    const sessionWorkspacePath = (sessionId: string) => join(dir, "sessions", sessionId);
+    const workspaceApp = createTestApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets, { sessionWorkspacePath })
+    });
+    const session = await store.createSession({
+      projectId: null,
+      title: "无目录源",
+      accessMode: "approval"
+    });
+    const first = await store.addMessage({ sessionId: session.id, role: "user", content: "一" });
+
+    const response = await workspaceApp(
+      jsonRequest(`/api/sessions/${session.id}/fork`, "POST", { messageId: first.id })
+    );
+
+    expect(response.status).toBe(201);
+    const { session: fork } = (await response.json()) as { session: { id: string } };
+    await expect(lstat(sessionWorkspacePath(fork.id))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not copy the project directory when forking a project session", async () => {
+    const sessionWorkspacePath = (sessionId: string) => join(dir, "sessions", sessionId);
+    const workspaceApp = createTestApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets, { sessionWorkspacePath })
+    });
+    const projectRoot = join(dir, "project-workspace");
+    await mkdir(projectRoot, { recursive: true });
+    await writeFile(join(projectRoot, "project.txt"), "shared");
+    const project = await store.createProject({ name: "项目", path: projectRoot });
+    const session = await store.createSession({
+      projectId: project.id,
+      title: "项目分支源",
+      accessMode: "approval"
+    });
+    const first = await store.addMessage({ sessionId: session.id, role: "user", content: "一" });
+
+    const response = await workspaceApp(
+      jsonRequest(`/api/sessions/${session.id}/fork`, "POST", { messageId: first.id })
+    );
+
+    expect(response.status).toBe(201);
+    const { session: fork } = (await response.json()) as {
+      session: { id: string; projectId: string | null };
+    };
+    expect(fork.projectId).toBe(project.id);
+    await expect(lstat(sessionWorkspacePath(fork.id))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(projectRoot, "project.txt"), "utf8")).resolves.toBe("shared");
+  });
+
+  it("rolls back the fork when workspace copy fails", async () => {
+    const sharedWorkspacePath = join(dir, "shared-session-workspace");
+    const workspaceApp = createTestApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets, { sessionWorkspacePath: () => sharedWorkspacePath })
+    });
+    const session = await store.createSession({
+      projectId: null,
+      title: "复制失败源",
+      accessMode: "approval"
+    });
+    const first = await store.addMessage({ sessionId: session.id, role: "user", content: "一" });
+    await mkdir(sharedWorkspacePath, { recursive: true });
+    await writeFile(join(sharedWorkspacePath, "note.txt"), "hello");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const response = await workspaceApp(
+        jsonRequest(`/api/sessions/${session.id}/fork`, "POST", { messageId: first.id })
+      );
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toMatchObject({
+        error: "派生工作区目标目录已存在，已取消派生"
+      });
+      await expect(store.listSessions(null)).resolves.toHaveLength(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("serves and saves the feishu config without exposing the secret", async () => {

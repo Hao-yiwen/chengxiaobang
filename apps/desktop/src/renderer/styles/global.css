@@ -309,7 +309,7 @@
 
   .chat-artifact-floating {
     flex: 0 1 auto;
-    max-height: 15rem;
+    max-height: min(22rem, calc(100vh - 6rem));
   }
 
   .chat-progress-floating {
@@ -593,7 +593,7 @@
   .markdown-streamdown {
     color: rgb(var(--foreground));
     font-size: 13px;
-    line-height: 18px;
+    line-height: 24px;
     letter-spacing: -0.26px;
     overflow-wrap: anywhere;
   }
@@ -656,21 +656,80 @@
 
   .markdown-streamdown [data-streamdown="inline-code"] {
     border: 1px solid rgb(var(--border) / 0.75);
-    background: rgb(var(--canvas-soft-2) / 0.72);
+    background: rgb(var(--hairline-strong) / 0.22);
     color: rgb(var(--foreground));
     font-size: 0.88em;
   }
 
   .markdown-streamdown [data-streamdown="mermaid-block"] {
-    margin-block: 0.625rem;
-    border-radius: 8px;
-    border-color: rgb(var(--border));
-    background: rgb(var(--canvas-soft));
-    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.03);
+    gap: 0;
+    overflow: hidden;
+    margin-block: 0.75rem;
+    border: 1px solid rgb(var(--border));
+    border-radius: 16px;
+    background: rgb(var(--canvas));
+    padding: 16px 20px 20px;
+    box-shadow: none;
   }
 
   .dark .markdown-streamdown [data-streamdown="mermaid-block"] {
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04);
+    background: rgb(var(--canvas));
+    box-shadow: none;
+  }
+
+  .markdown-streamdown [data-streamdown="mermaid-block"] > div:first-child {
+    height: 28px;
+    align-items: center;
+    color: rgb(var(--foreground));
+    font-size: 13px;
+    line-height: 18px;
+    letter-spacing: 0;
+  }
+
+  .markdown-streamdown [data-streamdown="mermaid-block"] > div:first-child > span {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: 0;
+    color: rgb(var(--foreground));
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 18px;
+    letter-spacing: 0;
+  }
+
+  .markdown-streamdown [data-streamdown="mermaid-block"] > div:first-child > span::before {
+    content: '';
+    display: block;
+    width: 14px;
+    height: 16px;
+    border: 1.5px solid rgb(var(--link));
+    border-radius: 2px;
+    background: transparent;
+  }
+
+  .markdown-streamdown [data-streamdown="mermaid-block"] > div:first-child > span::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 4px;
+    width: 5px;
+    height: 2px;
+    border-radius: 999px;
+    background: rgb(var(--link));
+    box-shadow: 0 4px 0 rgb(var(--link));
+  }
+
+  .markdown-streamdown
+    [data-streamdown="mermaid-block"]
+    > div:has(> [data-streamdown="mermaid-block-actions"]) {
+    position: absolute;
+    top: 18px;
+    right: 20px;
+    height: 24px;
+    margin-top: 0;
+    align-items: center;
   }
 
   .cxb-code-block-shell {
@@ -869,9 +928,80 @@
   }
 
   .markdown-streamdown [data-streamdown="mermaid-block-actions"] {
-    border-color: rgb(var(--border));
-    background: rgb(var(--canvas) / 0.86);
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+    gap: 0;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .markdown-streamdown
+    [data-streamdown="mermaid-block-actions"]
+    [data-streamdown="code-block-copy-button"] {
+    position: relative;
+    display: flex;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    padding: 0;
+    color: rgb(var(--foreground) / 0.72);
+  }
+
+  .markdown-streamdown
+    [data-streamdown="mermaid-block-actions"]
+    [data-streamdown="code-block-copy-button"]:hover {
+    background: rgb(var(--canvas-soft-2));
+    color: rgb(var(--foreground));
+  }
+
+  .markdown-streamdown
+    [data-streamdown="mermaid-block-actions"]
+    [data-streamdown="code-block-copy-button"]
+    svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .markdown-streamdown
+    [data-streamdown="mermaid-block-actions"]
+    [data-streamdown="code-block-copy-button"]::after {
+    position: absolute;
+    z-index: 50;
+    pointer-events: none;
+    opacity: 0;
+    transition:
+      opacity 0.12s ease,
+      transform 0.12s ease;
+  }
+
+  .markdown-streamdown
+    [data-streamdown="mermaid-block-actions"]
+    [data-streamdown="code-block-copy-button"]::after {
+    content: attr(title);
+    top: calc(100% + 8px);
+    right: 0;
+    width: max-content;
+    max-width: 160px;
+    border-radius: 4px;
+    background: rgb(var(--primary));
+    padding: 4px 8px;
+    color: rgb(var(--primary-foreground));
+    font-size: 11px;
+    line-height: 16px;
+    white-space: nowrap;
+    transform: translateY(-2px);
+  }
+
+  .markdown-streamdown
+    [data-streamdown="mermaid-block-actions"]
+    [data-streamdown="code-block-copy-button"]:hover::after,
+  .markdown-streamdown
+    [data-streamdown="mermaid-block-actions"]
+    [data-streamdown="code-block-copy-button"]:focus-visible::after {
+    opacity: 1;
+    transform: translateY(0);
   }
 
   .markdown-streamdown [data-streamdown="table-wrapper"] {
@@ -1073,8 +1203,58 @@
   }
 
   .markdown-streamdown [data-streamdown="mermaid-block"] > div:last-child {
-    border-color: rgb(var(--border));
-    background: rgb(var(--canvas));
+    overflow: auto;
+    margin-top: 24px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 16px 0 8px;
+  }
+
+  .markdown-streamdown [data-streamdown="mermaid"] {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    max-height: 680px;
+    overflow: auto;
+    pointer-events: auto;
+  }
+
+  .markdown-streamdown [data-streamdown="mermaid"] > div {
+    width: 100% !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    cursor: default !important;
+    pointer-events: none;
+  }
+
+  .markdown-streamdown [data-streamdown="mermaid"] [role="application"] {
+    width: 100% !important;
+    flex: 0 0 auto !important;
+    justify-content: center;
+    transform: none !important;
+    transition: none !important;
+    cursor: default !important;
+  }
+
+  .markdown-streamdown [data-streamdown="mermaid"] [role="img"] {
+    width: min(100%, var(--cxb-mermaid-fit-width, 100%));
+    height: var(--cxb-mermaid-fit-height, auto);
+    min-width: 0;
+    max-width: min(100%, 1040px);
+    max-height: 680px;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  .markdown-streamdown [data-streamdown="mermaid"] svg {
+    flex: 0 0 auto;
+    display: block;
+    width: min(100%, var(--cxb-mermaid-fit-width, 100%)) !important;
+    max-width: none !important;
+    height: var(--cxb-mermaid-fit-height, auto) !important;
+    max-height: 680px !important;
   }
 
   .markdown-streamdown [data-streamdown="table-fullscreen"],

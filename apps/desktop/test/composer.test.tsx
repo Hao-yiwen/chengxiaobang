@@ -54,6 +54,7 @@ const deepseekModelOptions: ProviderModelOption[] = [
     label: "DeepSeek V4 Flash",
     providerKind: "deepseek",
     reasoningModes: ["off", "high", "xhigh"],
+    defaultReasoningMode: "off",
     source: "catalog"
   },
   {
@@ -720,6 +721,49 @@ describe("Composer 运行与选择回归（ARCH-SPEC §6.4）", () => {
       providerId: "deepseek",
       model: "deepseek-chat"
     });
+  });
+
+  it("does not treat a model's default reasoning mode as the user's selected mode", async () => {
+    const listProviderModelOptions = vi.fn(async () => deepseekModelOptions);
+    const streamRun = vi.fn(async (..._args: Parameters<ApiClient["streamRun"]>) => {});
+    const client = createClient({
+      listProviders: vi.fn(async () => [deepseek, kimiUnconfigured]),
+      listProviderModelOptions,
+      streamRun: streamRun as never
+    });
+
+    render(<App client={client} />);
+    await screen.findByTestId("composer-shell");
+    const trigger = await openModelSelect();
+
+    const menu = await screen.findByRole("menu");
+    await openModelFlyout(menu, "DeepSeek V4 Flash");
+    const flyoutMenus = await screen.findAllByRole("menu");
+    const flyout = flyoutMenus[flyoutMenus.length - 1];
+    if (!flyout) {
+      throw new Error("找不到模型右侧 flyout");
+    }
+
+    const offItem = within(flyout).getByText("关闭").closest("[role='menuitem']");
+    expect(offItem?.querySelector("svg")).toHaveClass("opacity-0");
+    fireEvent.click(within(flyout).getByText("选择模型"));
+
+    await waitFor(() => {
+      expect(useAppStore.getState().model).toBe("deepseek-v4-flash");
+      expect(useAppStore.getState().reasoningMode).toBeUndefined();
+    });
+    expect(trigger).not.toHaveTextContent("关闭");
+
+    const input = screen.getByLabelText("输入消息");
+    fireEvent.change(input, { target: { value: "只选模型，不选推理" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(streamRun).toHaveBeenCalled());
+    expect(streamRun.mock.calls[0]?.[0]).toMatchObject({
+      providerId: "deepseek",
+      model: "deepseek-v4-flash"
+    });
+    expect(streamRun.mock.calls[0]?.[0]).not.toHaveProperty("reasoningMode");
   });
 
   it("sends the selected model reasoning level with the run request", async () => {

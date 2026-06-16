@@ -285,6 +285,7 @@ export class SqliteStateStore implements StateStore {
       ...(input.reasoningMode ? { reasoningMode: input.reasoningMode } : {}),
       ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
       ...(input.forkMessageId ? { forkMessageId: input.forkMessageId } : {}),
+      ...(input.forkPointMessageId ? { forkPointMessageId: input.forkPointMessageId } : {}),
       ...(input.feishuChatId ? { feishuChatId: input.feishuChatId } : {}),
       ...(input.wechatChatId ? { wechatChatId: input.wechatChatId } : {}),
       createdAt: timestamp,
@@ -293,8 +294,8 @@ export class SqliteStateStore implements StateStore {
     this.run(
       `insert into sessions
        (id, project_id, title, provider_id, access_mode, model, reasoning_mode, parent_session_id,
-        fork_message_id, feishu_chat_id, wechat_chat_id, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        fork_message_id, fork_point_message_id, feishu_chat_id, wechat_chat_id, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         session.id,
         session.projectId,
@@ -305,6 +306,7 @@ export class SqliteStateStore implements StateStore {
         session.reasoningMode ?? null,
         session.parentSessionId ?? null,
         session.forkMessageId ?? null,
+        session.forkPointMessageId ?? null,
         session.feishuChatId ?? null,
         session.wechatChatId ?? null,
         session.createdAt,
@@ -325,20 +327,25 @@ export class SqliteStateStore implements StateStore {
     if (index === -1) {
       throw new Error("消息不存在");
     }
+    const clonedMessages = messages.slice(0, index + 1).map((message) => ({
+      message,
+      newId: createId("msg")
+    }));
+    const forkPointMessageId = clonedMessages[index]?.newId;
     const fork = await this.createSession({
       projectId: source.projectId,
-      title: `${source.title}（分支）`,
+      title: source.title,
       providerId: source.providerId,
       accessMode: source.accessMode,
       model: source.model,
       reasoningMode: source.reasoningMode,
       parentSessionId: source.id,
-      forkMessageId: messageId
+      forkMessageId: messageId,
+      forkPointMessageId
     });
     // 分支消息使用新 id，但保留原 created_at，确保时间线顺序和压缩指针仍然有意义。
     const idMap = new Map<string, string>();
-    for (const message of messages.slice(0, index + 1)) {
-      const newId = createId("msg");
+    for (const { message, newId } of clonedMessages) {
       idMap.set(message.id, newId);
       this.run(
         `insert into messages

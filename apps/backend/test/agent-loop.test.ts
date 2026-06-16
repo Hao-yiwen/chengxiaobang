@@ -572,8 +572,8 @@ describe("AgentRunner agentic loop (pi)", () => {
             name: "Write",
             arguments: { file_path: "out.txt", content: "最终文件内容" },
             argumentDeltas: [
-              { content: "正在生成的大段内容" },
-              { file_path: "out.txt", content: "正在生成的大段内容" }
+              "{\"file_path\":\"out.txt\"",
+              "{\"file_path\":\"out.txt\",\"content\":\"正在生成的大段内容"
             ]
           }
         ]

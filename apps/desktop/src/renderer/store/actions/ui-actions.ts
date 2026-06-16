@@ -54,12 +54,18 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       setOnboardingOpen: (onboardingOpen) =>
         set((state) => {
+          const shouldDismiss = !onboardingOpen && !state.onboardingCompleted;
           console.info("[store] 切换首启引导可见性", {
             onboardingOpen,
             step: state.onboardingStep,
-            completed: state.onboardingCompleted
+            completed: state.onboardingCompleted,
+            dismissed: state.onboardingDismissed,
+            markDismissed: shouldDismiss
           });
-          return { onboardingOpen };
+          return {
+            onboardingOpen,
+            ...(shouldDismiss ? { onboardingDismissed: true } : {})
+          };
         }),
       openOnboarding: (step = "welcome") =>
         set((state) => {
@@ -100,6 +106,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           return {
             onboardingOpen: false,
             onboardingCompleted: true,
+            onboardingDismissed: true,
             onboardingStep: "welcome"
           };
         }),
@@ -250,6 +257,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           streamText: "",
           thinking: "",
           thinkingStartedAt: undefined,
+          thinkingDurationMs: undefined,
           activeRunStartedAt: undefined,
           events: [],
           toolActivity: undefined,

@@ -174,6 +174,8 @@ export interface AppState {
   /** 首启引导弹窗：欢迎页、用途画像与模型配置共用同一入口。 */
   onboardingOpen: boolean;
   onboardingCompleted: boolean;
+  /** 用户关闭过首启欢迎引导后，不再自动弹出；主动打开模型配置不受影响。 */
+  onboardingDismissed: boolean;
   onboardingStep: OnboardingStep;
   onboardingProfile: OnboardingProfile;
   notice?: string;
@@ -189,6 +191,8 @@ export interface AppState {
   thinking: string;
   // 当前轮 reasoning 流开始时间（epoch ms），用于实时计时；完成后的 reasoning 会落在 message.reasoning。
   thinkingStartedAt?: number;
+  // 当前轮 reasoning 已进入工具/正文阶段但尚未落库时的冻结耗时，避免工具阶段继续累加“思考中”。
+  thinkingDurationMs?: number;
   // 当前活跃 run 起点（epoch ms），跨多条中间消息保持到 run_end，用于轮次「已工作」实时计时。
   activeRunStartedAt?: number;
   events: StreamEvent[];

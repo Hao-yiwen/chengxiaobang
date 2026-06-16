@@ -128,6 +128,12 @@ export interface AgentRunnerOptions {
   projectApprovalTrustService?: ProjectApprovalTrustService;
 }
 
+export interface ResolvedSessionWorkspace {
+  workspacePath: string;
+  project?: Project;
+  projectBound: boolean;
+}
+
 export class AgentRunner {
   readonly approvals = new ApprovalQueue();
   /** 正在执行 run 的会话；调度器据此避让，免得与手动 run 在同一会话交错写入。 */
@@ -185,6 +191,15 @@ export class AgentRunner {
 
   enqueueSteering(runId: string, input: RunSteeringRequest): boolean {
     return this.activeRunRegistry.enqueueSteering(runId, input);
+  }
+
+  async resolveSessionWorkspace(session: Session): Promise<ResolvedSessionWorkspace> {
+    const project = session.projectId ? await this.store.getProject(session.projectId) : undefined;
+    return {
+      workspacePath: project?.path ?? this.sessionWorkspacePath(session.id),
+      ...(project ? { project } : {}),
+      projectBound: Boolean(project)
+    };
   }
 
   async listActiveRunSnapshots(sessionId?: string): Promise<ActiveRunSnapshot[]> {
@@ -297,8 +312,7 @@ export class AgentRunner {
       console.warn(`[agent-runner] Debug 上下文请求的会话不存在 sessionId=${sessionId}`);
       return undefined;
     }
-    const project = session.projectId ? await this.store.getProject(session.projectId) : undefined;
-    const workspacePath = project?.path ?? this.sessionWorkspacePath(session.id);
+    const { project, workspacePath } = await this.resolveSessionWorkspace(session);
     const [rows, runs, toolCalls, skills] = await Promise.all([
       this.store.listMessages(session.id),
       this.store.listRuns(session.id),
@@ -402,8 +416,7 @@ export class AgentRunner {
       model: options.model ?? session.model ?? providerBase.model,
       ...(effectiveReasoningMode ? { reasoningMode: effectiveReasoningMode } : {})
     };
-    const project = session.projectId ? await this.store.getProject(session.projectId) : undefined;
-    const workspacePath = project?.path ?? this.sessionWorkspacePath(session.id);
+    const { project, workspacePath } = await this.resolveSessionWorkspace(session);
     const [rows, toolCalls, sessionCostCny, skills] = await Promise.all([
       this.store.listMessages(session.id),
       this.store.listToolCallsForSession(session.id),
@@ -558,14 +571,11 @@ export class AgentRunner {
             ...(input.reasoningMode !== undefined ? { reasoningMode: input.reasoningMode } : {})
           })
         : session;
-    const project = activeSession.projectId
-      ? await this.store.getProject(activeSession.projectId)
-      : undefined;
+    const { project, workspacePath } = await this.resolveSessionWorkspace(activeSession);
     const expandedPrompt = (await this.slashCommandService.expandPrompt(input.prompt, project))
       .prompt;
     const displayContent = input.displayContent ?? expandedPrompt;
     const titleDisplayPrompt = displayPromptForTitle(displayContent, displayAttachments);
-    const workspacePath = project?.path ?? this.sessionWorkspacePath(activeSession.id);
 
     const runId = createId("run");
     // 在这里创建而不是放进 runPiLoop，便于并发标题任务把 session_updated 推入同一条事件流。

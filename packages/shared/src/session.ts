@@ -18,6 +18,8 @@ export const sessionSchema = z.object({
   parentSessionId: z.string().min(1).optional(),
   /** The message (in the parent) the branch was created from. */
   forkMessageId: z.string().min(1).optional(),
+  /** 派生会话内与父会话 forkMessageId 对应的复制消息，用于在时间线标记派生点。 */
+  forkPointMessageId: z.string().min(1).optional(),
   /** Set on sessions driven by a Feishu chat (one session per chat). */
   feishuChatId: z.string().min(1).optional(),
   /** 微信联系人驱动的会话（一位联系人对应一个会话）。 */

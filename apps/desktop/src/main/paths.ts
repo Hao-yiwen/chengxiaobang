@@ -22,9 +22,17 @@ export function defaultProfilePath(): string {
   return join(chengxiaobangRoot(), "profile.json");
 }
 
-/** The 1024px PNG used as the dev dock icon (packaged builds use the .icns). */
+/** 开发态 Dock 图标使用 1024px PNG；打包产物走 .icns / .ico。 */
 export function devDockIconPath(appPath: string): string {
   return join(appPath, "build", "icon.png");
+}
+
+export function startupSplashImageCandidates(appPath: string): string[] {
+  return [
+    join(appPath, "assets", "onboarding-loading-startup.png"),
+    join(appPath, "assets", "onboarding-loading.png"),
+    devDockIconPath(appPath)
+  ];
 }
 
 export function preloadPath(mainModuleUrl: string): string {

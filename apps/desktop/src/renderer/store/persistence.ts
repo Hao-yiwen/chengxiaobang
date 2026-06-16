@@ -53,6 +53,7 @@ export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
     codePreviewSettings: state.codePreviewSettings,
     locale: state.locale,
     onboardingCompleted: state.onboardingCompleted,
+    onboardingDismissed: state.onboardingDismissed,
     onboardingStep: state.onboardingStep,
     onboardingProfile: state.onboardingProfile
   }),

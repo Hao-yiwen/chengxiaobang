@@ -107,13 +107,6 @@ function reasoningModeSummary(
   return "";
 }
 
-function optionDefaultReasoningMode(option: ProviderModelOption): ReasoningMode | undefined {
-  return option.defaultReasoningMode &&
-    option.reasoningModes.includes(option.defaultReasoningMode)
-    ? option.defaultReasoningMode
-    : undefined;
-}
-
 export function Composer() {
   const { t } = useTranslation();
   const composerT = t as unknown as ComposerT;
@@ -260,8 +253,7 @@ export function Composer() {
     selectedModelOption
       ? modelOptionLabel(selectedModelOption)
       : selectedModel ?? t("composer.selectModel");
-  const configuredReasoningMode =
-    reasoningMode ?? selectedProvider?.reasoningMode ?? selectedModelOption?.defaultReasoningMode;
+  const configuredReasoningMode = reasoningMode ?? selectedProvider?.reasoningMode;
   const selectedReasoningMode =
     selectedModelOption && configuredReasoningMode
       ? selectedModelOption.reasoningModes.includes(configuredReasoningMode)
@@ -748,7 +740,7 @@ export function Composer() {
   return (
     <div
       data-testid="composer-shell"
-      className="relative w-full rounded-lg border border-border bg-card shadow-subtle transition-colors focus-within:border-hairline-strong/40 overflow-hidden"
+      className="relative w-full rounded-lg border border-border bg-card transition-colors focus-within:border-hairline-strong/40 overflow-hidden"
     >
       {queuedRuns.length > 0 ? (
         <QueuedRunStack
@@ -1233,7 +1225,7 @@ export function Composer() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[200px]">
-              {/* 左侧弹层平铺可用模型；右侧子菜单再选择该模型支持的推理等级。 */}
+              {/* 左侧弹层平铺可用模型；右侧子菜单可只选模型，也可显式选择推理等级。 */}
               {configuredProviders.flatMap((provider) => {
                 const options = withCurrentComposerModel(
                   provider,
@@ -1243,9 +1235,7 @@ export function Composer() {
                 return options.map((option) => {
                   const isSelected =
                     provider.id === selectedProvider?.id && option.id === selectedModel;
-                  const activeReasoning = isSelected
-                    ? selectedReasoningMode
-                    : optionDefaultReasoningMode(option);
+                  const modelOnlySelected = isSelected && selectedReasoningMode === undefined;
                   return (
                     <DropdownMenuSub key={`${provider.id}:${option.id}`}>
                       <DropdownMenuSubTrigger hideChevron>
@@ -1259,38 +1249,44 @@ export function Composer() {
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="min-w-[132px]">
                         <DropdownMenuLabel>{t("settings.providers.reasoning")}</DropdownMenuLabel>
+                        <DropdownMenuItem
+                          onSelect={() => pickComposerModel(provider, option.id, undefined)}
+                        >
+                          <span className="flex-1">
+                            {option.reasoningAlwaysOn
+                              ? t("settings.providers.reasoningAlwaysOn")
+                              : t("composer.selectModel")}
+                          </span>
+                          <CheckMediumIcon
+                            className={cn(
+                              "size-4 flex-none",
+                              modelOnlySelected ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                        </DropdownMenuItem>
                         {option.reasoningModes.length > 0 ? (
-                          option.reasoningModes.map((mode) => (
-                            <DropdownMenuItem
-                              key={mode}
-                              onSelect={() => pickComposerModel(provider, option.id, mode)}
-                            >
-                              <span className="flex-1">{reasoningModeLabel(composerT, mode)}</span>
-                              <CheckMediumIcon
-                                className={cn(
-                                  "size-4 flex-none",
-                                  activeReasoning === mode ? "opacity-100" : "opacity-0"
-                                )}
-                              />
-                            </DropdownMenuItem>
-                          ))
-                        ) : (
-                          <DropdownMenuItem
-                            onSelect={() => pickComposerModel(provider, option.id, undefined)}
-                          >
-                            <span className="flex-1">
-                              {option.reasoningAlwaysOn
-                                ? t("settings.providers.reasoningAlwaysOn")
-                                : t("composer.selectModel")}
-                            </span>
-                            <CheckMediumIcon
-                              className={cn(
-                                "size-4 flex-none",
-                                isSelected ? "opacity-100" : "opacity-0"
-                              )}
-                            />
-                          </DropdownMenuItem>
-                        )}
+                          <>
+                            <DropdownMenuSeparator />
+                            {option.reasoningModes.map((mode) => (
+                              <DropdownMenuItem
+                                key={mode}
+                                onSelect={() => pickComposerModel(provider, option.id, mode)}
+                              >
+                                <span className="flex-1">
+                                  {reasoningModeLabel(composerT, mode)}
+                                </span>
+                                <CheckMediumIcon
+                                  className={cn(
+                                    "size-4 flex-none",
+                                    isSelected && selectedReasoningMode === mode
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  )}
+                                />
+                              </DropdownMenuItem>
+                            ))}
+                          </>
+                        ) : null}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
                   );

@@ -20,12 +20,14 @@ export function MessageActions({
   message,
   isLastAssistant = false,
   onEdit,
+  canFork = false,
   copyContent,
   alwaysVisible = false
 }: {
   message: Message;
   isLastAssistant?: boolean;
   onEdit?: () => void;
+  canFork?: boolean;
   copyContent?: string;
   alwaysVisible?: boolean;
 }) {
@@ -62,7 +64,7 @@ export function MessageActions({
           <PencilOutlineIcon className="size-3.5" />
         </ActionButton>
       ) : null}
-      {!isRunning ? (
+      {canFork && !isRunning ? (
         <ActionButton
           label={t("chat.forkFromHere")}
           onClick={() => void forkSession(message.id)}

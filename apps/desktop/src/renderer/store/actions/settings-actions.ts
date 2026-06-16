@@ -422,6 +422,7 @@ export function createSettingsActions(set: AppStoreSet, get: AppStoreGet): Parti
           streamText: "",
           thinking: "",
           thinkingStartedAt: undefined,
+          thinkingDurationMs: undefined,
           activeRunStartedAt: undefined,
           events: [],
           toolActivity: undefined,

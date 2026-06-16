@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { thinkingSeconds } from "@/lib/reasoning";
 
 /**
- * 助手回答前的「深度思考」折叠块：流式阶段展开并计时，结束后收起为摘要。
+ * 助手回答前的「深度思考」折叠块：流式阶段计时但默认收起，点击后可查看详情。
  */
 export function ReasoningPanel({
   text,
@@ -19,7 +19,7 @@ export function ReasoningPanel({
   startedAt?: number;
 }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(streaming);
+  const [open, setOpen] = useState(false);
   const [elapsed, setElapsed] = useState(() =>
     startedAt !== undefined ? Math.max(0, Date.now() - startedAt) : 0
   );
@@ -46,6 +46,7 @@ export function ReasoningPanel({
     <div className="mb-4 self-stretch">
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         className="flex items-center gap-1.5 text-caption text-muted-foreground transition-colors hover:text-foreground"
       >
@@ -58,7 +59,7 @@ export function ReasoningPanel({
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
         )}
       >
-        <div className="overflow-hidden">
+        <div className="min-h-0 overflow-hidden">
           <div className="ml-1.5 mt-1.5 whitespace-pre-wrap break-words border-l border-hairline pl-3 text-caption text-muted-foreground/90">
             {text}
           </div>

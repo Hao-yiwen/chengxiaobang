@@ -69,6 +69,18 @@ function missingRunProviderPatch(state: AppState, source: string): Partial<AppSt
 
 const STREAM_DELTA_FLUSH_MS = 32;
 
+function closeLiveThinkingPatch(state: AppState): Partial<AppState> {
+  if (!state.thinking || state.thinkingDurationMs !== undefined) {
+    return {};
+  }
+  return {
+    thinkingDurationMs:
+      state.thinkingStartedAt !== undefined
+        ? Math.max(0, Date.now() - state.thinkingStartedAt)
+        : 0
+  };
+}
+
 export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {
   let bufferedTextDelta = "";
   let bufferedThinkingDelta = "";
@@ -123,7 +135,8 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
         ...(thinkingDelta
           ? {
               thinking: current.thinking + thinkingDelta,
-              thinkingStartedAt: current.thinkingStartedAt ?? thinkingStartedAt ?? Date.now()
+              thinkingStartedAt: current.thinkingStartedAt ?? thinkingStartedAt ?? Date.now(),
+              thinkingDurationMs: undefined
             }
           : {})
       };
@@ -135,6 +148,10 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
   ) => {
     if (bufferedDeltaRunId && bufferedDeltaRunId !== event.runId) {
       flushBufferedDeltas();
+    }
+    if (event.channel === "text") {
+      flushBufferedDeltas();
+      set((current) => closeLiveThinkingPatch(current));
     }
     bufferedDeltaRunId = event.runId;
     if (event.channel === "text") {
@@ -533,6 +550,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             pendingTool: undefined,
             runningTool: undefined,
             toolActivity: undefined,
+            thinkingDurationMs: undefined,
             ...(current.activeRunId
               ? clearRunRunning(current, current.activeRunId, current.activeSessionId)
               : current.activeSessionId
@@ -872,6 +890,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
               streamText: "",
               thinking: "",
               thinkingStartedAt: undefined,
+              thinkingDurationMs: undefined,
               activeRunStartedAt: undefined,
               notice: event.error,
               ...(current.activeRunId && current.activeSessionId
@@ -907,7 +926,11 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             enqueueDelta(event);
             break;
           case "tool_activity":
-            set({ toolActivity: event.activity });
+            flushBufferedDeltas();
+            set((current) => ({
+              toolActivity: event.activity,
+              ...closeLiveThinkingPatch(current)
+            }));
             break;
           case "message":
             flushBufferedDeltas();
@@ -920,6 +943,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
                     streamText: "",
                     thinking: "",
                     thinkingStartedAt: undefined,
+                    thinkingDurationMs: undefined,
                     activeRunLastAssistant: event.message
                   }
                 : {})
@@ -933,7 +957,8 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
               set({
                 pendingTool: event.toolCall,
                 runningTool: undefined,
-                toolActivity: undefined
+                toolActivity: undefined,
+                ...closeLiveThinkingPatch(get())
               });
             } else if (
               event.toolCall.status === "running" ||
@@ -944,6 +969,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
                 runningTool: event.toolCall,
                 toolActivity: undefined,
                 toolHistory: upsertToolCall(current.toolHistory, event.toolCall),
+                ...closeLiveThinkingPatch(current),
                 ...autoOpenProgressPanelPatch(current, event.toolCall)
               }));
             } else {
@@ -952,6 +978,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
                 runningTool: undefined,
                 toolActivity: undefined,
                 toolHistory: upsertToolCall(current.toolHistory, event.toolCall),
+                ...closeLiveThinkingPatch(current),
                 ...autoOpenProgressPanelPatch(current, event.toolCall)
               }));
             }
@@ -972,6 +999,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
               streamText: "",
               thinking: "",
               thinkingStartedAt: undefined,
+              thinkingDurationMs: undefined,
               activeRunStartedAt: undefined,
               ...(sessionId
                 ? {

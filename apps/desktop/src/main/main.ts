@@ -61,6 +61,7 @@ import {
   shouldAllowWebviewSrc,
   shouldOpenExternalFromAppWindow
 } from "./navigation";
+import { permissionRequestSourceSummary, shouldAllowAppPermissionRequest } from "./permissions";
 import {
   defaultDataDir,
   defaultLogDir,
@@ -68,7 +69,8 @@ import {
   defaultProviderConfigPath,
   devDockIconPath,
   preloadPath,
-  rendererIndexPath
+  rendererIndexPath,
+  startupSplashImageCandidates
 } from "./paths";
 import {
   previewPathCandidates,
@@ -79,6 +81,10 @@ import { registerTerminalIpc, type TerminalSessionManager } from "./terminal";
 import { DesktopUpdateService, registerUpdateIpc, type DesktopUpdater } from "./update-service";
 import { createTrustedIpcRegistrar } from "./trusted-ipc";
 import { saveUserProfile } from "./profile";
+import {
+  createStartupSplashUrl,
+  loadStartupSplashImageDataUrl
+} from "./startup-splash";
 
 const MAX_CONTEXT_FILE_BYTES = 256 * 1024;
 const DEFAULT_BLANK_PROJECT_NAME = "未命名项目";
@@ -290,6 +296,45 @@ function openMainWindowDevTools(reason: string): { ok: boolean; error?: string }
 
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function loadStartupSplash(window: BrowserWindow): Promise<void> {
+  const imageCandidates = startupSplashImageCandidates(app.getAppPath());
+  const imagePath = imageCandidates.find((candidate) => existsSync(candidate));
+  let imageSrc: string | undefined;
+  if (imagePath) {
+    try {
+      imageSrc = await loadStartupSplashImageDataUrl(imagePath);
+      console.info(`[main] 启动页图片已加载 path=${imagePath}`);
+    } catch (error) {
+      console.warn(`[main] 启动页图片读取失败 path=${imagePath}: ${messageFromError(error)}`);
+    }
+  } else {
+    console.warn(`[main] 启动页未找到图片 candidates=${JSON.stringify(imageCandidates)}`);
+  }
+
+  const dark = nativeTheme.shouldUseDarkColors;
+  try {
+    await window.loadURL(createStartupSplashUrl({ dark, imageSrc }));
+    console.info(`[main] 启动页已展示 dark=${dark} hasImage=${Boolean(imageSrc)}`);
+  } catch (error) {
+    console.warn(`[main] 启动页加载失败: ${messageFromError(error)}`);
+  }
+
+  if (!window.isDestroyed() && !window.isVisible()) {
+    window.show();
+  }
+}
+
+async function loadRenderer(window: BrowserWindow): Promise<void> {
+  if (process.env.VITE_DEV_SERVER_URL) {
+    console.info(`[main] 后端就绪，加载开发渲染层 url=${process.env.VITE_DEV_SERVER_URL}`);
+    await window.loadURL(process.env.VITE_DEV_SERVER_URL);
+    return;
+  }
+  const rendererPath = rendererIndexPath(import.meta.url);
+  console.info(`[main] 后端就绪，加载打包渲染层 path=${rendererPath}`);
+  await window.loadFile(rendererPath);
 }
 
 interface AutoUpdaterLoadResult {
@@ -730,14 +775,6 @@ async function createWindow(): Promise<void> {
     resourcesPath: process.resourcesPath,
     isPackaged: app.isPackaged
   };
-  ocrHttpService ??= await startOcrHttpService(ocrOptions);
-  backend = await startBackendProcess({
-    dataDir: defaultDataDir(),
-    resourcesPath: process.resourcesPath,
-    isPackaged: app.isPackaged,
-    ocrService: { url: ocrHttpService.url, token: ocrHttpService.token },
-    logger: desktopLogging?.backend
-  });
 
   const trustedIpc = createTrustedIpcRegistrar(ipcMain, {
     devServerUrl: process.env.VITE_DEV_SERVER_URL,
@@ -1043,7 +1080,8 @@ async function createWindow(): Promise<void> {
     minWidth: 960,
     minHeight: 640,
     title: "程小帮",
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff",
+    show: false,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#fafafa",
     ...(process.platform === "darwin"
       ? {
           titleBarStyle: "hiddenInset" as const,
@@ -1061,14 +1099,7 @@ async function createWindow(): Promise<void> {
     }
   };
   mainWindow = new BrowserWindow(windowOptions);
-  if (isDevDesktopRuntime()) {
-    openMainWindowDevTools("window-created");
-    mainWindow.webContents.once("did-finish-load", () => {
-      if (!mainWindow?.webContents.isDevToolsOpened()) {
-        openMainWindowDevTools("did-finish-load");
-      }
-    });
-  }
+  await loadStartupSplash(mainWindow);
 
   mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
     // webview 会打开任意网页，不能给它 preload 或 Node 权限。
@@ -1082,9 +1113,24 @@ async function createWindow(): Promise<void> {
     }
   });
 
-  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-    const allowed = permission === "media" || permission === "notifications";
-    console.info("[main] 权限申请", { permission, allowed });
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const requestingUrl = details.requestingUrl || webContents.getURL();
+    const request = {
+      permission,
+      requestingUrl,
+      isMainFrame: details.isMainFrame,
+      isMainWindow: webContents === mainWindow?.webContents,
+      trustedContext: {
+        devServerUrl: process.env.VITE_DEV_SERVER_URL,
+        rendererFilePath: rendererIndexPath(import.meta.url)
+      }
+    };
+    const allowed = shouldAllowAppPermissionRequest(request);
+    console.info("[main] 权限申请", {
+      permission,
+      allowed,
+      ...permissionRequestSourceSummary(request)
+    });
     callback(allowed);
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -1152,11 +1198,24 @@ async function createWindow(): Promise<void> {
     writeTerminalLog("error", `[renderer] 页面加载失败 ${code} ${desc} ${url}`);
   });
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    await mainWindow.loadFile(rendererIndexPath(import.meta.url));
+  console.info("[main] OCR 本地服务启动开始");
+  ocrHttpService ??= await startOcrHttpService(ocrOptions);
+  console.info(`[main] OCR 本地服务启动完成 url=${ocrHttpService.url}`);
+  console.info("[main] 后端启动开始");
+  backend = await startBackendProcess({
+    dataDir: defaultDataDir(),
+    resourcesPath: process.resourcesPath,
+    isPackaged: app.isPackaged,
+    ocrService: { url: ocrHttpService.url, token: ocrHttpService.token },
+    logger: desktopLogging?.backend
+  });
+  console.info(`[main] 后端启动完成 baseURL=${backend.info.baseURL}`);
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.warn("[main] 后端已就绪，但主窗口已关闭，跳过渲染层加载");
+    return;
   }
+  await loadRenderer(mainWindow);
   updateService.startAutoChecks();
 }
 

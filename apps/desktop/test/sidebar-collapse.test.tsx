@@ -76,13 +76,13 @@ beforeEach(() => {
 describe("sidebar collapse", () => {
   it("点击折叠按钮隐藏侧边栏，再点展开恢复", async () => {
     render(<App client={createClient()} />);
-    await screen.findByTestId("app-sidebar");
+    const sidebar = await screen.findByTestId("app-sidebar");
 
     fireEvent.click(screen.getByTitle("收起侧边栏"));
 
-    expect(screen.getByTestId("app-sidebar")).toHaveAttribute("aria-hidden", "true");
-    expect(screen.getByTestId("app-sidebar")).toHaveAttribute("inert");
-    expect(screen.getByTestId("app-sidebar")).toHaveClass("w-0");
+    expect(sidebar).toHaveAttribute("aria-hidden", "true");
+    expect(sidebar).toHaveAttribute("inert");
+    expect(sidebar.style.width).toBe("0px");
     expect(useAppStore.getState().sidebarOpen).toBe(false);
 
     // 折叠状态持久化到 localStorage，重启后保持。
@@ -94,10 +94,25 @@ describe("sidebar collapse", () => {
 
     fireEvent.click(screen.getByTitle("展开侧边栏"));
 
-    expect(await screen.findByTestId("app-sidebar")).toHaveAttribute("aria-hidden", "false");
-    expect(screen.getByTestId("app-sidebar")).not.toHaveAttribute("inert");
-    expect(screen.getByTestId("app-sidebar")).toHaveClass("w-[272px]");
+    const expandedSidebar = await screen.findByTestId("app-sidebar");
+    expect(expandedSidebar).toHaveAttribute("aria-hidden", "false");
+    expect(expandedSidebar).not.toHaveAttribute("inert");
+    expect(expandedSidebar.style.width).toBe("var(--sidebar-width)");
+    expect(expandedSidebar.style.getPropertyValue("--sidebar-width")).toBe("272px");
     expect(useAppStore.getState().sidebarOpen).toBe(true);
+  });
+
+  it("拖拽侧边栏宽度时不会小于最小宽度", async () => {
+    render(<App client={createClient()} />);
+    const sidebar = await screen.findByTestId("app-sidebar");
+    const resizeHandle = screen.getByTitle("调整侧边栏宽度");
+
+    fireEvent.pointerDown(resizeHandle, { clientX: 272 });
+    fireEvent.pointerMove(window, { clientX: 0 });
+    fireEvent.pointerUp(window);
+
+    expect(sidebar.style.width).toBe("var(--sidebar-width)");
+    expect(sidebar.style.getPropertyValue("--sidebar-width")).toBe("240px");
   });
 
   it("在 Electron 窗口中让折叠按钮避开红绿灯并对齐标题让位", async () => {
