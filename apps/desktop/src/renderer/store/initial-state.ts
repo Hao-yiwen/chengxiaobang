@@ -115,6 +115,7 @@ export const initialState =  {
   rightPanelMode: null as RightPanelMode | null,
   rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH,
   previewFile: undefined as PreviewFileState | undefined,
+  filePreviewEntrySource: undefined,
   browserUrl: "",
   rightPanelBySession: {} as Record<string, RightPanelSessionState>,
   terminalEntries: [] as TerminalEntry[],

@@ -14,7 +14,10 @@ import {
 import type { ApiClient } from "../src/renderer/lib/api";
 import type { TerminalDataEvent, TerminalExitEvent } from "../src/renderer/global";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
-import { RIGHT_PANEL_FILE_WIDTH } from "../src/renderer/store/helpers/right-panel";
+import {
+  RIGHT_PANEL_FILE_WIDTH,
+  RIGHT_PANEL_PROJECT_FILES_WIDTH
+} from "../src/renderer/store/helpers/right-panel";
 import type {
   Message,
   Project,
@@ -531,7 +534,11 @@ async function openPane(name: string): Promise<void> {
 }
 
 async function expandProjectFiles(): Promise<void> {
-  fireEvent.click(await screen.findByRole("button", { name: "展开项目文件" }));
+  const expandButton = screen.queryByRole("button", { name: "展开项目文件" });
+  if (expandButton) {
+    fireEvent.click(expandButton);
+  }
+  await screen.findByTestId("project-file-tree-region");
 }
 
 async function selectSession(title: string): Promise<void> {
@@ -555,15 +562,23 @@ async function clickArtifactButton(name: string): Promise<void> {
   fireEvent.click(button ?? matches[0]);
 }
 
+function projectFileTreeRow(path: string): HTMLElement {
+  const row = screen
+    .getAllByRole("button")
+    .find((button) => button.getAttribute("data-project-file-path") === path);
+  expect(row).toBeDefined();
+  return row as HTMLElement;
+}
+
 function fileTreeIconSvg(path: string): string {
-  const button = screen.getByTitle(path);
+  const button = projectFileTreeRow(path);
   const icon = button.querySelector("svg.cxb-svg-icon");
   expect(icon).not.toBeNull();
   return icon?.outerHTML ?? "";
 }
 
 function fileTreeGuides(path: string): HTMLElement[] {
-  return within(screen.getByTitle(path)).queryAllByTestId("project-file-tree-guide");
+  return within(projectFileTreeRow(path)).queryAllByTestId("project-file-tree-guide");
 }
 
 function todoToolCall(
@@ -1187,8 +1202,45 @@ describe("right panel", () => {
     const panelStyle = panel.getAttribute("style") ?? "";
     expect(panelStyle).toContain(`--right-panel-width: ${RIGHT_PANEL_FILE_WIDTH}px`);
     expect(panelStyle).not.toContain("width: 0px");
+    expect(screen.queryByPlaceholderText("筛选文件…")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("project-file-tree-region")).not.toBeInTheDocument();
+    const closePanelButton = screen.getByTitle("关闭面板");
+    const expandProjectFilesButton = screen.getByTitle("展开项目文件");
+    expect(expandProjectFilesButton.parentElement).toContainElement(closePanelButton);
+    expect(expandProjectFilesButton).toHaveClass("size-7");
+    expect(expandProjectFilesButton).not.toHaveClass("w-10");
+    expect(expandProjectFilesButton).not.toHaveClass("flex-none");
+    expect(expandProjectFilesButton).not.toHaveClass("border-l");
+
+    fireEvent.click(expandProjectFilesButton);
+    expect(screen.getByPlaceholderText("筛选文件…")).toBeInTheDocument();
+    const projectFileTreeRegion = screen.getByTestId("project-file-tree-region");
+    expect(projectFileTreeRegion).toHaveClass("absolute", "right-0");
+    expect(projectFileTreeRegion).not.toHaveClass("flex-none");
+    expect(projectFileTreeRegion).toHaveStyle(
+      `width: ${RIGHT_PANEL_PROJECT_FILES_WIDTH}px`
+    );
+    const collapseProjectFilesButton = screen.getByTitle("收起项目文件");
+    expect(collapseProjectFilesButton.parentElement).toContainElement(closePanelButton);
     expect(within(stack).getByTestId("progress-floating-panel")).toBeInTheDocument();
     expect(await screen.findByText("a.ts")).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByTestId("file-preview-content-region"));
+    expect(screen.queryByPlaceholderText("筛选文件…")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("project-file-tree-region")).not.toBeInTheDocument();
+    const expandProjectFilesButtonAfterCollapse = screen.getByTitle("展开项目文件");
+    expect(expandProjectFilesButtonAfterCollapse.parentElement).toContainElement(
+      screen.getByTitle("关闭面板")
+    );
+    expect(expandProjectFilesButtonAfterCollapse).toHaveClass("size-7");
+    expect(expandProjectFilesButtonAfterCollapse).not.toHaveClass("w-10");
+    expect(expandProjectFilesButtonAfterCollapse).not.toHaveClass("flex-none");
+    expect(expandProjectFilesButtonAfterCollapse).not.toHaveClass("border-l");
+
+    fireEvent.click(expandProjectFilesButtonAfterCollapse);
+    expect(screen.getByPlaceholderText("筛选文件…")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("收起项目文件"));
+    expect(screen.queryByTestId("project-file-tree-region")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle("关闭面板"));
 
@@ -1486,33 +1538,35 @@ describe("right panel", () => {
     await selectSession("项目对话");
     await openPane("文件预览");
 
-    expect(screen.getByRole("button", { name: "展开项目文件" })).toBeInTheDocument();
-    expect(screen.queryByText("项目文件")).not.toBeInTheDocument();
-    expect(screen.queryByText("README.md")).not.toBeInTheDocument();
-    expect(listProjectDirectory).not.toHaveBeenCalled();
-
-    await expandProjectFiles();
+    expect(useAppStore.getState().filePreviewEntrySource).toBe("panel");
     expect(await screen.findByText("项目文件")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /选择文件|rightPanel\.pickFile/u })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /选择文件|rightPanel\.pickFile/u })
+    ).not.toBeInTheDocument();
     expect(bridge.pickFiles).not.toHaveBeenCalled();
     expect(await screen.findByText("README.md")).toBeInTheDocument();
     expect(listProjectDirectory).toHaveBeenCalledWith(project.id, ".");
-    expect(screen.getByTitle("src")).toHaveClass("h-7");
-    expect(screen.getByTitle("src").querySelector("img")).toBeNull();
+    expect(projectFileTreeRow("src")).toHaveClass("h-7");
+    expect(projectFileTreeRow("src").querySelector("img")).toBeNull();
+    expect(projectFileTreeRow(".eslintrc.js")).not.toHaveAttribute("title");
     expect(fileTreeIconSvg(".eslintrc.js")).toContain("#693acf");
     expect(fileTreeIconSvg("package.json")).toContain("#d52c36");
 
-    fireEvent.click(screen.getByTitle("src"));
+    fireEvent.click(projectFileTreeRow("src"));
     expect(await screen.findByText("app.js")).toBeInTheDocument();
+    expect(projectFileTreeRow("src/app.js")).not.toHaveAttribute("title");
     expect(fileTreeGuides("src/app.js")).toHaveLength(1);
-    fireEvent.click(screen.getByTitle("src/components"));
+    fireEvent.click(projectFileTreeRow("src/components"));
     expect(await screen.findByText("Button.tsx")).toBeInTheDocument();
-    expect(screen.getByTitle("src/components").querySelector("img")).toBeNull();
+    expect(projectFileTreeRow("src/components")).not.toHaveAttribute("title");
+    expect(projectFileTreeRow("src/components").querySelector("img")).toBeNull();
     expect(fileTreeGuides("src/components/Button.tsx")).toHaveLength(2);
 
     fireEvent.click(screen.getByText("README.md"));
 
     expect(await screen.findByText("line two")).toBeInTheDocument();
+    expect(useAppStore.getState().filePreviewEntrySource).toBe("project-tree");
+    expect(screen.getByTestId("project-file-tree-region")).toBeInTheDocument();
     expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("README.md", {
       projectPath: project.path,
       sessionId: session.id
@@ -1520,6 +1574,49 @@ describe("right panel", () => {
     expect(bridge.readFilePreviewText).toHaveBeenCalledWith("/tmp/demo/README.md", {
       maxBytes: 524288
     });
+  });
+
+  it("only enables file-tree tooltips for truncated labels in file preview", async () => {
+    const longName = "very-long-component-file-name-that-needs-tooltip.tsx";
+    installPreviewBridge({ kind: "code", text: "export const value = 1;" });
+    const scrollWidthSpy = vi
+      .spyOn(HTMLElement.prototype, "scrollWidth", "get")
+      .mockImplementation(function scrollWidthForProjectFileLabel(this: HTMLElement) {
+        return this.getAttribute("data-project-file-label") === longName ? 260 : 80;
+      });
+    const clientWidthSpy = vi
+      .spyOn(HTMLElement.prototype, "clientWidth", "get")
+      .mockImplementation(function clientWidthForProjectFileLabel(this: HTMLElement) {
+        return this.hasAttribute("data-project-file-label") ? 120 : 0;
+      });
+    try {
+      const listProjectDirectory = vi.fn(async () => [
+        { name: longName, path: `src/${longName}`, type: "file" },
+        { name: "short.ts", path: "src/short.ts", type: "file" }
+      ] satisfies ProjectFileEntry[]);
+      const client = createClient({ listProjectDirectory });
+
+      render(<App client={client} />);
+      await screen.findByText("项目对话");
+      await selectSession("项目对话");
+      await openPane("文件预览");
+
+      await waitFor(() =>
+        expect(screen.getByText(longName)).toHaveAttribute(
+          "data-project-file-label-truncated",
+          "true"
+        )
+      );
+      expect(screen.getByText("short.ts")).toHaveAttribute(
+        "data-project-file-label-truncated",
+        "false"
+      );
+      expect(projectFileTreeRow(`src/${longName}`)).not.toHaveAttribute("title");
+      expect(projectFileTreeRow("src/short.ts")).not.toHaveAttribute("title");
+    } finally {
+      scrollWidthSpy.mockRestore();
+      clientWidthSpy.mockRestore();
+    }
   });
 
   it("highlights JavaScript project files in the file preview panel", async () => {
@@ -1779,6 +1876,7 @@ describe("right panel", () => {
       files: [
         {
           path: "src/a.ts",
+          scope: "unstaged",
           status: " M",
           diff: [
             "diff --git a/src/a.ts b/src/a.ts",
@@ -1791,6 +1889,7 @@ describe("right panel", () => {
         },
         {
           path: "README.md",
+          scope: "unstaged",
           status: "??",
           diff: [
             "diff --git a/README.md b/README.md",
@@ -1813,9 +1912,11 @@ describe("right panel", () => {
 
     const changedFile = await screen.findByText("a.ts");
     expect(changedFile).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "折叠变更分组 暂存的更改" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "折叠变更分组 更改" })).toBeInTheDocument();
     expect(screen.queryByText("src/a.ts")).not.toBeInTheDocument();
     expect(screen.getByTitle("src/a.ts")).toBeInTheDocument();
-    expect(screen.getByText("+2")).toBeInTheDocument();
+    expect(screen.getAllByText("+2").length).toBeGreaterThan(0);
     expect(screen.getAllByText("-1").length).toBeGreaterThan(0);
     expect(screen.queryByText("new line")).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText("筛选文件…")).not.toBeInTheDocument();

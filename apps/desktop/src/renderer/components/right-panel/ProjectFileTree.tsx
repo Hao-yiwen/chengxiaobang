@@ -5,7 +5,16 @@ import {
   SearchIcon,
   WarningCircleIcon
 } from "@/assets/file-type-icons";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from "react";
 import { useTranslation } from "react-i18next";
 import type { Project, ProjectFileEntry } from "@chengxiaobang/shared";
 import { resolveFileTypeIcon } from "@/lib/code-language-icons";
@@ -286,13 +295,13 @@ export function ProjectFileTree({
       <div key={entry.path}>
         <button
           type="button"
+          data-project-file-path={entry.path}
           onClick={() => (isDirectory ? toggleDirectory(entry) : openFile(entry.path))}
           className={cn(
             "flex w-full min-w-0 items-center gap-1 rounded-xs px-1.5 pr-2 text-left text-caption text-foreground transition-colors hover:bg-muted",
             TREE_ROW_HEIGHT,
             isSelected && "bg-muted"
           )}
-          title={entry.path}
         >
           <TreeIndentGuides depth={depth} />
           {isDirectory ? (
@@ -305,7 +314,7 @@ export function ProjectFileTree({
             <span className="w-3.5 flex-none" />
           )}
           {isDirectory ? null : <FileTypeIcon path={entry.path} />}
-          <span className="min-w-0 flex-1 truncate font-mono text-micro">{entry.name}</span>
+          <FileTreeOverflowLabel text={entry.name} />
           {loading ? <RefreshIcon className="size-3 animate-spin text-muted-foreground" /> : null}
           {!isDirectory ? <GitStatusMark kind={statusByPath[entry.path]} /> : null}
         </button>
@@ -368,15 +377,15 @@ function SearchResults(props: {
           <button
             key={path}
             type="button"
+            data-project-file-path={path}
             onClick={() => props.onOpenFile(path)}
             className={cn(
               "flex h-7 w-full min-w-0 items-center gap-1.5 rounded-xs px-2 text-left text-caption text-foreground transition-colors hover:bg-muted",
               isSelected && "bg-muted"
             )}
-            title={path}
           >
             <FileTypeIcon path={path} />
-            <span className="min-w-0 flex-1 truncate font-mono text-micro">{path}</span>
+            <FileTreeOverflowLabel text={path} />
             <GitStatusMark kind={props.statusByPath[path]} />
           </button>
         );
@@ -388,6 +397,53 @@ function SearchResults(props: {
 function FileTypeIcon({ path }: { path: string }) {
   const Icon = resolveFileTypeIcon(path);
   return <Icon aria-hidden className="cxb-svg-icon size-3.5 flex-none" />;
+}
+
+function FileTreeOverflowLabel({ text }: { text: string }) {
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const [truncated, setTruncated] = useState(false);
+
+  useLayoutEffect(() => {
+    const element = labelRef.current;
+    if (!element) {
+      return;
+    }
+    const updateTruncated = () => {
+      const nextTruncated = element.scrollWidth > element.clientWidth + 1;
+      setTruncated((current) => (current === nextTruncated ? current : nextTruncated));
+    };
+    updateTruncated();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateTruncated);
+      return () => window.removeEventListener("resize", updateTruncated);
+    }
+    const resizeObserver = new ResizeObserver(updateTruncated);
+    resizeObserver.observe(element);
+    return () => resizeObserver.disconnect();
+  }, [text]);
+
+  const label = (
+    <span
+      ref={labelRef}
+      data-project-file-label={text}
+      data-project-file-label-truncated={truncated ? "true" : "false"}
+      className="min-w-0 flex-1 truncate font-mono text-micro"
+    >
+      {text}
+    </span>
+  );
+
+  if (!truncated) {
+    return label;
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{label}</TooltipTrigger>
+      <TooltipContent className="pointer-events-none max-w-[320px] break-all font-mono text-micro">
+        {text}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 function LoadFailure(props: { message: string; onRetry?: () => void }) {

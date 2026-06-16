@@ -4,6 +4,7 @@ import {
   DEFAULT_RIGHT_PANEL_WIDTH,
   RIGHT_PANEL_FILE_WIDTH,
   RIGHT_PANEL_MAX_WIDTH,
+  RIGHT_PANEL_PROJECT_FILES_WIDTH,
   RIGHT_PANEL_REVIEW_WIDTH,
   clampRightPanelWidth,
   rightPanelMaxWidthForContainer,
@@ -15,13 +16,15 @@ import { initialState } from "../src/renderer/store/initial-state";
 
 describe("right panel width defaults", () => {
   it("uses the compact right panel width for fresh state", () => {
+    expect(CHAT_PANEL_MIN_WIDTH).toBe(420);
     expect(DEFAULT_RIGHT_PANEL_WIDTH).toBe(320);
     expect(initialState.rightPanelWidth).toBe(DEFAULT_RIGHT_PANEL_WIDTH);
   });
 
   it("uses smaller defaults for wide panel modes", () => {
-    expect(RIGHT_PANEL_REVIEW_WIDTH).toBe(640);
-    expect(RIGHT_PANEL_FILE_WIDTH).toBe(640);
+    expect(RIGHT_PANEL_REVIEW_WIDTH).toBe(520);
+    expect(RIGHT_PANEL_FILE_WIDTH).toBe(520);
+    expect(RIGHT_PANEL_PROJECT_FILES_WIDTH).toBe(200);
   });
 
   it("migrates old default widths and caps oversized custom widths", () => {

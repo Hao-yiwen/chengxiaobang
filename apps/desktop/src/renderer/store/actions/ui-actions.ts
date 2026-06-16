@@ -310,6 +310,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           rightPanelOpen: false,
           rightPanelMode: null,
           previewFile: undefined,
+          filePreviewEntrySource: undefined,
           browserUrl: "",
           view: "home"
         }));
@@ -370,10 +371,12 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           console.info("[store] 打开右侧面板", {
             mode,
             targetWidth,
-            nextWidth: patch.rightPanelWidth ?? state.rightPanelWidth
+            nextWidth: patch.rightPanelWidth ?? state.rightPanelWidth,
+            filePreviewEntrySource: mode === "files" ? "panel" : undefined
           });
           return {
             ...patch,
+            filePreviewEntrySource: mode === "files" ? "panel" : undefined,
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
           };
         }),
@@ -403,16 +406,18 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           };
         }),
 
-      openFilePreview(path) {
+      openFilePreview(path, options) {
         const state = get();
         const project = selectActiveProject(state);
         const session = selectActiveSession(state);
         const sessionId = session?.id ?? state.activeSessionId;
+        const source = options?.source ?? "direct";
         console.info("[store] 打开文件预览", {
           path,
           projectPath: project?.path,
           sessionId,
-          pathKind: isAbsolutePathLike(path) ? "absolute" : "relative"
+          pathKind: isAbsolutePathLike(path) ? "absolute" : "relative",
+          source
         });
         set((state) => {
           const patch: RightPanelPatch = {
@@ -431,6 +436,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           };
           return {
             ...patch,
+            filePreviewEntrySource: source,
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
           };
         });
@@ -464,6 +470,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
             };
             return {
               ...patch,
+              filePreviewEntrySource: "direct",
               rightPanelBySession: rememberRightPanel(state, undefined, patch)
             };
           });
@@ -520,6 +527,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
             };
             return {
               ...patch,
+              filePreviewEntrySource: undefined,
               rightPanelBySession: rememberRightPanel(state, undefined, patch)
             };
           });

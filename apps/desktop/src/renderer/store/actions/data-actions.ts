@@ -287,6 +287,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             rightPanelOpen: false,
             rightPanelMode: null,
             previewFile: undefined,
+            filePreviewEntrySource: undefined,
             browserUrl: "",
             onboardingOpen: shouldShowFirstRunOnboarding,
             ...(shouldShowFirstRunOnboarding ? { onboardingStep: "welcome" as const } : {})
@@ -322,6 +323,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             rightPanelOpen: false,
             rightPanelMode: null,
             previewFile: undefined,
+            filePreviewEntrySource: undefined,
             browserUrl: "",
             view: "home",
             ...firstRunOnboardingPatch
@@ -355,6 +357,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             rightPanelOpen: false,
             rightPanelMode: null,
             previewFile: undefined,
+            filePreviewEntrySource: undefined,
             browserUrl: "",
             view: "home",
             ...firstRunOnboardingPatch
@@ -573,6 +576,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               rightPanelOpen: false,
               rightPanelMode: null,
               previewFile: undefined,
+              filePreviewEntrySource: undefined,
               browserUrl: "",
               view: "home" as View
             };
@@ -654,6 +658,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               rightPanelOpen: false,
               rightPanelMode: null,
               previewFile: undefined,
+              filePreviewEntrySource: undefined,
               browserUrl: "",
               view: "home" as View
             };
@@ -784,6 +789,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           rightPanelOpen: false,
           rightPanelMode: null,
           previewFile: undefined,
+          filePreviewEntrySource: undefined,
           browserUrl: "",
           view: "home"
         }));
@@ -810,6 +816,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           rightPanelOpen: false,
           rightPanelMode: null,
           previewFile: undefined,
+          filePreviewEntrySource: undefined,
           browserUrl: "",
           view: "home"
         }));

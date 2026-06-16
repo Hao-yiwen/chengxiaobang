@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { GitChangesResult, GitFileChange } from "@chengxiaobang/shared";
+import type { GitChangeScope, GitChangesResult, GitFileChange } from "@chengxiaobang/shared";
 import { runCommand } from "./shell";
 
 const MAX_UNTRACKED_BYTES = 256 * 1024;
@@ -154,7 +154,54 @@ export async function detectGitRepository(projectPath: string): Promise<boolean>
   return isRepo;
 }
 
-/** 收集项目未提交变更：状态条目 + 每个文件的 unified diff。 */
+function hasScopeChange(status: string, scope: GitChangeScope): boolean {
+  if (status === "??") {
+    return scope === "unstaged";
+  }
+  const code = scope === "staged" ? status[0] : status[1];
+  return code !== undefined && code !== " " && code !== "?" && code !== "!";
+}
+
+function logDiffCommandFailure(
+  scope: GitChangeScope,
+  result: Awaited<ReturnType<typeof runCommand>>,
+  projectPath: string
+): void {
+  if (result.exitCode === 0) {
+    return;
+  }
+  console.error("[git-changes] git diff 失败", {
+    projectPath,
+    scope,
+    exitCode: result.exitCode,
+    output: result.output.slice(0, 200)
+  });
+}
+
+function createScopedChange(
+  entry: { status: string; path: string },
+  scope: GitChangeScope,
+  blocks: Map<string, string>,
+  projectPath: string
+): GitFileChange {
+  const diff = blocks.get(entry.path) ?? "";
+  if (!diff) {
+    console.debug("[git-changes] 未找到可展示的 diff 块", {
+      projectPath,
+      scope,
+      path: entry.path,
+      status: entry.status
+    });
+  }
+  return {
+    path: entry.path,
+    scope,
+    status: entry.status,
+    diff
+  };
+}
+
+/** 收集项目未提交变更：同一路径会按 staged/unstaged scope 拆成多条记录。 */
 export async function collectGitChanges(projectPath: string): Promise<GitChangesResult> {
   if (!(await detectGitRepository(projectPath))) {
     return { isRepo: false, files: [] };
@@ -165,24 +212,41 @@ export async function collectGitChanges(projectPath: string): Promise<GitChanges
     runCommand(`${GIT} diff --cached`, projectPath)
   ]);
   if (status.exitCode !== 0) {
-    console.error(
-      `[git-changes] git status 失败 exitCode=${status.exitCode} output=${status.output.slice(0, 200)}`
-    );
+    console.error("[git-changes] git status 失败", {
+      projectPath,
+      exitCode: status.exitCode,
+      output: status.output.slice(0, 200)
+    });
     return { isRepo: true, files: [] };
   }
+  logDiffCommandFailure("unstaged", unstaged, projectPath);
+  logDiffCommandFailure("staged", staged, projectPath);
   const stagedBlocks = splitUnifiedDiff(staged.exitCode === 0 ? staged.output : "");
   const unstagedBlocks = splitUnifiedDiff(unstaged.exitCode === 0 ? unstaged.output : "");
   const files: GitFileChange[] = [];
-  for (const entry of parsePorcelainStatus(status.output)) {
+  const entries = parsePorcelainStatus(status.output);
+  for (const entry of entries) {
     if (entry.status === "??") {
-      files.push({ ...entry, diff: await readUntrackedDiff(projectPath, entry.path) });
+      files.push({
+        ...entry,
+        scope: "unstaged",
+        diff: await readUntrackedDiff(projectPath, entry.path)
+      });
       continue;
     }
-    const diff = [stagedBlocks.get(entry.path), unstagedBlocks.get(entry.path)]
-      .filter(Boolean)
-      .join("\n");
-    files.push({ ...entry, diff });
+    if (hasScopeChange(entry.status, "staged")) {
+      files.push(createScopedChange(entry, "staged", stagedBlocks, projectPath));
+    }
+    if (hasScopeChange(entry.status, "unstaged")) {
+      files.push(createScopedChange(entry, "unstaged", unstagedBlocks, projectPath));
+    }
   }
+  console.info("[git-changes] Git 变更收集完成", {
+    projectPath,
+    uniqueFileCount: new Set(entries.map((entry) => entry.path)).size,
+    stagedCount: files.filter((file) => file.scope === "staged").length,
+    unstagedCount: files.filter((file) => file.scope === "unstaged").length
+  });
   return { isRepo: true, files };
 }
 

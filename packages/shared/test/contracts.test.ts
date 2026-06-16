@@ -5,6 +5,7 @@ import {
   appEventSchema,
   askUserAnswerSchema,
   askUserArgsSchema,
+  gitChangesResultSchema,
   messageFeedbackUpdateSchema,
   messageSchema,
   proposePlanArgsSchema,
@@ -67,6 +68,42 @@ describe("sessionSchema", () => {
         wechatChatId: "wx_user1"
       }).wechatChatId
     ).toBe("wx_user1");
+  });
+});
+
+describe("gitChangesResultSchema", () => {
+  it("允许同一路径按 staged/unstaged scope 拆成多条记录", () => {
+    const parsed = gitChangesResultSchema.parse({
+      isRepo: true,
+      files: [
+        {
+          path: "src/app.ts",
+          scope: "staged",
+          status: "MM",
+          diff: "diff --git a/src/app.ts b/src/app.ts\n+staged\n"
+        },
+        {
+          path: "src/app.ts",
+          scope: "unstaged",
+          status: "MM",
+          diff: "diff --git a/src/app.ts b/src/app.ts\n+unstaged\n"
+        }
+      ]
+    });
+
+    expect(parsed.files.map((file) => `${file.scope}:${file.path}`)).toEqual([
+      "staged:src/app.ts",
+      "unstaged:src/app.ts"
+    ]);
+  });
+
+  it("拒绝缺少 scope 的 Git 变更记录", () => {
+    expect(
+      gitChangesResultSchema.safeParse({
+        isRepo: true,
+        files: [{ path: "src/app.ts", status: " M", diff: "" }]
+      }).success
+    ).toBe(false);
   });
 });
 

@@ -14,11 +14,12 @@ import {
 } from "./composer-drafts";
 import { restoreHomeModelSelection } from "./model-selection";
 
-export const CHAT_PANEL_MIN_WIDTH = 560;
+export const CHAT_PANEL_MIN_WIDTH = 420;
 export const RIGHT_PANEL_MIN_WIDTH = 300;
 export const RIGHT_PANEL_MAX_WIDTH = 720;
-export const RIGHT_PANEL_REVIEW_WIDTH = 640;
-export const RIGHT_PANEL_FILE_WIDTH = 640;
+export const RIGHT_PANEL_REVIEW_WIDTH = 520;
+export const RIGHT_PANEL_FILE_WIDTH = 520;
+export const RIGHT_PANEL_PROJECT_FILES_WIDTH = 200;
 export const DEFAULT_RIGHT_PANEL_WIDTH = 320;
 const LEGACY_DEFAULT_RIGHT_PANEL_WIDTHS = new Set<number>([340, 380]);
 
@@ -252,6 +253,7 @@ export function selectNewProjectState(state: AppState, project: Project, source:
     rightPanelOpen: false,
     rightPanelMode: null,
     previewFile: undefined,
+    filePreviewEntrySource: undefined,
     browserUrl: "",
     notice: undefined,
     view: "home" as const
@@ -268,6 +270,7 @@ export function restoredRightPanel(
   | "rightPanelMode"
   | "rightPanelWidth"
   | "previewFile"
+  | "filePreviewEntrySource"
   | "browserUrl"
 > {
   const snapshot = sessionId ? state.rightPanelBySession[sessionId] : undefined;
@@ -290,6 +293,7 @@ export function restoredRightPanel(
       rightPanelWidth:
         normalizeStoredRightPanelWidth(state.rightPanelWidth) ?? DEFAULT_RIGHT_PANEL_WIDTH,
       previewFile: undefined,
+      filePreviewEntrySource: undefined,
       browserUrl: ""
     };
   }
@@ -305,6 +309,7 @@ export function restoredRightPanel(
     rightPanelMode: snapshot.mode,
     rightPanelWidth: normalizeStoredRightPanelWidth(snapshot.width) ?? DEFAULT_RIGHT_PANEL_WIDTH,
     previewFile: snapshot.previewFile,
+    filePreviewEntrySource: undefined,
     browserUrl: snapshot.browserUrl
   };
 }

@@ -564,6 +564,13 @@
     "changesPatchParseFailed": "Diff 解析失败，已展示原始 patch",
     "changesExpandFile": "展开变更文件",
     "changesCollapseFile": "折叠变更文件",
+    "changesExpandGroup": "展开变更分组",
+    "changesCollapseGroup": "折叠变更分组",
+    "changesGroupFileCount": "{{count}} 个文件",
+    "changeScopes": {
+      "staged": "暂存的更改",
+      "unstaged": "更改"
+    },
     "reviewFilesTitle": "变更文件",
     "reviewSelectFile": "展开一个变更文件进行审查。",
     "reviewOpenFilePreview": "打开文件预览",

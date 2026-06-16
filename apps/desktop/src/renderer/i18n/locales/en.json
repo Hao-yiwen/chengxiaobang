@@ -575,6 +575,13 @@
     "changesPatchParseFailed": "Diff parsing failed; showing raw patch",
     "changesExpandFile": "Expand changed file",
     "changesCollapseFile": "Collapse changed file",
+    "changesExpandGroup": "Expand change group",
+    "changesCollapseGroup": "Collapse change group",
+    "changesGroupFileCount": "{{count}} files",
+    "changeScopes": {
+      "staged": "Staged changes",
+      "unstaged": "Changes"
+    },
     "reviewFilesTitle": "Changed files",
     "reviewSelectFile": "Expand a changed file to review it.",
     "reviewOpenFilePreview": "Open file preview",

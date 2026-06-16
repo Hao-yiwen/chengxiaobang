@@ -1,8 +1,12 @@
 import { z } from "zod";
 
-/** 一个未提交变更文件：porcelain XY 状态码 + 合并后的 unified diff。 */
+export const gitChangeScopeSchema = z.enum(["staged", "unstaged"]);
+export type GitChangeScope = z.infer<typeof gitChangeScopeSchema>;
+
+/** 一个未提交变更文件：porcelain XY 状态码 + 当前 scope 对应的 unified diff。 */
 export const gitFileChangeSchema = z.object({
   path: z.string().min(1),
+  scope: gitChangeScopeSchema,
   status: z.string().min(2),
   /** 二进制或过大文件无法展示内容时为空。 */
   diff: z.string()

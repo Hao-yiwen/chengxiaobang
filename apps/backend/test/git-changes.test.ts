@@ -106,31 +106,45 @@ describe("collectGitChanges", () => {
     await expect(detectGitRepository(dir)).resolves.toBe(true);
     await writeFile(join(dir, "tracked.txt"), "one\n");
     await writeFile(join(dir, "staged.txt"), "base\n");
+    await writeFile(join(dir, "both.txt"), "base\n");
     await git("add .");
     await git('commit -m "base"');
 
     await writeFile(join(dir, "tracked.txt"), "one\ntwo\n");
     await writeFile(join(dir, "staged.txt"), "changed\n");
     await git("add staged.txt");
+    await writeFile(join(dir, "both.txt"), "staged\n");
+    await git("add both.txt");
+    await writeFile(join(dir, "both.txt"), "unstaged\n");
     await writeFile(join(dir, "fresh.txt"), "alpha\nbeta\n");
 
     const result = await collectGitChanges(dir);
     expect(result.isRepo).toBe(true);
-    const byPath = new Map(result.files.map((file) => [file.path, file]));
+    const byScopePath = new Map(result.files.map((file) => [`${file.scope}:${file.path}`, file]));
 
-    expect(byPath.get("tracked.txt")?.status).toBe(" M");
-    expect(byPath.get("tracked.txt")?.diff).toContain("+two");
+    expect(byScopePath.get("unstaged:tracked.txt")?.status).toBe(" M");
+    expect(byScopePath.get("unstaged:tracked.txt")?.diff).toContain("+two");
 
-    expect(byPath.get("staged.txt")?.status).toBe("M ");
-    expect(byPath.get("staged.txt")?.diff).toContain("+changed");
+    expect(byScopePath.get("staged:staged.txt")?.status).toBe("M ");
+    expect(byScopePath.get("staged:staged.txt")?.diff).toContain("+changed");
 
-    expect(byPath.get("fresh.txt")?.status).toBe("??");
-    expect(byPath.get("fresh.txt")?.diff).toContain("diff --git a/fresh.txt b/fresh.txt");
-    expect(byPath.get("fresh.txt")?.diff).toContain("--- /dev/null");
-    expect(byPath.get("fresh.txt")?.diff).toContain("+++ b/fresh.txt");
-    expect(byPath.get("fresh.txt")?.diff).toContain("@@ -0,0 +1,2 @@");
-    expect(byPath.get("fresh.txt")?.diff).toContain("+alpha");
-    expect(byPath.get("fresh.txt")?.diff).toContain("+beta");
+    expect(byScopePath.get("staged:both.txt")?.status).toBe("MM");
+    expect(byScopePath.get("staged:both.txt")?.diff).toContain("-base");
+    expect(byScopePath.get("staged:both.txt")?.diff).toContain("+staged");
+    expect(byScopePath.get("staged:both.txt")?.diff).not.toContain("+unstaged");
+
+    expect(byScopePath.get("unstaged:both.txt")?.status).toBe("MM");
+    expect(byScopePath.get("unstaged:both.txt")?.diff).toContain("-staged");
+    expect(byScopePath.get("unstaged:both.txt")?.diff).toContain("+unstaged");
+    expect(byScopePath.get("unstaged:both.txt")?.diff).not.toContain("-base");
+
+    expect(byScopePath.get("unstaged:fresh.txt")?.status).toBe("??");
+    expect(byScopePath.get("unstaged:fresh.txt")?.diff).toContain("diff --git a/fresh.txt b/fresh.txt");
+    expect(byScopePath.get("unstaged:fresh.txt")?.diff).toContain("--- /dev/null");
+    expect(byScopePath.get("unstaged:fresh.txt")?.diff).toContain("+++ b/fresh.txt");
+    expect(byScopePath.get("unstaged:fresh.txt")?.diff).toContain("@@ -0,0 +1,2 @@");
+    expect(byScopePath.get("unstaged:fresh.txt")?.diff).toContain("+alpha");
+    expect(byScopePath.get("unstaged:fresh.txt")?.diff).toContain("+beta");
   }, 20_000);
 
   it("returns an empty diff for binary untracked files", async () => {
@@ -138,6 +152,6 @@ describe("collectGitChanges", () => {
     await writeFile(join(dir, "blob.bin"), Buffer.from([0, 1, 2, 0, 255]));
 
     const result = await collectGitChanges(dir);
-    expect(result.files).toEqual([{ path: "blob.bin", status: "??", diff: "" }]);
+    expect(result.files).toEqual([{ path: "blob.bin", scope: "unstaged", status: "??", diff: "" }]);
   }, 20_000);
 });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   GitChangesResult,
@@ -55,6 +55,8 @@ const session: Session = {
   updatedAt: "2026-06-08T00:00:02.000Z"
 };
 
+let scrollIntoView: ReturnType<typeof vi.fn>;
+
 function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     listProjects: vi.fn(async () => [project]),
@@ -106,6 +108,11 @@ beforeAll(() => {
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
+  scrollIntoView = vi.fn();
+  Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView
+  });
   // 变更面板是对话视图里的右侧工具，模拟已完成首启后停在对话（刷新会保留该视图）。
   useAppStore.setState({ view: "chat", onboardingOpen: false, onboardingCompleted: true });
 });
@@ -115,9 +122,25 @@ describe("changes panel", () => {
     const changes: GitChangesResult = {
       isRepo: true,
       files: [
-        { path: "src/a.ts", status: " M", diff: patchFor("src/a.ts", "-old line", "+new line") },
-        { path: "fresh.txt", status: "??", diff: untrackedPatchFor("fresh.txt", ["alpha"]) },
-        { path: "blob.bin", status: "??", diff: "" }
+        {
+          path: "src/a.ts",
+          scope: "staged",
+          status: "MM",
+          diff: patchFor("src/a.ts", "-base line", "+staged line")
+        },
+        {
+          path: "src/a.ts",
+          scope: "unstaged",
+          status: "MM",
+          diff: patchFor("src/a.ts", "-staged line", "+unstaged line")
+        },
+        {
+          path: "fresh.txt",
+          scope: "unstaged",
+          status: "??",
+          diff: untrackedPatchFor("fresh.txt", ["alpha"])
+        },
+        { path: "blob.bin", scope: "unstaged", status: "??", diff: "" }
       ]
     };
     const getGitChanges = vi.fn(async () => changes);
@@ -128,23 +151,46 @@ describe("changes panel", () => {
     await openChangesPane();
 
     expect(await screen.findByText("3 个文件有变更")).toBeInTheDocument();
-    const modifiedFile = await screen.findByText("a.ts");
-    expect(modifiedFile).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "折叠变更分组 暂存的更改" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "折叠变更分组 更改" })).toBeInTheDocument();
+    expect(screen.getByText("暂存的更改")).toBeInTheDocument();
+    expect(screen.getByText("更改")).toBeInTheDocument();
+    expect(screen.getByText("1 个文件")).toBeInTheDocument();
+    expect(screen.getByText("3 个文件")).toBeInTheDocument();
+    const modifiedFiles = await screen.findAllByText("a.ts");
+    expect(modifiedFiles).toHaveLength(2);
     expect(screen.queryByText("src/a.ts")).not.toBeInTheDocument();
-    expect(screen.getByTitle("src/a.ts")).toBeInTheDocument();
-    expect(screen.getByText("修改")).toBeInTheDocument();
+    expect(screen.getAllByTitle("src/a.ts")).toHaveLength(2);
+    expect(screen.getAllByText("修改").length).toBeGreaterThanOrEqual(2);
     expect(await screen.findByText("fresh.txt")).toBeInTheDocument();
     expect(await screen.findByText("blob.bin")).toBeInTheDocument();
     expect(getGitChanges).toHaveBeenCalledWith(project.id);
     expect(screen.queryByPlaceholderText("筛选文件…")).not.toBeInTheDocument();
-    expect(screen.queryByText("new line")).not.toBeInTheDocument();
+    expect(screen.queryByText("staged line")).not.toBeInTheDocument();
+    expect(screen.queryByText("unstaged line")).not.toBeInTheDocument();
 
-    fireEvent.click(modifiedFile);
+    scrollIntoView.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "展开变更文件 暂存的更改 src/a.ts" }));
     const diff = await screen.findByLabelText("变更对比");
-    expect(diff).toHaveTextContent("new line");
-    expect(diff).toHaveTextContent("old line");
+    expect(diff).toHaveTextContent("staged line");
+    expect(diff).toHaveTextContent("base line");
+    expect(diff).not.toHaveTextContent("unstaged line");
+    await waitFor(() =>
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" })
+    );
 
-    fireEvent.click(screen.getByText("blob.bin"));
+    fireEvent.click(screen.getByRole("button", { name: "折叠变更文件 暂存的更改 src/a.ts" }));
+    fireEvent.click(screen.getByRole("button", { name: "展开变更文件 更改 src/a.ts" }));
+    const unstagedDiff = await screen.findByLabelText("变更对比");
+    expect(unstagedDiff).toHaveTextContent("unstaged line");
+    expect(unstagedDiff).toHaveTextContent("staged line");
+    expect(unstagedDiff).not.toHaveTextContent("base line");
+
+    const changesGroup = screen.getByRole("button", { name: "折叠变更分组 更改" }).closest("section");
+    expect(changesGroup).not.toBeNull();
+    expect(within(changesGroup as HTMLElement).getByText("fresh.txt")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开变更文件 更改 blob.bin" }));
     expect(await screen.findByText("二进制或过大文件，不展示内容")).toBeInTheDocument();
   });
 
@@ -154,7 +200,7 @@ describe("changes panel", () => {
       .mockResolvedValueOnce({ isRepo: true, files: [] })
       .mockResolvedValueOnce({
         isRepo: true,
-        files: [{ path: "new.ts", status: "A ", diff: untrackedPatchFor("new.ts", ["x"]) }]
+        files: [{ path: "new.ts", scope: "staged", status: "A ", diff: untrackedPatchFor("new.ts", ["x"]) }]
       });
     const client = createClient({ getGitChanges: getGitChanges as never });
 

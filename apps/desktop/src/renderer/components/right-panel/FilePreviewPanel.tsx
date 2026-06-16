@@ -4,7 +4,6 @@ import {
   CheckMediumIcon,
   CopyIcon,
   MinusIcon,
-  PanelRightOutlineIcon,
   PlusIcon,
   RefreshIcon,
   TextDocumentGrayIcon,
@@ -37,6 +36,7 @@ import {
   type PreviewKind
 } from "../../../common/file-preview";
 import { selectActiveProject, useAppStore } from "@/store";
+import { RIGHT_PANEL_PROJECT_FILES_WIDTH } from "@/store/helpers/right-panel";
 import type { FilePreviewInfo } from "@/global";
 import { cn } from "@/lib/utils";
 
@@ -58,7 +58,15 @@ type PreviewState =
 const ICON_BUTTON =
   "flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
 
-export function FilePreviewPanel() {
+interface FilePreviewPanelProps {
+  projectFilesOpen: boolean;
+  onProjectFilesOpenChange(open: boolean): void;
+}
+
+export function FilePreviewPanel({
+  projectFilesOpen,
+  onProjectFilesOpenChange
+}: FilePreviewPanelProps) {
   const { t } = useTranslation();
   const previewFile = useAppStore((state) => state.previewFile);
   const openFilePreview = useAppStore((state) => state.openFilePreview);
@@ -66,7 +74,6 @@ export function FilePreviewPanel() {
   const project = useAppStore(selectActiveProject);
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [refreshKey, setRefreshKey] = useState(0);
-  const [projectFilesOpen, setProjectFilesOpen] = useState(false);
   const path = previewFile?.path;
   const previewContext = useMemo(
     () => ({
@@ -215,51 +222,45 @@ export function FilePreviewPanel() {
       projectId: project?.id,
       path: relativePath
     });
-    openFilePreview(relativePath);
+    openFilePreview(relativePath, { source: "project-tree" });
   }
 
-  function toggleProjectFilesOpen(open: boolean): void {
-    console.debug("[FilePreviewPanel] 切换项目文件树展开状态", {
+  function collapseProjectFilesFromPreviewContent(): void {
+    if (!projectFilesOpen) {
+      return;
+    }
+    console.debug("[FilePreviewPanel] 点击文件预览内容，自动收起项目文件树", {
       projectId: project?.id,
-      open
+      previewPath: path
     });
-    setProjectFilesOpen(open);
+    onProjectFilesOpenChange(false);
   }
 
   const content = renderPreviewContent();
   if (project) {
     return (
-      <div className="flex h-full min-h-0">
-        <section className="min-w-0 flex-1 overflow-hidden">{content}</section>
+      <div className="relative h-full min-h-0 overflow-hidden">
+        <section
+          data-testid="file-preview-content-region"
+          className="h-full min-w-0 overflow-hidden"
+          onPointerDown={collapseProjectFilesFromPreviewContent}
+        >
+          {content}
+        </section>
         {projectFilesOpen ? (
-          <div className="relative w-[288px] flex-none border-l">
+          <div
+            data-testid="project-file-tree-region"
+            className="absolute bottom-0 right-0 top-0 z-20 border-l bg-background"
+            style={{ width: RIGHT_PANEL_PROJECT_FILES_WIDTH }}
+          >
             <ProjectFileTree
               project={project}
               selectedPath={path}
               onOpenFile={openProjectFile}
               className="h-full"
             />
-            <button
-              type="button"
-              title={t("rightPanel.projectFilesCollapse")}
-              aria-label={t("rightPanel.projectFilesCollapse")}
-              onClick={() => toggleProjectFilesOpen(false)}
-              className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-xs bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <PanelRightOutlineIcon className="size-4" />
-            </button>
           </div>
-        ) : (
-          <button
-            type="button"
-            title={t("rightPanel.projectFilesExpand")}
-            aria-label={t("rightPanel.projectFilesExpand")}
-            onClick={() => toggleProjectFilesOpen(true)}
-            className="flex h-full w-10 flex-none items-start justify-center border-l bg-background px-1 py-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <PanelRightOutlineIcon className="size-4" />
-          </button>
-        )}
+        ) : null}
       </div>
     );
   }

@@ -3,9 +3,9 @@ import {
   GitBranchIcon,
   RefreshIcon
 } from "@/assets/file-type-icons";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { GitChangesResult, GitFileChange } from "@chengxiaobang/shared";
+import type { GitChangeScope, GitChangesResult, GitFileChange } from "@chengxiaobang/shared";
 import { DiffView } from "@/components/DiffView";
 import {
   Tooltip,
@@ -25,12 +25,17 @@ import { getApiClient, selectActiveProject, useAppStore } from "@/store";
 const ICON_BUTTON =
   "flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
 
+const CHANGE_GROUP_SCOPES: GitChangeScope[] = ["staged", "unstaged"];
+
 /** 当前项目未提交变更的审查列表，默认折叠每个文件的 diff。 */
 export function ChangesPanel() {
   const { t } = useTranslation();
   const project = useAppStore(selectActiveProject);
   const [changes, setChanges] = useState<GitChangesResult>();
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set());
+  const [expandedFileKeys, setExpandedFileKeys] = useState<Set<string>>(() => new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<GitChangeScope>>(
+    defaultExpandedGroups
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const projectId = project?.id;
@@ -40,21 +45,23 @@ export function ChangesPanel() {
     if (!client || !projectId) {
       return;
     }
-    console.info("[changes-panel] 开始加载项目审查变更", { projectId, reason });
+    logChangesPanelInfo("开始加载项目审查变更", { projectId, reason });
     setLoading(true);
     setError(undefined);
     try {
       const nextChanges = await client.getGitChanges(projectId);
-      console.info("[changes-panel] 项目审查变更加载完成", {
+      logChangesPanelInfo("项目审查变更加载完成", {
         projectId,
         reason,
         isRepo: nextChanges.isRepo,
-        fileCount: nextChanges.files.length
+        fileCount: uniqueChangedFileCount(nextChanges.files),
+        stagedCount: nextChanges.files.filter((file) => file.scope === "staged").length,
+        unstagedCount: nextChanges.files.filter((file) => file.scope === "unstaged").length
       });
       setChanges(nextChanges);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      console.error("[changes-panel] 加载 git 变更失败", { projectId, reason, error: message });
+      logChangesPanelError("加载 git 变更失败", { projectId, reason, error: message });
       setChanges(undefined);
       setError(message);
     } finally {
@@ -64,7 +71,8 @@ export function ChangesPanel() {
 
   useEffect(() => {
     setChanges(undefined);
-    setExpandedPaths(new Set());
+    setExpandedFileKeys(new Set());
+    setExpandedGroups(defaultExpandedGroups());
     setError(undefined);
     void load("initial");
   }, [load]);
@@ -75,26 +83,43 @@ export function ChangesPanel() {
     if (!projectId) {
       return;
     }
-    console.info("[changes-panel] 手动刷新审查变更", { projectId });
-    setExpandedPaths(new Set());
+    logChangesPanelInfo("手动刷新审查变更", { projectId });
+    setExpandedFileKeys(new Set());
+    setExpandedGroups(defaultExpandedGroups());
     void load("refresh");
   }, [load, projectId]);
 
   const toggleFile = useCallback((file: GitFileChange) => {
-    setExpandedPaths((current) => {
+    setExpandedFileKeys((current) => {
       const next = new Set(current);
-      const open = !next.has(file.path);
+      const key = changedFileKey(file);
+      const open = !next.has(key);
       if (open) {
-        next.add(file.path);
+        next.add(key);
       } else {
-        next.delete(file.path);
+        next.delete(key);
       }
-      console.info("[changes-panel] 切换变更文件展开状态", {
+      logChangesPanelInfo("切换变更文件展开状态", {
         projectId,
         path: file.path,
+        scope: file.scope,
         status: file.status,
         open
       });
+      return next;
+    });
+  }, [projectId]);
+
+  const toggleGroup = useCallback((scope: GitChangeScope) => {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      const open = !next.has(scope);
+      if (open) {
+        next.add(scope);
+      } else {
+        next.delete(scope);
+      }
+      logChangesPanelInfo("切换变更分组展开状态", { projectId, scope, open });
       return next;
     });
   }, [projectId]);
@@ -113,6 +138,7 @@ export function ChangesPanel() {
         projectName={project.name}
         projectPath={project.path}
         changes={changes}
+        fileCount={uniqueChangedFileCount(changes?.files ?? [])}
         additions={stats.additions}
         deletions={stats.deletions}
         loading={loading}
@@ -120,11 +146,13 @@ export function ChangesPanel() {
       />
       <ReviewBody
         changes={changes}
-        expandedPaths={expandedPaths}
+        expandedFileKeys={expandedFileKeys}
+        expandedGroups={expandedGroups}
         loading={loading}
         error={error}
         projectId={project.id}
         onToggleFile={toggleFile}
+        onToggleGroup={toggleGroup}
       />
     </div>
   );
@@ -134,6 +162,7 @@ function ReviewToolbar(props: {
   projectName: string;
   projectPath: string;
   changes: GitChangesResult | undefined;
+  fileCount: number;
   additions: number;
   deletions: number;
   loading: boolean;
@@ -159,7 +188,7 @@ function ReviewToolbar(props: {
         </div>
         <p className="mt-1 truncate font-mono text-micro text-muted-foreground" title={props.projectPath}>
           {props.changes?.isRepo
-            ? t("rightPanel.changesFileCount", { count: props.changes.files.length })
+            ? t("rightPanel.changesFileCount", { count: props.fileCount })
             : props.projectPath}
         </p>
       </div>
@@ -178,11 +207,13 @@ function ReviewToolbar(props: {
 
 function ReviewBody(props: {
   changes: GitChangesResult | undefined;
-  expandedPaths: Set<string>;
+  expandedFileKeys: Set<string>;
+  expandedGroups: Set<GitChangeScope>;
   loading: boolean;
   error: string | undefined;
   projectId: string;
   onToggleFile: (file: GitFileChange) => void;
+  onToggleGroup: (scope: GitChangeScope) => void;
 }) {
   const { t } = useTranslation();
   if (props.error) {
@@ -216,20 +247,93 @@ function ReviewBody(props: {
       </div>
     );
   }
+  const groups = groupGitChanges(props.changes.files);
   return (
-    <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
+    <div className="scrollbar-hidden min-h-0 flex-1 overflow-auto px-3 py-3">
       <div className="space-y-2">
-        {props.changes.files.map((file) => (
-          <ChangedFileRow
-            key={file.path}
-            file={file}
-            isExpanded={props.expandedPaths.has(file.path)}
+        {groups.map((group) => (
+          <ChangeScopeGroup
+            key={group.scope}
+            group={group}
+            isExpanded={props.expandedGroups.has(group.scope)}
+            expandedFileKeys={props.expandedFileKeys}
             projectId={props.projectId}
-            onToggle={() => props.onToggleFile(file)}
+            onToggleGroup={() => props.onToggleGroup(group.scope)}
+            onToggleFile={props.onToggleFile}
           />
         ))}
       </div>
     </div>
+  );
+}
+
+interface GitChangeGroup {
+  scope: GitChangeScope;
+  files: GitFileChange[];
+  stats: ReturnType<typeof gitChangeStats>;
+}
+
+function ChangeScopeGroup({
+  group,
+  isExpanded,
+  expandedFileKeys,
+  projectId,
+  onToggleGroup,
+  onToggleFile
+}: {
+  group: GitChangeGroup;
+  isExpanded: boolean;
+  expandedFileKeys: Set<string>;
+  projectId: string;
+  onToggleGroup: () => void;
+  onToggleFile: (file: GitFileChange) => void;
+}) {
+  const { t } = useTranslation();
+  const actionLabel = isExpanded
+    ? t("rightPanel.changesCollapseGroup")
+    : t("rightPanel.changesExpandGroup");
+  return (
+    <section className="overflow-hidden rounded-md border bg-card">
+      <button
+        type="button"
+        aria-expanded={isExpanded}
+        aria-label={`${actionLabel} ${t(`rightPanel.changeScopes.${group.scope}`)}`}
+        onClick={onToggleGroup}
+        className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/60"
+      >
+        <ChevronIcon
+          className={cn(
+            "size-3.5 flex-none text-muted-foreground transition-transform duration-200",
+            !isExpanded && "-rotate-90"
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate text-caption font-medium text-foreground">
+          {t(`rightPanel.changeScopes.${group.scope}`)}
+        </span>
+        <span className="flex-none font-mono text-micro text-muted-foreground">
+          {t("rightPanel.changesGroupFileCount", { count: group.files.length })}
+        </span>
+        <span className="flex-none font-mono text-micro text-link">
+          +{group.stats.additions.toLocaleString()}
+        </span>
+        <span className="flex-none font-mono text-micro text-destructive">
+          -{group.stats.deletions.toLocaleString()}
+        </span>
+      </button>
+      {isExpanded && group.files.length > 0 ? (
+        <div className="border-t">
+          {group.files.map((file) => (
+            <ChangedFileRow
+              key={changedFileKey(file)}
+              file={file}
+              isExpanded={expandedFileKeys.has(changedFileKey(file))}
+              projectId={projectId}
+              onToggle={() => onToggleFile(file)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -245,21 +349,37 @@ function ChangedFileRow({
   onToggle: () => void;
 }) {
   const { t } = useTranslation();
-  const kind = gitStatusKind(file.status);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const diffRef = useRef<HTMLDivElement>(null);
+  const kind = gitStatusKind(file.status, file.scope);
   const stats = useMemo(() => gitChangeStats([file]), [file]);
   const FileIcon = resolveFileTypeIcon(file.path);
   const fileName = basenameOf(file.path);
   const actionLabel = isExpanded
     ? t("rightPanel.changesCollapseFile")
     : t("rightPanel.changesExpandFile");
+
+  useEffect(() => {
+    if (!isExpanded) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      (diffRef.current ?? rowRef.current)?.scrollIntoView?.({
+        block: "nearest",
+        inline: "nearest"
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [file.path, file.scope, isExpanded]);
+
   return (
-    <section className="overflow-hidden rounded-md border bg-card">
+    <div ref={rowRef} className="border-t first:border-t-0">
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
             aria-expanded={isExpanded}
-            aria-label={`${actionLabel} ${file.path}`}
+            aria-label={`${actionLabel} ${t(`rightPanel.changeScopes.${file.scope}`)} ${file.path}`}
             title={file.path}
             onClick={onToggle}
             className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/60"
@@ -290,16 +410,16 @@ function ChangedFileRow({
             </span>
           </button>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[480px] break-all font-mono text-micro">
+        <TooltipContent className="pointer-events-none max-w-[480px] break-all font-mono text-micro">
           {file.path}
         </TooltipContent>
       </Tooltip>
       {isExpanded ? (
-        <div className="border-t">
+        <div ref={diffRef} className="border-t">
           <GitFileDiff file={file} projectId={projectId} />
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }
 
@@ -314,8 +434,8 @@ function basenameOf(path: string): string {
 function GitFileDiff({ file, projectId }: { file: GitFileChange; projectId: string }) {
   const { t } = useTranslation();
   const cacheKeyPrefix = useMemo(
-    () => `${projectId}:${file.path}:${file.status}:${diffFingerprint(file.diff)}`,
-    [file.diff, file.path, file.status, projectId]
+    () => `${projectId}:${file.scope}:${file.path}:${file.status}:${diffFingerprint(file.diff)}`,
+    [file.diff, file.path, file.scope, file.status, projectId]
   );
   const blocks = useMemo(
     () =>
@@ -335,9 +455,10 @@ function GitFileDiff({ file, projectId }: { file: GitFileChange; projectId: stri
     console.warn("[changes-panel] Git diff patch 解析失败，改为展示原始内容", {
       projectId,
       path: file.path,
+      scope: file.scope,
       errors: rawBlocks.map((block) => block.error)
     });
-  }, [blocks, file.path, projectId]);
+  }, [blocks, file.path, file.scope, projectId]);
 
   if (!file.diff) {
     return (
@@ -359,6 +480,37 @@ function diffFingerprint(value: string): string {
     hash = (hash * 31 + value.charCodeAt(index)) | 0;
   }
   return `${value.length}:${hash >>> 0}`;
+}
+
+function defaultExpandedGroups(): Set<GitChangeScope> {
+  return new Set(CHANGE_GROUP_SCOPES);
+}
+
+function changedFileKey(file: Pick<GitFileChange, "path" | "scope">): string {
+  return `${file.scope}:${file.path}`;
+}
+
+function uniqueChangedFileCount(files: GitFileChange[]): number {
+  return new Set(files.map((file) => file.path)).size;
+}
+
+function groupGitChanges(files: GitFileChange[]): GitChangeGroup[] {
+  return CHANGE_GROUP_SCOPES.map((scope) => {
+    const scopedFiles = files.filter((file) => file.scope === scope);
+    return {
+      scope,
+      files: scopedFiles,
+      stats: gitChangeStats(scopedFiles)
+    };
+  });
+}
+
+function logChangesPanelInfo(message: string, context: Record<string, unknown>): void {
+  console.info(`[changes-panel] ${message} ${JSON.stringify(context)}`);
+}
+
+function logChangesPanelError(message: string, context: Record<string, unknown>): void {
+  console.error(`[changes-panel] ${message} ${JSON.stringify(context)}`);
 }
 
 function statusBadgeClassName(kind: GitStatusKind): string {

@@ -1,5 +1,6 @@
 import {
   ArrowLeftIcon,
+  PanelRightOutlineIcon,
   XMarkIcon
 } from "@/assets/file-type-icons";
 import {
@@ -61,6 +62,7 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
   const mode = useAppStore((state) => state.rightPanelMode);
   const width = useAppStore((state) => state.rightPanelWidth);
   const previewFile = useAppStore((state) => state.previewFile);
+  const filePreviewEntrySource = useAppStore((state) => state.filePreviewEntrySource);
   const project = useAppStore(selectActiveProject);
   const clientReady = useAppStore((state) => state.clientReady);
   const openRightPanel = useAppStore((state) => state.openRightPanel);
@@ -70,6 +72,7 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     Record<string, GitRepoStatus>
   >({});
   const [resizing, setResizing] = useState(false);
+  const [projectFilesOpen, setProjectFilesOpen] = useState(true);
   const panelRef = useRef<HTMLElement>(null);
   const layoutLogKeyRef = useRef<string | undefined>(undefined);
   const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
@@ -84,6 +87,7 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     [isGitRepo, project]
   );
   const directFilePreview = mode === "files" && Boolean(previewFile?.path);
+  const showProjectFilesToggle = mode === "files" && Boolean(project);
   const modeFallbackReason = (() => {
     if (mode === null || directFilePreview || mode === "browser" || mode === "chat") {
       return undefined;
@@ -102,6 +106,23 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     }
     return "not-git-repo";
   })();
+
+  useLayoutEffect(() => {
+    if (!open || mode !== "files" || !projectId) {
+      return;
+    }
+    const nextOpen =
+      filePreviewEntrySource === "panel" ||
+      filePreviewEntrySource === "project-tree" ||
+      (!filePreviewEntrySource && !previewFile?.path);
+    console.debug("[right-panel] 同步文件预览项目树入口状态", {
+      projectId,
+      previewPath: previewFile?.path,
+      source: filePreviewEntrySource ?? "unknown",
+      open: nextOpen
+    });
+    setProjectFilesOpen(nextOpen);
+  }, [filePreviewEntrySource, mode, open, previewFile?.path, projectId]);
 
   useEffect(() => {
     if (!projectId || !clientReady || gitRepoStatus) {
@@ -246,6 +267,16 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     window.addEventListener("pointerup", onUp, { once: true });
   }
 
+  function toggleProjectFilesOpen(): void {
+    const nextOpen = !projectFilesOpen;
+    console.debug("[right-panel] 切换项目文件树顶栏按钮", {
+      projectId,
+      open: nextOpen,
+      mode
+    });
+    setProjectFilesOpen(nextOpen);
+  }
+
   return (
     <aside
       ref={panelRef}
@@ -286,14 +317,36 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
               {title}
             </h2>
           </div>
-          <button
-            type="button"
-            title={t("rightPanel.close")}
-            onClick={closeRightPanel}
-            className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <XMarkIcon className="size-4" />
-          </button>
+          <div className="flex flex-none items-center gap-1">
+            {showProjectFilesToggle ? (
+              <button
+                type="button"
+                title={t(
+                  projectFilesOpen
+                    ? "rightPanel.projectFilesCollapse"
+                    : "rightPanel.projectFilesExpand"
+                )}
+                aria-label={t(
+                  projectFilesOpen
+                    ? "rightPanel.projectFilesCollapse"
+                    : "rightPanel.projectFilesExpand"
+                )}
+                aria-pressed={projectFilesOpen}
+                onClick={toggleProjectFilesOpen}
+                className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <PanelRightOutlineIcon className="size-4" />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              title={t("rightPanel.close")}
+              onClick={closeRightPanel}
+              className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <XMarkIcon className="size-4" />
+            </button>
+          </div>
         </header>
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
           {mode === null ? (
@@ -305,7 +358,10 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
           ) : mode === "browser" ? (
             <BrowserPanel />
           ) : mode === "files" ? (
-            <FilePreviewPanel />
+            <FilePreviewPanel
+              projectFilesOpen={projectFilesOpen}
+              onProjectFilesOpenChange={setProjectFilesOpen}
+            />
           ) : (
             <SideChatPanel />
           )}

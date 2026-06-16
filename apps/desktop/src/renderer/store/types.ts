@@ -61,6 +61,7 @@ export type ProjectSortMode = "created" | "recent";
 export type OnboardingStep = "welcome" | "profile" | "model";
 export type ScheduledTaskFinishedEvent = Extract<ScheduledTaskEvent, { type: "scheduled_task_finished" }>;
 export type SessionRunHistory = { runs: RunRecord[]; toolCalls: ToolCall[] };
+export type FilePreviewEntrySource = "panel" | "direct" | "project-tree";
 
 export interface ModelSelection {
   providerId?: string;
@@ -233,6 +234,7 @@ export interface AppState {
   rightPanelMode: RightPanelMode | null;
   rightPanelWidth: number;
   previewFile?: PreviewFileState;
+  filePreviewEntrySource?: FilePreviewEntrySource;
   browserUrl: string;
   rightPanelBySession: Record<string, RightPanelSessionState>;
   terminalEntries: TerminalEntry[];
@@ -300,7 +302,7 @@ export interface AppState {
   closeRightPanel(): void;
   setRightPanelWidth(width: number): void;
   setBrowserUrl(url: string): void;
-  openFilePreview(path: string): void;
+  openFilePreview(path: string, options?: { source?: FilePreviewEntrySource }): void;
   /** 打开生成物：统一进入右侧文件预览工作台，由预览器按类型处理。 */
   openArtifact(path: string, kind: ArtifactKind): void;
   runTerminalCommand(command: string): Promise<void>;
