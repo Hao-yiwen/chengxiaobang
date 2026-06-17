@@ -43,6 +43,11 @@ export type RightPanelVisualPhase = "closed" | "opening" | "open" | "closing";
 
 export const RIGHT_PANEL_VISUAL_TRANSITION_MS = 200;
 
+interface ProjectFilesOpenState {
+  key: string;
+  open: boolean;
+}
+
 function availableModesForContext(hasProject: boolean, isGitRepo: boolean): RightPanelMode[] {
   if (!hasProject) {
     return ["browser", "chat"];
@@ -72,7 +77,10 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     Record<string, GitRepoStatus>
   >({});
   const [resizing, setResizing] = useState(false);
-  const [projectFilesOpen, setProjectFilesOpen] = useState(true);
+  const [projectFilesOpenState, setProjectFilesOpenState] = useState<ProjectFilesOpenState>({
+    key: "",
+    open: false
+  });
   const panelRef = useRef<HTMLElement>(null);
   const layoutLogKeyRef = useRef<string | undefined>(undefined);
   const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
@@ -88,6 +96,31 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
   );
   const directFilePreview = mode === "files" && Boolean(previewFile?.path);
   const showProjectFilesToggle = mode === "files" && Boolean(project);
+  const projectFilesEntryKey = useMemo(
+    () =>
+      [
+        open ? "open" : "closed",
+        mode ?? "menu",
+        projectId ?? "no-project",
+        previewFile?.path ?? "no-file",
+        filePreviewEntrySource ?? "unknown"
+      ].join(":"),
+    [filePreviewEntrySource, mode, open, previewFile?.path, projectId]
+  );
+  const defaultProjectFilesOpen = useMemo(() => {
+    if (!open || mode !== "files" || !projectId) {
+      return false;
+    }
+    return (
+      filePreviewEntrySource === "panel" ||
+      filePreviewEntrySource === "project-tree" ||
+      (!filePreviewEntrySource && !previewFile?.path)
+    );
+  }, [filePreviewEntrySource, mode, open, previewFile?.path, projectId]);
+  const projectFilesOpen =
+    projectFilesOpenState.key === projectFilesEntryKey
+      ? projectFilesOpenState.open
+      : defaultProjectFilesOpen;
   const modeFallbackReason = (() => {
     if (mode === null || directFilePreview || mode === "browser" || mode === "chat") {
       return undefined;
@@ -108,21 +141,28 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
   })();
 
   useLayoutEffect(() => {
-    if (!open || mode !== "files" || !projectId) {
+    if (projectFilesOpenState.key === projectFilesEntryKey) {
       return;
     }
-    const nextOpen =
-      filePreviewEntrySource === "panel" ||
-      filePreviewEntrySource === "project-tree" ||
-      (!filePreviewEntrySource && !previewFile?.path);
-    console.debug("[right-panel] 同步文件预览项目树入口状态", {
-      projectId,
-      previewPath: previewFile?.path,
-      source: filePreviewEntrySource ?? "unknown",
-      open: nextOpen
-    });
-    setProjectFilesOpen(nextOpen);
-  }, [filePreviewEntrySource, mode, open, previewFile?.path, projectId]);
+    if (open && mode === "files" && projectId) {
+      console.debug("[right-panel] 同步文件预览项目树入口状态", {
+        projectId,
+        previewPath: previewFile?.path,
+        source: filePreviewEntrySource ?? "unknown",
+        open: defaultProjectFilesOpen
+      });
+    }
+    setProjectFilesOpenState({ key: projectFilesEntryKey, open: defaultProjectFilesOpen });
+  }, [
+    defaultProjectFilesOpen,
+    filePreviewEntrySource,
+    mode,
+    open,
+    previewFile?.path,
+    projectFilesEntryKey,
+    projectFilesOpenState.key,
+    projectId
+  ]);
 
   useEffect(() => {
     if (!projectId || !clientReady || gitRepoStatus) {
@@ -274,7 +314,7 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
       open: nextOpen,
       mode
     });
-    setProjectFilesOpen(nextOpen);
+    setProjectFilesOpenState({ key: projectFilesEntryKey, open: nextOpen });
   }
 
   return (
@@ -360,7 +400,9 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
           ) : mode === "files" ? (
             <FilePreviewPanel
               projectFilesOpen={projectFilesOpen}
-              onProjectFilesOpenChange={setProjectFilesOpen}
+              onProjectFilesOpenChange={(nextOpen) =>
+                setProjectFilesOpenState({ key: projectFilesEntryKey, open: nextOpen })
+              }
             />
           ) : (
             <SideChatPanel />

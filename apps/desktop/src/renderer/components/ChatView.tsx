@@ -242,6 +242,10 @@ export function ChatView() {
     }))
   );
   const openFilePreview = useAppStore((state) => state.openFilePreview);
+  const openFilePreviewFromChat = useCallback(
+    (path: string) => openFilePreview(path, { source: "direct" }),
+    [openFilePreview]
+  );
   const regenerateLast = useAppStore((state) => state.regenerateLast);
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId),
@@ -577,7 +581,7 @@ export function ChatView() {
         <ToolCallGroup
           key={`group-${item.toolCalls[0].id}`}
           toolCalls={item.toolCalls}
-          onOpenFile={openFilePreview}
+          onOpenFile={openFilePreviewFromChat}
         />
       );
     }
@@ -585,7 +589,7 @@ export function ChatView() {
       <ToolCallRow
         key={`tool-${item.toolCall.id}`}
         toolCall={item.toolCall}
-        onOpenFile={openFilePreview}
+        onOpenFile={openFilePreviewFromChat}
       />
     );
   };
@@ -689,7 +693,7 @@ export function ChatView() {
           </div>
         ) : null}
         {liveToolActivityCall ? (
-          <ToolCallRow toolCall={liveToolActivityCall} onOpenFile={openFilePreview} />
+          <ToolCallRow toolCall={liveToolActivityCall} onOpenFile={openFilePreviewFromChat} />
         ) : null}
         {showWaiting ? (
           <div className="mb-6 flex items-center gap-2 self-stretch text-caption text-muted-foreground">
