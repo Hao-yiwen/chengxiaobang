@@ -91,9 +91,13 @@ function runStreamResponse(
   input: RunRequest,
   signal: AbortSignal
 ): Response {
-  // 客户端断连(刷新/关闭页面)时必须中止对应后端 run,否则 pi 循环、模型调用、
-  // 工具执行与持久化会继续跑完,占着 activeSessionIds/abortControllers 并持续消耗 token。
-  // 这里捕获首个 run_started 的 runId,断连或请求 signal 中止时据此 abort。
+  // 本路径(POST /api/runs/stream,流式回退路径)把 run 生命周期绑定到这条 HTTP 请求:
+  // 客户端断连(刷新/关闭页面)时中止对应后端 run,避免 pi 循环/模型/工具/持久化继续跑完、
+  // 占着 activeSessionIds/abortControllers 并持续消耗 token。捕获首个 run_started 的 runId,
+  // 断连或请求 signal 中止时据此 abort。
+  // 注意:桌面默认走的不是这条,而是 startRun(POST /api/runs)+ 全局 /api/events——那条路径
+  // run 与请求解耦、可断线续传(/events 用 lastEventId 重连 + recoverActiveRunSnapshot 恢复),
+  // 断开 /events 只结束订阅、不中止 run(见 startRunAndPublish)。
   let capturedRunId: string | undefined;
   let consumerGone = false;
   const abortCurrentRun = (reason: string): void => {
@@ -208,6 +212,10 @@ function eventStreamResponse(
   });
 }
 
+// 主路径(桌面默认):run 在与单条 HTTP 请求解耦的后台运行(生命周期随会话/进程),
+// 事件经 eventHub 广播给 /api/events。因此 /events 断开只结束该订阅、**不**中止 run——
+// 这是「刷新/重连后可断线续传」(配合 lastEventId + recoverActiveRunSnapshot)的有意设计;
+// 真正的永久放弃由应用退出杀后端兜底(desktop main 的 stopAndWait)。
 function startRunAndPublish(context: AppContext, input: RunRequest): Promise<RunStartResponse> {
   return new Promise((resolve, reject) => {
     let settled = false;
