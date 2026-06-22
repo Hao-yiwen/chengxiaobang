@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { PRODUCT_NAME } from "@chengxiaobang/shared/product";
 
 export const STARTUP_SPLASH_URL_PREFIX = "data:text/html;charset=utf-8,";
 
@@ -22,7 +23,7 @@ export function createStartupSplashUrl(options: StartupSplashHtmlOptions): strin
 export function createStartupSplashHtml(options: StartupSplashHtmlOptions): string {
   const background = options.dark ? DARK_BACKGROUND : LIGHT_BACKGROUND;
   const image = options.imageSrc
-    ? `<img class="startup-image" src="${escapeAttribute(options.imageSrc)}" alt="程小帮" />`
+    ? `<img class="startup-image" src="${escapeAttribute(options.imageSrc)}" alt="${PRODUCT_NAME}" />`
     : "";
   return `<!doctype html>
 <html lang="zh-CN">
@@ -33,7 +34,7 @@ export function createStartupSplashHtml(options: StartupSplashHtmlOptions): stri
       content="default-src 'none'; script-src 'none'; img-src data:; style-src 'unsafe-inline';"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>程小帮</title>
+    <title>${PRODUCT_NAME}</title>
     <style>
       :root {
         color-scheme: ${options.dark ? "dark" : "light"};

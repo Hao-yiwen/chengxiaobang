@@ -73,7 +73,7 @@
     "title": "定时任务",
     "subtitle": "在任意会话里用自然语言创建定时任务，到点后会在原会话中自动执行并保留结果。",
     "refresh": "刷新",
-    "empty": "还没有定时任务。在任意会话里告诉程小帮，例如：每天早上 9 点生成 AI 日报。",
+    "empty": "还没有定时任务。在任意会话里告诉{{productName}}，例如：每天早上 9 点生成 AI 日报。",
     "activeTitle": "正在运行的任务",
     "activeEmpty": "没有正在运行的任务。",
     "expiredTitle": "已过期任务",
@@ -113,7 +113,7 @@
   },
   "connectPhone": {
     "title": "连接手机",
-    "helpText": "用微信或飞书扫码连接程小帮，在手机里继续对话与触发任务。",
+    "helpText": "用微信或飞书扫码连接{{productName}}，在手机里继续对话与触发任务。",
     "platformLabel": "连接平台",
     "wechatTitle": "微信",
     "feishuTitle": "飞书 / Lark",
@@ -126,23 +126,23 @@
     "bindingsTitle": "已绑定会话",
     "refreshBindings": "刷新",
     "bindingsEmptyTitle": "暂无绑定会话",
-    "wechatBindingsEmptyHint": "在微信里向程小帮发送第一条消息后，绑定会话会自动出现在这里。",
+    "wechatBindingsEmptyHint": "在微信里向{{productName}}发送第一条消息后，绑定会话会自动出现在这里。",
     "feishuBindingsEmptyHint": "在飞书里私聊机器人，或在群聊里 @ 机器人，绑定会话会自动出现在这里。",
     "wechatBoundSessionHint": "来自微信的独立会话",
     "feishuBoundSessionHint": "来自飞书的独立会话",
     "openSession": "打开",
-    "wechatScanHint": "用手机微信扫码确认，完成后微信消息会进入程小帮。",
+    "wechatScanHint": "用手机微信扫码确认，完成后微信消息会进入{{productName}}。",
     "feishuScanHint": "用飞书或 Lark 手机客户端扫码确认，授权完成后会自动绑定。",
     "installLoading": "正在生成二维码…",
     "installRefresh": "刷新",
     "installExpired": "二维码已过期",
     "installFailed": "扫码连接失败",
     "connected": "已连接",
-    "subtitle": "把程小帮接到飞书或 Lark，在手机里继续对话与触发任务。",
+    "subtitle": "把{{productName}}接到飞书或 Lark，在手机里继续对话与触发任务。",
     "feishuDesc": "生成官方 PersonalAgent 二维码，手机扫码确认后自动保存应用凭据，并启动飞书长连接。",
     "scanHint": "用当前选择的平台客户端扫码确认。",
     "autoBindHint": "授权完成后会自动保存并连接，无需手动复制 App ID。",
-    "connectedHint": "已连接，手机里的飞书消息会同步到程小帮。",
+    "connectedHint": "已连接，手机里的飞书消息会同步到{{productName}}。",
     "feishuIllustrationAlt": "手机飞书聊天页插画",
     "wechatIllustrationAlt": "手机微信聊天页插画",
     "illustrationAlt": "手机聊天页插画"
@@ -151,11 +151,11 @@
     "messageLabel": "输入消息",
     "placeholder": "随心输入",
     "placeholderRotation": [
-      "随心输入，交给程小帮",
+      "随心输入，交给{{productName}}",
       "试试：帮我把这个文件夹整理一下",
       "试试：生成一份项目周报"
     ],
-    "runningPlaceholder": "程小帮正在处理当前请求…",
+    "runningPlaceholder": "{{productName}}正在处理当前请求…",
     "queuePlaceholder": "要求后续变更",
     "queueSend": "加入排队",
     "queuePosition": "排队 {{index}}",
@@ -211,7 +211,7 @@
     "planWatermark": "计划模式 · 先想后做",
     "planModeOff": "关闭计划模式",
     "addFile": "添加文件",
-    "askUserWaiting": "程小帮在等你的回答…",
+    "askUserWaiting": "{{productName}}在等你的回答…",
     "manageModels": "管理模型…",
     "insertSlash": "/技能",
     "insertAt": "@文件",
@@ -263,7 +263,7 @@
   },
   "onboarding": {
     "title": "配置一个模型即可开始",
-    "desc": "填入任意一个模型的 API Key，就能开始使用程小帮。也可以前往设置进行更完整的配置。",
+    "desc": "填入任意一个模型的 API Key，就能开始使用{{productName}}。也可以前往设置进行更完整的配置。",
     "type": "类型",
     "model": "模型",
     "getApiKey": "获取 API Key",
@@ -303,7 +303,7 @@
     },
     "scrollToBottom": "回到底部",
     "roleUser": "你",
-    "roleAssistant": "程小帮",
+    "roleAssistant": "{{productName}}",
     "roleTool": "工具",
     "roleSystem": "系统",
     "previewFile": "预览文件",
@@ -482,7 +482,7 @@
     "openFailedFallback": "未知错误"
   },
   "app": {
-    "disclaimer": "程小帮也可能会犯错，请核查重要信息。"
+    "disclaimer": "{{productName}}也可能会犯错，请核查重要信息。"
   },
   "setup": {
     "title": "配置模型",
@@ -503,10 +503,10 @@
       "title": "先认识一下你的工作方式",
       "desc": "用几步完成基础偏好和模型配置，进入应用后就能直接开始对话。",
       "start": "开始设置",
-      "imageAlt": "程小帮欢迎插画"
+      "imageAlt": "{{productName}}欢迎插画"
     },
     "profile": {
-      "title": "你主要会怎么使用程小帮？",
+      "title": "你主要会怎么使用{{productName}}？",
       "desc": "这些信息只用于本机首启体验，后续可以继续手动调整模型和工具。",
       "primaryLabel": "主要用途",
       "scenarioLabel": "常见场景",
@@ -637,7 +637,7 @@
   "home": {
     "heading": "我们应该在 {{name}} 中做些什么？",
     "headingNoProject": "今天想做点什么？",
-    "tagline": "程小帮 · AI 工作台",
+    "tagline": "{{productName}} · AI 工作台",
     "heroPhrases": {
       "today": "今天我们来做些什么？",
       "next": "接下来想先推进哪件事？",
@@ -645,7 +645,7 @@
       "ship": "今天把哪件事落地？"
     },
     "subtitle": "办公 + 编程，一个就够",
-    "heroAlt": "程小帮创意冒险插画",
+    "heroAlt": "{{productName}}创意冒险插画",
     "starters": {
       "pptTitle": "做一份 PPT",
       "pptPrompt": "帮我做一份介绍『人工智能发展简史』的演示文稿，规划好整体结构和每页要点，并生成 PPT 文件。",
@@ -987,7 +987,7 @@
       "guideTitle": "使用指引",
       "guideDesc": "扫码会创建或授权 PersonalAgent 应用；应用关闭期间的消息不会补发。",
       "guide1": "选择飞书或 Lark，生成二维码，并用对应客户端扫码确认",
-      "guide2": "授权成功后程小帮会保存 App ID，并把 App Secret 写入系统密钥库",
+      "guide2": "授权成功后{{productName}}会保存 App ID，并把 App Secret 写入系统密钥库",
       "guide3": "状态变为「已连接」后即可私聊机器人，群聊中需要 @ 机器人",
       "guide4": "如需使用已有自建应用，可展开「高级手动配置」继续填写凭据",
       "guide5": "默认只读；需要从飞书触发写文件或执行命令时，再手动开启完全访问",
@@ -1050,7 +1050,7 @@
     "collapse": "收起计划",
     "approvalTitle": "实施此计划？",
     "approveAction": "是，实施此计划",
-    "adjustPlaceholder": "否，请告知程小帮如何调整",
+    "adjustPlaceholder": "否，请告知{{productName}}如何调整",
     "submitAdjustment": "提交"
   },
   "updates": {
@@ -1119,14 +1119,14 @@
     "deleteConfirm": "确定删除自定义技能「{{name}}」？技能文件会从磁盘移除。",
     "manage": "管理技能",
     "addCustom": "添加技能",
-    "addCustomHint": "粘贴包含 SKILL.md 的 GitHub 链接快速导入，或交给程小帮在对话中帮你创建。",
+    "addCustomHint": "粘贴包含 SKILL.md 的 GitHub 链接快速导入，或交给{{productName}}在对话中帮你创建。",
     "importUrlLabel": "GitHub 链接",
     "importUrlHint": "支持仓库、目录或 SKILL.md 文件链接，要求仓库公开可访问。",
     "import": "导入",
     "importing": "导入中…",
     "or": "或",
     "chatCreateTitle": "通过对话创建",
-    "chatCreateHint": "在对话中用自然语言描述你想要的技能，或把一个 GitHub 链接发给程小帮，它会帮你抓取内容、生成并安装这个技能。",
+    "chatCreateHint": "在对话中用自然语言描述你想要的技能，或把一个 GitHub 链接发给{{productName}}，它会帮你抓取内容、生成并安装这个技能。",
     "chatCreateCta": "去对话创建",
     "chatCreatePrompt": "我想创建一个新技能。我的需求是：",
     "viewDetail": "查看「{{name}}」详情",

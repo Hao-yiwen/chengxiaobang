@@ -9,12 +9,16 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./product": {
+      "types": "./dist/product.d.ts",
+      "import": "./dist/product.js"
     }
   },
   "scripts": {
     "catalog:generate": "node scripts/generate-provider-catalog.mjs --write",
     "catalog:check": "node scripts/generate-provider-catalog.mjs --check",
-    "build": "pnpm run catalog:check && tsup src/index.ts --format esm --dts --out-dir dist",
+    "build": "pnpm run catalog:check && tsup src/index.ts src/product.ts --format esm --dts --out-dir dist",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

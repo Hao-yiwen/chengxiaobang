@@ -1,4 +1,12 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "tsup";
+
+// 把 shared 的 ./product 子路径解析到源码,而不是 dist。
+// 这样 fresh checkout(未先 build shared)下 desktop 自己的 build 也能成功;
+// product.ts 无外部依赖,内联进 main 包不会带入 zod 等。
+const sharedProductSource = fileURLToPath(
+  new URL("../../packages/shared/src/product.ts", import.meta.url)
+);
 
 const external = [
   "@napi-rs/canvas",
@@ -19,6 +27,15 @@ export default defineConfig([
     format: "esm",
     platform: "node",
     external,
+    // tsup 默认把 dependencies 外置;关掉 shared 的外置,再用 alias 把 ./product
+    // 子路径解析到源码,从而内联进 main 包且不依赖 packages/shared/dist。
+    noExternal: ["@chengxiaobang/shared"],
+    esbuildOptions(options) {
+      options.alias = {
+        ...options.alias,
+        "@chengxiaobang/shared/product": sharedProductSource
+      };
+    },
     outDir: "dist/main",
     clean: ["dist/main", "dist/main.js"]
   },

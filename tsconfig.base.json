@@ -14,6 +14,7 @@
     "baseUrl": ".",
     "paths": {
       "@chengxiaobang/shared": ["packages/shared/src/index.ts"],
+      "@chengxiaobang/shared/product": ["packages/shared/src/product.ts"],
       "@chengxiaobang/backend/*": ["apps/backend/src/*"],
       "@chengxiaobang/desktop/*": ["apps/desktop/src/*"]
     }
