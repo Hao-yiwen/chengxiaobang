@@ -64,7 +64,7 @@ export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 na
 
 ### 2.5 状态呈现
 
-- 组内有 running/pending → 头部 spinner + 当前工具的人话描述(`… · 运行 pnpm dev`)。
+- 组内有 running/pending → 头部 spinner + 当前工具的人话描述；非 `Write` / `Edit` 的运行中描述使用泛化文案（如 `… · 运行命令中`）。
 - 有 failed/rejected → 头部红色 mono 计数(`1 失败`),但**不自动展开**——流式中自动展开会引起视口跳动。
 - 待审批的活动工具只进 `pendingTool` 不进 `toolHistory`(store 的 tool_call 事件分支),所以审批中的工具只出现在底部 dock,不会同时出现在时间线里。
 
@@ -144,7 +144,7 @@ StreamEvent(tool_call)
 ### 文案与截断规则
 
 - 描述模板按工具取参:path 类用 `shortenPath`(尾两段);`search.query`/`glob.pattern` 截 40;`Bash.command` 压缩空白后截 60;`WebFetch.url` 截 60;`ExitPlanMode.title` 截 30。
-- 流式参数预览仅用于 `Write` / `Edit` 的 `file_path`;其他工具等真实 `tool_call(running)` 后再展示，避免 URL、搜索词或命令在参数生成阶段反复闪烁。
+- 流式参数预览仅用于 `Write` / `Edit` 的 `file_path`;聊天时间线里的运行中工具也只允许 `Write` / `Edit` 显示路径，其他工具到完成历史或审批面板里再展示 URL、搜索词或命令。
 - 摘要类别:read / edit / search / command / web / artifact / message / plan / schedule / other,组件层以 `" · "` 连接。
 - `ToolCall.name` 是普通 string(模型可能请求未知工具),未知名 → `chat.toolLine.fallback`(「调用 {{name}}」)+ 兜底图标。
 

@@ -3,10 +3,12 @@ import type { ToolCall } from "@chengxiaobang/shared";
 import {
   FALLBACK_TOOL_ICON,
   categoryIcon,
+  shouldHideRunningToolArgs,
   toolCategory,
   toolGroupSummary,
   toolIcon,
   toolLineLabel,
+  toolLineRunningLabel,
   truncateEnd,
   type ToolCategory
 } from "../src/renderer/lib/tool-display";
@@ -122,6 +124,68 @@ describe("toolLineLabel", () => {
     expect(en.chat.toolLine).toHaveProperty("fallback");
   });
 
+  it("运行中工具只允许 Write/Edit 展示 file_path 参数", () => {
+    const write = toolLineRunningLabel(
+      toolCall({ name: "Write", status: "running", args: { file_path: "out.txt" } })
+    );
+    const edit = toolLineRunningLabel(
+      toolCall({ name: "Edit", status: "running", args: { file_path: "src/app.ts" } })
+    );
+    expect(write).toEqual({
+      key: "chat.toolLineRunning.Write",
+      params: { path: "out.txt" }
+    });
+    expect(edit).toEqual({
+      key: "chat.toolLineRunning.Edit",
+      params: { path: "src/app.ts" }
+    });
+    expect(shouldHideRunningToolArgs(toolCall({ name: "Write", status: "running" }))).toBe(false);
+    expect(shouldHideRunningToolArgs(toolCall({ name: "WebFetch", status: "running" }))).toBe(true);
+  });
+
+  it("非 Write/Edit 运行中工具使用泛化文案且不带参数", () => {
+    const cases: Array<{ name: ToolCall["name"]; args: ToolCall["args"]; key: string }> = [
+      { name: "Read", args: { file_path: "secret.ts" }, key: "chat.toolLineRunning.ReadGeneric" },
+      { name: "WebFetch", args: { url: "https://example.com" }, key: "chat.toolLineRunning.WebFetchGeneric" },
+      { name: "WebSearch", args: { query: "private query" }, key: "chat.toolLineRunning.WebSearchGeneric" },
+      { name: "Bash", args: { command: "pnpm test" }, key: "chat.toolLineRunning.BashGeneric" },
+      { name: "Skill", args: { skill: "ppt" }, key: "chat.toolLineRunning.SkillGeneric" }
+    ];
+    for (const item of cases) {
+      const label = toolLineRunningLabel(
+        toolCall({ name: item.name, status: "running", args: item.args })
+      );
+      expect(label.key, item.name).toBe(item.key);
+      expect(label.params, item.name).toBeUndefined();
+      const suffix = label.key.replace("chat.toolLineRunning.", "");
+      expect(zh.chat.toolLineRunning, `zh 缺少 ${suffix}`).toHaveProperty(suffix);
+      expect(en.chat.toolLineRunning, `en 缺少 ${suffix}`).toHaveProperty(suffix);
+    }
+  });
+
+  it("运行中无参数工具保留专属文案", () => {
+    expect(toolLineRunningLabel(toolCall({ name: "GitStatus", status: "running" }))).toEqual({
+      key: "chat.toolLineRunning.GitStatus"
+    });
+  });
+
+  it("完成后的工具历史仍保留真实参数描述", () => {
+    expect(
+      toolLineLabel(toolCall({ name: "WebFetch", args: { url: "https://example.com" } }))
+    ).toEqual({
+      key: "chat.toolLine.WebFetch",
+      params: { url: "https://example.com" }
+    });
+    expect(toolLineLabel(toolCall({ name: "WebSearch", args: { query: "z".repeat(50) } }))).toEqual({
+      key: "chat.toolLine.WebSearch",
+      params: { query: `${"z".repeat(40)}…` }
+    });
+    expect(toolLineLabel(toolCall({ name: "Bash", args: { command: "pnpm   test" } }))).toEqual({
+      key: "chat.toolLine.Bash",
+      params: { command: "pnpm test" }
+    });
+  });
+
   it("文件类工具缩短路径", () => {
     const label = toolLineLabel(
       toolCall({ name: "Read", args: { file_path: "apps/desktop/src/renderer/lib/timeline.ts" } })
@@ -167,7 +231,7 @@ describe("toolLineLabel", () => {
   });
 
   it("参数缺失时不抛错", () => {
-    expect(toolLineLabel(toolCall({ name: "Read", args: {} })).params).toEqual({ path: "." });
+    expect(toolLineLabel(toolCall({ name: "Read", args: {} })).key).toBe("chat.toolLine.ReadGeneric");
     expect(toolLineLabel(toolCall({ name: "Bash", args: {} })).params).toEqual({ command: "" });
   });
 });

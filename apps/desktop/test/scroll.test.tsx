@@ -327,7 +327,41 @@ describe("anchor-on-send scrolling", () => {
     });
   });
 
-  it("never drags the view down while the answer streams in", async () => {
+  it("auto-follows streamed output when the user has not scrolled away", async () => {
+    const client = createClient();
+    const run = scriptedRun();
+    client.streamRun = run.streamRun as ApiClient["streamRun"];
+    render(<App client={client} />);
+    await screen.findByText("很长的回答");
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+
+    metrics.scrollHeight = 860;
+    metrics.rectTops.u2 = 10;
+    let runPromise!: Promise<void>;
+    act(() => {
+      runPromise = useAppStore.getState().runPrompt("新问题");
+    });
+    await screen.findByText("新问题");
+    expect(scroller.scrollTop).toBe(794);
+
+    // 流式内容超过锚点后的一屏空间后，视口应该跟到新的底部。
+    metrics.scrollHeight = 1200;
+    await act(async () => {
+      run.afterEcho.resolve();
+      await Promise.resolve();
+    });
+    await screen.findByText("流式片段");
+    await waitFor(() => expect(scroller.scrollTop).toBe(900));
+    expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      run.afterDelta.resolve();
+      await runPromise;
+    });
+  });
+
+  it("pauses auto-follow when the user scrolls away during streaming", async () => {
     const client = createClient();
     const run = scriptedRun();
     client.streamRun = run.streamRun as ApiClient["streamRun"];
@@ -350,6 +384,7 @@ describe("anchor-on-send scrolling", () => {
     await screen.findByRole("button", { name: "回到底部" });
 
     // 后续流式增量不应把视口重新拽回底部。
+    metrics.scrollHeight = 1200;
     await act(async () => {
       run.afterEcho.resolve();
       await Promise.resolve();
@@ -357,6 +392,80 @@ describe("anchor-on-send scrolling", () => {
     await screen.findByText("流式片段");
     expect(scroller.scrollTop).toBe(100);
     expect(screen.getByRole("button", { name: "回到底部" })).toBeInTheDocument();
+
+    await act(async () => {
+      run.afterDelta.resolve();
+      await runPromise;
+    });
+  });
+
+  it("resumes auto-follow after clicking the scroll-to-bottom button", async () => {
+    const client = createClient();
+    const run = scriptedRun();
+    client.streamRun = run.streamRun as ApiClient["streamRun"];
+    render(<App client={client} />);
+    await screen.findByText("很长的回答");
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+
+    metrics.scrollHeight = 860;
+    metrics.rectTops.u2 = 10;
+    let runPromise!: Promise<void>;
+    act(() => {
+      runPromise = useAppStore.getState().runPrompt("新问题");
+    });
+    await screen.findByText("新问题");
+
+    scroller.scrollTop = 100;
+    fireEvent.scroll(scroller);
+    const button = await screen.findByRole("button", { name: "回到底部" });
+    fireEvent.click(button);
+
+    metrics.scrollHeight = 1200;
+    await act(async () => {
+      run.afterEcho.resolve();
+      await Promise.resolve();
+    });
+    await screen.findByText("流式片段");
+    await waitFor(() => expect(scroller.scrollTop).toBe(900));
+
+    await act(async () => {
+      run.afterDelta.resolve();
+      await runPromise;
+    });
+  });
+
+  it("resumes auto-follow when the user scrolls back near the bottom", async () => {
+    const client = createClient();
+    const run = scriptedRun();
+    client.streamRun = run.streamRun as ApiClient["streamRun"];
+    render(<App client={client} />);
+    await screen.findByText("很长的回答");
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+
+    metrics.scrollHeight = 860;
+    metrics.rectTops.u2 = 10;
+    let runPromise!: Promise<void>;
+    act(() => {
+      runPromise = useAppStore.getState().runPrompt("新问题");
+    });
+    await screen.findByText("新问题");
+
+    scroller.scrollTop = 100;
+    fireEvent.scroll(scroller);
+    await screen.findByRole("button", { name: "回到底部" });
+
+    // 用户自己滚回底部阈值内后，下一段流式内容继续自动跟随。
+    scroller.scrollTop = 560;
+    fireEvent.scroll(scroller);
+    metrics.scrollHeight = 1200;
+    await act(async () => {
+      run.afterEcho.resolve();
+      await Promise.resolve();
+    });
+    await screen.findByText("流式片段");
+    await waitFor(() => expect(scroller.scrollTop).toBe(900));
 
     await act(async () => {
       run.afterDelta.resolve();

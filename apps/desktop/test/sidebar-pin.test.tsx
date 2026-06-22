@@ -112,6 +112,32 @@ describe("sidebar pinning", () => {
     expect(sidebar.queryByText("置顶")).not.toBeInTheDocument();
   });
 
+  it("不在侧边栏展示手机绑定会话", async () => {
+    const client = createClient({
+      listSessions: vi.fn(async () => [
+        session("s_regular", "普通会话"),
+        session("p_regular", "项目普通会话", "project_1"),
+        {
+          ...session("s_feishu", "飞书 · 张三", null, "2026-06-12T00:00:00.000Z"),
+          feishuChatId: "oc_chat1"
+        },
+        {
+          ...session("s_wechat", "微信 · 小王", "project_1"),
+          wechatChatId: "wx_user1"
+        }
+      ])
+    });
+
+    render(<App client={client} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+
+    expect(await sidebar.findByText("普通会话")).toBeInTheDocument();
+    expect(await sidebar.findByText("项目普通会话")).toBeInTheDocument();
+    expect(sidebar.queryByText("飞书 · 张三")).not.toBeInTheDocument();
+    expect(sidebar.queryByText("微信 · 小王")).not.toBeInTheDocument();
+    expect(sidebar.queryByText("置顶")).not.toBeInTheDocument();
+  });
+
   it("会话行展示未读/失败点位和待处理 Tag", async () => {
     const unread = {
       ...session("s1", "这是一个非常长的旧标题A，用来确认待处理标签不会被标题挤没"),
@@ -178,7 +204,7 @@ describe("sidebar pinning", () => {
     act(() => {
       useAppStore.setState({ runningSessionsById: { s2: true } });
     });
-    await waitFor(() => expect(sidebar.getByTitle("正在处理")).toBeInTheDocument());
+    await waitFor(() => expect(sidebar.queryByTitle("正在处理")).not.toBeInTheDocument());
     expect(sidebar.getByTestId("session-pending-action-s2")).toBeInTheDocument();
   });
 

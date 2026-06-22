@@ -3,7 +3,7 @@ import {
   InfoCircleIcon,
   XMarkIcon
 } from "@/assets/file-type-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ApprovalDecision, ToolCall } from "@chengxiaobang/shared";
 import { AskUserCard } from "@/components/AskUserCard";
@@ -69,6 +69,21 @@ function PlanApprovalCard({
   const { t } = useTranslation();
   const [feedback, setFeedback] = useState("");
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.repeat) {
+        return;
+      }
+      event.preventDefault();
+      console.info("[ApprovalDock] 用户按 Escape 拒绝计划", {
+        toolCallId: toolCall.id
+      });
+      onDecide({ approved: false });
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onDecide, toolCall.id]);
+
   const submitAdjustment = () => {
     const text = feedback.trim();
     if (!text) {
@@ -90,27 +105,27 @@ function PlanApprovalCard({
   return (
     <div
       data-testid="plan-approval-dock"
-      className="mb-3 animate-scale-in rounded-md border bg-card p-4 shadow-subtle"
+      className="mb-3 animate-scale-in rounded-lg border border-border bg-card p-3 shadow-none"
     >
-      <h3 className="mb-3 text-body-sm-strong text-foreground">{t("plan.approvalTitle")}</h3>
-      <div className="overflow-hidden rounded-md bg-canvas-soft-2">
+      <h3 className="mb-2 text-body-sm-strong text-foreground">{t("plan.approvalTitle")}</h3>
+      <div className="overflow-hidden rounded-md border border-border bg-canvas-soft-2">
         <button
           type="button"
-          className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-body-sm-strong text-foreground transition-colors hover:bg-surface-hover"
+          className="flex min-h-10 w-full items-center gap-2.5 px-3 text-left text-body-sm-strong text-foreground transition-colors hover:bg-surface-hover"
           onClick={() => {
             console.info("[ApprovalDock] 用户选择实施计划", { toolCallId: toolCall.id });
             onDecide({ approved: true });
           }}
         >
-          <span className="flex size-7 flex-none items-center justify-center rounded-full bg-primary text-button-md text-primary-foreground">
+          <span className="flex size-6 flex-none items-center justify-center rounded-full bg-primary text-caption font-medium text-primary-foreground">
             1
           </span>
           <span className="min-w-0 flex-1">{t("plan.approveAction")}</span>
-          <CheckMediumIcon className="size-4 flex-none text-muted-foreground" />
+          <CheckMediumIcon className="size-3.5 flex-none text-muted-foreground" />
         </button>
-        <div className="flex min-h-12 items-center gap-3 border-t border-border bg-card px-4">
-          <span className="flex size-7 flex-none items-center justify-center rounded-full border bg-card text-muted-foreground">
-            <XMarkIcon className="size-4" />
+        <div className="flex min-h-10 items-center gap-2.5 border-t border-border bg-card px-3">
+          <span className="flex size-6 flex-none items-center justify-center rounded-full border border-border bg-card text-muted-foreground">
+            <XMarkIcon className="size-3.5" />
           </span>
           <input
             value={feedback}
@@ -125,9 +140,13 @@ function PlanApprovalCard({
             aria-label={t("plan.adjustPlaceholder")}
             className="min-w-0 flex-1 bg-transparent text-body-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
-          <Button size="sm" variant="outline" onClick={submitAdjustment}>
+          <button
+            type="button"
+            onClick={submitAdjustment}
+            className="inline-flex h-7 flex-none items-center justify-center whitespace-nowrap rounded-md border border-border bg-card px-3 text-caption font-medium text-foreground transition-colors hover:bg-canvas-soft-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+          >
             {t("plan.submitAdjustment")}
-          </Button>
+          </button>
         </div>
       </div>
     </div>
@@ -179,9 +198,17 @@ function ApprovalCard({
     0,
     choices.findIndex((choice) => choice.id === selected)
   );
-  const confirm = () => {
-    const choice = choices[selectedIndex] ?? choices[0]!;
+  const confirmChoice = (choice: (typeof choices)[number], source: "confirm_button" | "double_click" | "keyboard") => {
+    console.info("[ApprovalDock] 确认权限选项", {
+      toolCallId: toolCall.id,
+      choiceId: choice.id,
+      source
+    });
     onDecide(choice.decision);
+  };
+  const confirm = (source: "confirm_button" | "keyboard") => {
+    const choice = choices[selectedIndex] ?? choices[0]!;
+    confirmChoice(choice, source);
   };
   const moveSelection = (direction: 1 | -1) => {
     const next = (selectedIndex + direction + choices.length) % choices.length;
@@ -205,26 +232,28 @@ function ApprovalCard({
         }
         if (event.key === "Enter") {
           event.preventDefault();
-          confirm();
+          confirm("keyboard");
         }
       }}
-      className="mb-3 animate-scale-in rounded-lg border border-border bg-card p-4 shadow-subtle"
+      className="mb-3 animate-scale-in rounded-lg border border-border bg-card p-3 shadow-none"
     >
-      <div className="space-y-3">
-        <div>
-          <p className="text-caption font-medium text-muted-foreground">
-            {t("chat.approvalDialog.title")}
-          </p>
-          <p className="mt-2 break-words text-body-sm font-medium text-foreground">
-            {t(label.key, label.params)}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
-          <ToolIcon className="size-4 flex-none" />
-          <span>{t("chat.approvalDialog.pending")}</span>
+      <div className="space-y-2.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-caption font-medium text-muted-foreground">
+              {t("chat.approvalDialog.title")}
+            </p>
+            <p className="mt-1 line-clamp-2 break-words text-body-sm-strong text-foreground">
+              {t(label.key, label.params)}
+            </p>
+          </div>
+          <div className="mt-0.5 flex flex-none items-center gap-1.5 rounded-pill border border-border bg-canvas px-2.5 py-1 text-caption font-medium text-muted-foreground">
+            <ToolIcon className="size-3.5 flex-none" />
+            <span>{t("chat.approvalDialog.pending")}</span>
+          </div>
         </div>
         <ApprovalPreview toolCall={toolCall} />
-        <div className="space-y-1.5 pt-1">
+        <div className="grid gap-1.5 pt-0.5">
           {choices.map((choice, index) => {
             const active = selected === choice.id;
             return (
@@ -232,33 +261,42 @@ function ApprovalCard({
                 key={choice.id}
                 type="button"
                 onClick={() => setSelected(choice.id)}
+                onDoubleClick={() => {
+                  setSelected(choice.id);
+                  confirmChoice(choice, "double_click");
+                }}
                 className={cn(
-                  "flex min-h-10 w-full items-center gap-3 rounded-md border border-transparent px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex min-h-9 w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25",
                   active
                     ? "border-border bg-canvas-soft-2 text-foreground"
                     : "text-muted-foreground hover:bg-canvas-soft"
                 )}
                 aria-pressed={active}
               >
-                <span className="w-6 flex-none text-caption font-medium tabular-nums">
+                <span className="w-5 flex-none text-caption font-medium tabular-nums text-muted-foreground">
                   {index + 1}.
                 </span>
-                <span className="min-w-0 flex-none text-body-sm font-medium text-foreground">
-                  {choice.label}
-                </span>
-                <span className="min-w-0 break-words text-body-sm text-muted-foreground">
-                  {choice.description}
+                <span className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                  <span className="break-words text-body-sm font-medium text-foreground">
+                    {choice.label}
+                  </span>
+                  <span className="break-words text-caption text-muted-foreground">
+                    {choice.description}
+                  </span>
                 </span>
               </button>
             );
           })}
         </div>
-        <div className="flex items-center justify-between gap-4 pt-1">
-          <div className="flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-            <InfoCircleIcon className="size-4 flex-none text-foreground" />
+        <div className="flex items-center justify-between gap-3 pt-0.5">
+          <div className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
+            <InfoCircleIcon className="size-3.5 flex-none text-foreground" />
             <span className="min-w-0 break-words">{t("chat.approvalDialog.keyboardHint")}</span>
           </div>
-          <Button className="h-9 flex-none rounded-md px-4 text-button-md text-primary-foreground" onClick={confirm}>
+          <Button
+            className="h-8 flex-none rounded-md px-3.5 text-caption font-medium text-primary-foreground"
+            onClick={() => confirm("confirm_button")}
+          >
             {t("chat.approvalDialog.confirm")}
           </Button>
         </div>
@@ -272,12 +310,12 @@ function ApprovalPreview({ toolCall }: { toolCall: ToolCall }) {
   const { t } = useTranslation();
   if (toolCall.name === "Bash" && typeof toolCall.args.command === "string") {
     return (
-      <div className="max-h-[180px] overflow-auto rounded-lg border border-border bg-canvas px-3 py-2.5 [scrollbar-gutter:stable]">
+      <div className="max-h-[128px] overflow-auto rounded-md border border-border bg-canvas px-3 py-2 [scrollbar-gutter:stable]">
         <p className="whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
           <span className="text-muted-foreground">$ </span>
           {toolCall.args.command}
         </p>
-        <p className="mt-2 text-caption text-muted-foreground">
+        <p className="mt-1.5 text-caption text-muted-foreground">
           {t("chat.approvalDialog.noOutput")}
         </p>
       </div>
@@ -286,18 +324,18 @@ function ApprovalPreview({ toolCall }: { toolCall: ToolCall }) {
   const diff = buildToolCallDiff(toolCall);
   if (diff && typeof toolCall.args.file_path === "string") {
     return (
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="overflow-hidden rounded-md border border-border bg-card">
         <div className="border-b px-3 py-1.5 font-mono text-micro text-muted-foreground">
           {toolCall.args.file_path}
         </div>
-        <div className="max-h-[180px] overflow-auto">
+        <div className="max-h-[128px] overflow-auto">
           <DiffView source={diff} />
         </div>
       </div>
     );
   }
   return (
-    <pre className="max-h-[180px] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-card px-3 py-2.5 font-mono text-micro leading-relaxed text-muted-foreground [scrollbar-gutter:stable]">
+    <pre className="max-h-[128px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-card px-3 py-2 font-mono text-micro leading-relaxed text-muted-foreground [scrollbar-gutter:stable]">
       {JSON.stringify(toolCall.args, null, 2)}
     </pre>
   );

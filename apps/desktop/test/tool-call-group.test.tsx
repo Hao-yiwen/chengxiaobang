@@ -73,8 +73,9 @@ describe("ToolCallGroup", () => {
     );
 
     expect(
-      screen.getByText("读取 1 个文件 · 运行 1 条命令 · 运行 pnpm dev")
+      screen.getByText("读取 1 个文件 · 运行 1 条命令 · 运行命令中")
     ).toBeInTheDocument();
+    expect(screen.queryByText(/pnpm dev/)).not.toBeInTheDocument();
   });
 
   it("surfaces a failure count but stays collapsed", () => {

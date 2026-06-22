@@ -643,10 +643,12 @@ export class SqliteStateStore implements StateStore {
     if (!current) {
       throw new Error("会话不存在");
     }
+    await this.assertProjectExists(input.projectId ?? undefined);
     await this.assertProviderExists(input.providerId ?? undefined);
     const next: Session = {
       ...current,
       title: input.title ?? current.title,
+      projectId: input.projectId === undefined ? current.projectId : input.projectId,
       providerId:
         input.providerId === null ? undefined : input.providerId ?? current.providerId,
       accessMode: input.accessMode ?? current.accessMode,
@@ -667,11 +669,12 @@ export class SqliteStateStore implements StateStore {
     };
     this.run(
       `update sessions
-       set title = ?, provider_id = ?, access_mode = ?, model = ?, reasoning_mode = ?,
+       set title = ?, project_id = ?, provider_id = ?, access_mode = ?, model = ?, reasoning_mode = ?,
            compacted_up_to_message_id = ?, updated_at = ?
        where id = ?`,
       [
         next.title,
+        next.projectId,
         next.providerId ?? null,
         next.accessMode,
         next.model ?? null,
@@ -682,6 +685,13 @@ export class SqliteStateStore implements StateStore {
       ]
     );
     await this.flush();
+    if (input.projectId !== undefined) {
+      log.info("[sqlite-state-store] 已更新会话项目绑定", {
+        sessionId: id,
+        fromProjectId: current.projectId,
+        toProjectId: next.projectId
+      });
+    }
     return next;
   }
 

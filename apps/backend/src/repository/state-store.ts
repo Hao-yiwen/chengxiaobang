@@ -135,6 +135,8 @@ export interface UsageCostEntryFilter {
 
 export interface UpdateSessionInput {
   title?: string;
+  /** undefined 保留当前绑定；null 解除项目文件夹绑定。 */
+  projectId?: string | null;
   providerId?: string | null;
   accessMode?: AccessMode;
   /** 会话级模型记忆（§6.2）。undefined preserves the current value; null clears it. */

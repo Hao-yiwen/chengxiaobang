@@ -170,7 +170,25 @@ type ToolLineName =
   | "OcrExtractText"
   | "fallback";
 
-type ToolLineKey = `chat.toolLine.${ToolLineName}` | `chat.toolLineRunning.${ToolLineName}`;
+type ToolLineRunningOnlyName =
+  | "LSGeneric"
+  | "MakeDirectoryGeneric"
+  | "GlobGeneric"
+  | "GrepGeneric"
+  | "BashGeneric"
+  | "WebFetchGeneric"
+  | "WebSearchGeneric"
+  | "ExitPlanModeGeneric"
+  | "SkillGeneric"
+  | "CreateSkillGeneric"
+  | "ScheduleCreateGeneric"
+  | "MemoryGeneric"
+  | "fallbackGeneric";
+
+type ToolLineRunningName = ToolLineName | ToolLineRunningOnlyName;
+type ToolLineKey =
+  | `chat.toolLine.${ToolLineName}`
+  | `chat.toolLineRunning.${ToolLineRunningName}`;
 
 export interface ToolLineLabel {
   key: ToolLineKey;
@@ -184,8 +202,37 @@ function stringArg(args: ToolCall["args"], key: string): string | undefined {
 
 type ToolLineNamespace = "chat.toolLine" | "chat.toolLineRunning";
 
-function labelKey(namespace: ToolLineNamespace, name: ToolLineName): ToolLineKey {
-  return `${namespace}.${name}`;
+function labelKey(
+  namespace: "chat.toolLine",
+  name: ToolLineName
+): `chat.toolLine.${ToolLineName}`;
+function labelKey(
+  namespace: "chat.toolLineRunning",
+  name: ToolLineRunningName
+): `chat.toolLineRunning.${ToolLineRunningName}`;
+function labelKey(namespace: ToolLineNamespace, name: ToolLineName): ToolLineKey;
+function labelKey(
+  namespace: ToolLineNamespace,
+  name: ToolLineName | ToolLineRunningName
+): ToolLineKey {
+  return `${namespace}.${name}` as ToolLineKey;
+}
+
+const RUNNING_ARG_DISPLAY_TOOL_NAMES = new Set<string>(["Write", "Edit"]);
+const ACTIVE_TOOL_STATUSES = new Set<ToolCall["status"]>([
+  "running",
+  "pending_approval",
+  "pending_smart_approval"
+]);
+
+/** 运行中工具行只允许写入/编辑展示 file_path，其他工具参数等完成后再出现在历史里。 */
+export function shouldHideRunningToolArgs(
+  toolCall: Pick<ToolCall, "name" | "status">
+): boolean {
+  return (
+    ACTIVE_TOOL_STATUSES.has(toolCall.status) &&
+    !RUNNING_ARG_DISPLAY_TOOL_NAMES.has(toolCall.name)
+  );
 }
 
 /** 工具调用的一行人话描述（i18n key + 已截断好的插值参数）。 */
@@ -195,7 +242,59 @@ export function toolLineLabel(toolCall: ToolCall): ToolLineLabel {
 
 /** 运行中/准备中的工具描述，避免把正在执行的工具显示成完成态。 */
 export function toolLineRunningLabel(toolCall: ToolCall): ToolLineLabel {
+  const genericLabel = genericRunningToolLineLabel(toolCall);
+  if (genericLabel) {
+    return genericLabel;
+  }
   return toolLineLabelInNamespace(toolCall, "chat.toolLineRunning");
+}
+
+function genericRunningToolLineLabel(toolCall: ToolCall): ToolLineLabel | undefined {
+  if (!shouldHideRunningToolArgs(toolCall)) {
+    return undefined;
+  }
+  switch (toolCall.name) {
+    case "Read":
+      return { key: labelKey("chat.toolLineRunning", "ReadGeneric") };
+    case "LS":
+      return { key: labelKey("chat.toolLineRunning", "LSGeneric") };
+    case "MakeDirectory":
+      return { key: labelKey("chat.toolLineRunning", "MakeDirectoryGeneric") };
+    case "Glob":
+      return { key: labelKey("chat.toolLineRunning", "GlobGeneric") };
+    case "Grep":
+      return { key: labelKey("chat.toolLineRunning", "GrepGeneric") };
+    case "Bash":
+      return { key: labelKey("chat.toolLineRunning", "BashGeneric") };
+    case "WebFetch":
+      return { key: labelKey("chat.toolLineRunning", "WebFetchGeneric") };
+    case "WebSearch":
+      return { key: labelKey("chat.toolLineRunning", "WebSearchGeneric") };
+    case "ExitPlanMode":
+      return { key: labelKey("chat.toolLineRunning", "ExitPlanModeGeneric") };
+    case "Skill":
+      return { key: labelKey("chat.toolLineRunning", "SkillGeneric") };
+    case "CreateSkill":
+      return { key: labelKey("chat.toolLineRunning", "CreateSkillGeneric") };
+    case "ScheduleCreate":
+      return { key: labelKey("chat.toolLineRunning", "ScheduleCreateGeneric") };
+    case "Memory":
+      return { key: labelKey("chat.toolLineRunning", "MemoryGeneric") };
+    case "BashStatus":
+    case "BashCancel":
+    case "GitStatus":
+    case "GitDiff":
+    case "FeishuSendMessage":
+    case "TodoRead":
+    case "TodoWrite":
+    case "AskUserQuestion":
+    case "ScheduleList":
+    case "ScheduleCancel":
+    case "OcrExtractText":
+      return undefined;
+    default:
+      return { key: labelKey("chat.toolLineRunning", "fallbackGeneric") };
+  }
 }
 
 function toolLineLabelInNamespace(

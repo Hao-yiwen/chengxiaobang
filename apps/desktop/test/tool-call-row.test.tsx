@@ -247,6 +247,50 @@ describe("ToolCallRow", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("total 0"));
   });
 
+  it("hides running arguments for non Write/Edit tools", () => {
+    const onOpenFile = vi.fn();
+    const { rerender } = render(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "Bash",
+          status: "running",
+          args: { command: "pnpm test -- --secret" }
+        })}
+      />
+    );
+
+    expect(screen.getByText("运行命令中")).toBeInTheDocument();
+    expect(screen.queryByText(/pnpm test/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("运行命令中"));
+    expect(screen.queryByText("执行命令")).not.toBeInTheDocument();
+
+    rerender(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "WebFetch",
+          status: "running",
+          args: { url: "https://example.com/secret" }
+        })}
+      />
+    );
+    expect(screen.getByText("抓取网页中")).toBeInTheDocument();
+    expect(screen.queryByText(/example\.com/)).not.toBeInTheDocument();
+
+    rerender(
+      <ToolCallRow
+        toolCall={toolCall({
+          name: "Read",
+          status: "running",
+          args: { file_path: "src/secret.ts" }
+        })}
+        onOpenFile={onOpenFile}
+      />
+    );
+    expect(screen.getByText("读取文件中")).toBeInTheDocument();
+    expect(screen.queryByText(/secret\.ts/)).not.toBeInTheDocument();
+    expect(screen.queryByTitle("预览文件")).not.toBeInTheDocument();
+  });
+
   it("applies global code preview settings to expanded Bash details", async () => {
     useAppStore.setState({
       codePreviewSettings: {

@@ -7,6 +7,7 @@ import type { MessageAttachment, Session, StreamEvent, ToolActivity } from "@che
 import i18n from "../../i18n";
 import { saveDisplayAttachmentSnapshots } from "../../lib/attachment-preparation";
 import { showSystemNotification } from "../../lib/notifications";
+import { shouldHideRunningToolArgs } from "../../lib/tool-display";
 import { apiClientRef } from "../client";
 import type { AppState, AppStoreGet, AppStoreSet, QueuedRunItem } from "../types";
 import {
@@ -1217,6 +1218,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
                   toolName: event.toolCall.name,
                   toolCallId: event.toolCall.id,
                   status: event.toolCall.status,
+                  runningArgsHiddenInTimeline: shouldHideRunningToolArgs(event.toolCall),
                   filePath: previewFilePath(event.toolCall.args),
                   streamTextChars: get().streamText.length,
                   thinkingChars: get().thinking.length

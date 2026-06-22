@@ -69,6 +69,15 @@ describe("sessionSchema", () => {
       }).wechatChatId
     ).toBe("wx_user1");
   });
+
+  it("接受会话更新项目文件夹绑定", () => {
+    expect(sessionUpdateSchema.parse({ projectId: "project_1" })).toEqual({
+      projectId: "project_1"
+    });
+    expect(sessionUpdateSchema.parse({ projectId: null })).toEqual({
+      projectId: null
+    });
+  });
 });
 
 describe("gitChangesResultSchema", () => {

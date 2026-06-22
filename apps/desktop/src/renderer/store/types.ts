@@ -369,6 +369,8 @@ export interface AppState {
   searchSessions(query: string): Promise<SessionSearchResult[]>;
   markSessionRead(id: string): Promise<void>;
   renameSession(id: string, title: string): Promise<void>;
+  /** 为手机绑定会话选择/更换项目文件夹。 */
+  bindPhoneSessionToFolder(id: string): Promise<void>;
   /** 置顶/取消置顶会话（侧边栏置顶区）。 */
   setSessionPinned(id: string, pinned: boolean): Promise<void>;
   deleteSession(id: string): Promise<void>;

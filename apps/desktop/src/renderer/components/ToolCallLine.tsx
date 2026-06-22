@@ -15,7 +15,12 @@ import {
   shortenPath,
   toolCallDurationMs
 } from "@/lib/tool-call";
-import { toolIcon, toolLineLabel, toolLineRunningLabel } from "@/lib/tool-display";
+import {
+  shouldHideRunningToolArgs,
+  toolIcon,
+  toolLineLabel,
+  toolLineRunningLabel
+} from "@/lib/tool-display";
 import { cn } from "@/lib/utils";
 
 /** 可在右侧预览面板打开 path 参数的文件类工具。 */
@@ -40,8 +45,10 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
     toolCall.status === "pending_approval" ||
     toolCall.status === "pending_smart_approval";
   const label = isRunning ? toolLineRunningLabel(toolCall) : toolLineLabel(toolCall);
+  const hideRunningArgs = shouldHideRunningToolArgs(toolCall);
   const isError = toolCall.status === "failed" || toolCall.status === "rejected";
   const filePath =
+    !hideRunningArgs &&
     onOpenFile &&
     FILE_PREVIEW_TOOLS.has(toolCall.name) &&
     typeof toolCall.args.file_path === "string"
@@ -49,7 +56,7 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
       : undefined;
   const durationMs = toolCallDurationMs(toolCall);
   const diff = toolCall.status === "completed" ? buildToolCallDiff(toolCall) : undefined;
-  const command = shellCommandDetail(toolCall);
+  const command = hideRunningArgs ? undefined : shellCommandDetail(toolCall);
   const result = typeof toolCall.result === "string" && toolCall.result.length > 0
     ? toolCall.result
     : undefined;

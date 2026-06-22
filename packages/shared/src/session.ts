@@ -83,6 +83,8 @@ export type SessionInput = z.infer<typeof sessionInputSchema>;
 
 export const sessionUpdateSchema = z.object({
   title: z.string().min(1).optional(),
+  /** 手机绑定会话可后续绑定/更换项目文件夹；undefined 保留，null 解除绑定。 */
+  projectId: z.string().min(1).nullable().optional(),
   providerId: z.string().min(1).nullable().optional(),
   accessMode: accessModeSchema.optional(),
   model: z.string().min(1).nullable().optional(),

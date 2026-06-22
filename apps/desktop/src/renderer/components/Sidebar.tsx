@@ -156,6 +156,10 @@ function latestProjectActivityAt(group: ProjectSessionGroup): string {
   );
 }
 
+function isPhoneBoundSession(session: Session): boolean {
+  return Boolean(session.feishuChatId || session.wechatChatId);
+}
+
 function compareProjectGroups(
   left: ProjectSessionGroup,
   right: ProjectSessionGroup,
@@ -310,11 +314,14 @@ export function Sidebar() {
   const [projectDraft, setProjectDraft] = useState("");
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
 
+  // 手机绑定会话由「连接手机」页直接管理，不进入左侧项目/对话/置顶列表。
+  const sidebarSessions = sessions.filter((session) => !isPhoneBoundSession(session));
+
   // 置顶项只在置顶区展示，原「项目」/「对话」区域不再重复出现。
-  const ungrouped = sessions.filter((session) => !session.projectId && !session.pinnedAt);
+  const ungrouped = sidebarSessions.filter((session) => !session.projectId && !session.pinnedAt);
   const projectSessions = projects.map((project) => ({
     project,
-    sessions: sessions.filter((session) => session.projectId === project.id)
+    sessions: sidebarSessions.filter((session) => session.projectId === project.id)
   }));
   const allProjectIds = projectSessions.map(({ project }) => project.id);
   const allProjectGroupsCollapsed =
@@ -329,7 +336,7 @@ export function Sidebar() {
       sessions: list.filter((session) => !session.pinnedAt)
     }))
     .sort((a, b) => b.project.pinnedAt!.localeCompare(a.project.pinnedAt!));
-  const pinnedSessions = sessions
+  const pinnedSessions = sidebarSessions
     .filter((session) => session.pinnedAt)
     .sort((a, b) => b.pinnedAt!.localeCompare(a.pinnedAt!));
   const hasPinned = pinnedProjects.length > 0 || pinnedSessions.length > 0;
@@ -835,6 +842,7 @@ interface SessionRowProps {
 
 function SessionRow(props: SessionRowProps) {
   const { t } = useTranslation();
+  const showRunningSpinner = props.running && !props.pendingAction;
   if (props.editing) {
     return (
       <div className={cn("flex items-center gap-1 py-1 pr-1", props.indent ? "pl-7" : "pl-2.5")}>
@@ -934,7 +942,7 @@ function SessionRow(props: SessionRowProps) {
               </span>
             ) : null}
           </button>
-          {props.running ? (
+          {showRunningSpinner ? (
             <span
               title={t("sidebar.sessionRunning")}
               className="absolute right-1 top-0 flex h-full w-6 flex-none items-center justify-center text-muted-foreground"
@@ -945,7 +953,7 @@ function SessionRow(props: SessionRowProps) {
           <div
             className={cn(
               "absolute right-1 top-0 h-full flex-none items-center",
-              props.running ? "hidden" : "hidden group-hover:flex"
+              showRunningSpinner ? "hidden" : "hidden group-hover:flex"
             )}
           >
             <button

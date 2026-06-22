@@ -110,6 +110,30 @@ describe("SqliteStateStore", () => {
     await store.close();
   });
 
+  it("updates a session project binding", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const project = await store.createProject({ name: "phone", path: join(dir, "phone") });
+    const session = await store.createSession({
+      projectId: null,
+      title: "飞书 · 张三",
+      accessMode: "approval",
+      feishuChatId: "oc_abc123"
+    });
+
+    const bound = await store.updateSession(session.id, { projectId: project.id });
+    expect(bound.projectId).toBe(project.id);
+    await expect(store.listSessions(project.id)).resolves.toMatchObject([
+      { id: session.id, projectId: project.id }
+    ]);
+    await expect(store.updateSession(session.id, { projectId: "project_missing" })).rejects.toThrow(
+      "项目不存在"
+    );
+    const cleared = await store.updateSession(session.id, { projectId: null });
+    expect(cleared.projectId).toBeNull();
+    await store.close();
+  });
+
   it("置顶/取消置顶不触碰 updated_at 且跨重启持久化", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);

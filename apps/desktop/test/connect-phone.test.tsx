@@ -8,6 +8,7 @@ import type {
   ConnectPhoneInstallPollResult,
   FeishuConfig,
   FeishuStatus,
+  Project,
   ProviderConfig,
   Session,
   WechatConfig,
@@ -152,7 +153,7 @@ async function openConnectPhone(client: ApiClient): Promise<void> {
 }
 
 describe("ConnectPhoneView", () => {
-  it("shows WeChat by default and automatically generates a WeChat QR", async () => {
+  it("shows Feishu by default and automatically generates a Feishu QR", async () => {
     const startConnectPhoneInstall = vi.fn(async (input: ConnectPhoneInstallStartInput) => qrStart(input));
     const client = createClient({ startConnectPhoneInstall });
 
@@ -161,36 +162,39 @@ describe("ConnectPhoneView", () => {
     const wechatButton = screen.getByRole("button", { name: "微信" });
     const feishuButton = screen.getByRole("button", { name: "飞书 / Lark" });
     expect(screen.getByTestId("connect-phone-panel")).toHaveClass("rounded-sm", "border");
-    expect(wechatButton).toHaveAttribute("aria-pressed", "true");
-    expect(wechatButton).toHaveClass(
+    expect(
+      feishuButton.compareDocumentPosition(wechatButton) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(feishuButton).toHaveAttribute("aria-pressed", "true");
+    expect(feishuButton).toHaveClass(
       "border-soft-blue-border",
       "bg-soft-blue-surface",
       "text-soft-blue-foreground"
     );
-    expect(wechatButton).not.toHaveClass("bg-foreground");
-    expect(feishuButton).toHaveAttribute("aria-pressed", "false");
+    expect(feishuButton).not.toHaveClass("bg-foreground");
+    expect(wechatButton).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("用微信或飞书扫码连接程小帮，在手机里继续对话与触发任务。")).toBeInTheDocument();
-    expect(screen.getByText("微信扫码连接")).toBeInTheDocument();
-    expect(screen.getByAltText("手机微信聊天页插画")).toBeInTheDocument();
+    expect(screen.getByText("飞书 / Lark 扫码连接")).toBeInTheDocument();
+    expect(screen.getByAltText("手机飞书聊天页插画")).toBeInTheDocument();
 
-    await waitFor(() => expect(startConnectPhoneInstall).toHaveBeenCalledWith({ target: "wechat" }));
-    expect(screen.getByTestId("wechat-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
+    await waitFor(() => expect(startConnectPhoneInstall).toHaveBeenCalledWith({ target: "feishu" }));
+    expect(screen.getByTestId("feishu-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
     expect(screen.getByTestId("connect-phone-qr-frame")).toBeInTheDocument();
     expect(screen.queryByLabelText("App ID")).not.toBeInTheDocument();
     expect(screen.queryByText("允许完全访问")).not.toBeInTheDocument();
   });
 
-  it("can switch to Feishu / Lark and generate the Feishu QR path", async () => {
+  it("can switch to WeChat and generate the WeChat QR path", async () => {
     const startConnectPhoneInstall = vi.fn(async (input: ConnectPhoneInstallStartInput) => qrStart(input));
     const client = createClient({ startConnectPhoneInstall });
 
     await openConnectPhone(client);
-    fireEvent.click(screen.getByRole("button", { name: "飞书 / Lark" }));
+    fireEvent.click(screen.getByRole("button", { name: "微信" }));
 
-    await waitFor(() => expect(startConnectPhoneInstall).toHaveBeenCalledWith({ target: "feishu" }));
-    expect(screen.getByText("飞书 / Lark 扫码连接")).toBeInTheDocument();
-    expect(screen.getByTestId("feishu-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
-    expect(screen.getByAltText("手机飞书聊天页插画")).toBeInTheDocument();
+    await waitFor(() => expect(startConnectPhoneInstall).toHaveBeenCalledWith({ target: "wechat" }));
+    expect(screen.getByText("微信扫码连接")).toBeInTheDocument();
+    expect(screen.getByTestId("wechat-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
+    expect(screen.getByAltText("手机微信聊天页插画")).toBeInTheDocument();
   });
 
   it("shows the Feishu binding list by default when only Feishu is configured", async () => {
@@ -224,6 +228,52 @@ describe("ConnectPhoneView", () => {
     await waitFor(() => expect(client.listMessages).toHaveBeenCalledWith("session_feishu"));
   });
 
+  it("binds a Feishu session to a selected folder from the binding list", async () => {
+    const bound = session({
+      id: "session_feishu",
+      title: "飞书 · 张三",
+      feishuChatId: "oc_chat1"
+    });
+    const project: Project = {
+      id: "project_mobile",
+      name: "mobile-project",
+      path: "/tmp/mobile-project",
+      createdAt: "2026-06-15T09:10:00.000Z",
+      updatedAt: "2026-06-15T09:10:00.000Z"
+    };
+    const createProject = vi.fn(async () => project);
+    const updateSession = vi.fn(async () => ({ ...bound, projectId: project.id }));
+    Object.defineProperty(window, "chengxiaobang", {
+      value: {
+        pickDirectory: vi.fn(async () => "/tmp/mobile-project")
+      },
+      configurable: true
+    });
+    const client = createClient({
+      listSessions: vi.fn(async () => [bound]),
+      getFeishuConfig: vi.fn(async () => connectedFeishuConfig),
+      getFeishuStatus: vi.fn(async () => ({ status: "connected" }) satisfies FeishuStatus),
+      createProject,
+      updateSession
+    });
+
+    await openConnectPhone(client);
+    fireEvent.click(await screen.findByLabelText("为「飞书 · 张三」绑定文件夹"));
+
+    await waitFor(() =>
+      expect(createProject).toHaveBeenCalledWith({
+        path: "/tmp/mobile-project",
+        name: "mobile-project"
+      })
+    );
+    expect(updateSession).toHaveBeenCalledWith("session_feishu", {
+      projectId: "project_mobile"
+    });
+    expect(useAppStore.getState().sessions.find((item) => item.id === "session_feishu")).toMatchObject({
+      projectId: "project_mobile"
+    });
+  });
+
   it("shows WeChat bound sessions when WeChat is configured", async () => {
     const startConnectPhoneInstall = vi.fn(async (input: ConnectPhoneInstallStartInput) => qrStart(input));
     const bound = session({
@@ -244,12 +294,12 @@ describe("ConnectPhoneView", () => {
     });
 
     await openConnectPhone(client);
+    fireEvent.click(screen.getByRole("button", { name: "微信" }));
 
     const bindingList = await screen.findByTestId("wechat-binding-list");
     expect(screen.getByRole("button", { name: "微信" })).toHaveAttribute("aria-pressed", "true");
     expect(within(bindingList).getByText("微信 · 小王")).toBeInTheDocument();
     expect(within(bindingList).queryByText("飞书 · 张三")).not.toBeInTheDocument();
-    expect(startConnectPhoneInstall).not.toHaveBeenCalled();
   });
 
   it("uses the plus button to add a new Feishu connection from the binding tab", async () => {
@@ -286,6 +336,7 @@ describe("ConnectPhoneView", () => {
     });
 
     await openConnectPhone(client);
+    fireEvent.click(screen.getByRole("button", { name: "微信" }));
 
     await waitFor(() => expect(pollConnectPhoneInstall).toHaveBeenCalledWith({
       target: "wechat",
@@ -311,6 +362,7 @@ describe("ConnectPhoneView", () => {
     });
 
     await openConnectPhone(client);
+    fireEvent.click(screen.getByRole("button", { name: "微信" }));
     await waitFor(() => expect(pollConnectPhoneInstall).toHaveBeenCalledTimes(1));
 
     await act(async () => {
@@ -355,7 +407,7 @@ describe("ConnectPhoneView", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByTestId("wechat-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
+    expect(screen.getByTestId("feishu-qr-surface")).toHaveClass("mx-auto", "size-[246px]");
     expect(screen.getByTestId("connect-phone-qr-frame")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "刷新" })).not.toBeInTheDocument();
 

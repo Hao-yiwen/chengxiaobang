@@ -265,14 +265,13 @@ export function ChatView() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
   const scrollFrame = useRef<number | null>(null);
-  // Message id currently anchored to the viewport top (the just-sent user
-  // message), and a snapshot of the previous messages tail so wholesale array
-  // replacements (session switch, post-run reload) can be told apart from a
-  // genuine echo append.
+  // 当前锚定到视口顶部的消息 id（刚发送的用户消息），以及上一轮消息尾部快照；
+  // 后者用来区分会话切换/运行结束刷新这类整组替换和真正的新 user echo。
   const anchorIdRef = useRef<string | undefined>(undefined);
   const prevTailRef = useRef<
     { sessionId?: string; lastId?: string; length: number } | undefined
   >(undefined);
+  const streamAutoFollowRef = useRef<{ runId?: string; paused: boolean }>({ paused: false });
   const streamCaretDecisionLogKeyRef = useRef<string | undefined>(undefined);
   const [nearBottom, setNearBottom] = useState(true);
   const [scrollProgress, setScrollProgress] = useState({
@@ -335,8 +334,7 @@ export function ChatView() {
     isRunning &&
     !hasActiveRunOutput;
 
-  // Reasoning-only rows carry no actions, so the "last assistant" affordances
-  // (copy/regenerate) stay on the last turn that actually has content.
+  // 纯 reasoning 行没有操作区，所以“最后一条 assistant”的复制/重试入口保留在最后一条有正文的回复上。
   const lastAssistantId = [...messages]
     .reverse()
     .find((message) => message.role === "assistant" && message.content.trim().length > 0)?.id;
@@ -377,9 +375,42 @@ export function ChatView() {
   // 运行中但还没有活跃轮（如 user 消息回显前的瞬间）时，运行中临时块需要兜底挂末尾，避免丢失。
   const hasActiveTurn = blocks.some((block) => block.kind === "turn" && block.active);
 
-  // Resize the tail spacer to keep the anchored message's scroll position
-  // reachable, and recompute nearBottom (content can grow without a scroll
-  // event). Never moves scrollTop — streaming must not yank the view.
+  const updateStreamAutoFollowPaused = useCallback(
+    (paused: boolean, reason: "manual-scroll" | "near-bottom" | "button") => {
+      const state = streamAutoFollowRef.current;
+      if (state.paused === paused) {
+        return;
+      }
+      state.paused = paused;
+
+      const el = scrollRef.current;
+      const context = {
+        runId: state.runId,
+        reason,
+        scrollTop: el?.scrollTop,
+        scrollHeight: el?.scrollHeight,
+        clientHeight: el?.clientHeight
+      };
+      if (paused) {
+        console.info("[ChatView] 用户滚离底部，暂停本轮流式自动跟随", context);
+      } else {
+        console.info("[ChatView] 用户回到底部，恢复本轮流式自动跟随", context);
+      }
+    },
+    []
+  );
+
+  const followStreamToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    setNearBottom(isNearBottom(el));
+    syncScrollProgress(el);
+  }, [syncScrollProgress]);
+
+  // 调整尾部 spacer，让锚点消息的滚动位置始终可达，并在内容无滚动事件增长时同步底部状态。
   const syncTailGeometry = useCallback(() => {
     const el = scrollRef.current;
     const spacer = spacerRef.current;
@@ -414,10 +445,8 @@ export function ChatView() {
     syncScrollProgress(el);
   }, [syncScrollProgress]);
 
-  // Anchor a just-sent user message to the viewport top (claude.ai-style).
-  // The echo only ever arrives while the run is active; history loads and the
-  // post-run reload replace the whole array, so they are told apart by the
-  // tail message's id/sessionId rather than by array identity.
+  // 刚发送的用户消息回显后锚定到视口顶部（claude.ai 风格）。回显只会发生在运行中；
+  // 历史加载和运行结束刷新会替换整组数组，所以用尾部消息 id/sessionId 区分。
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) {
@@ -438,6 +467,7 @@ export function ChatView() {
       (!prev || prev.length === 0 || last.sessionId === prev.sessionId);
     if (isUserEcho) {
       anchorIdRef.current = last.id;
+      streamAutoFollowRef.current = { runId: activeRunId, paused: false };
       const node = el.querySelector<HTMLElement>(`[data-message-id="${last.id}"]`);
       const spacer = spacerRef.current;
       if (!node || !spacer) {
@@ -460,12 +490,14 @@ export function ChatView() {
       setNearBottom(isNearBottom(el));
       syncScrollProgress(el);
       console.debug("[ChatView] 锚定用户消息到视口顶部", { id: last.id, target });
+      console.debug("[ChatView] 启动本轮流式自动跟随", { messageId: last.id, runId: activeRunId });
       return;
     }
 
     const historyLoaded = messages.length > 0 && (!prev || last?.sessionId !== prev.sessionId);
     if (historyLoaded) {
       anchorIdRef.current = undefined;
+      streamAutoFollowRef.current = { paused: false };
       if (spacerRef.current) {
         spacerRef.current.style.height = "0px";
       }
@@ -474,25 +506,35 @@ export function ChatView() {
       syncScrollProgress(el);
       console.debug("[ChatView] 历史加载完成，滚动到底部", { count: messages.length });
     }
-  }, [messages, isRunning, syncScrollProgress]);
+  }, [activeRunId, messages, isRunning, syncScrollProgress]);
 
-  // While content streams in, shrink the spacer 1:1 with growth so the view
-  // stays put (no auto-scroll — the user may still be reading above).
+  // 流式内容增长时先更新 spacer；如果用户没有手动离开底部，就把视口跟随到最新输出。
   useEffect(() => {
-    if (typeof window.requestAnimationFrame !== "function") {
+    const syncAndMaybeFollow = () => {
       syncTailGeometry();
+      const autoFollow = streamAutoFollowRef.current;
+      const sameRun = !autoFollow.runId || !activeRunId || autoFollow.runId === activeRunId;
+      if (isRunning && hasActiveRunOutput && sameRun && !autoFollow.paused) {
+        followStreamToBottom();
+      }
+    };
+
+    if (typeof window.requestAnimationFrame !== "function") {
+      syncAndMaybeFollow();
       return;
     }
-    // Coalesce per-delta work into one frame so layout is forced at most once
-    // per paint while streaming.
+    // 合并同一帧内的多次 delta，避免每个 token 都强制布局。
     if (scrollFrame.current !== null) {
       window.cancelAnimationFrame(scrollFrame.current);
     }
     scrollFrame.current = window.requestAnimationFrame(() => {
       scrollFrame.current = null;
-      syncTailGeometry();
+      syncAndMaybeFollow();
     });
   }, [
+    activeRunId,
+    hasActiveRunOutput,
+    isRunning,
     messages,
     toolHistory,
     items,
@@ -501,10 +543,11 @@ export function ChatView() {
     pendingTool,
     toolActivity,
     runningTool,
+    followStreamToBottom,
     syncTailGeometry
   ]);
 
-  // Container resizes (window resize, side panels) change the spacer math.
+  // 容器尺寸变化（窗口、右侧面板等）会改变 spacer 计算。
   useEffect(() => {
     if (typeof ResizeObserver === "undefined") {
       window.addEventListener("resize", syncTailGeometry);
@@ -525,6 +568,36 @@ export function ChatView() {
     },
     []
   );
+
+  useEffect(() => {
+    if (!isRunning) {
+      streamAutoFollowRef.current = { paused: false };
+    }
+  }, [isRunning]);
+
+  const handleChatScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    const atBottom = isNearBottom(el);
+    setNearBottom(atBottom);
+    syncScrollProgress(el);
+
+    if (!isRunning || !anchorIdRef.current) {
+      return;
+    }
+    if (!atBottom) {
+      updateStreamAutoFollowPaused(true, "manual-scroll");
+    } else {
+      updateStreamAutoFollowPaused(false, "near-bottom");
+    }
+  }, [isRunning, syncScrollProgress, updateStreamAutoFollowPaused]);
+
+  const handleScrollToBottomClick = useCallback(() => {
+    updateStreamAutoFollowPaused(false, "button");
+    bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+  }, [updateStreamAutoFollowPaused]);
 
   // 运行中临时块兜底挂末尾时记一笔，便于排查「活跃轮判定异常导致思考/工具状态错位」。
   useEffect(() => {
@@ -727,13 +800,7 @@ export function ChatView() {
       <div
         ref={scrollRef}
         data-testid="chat-scroll"
-        onScroll={() => {
-          const el = scrollRef.current;
-          if (el) {
-            setNearBottom(isNearBottom(el));
-            syncScrollProgress(el);
-          }
-        }}
+        onScroll={handleChatScroll}
         className="chat-scroll-area min-h-0 flex-1 overflow-y-auto"
       >
         <div
@@ -789,9 +856,7 @@ export function ChatView() {
         <div className="pointer-events-none absolute inset-x-0 bottom-10 z-10">
           <div className="chat-primary-column flex justify-center">
             <ScrollToBottomButton
-              onClick={() =>
-                bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" })
-              }
+              onClick={handleScrollToBottomClick}
             />
           </div>
         </div>

@@ -2,6 +2,7 @@ import {
   CheckMediumIcon,
   CopyIcon,
   EllipsisHorizontalIcon,
+  FolderOpenSmallIcon,
   PencilOutlineIcon,
   PinFilledSmallIcon,
   PinOutlineIcon,
@@ -40,6 +41,7 @@ export function SessionActionsMenu({ session }: { session: Session }) {
   const isRunning = useAppStore((state) => state.isRunning);
   const setSessionPinned = useAppStore((state) => state.setSessionPinned);
   const renameSession = useAppStore((state) => state.renameSession);
+  const bindPhoneSessionToFolder = useAppStore((state) => state.bindPhoneSessionToFolder);
   const forkSession = useAppStore((state) => state.forkSession);
   const setNotice = useAppStore((state) => state.setNotice);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -48,6 +50,7 @@ export function SessionActionsMenu({ session }: { session: Session }) {
 
   const lastMessage = useMemo(() => latestForkableMessage(messages), [messages]);
   const forkDisabled = isRunning;
+  const isPhoneSession = Boolean(session.feishuChatId || session.wechatChatId);
 
   async function copyText(kind: "title" | "sessionId" | "markdown", text: string): Promise<void> {
     if (!navigator.clipboard?.writeText) {
@@ -157,6 +160,20 @@ export function SessionActionsMenu({ session }: { session: Session }) {
             <PencilOutlineIcon className="size-4" />
             <span>{t("sessionMenu.rename")}</span>
           </DropdownMenuItem>
+          {isPhoneSession ? (
+            <DropdownMenuItem
+              onSelect={() => {
+                console.info("[session-actions-menu] 手机会话选择绑定文件夹", {
+                  sessionId: session.id,
+                  source: session.wechatChatId ? "wechat" : "feishu"
+                });
+                void bindPhoneSessionToFolder(session.id);
+              }}
+            >
+              <FolderOpenSmallIcon className="size-4" />
+              <span>{t("sessionMenu.bindFolder")}</span>
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuSeparator />
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>

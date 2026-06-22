@@ -687,6 +687,51 @@ describe("App", () => {
 
     await openSessionActionsMenu();
     expect(screen.queryByText("打开侧边聊天")).not.toBeInTheDocument();
+    expect(screen.queryByText("绑定文件夹…")).not.toBeInTheDocument();
+  });
+
+  it("binds a phone session folder from the session actions menu", async () => {
+    const phoneSession = createSessionFixture({ feishuChatId: "oc_chat1" });
+    const project: Project = {
+      id: "project_mobile",
+      name: "mobile-project",
+      path: "/tmp/mobile-project",
+      createdAt: "2026-06-16T00:00:04.000Z",
+      updatedAt: "2026-06-16T00:00:04.000Z"
+    };
+    const createProject = vi.fn(async () => project);
+    const updateSession = vi.fn(async () => ({ ...phoneSession, projectId: project.id }));
+    const listSlashCommands = vi.fn(async () => ({ commands: [], diagnostics: [] }));
+    Object.defineProperty(window, "chengxiaobang", {
+      value: {
+        pickDirectory: vi.fn(async () => "/tmp/mobile-project")
+      },
+      configurable: true
+    });
+    const client = createClient({
+      listSessions: vi.fn(async () => [phoneSession]),
+      createProject,
+      updateSession: updateSession as never,
+      listSlashCommands
+    });
+
+    useAppStore.setState({ view: "chat", activeSessionId: phoneSession.id });
+    render(<App client={client} />);
+
+    await openSessionActionsMenu();
+    fireEvent.click(await screen.findByText("绑定文件夹…"));
+
+    await waitFor(() =>
+      expect(createProject).toHaveBeenCalledWith({
+        path: "/tmp/mobile-project",
+        name: "mobile-project"
+      })
+    );
+    expect(updateSession).toHaveBeenCalledWith(phoneSession.id, {
+      projectId: "project_mobile"
+    });
+    expect(useAppStore.getState().activeProjectId).toBe("project_mobile");
+    expect(listSlashCommands).toHaveBeenCalledWith("project_mobile");
   });
 
   it("only shows the side chat marker after a side chat exists", async () => {
@@ -1719,6 +1764,14 @@ describe("App", () => {
 
     act(() => {
       emit?.({ type: "tool_call", runId: "run_1", toolCall: webFetchTool("tool_fetch_1", "https://a.example", "running") });
+    });
+    await waitFor(() => {
+      expect(within(chatScroll).getByText("抓取网页中")).toBeInTheDocument();
+    });
+    expect(within(chatScroll).queryByText(/抓取 https:\/\/a\.example 中/)).not.toBeInTheDocument();
+    expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
+
+    act(() => {
       emit?.({
         type: "tool_call",
         runId: "run_1",
@@ -1735,6 +1788,14 @@ describe("App", () => {
 
     act(() => {
       emit?.({ type: "tool_call", runId: "run_1", toolCall: webFetchTool("tool_fetch_2", "https://b.example", "running") });
+    });
+    await waitFor(() => {
+      expect(within(chatScroll).getByText(/抓取网页中/)).toBeInTheDocument();
+    });
+    expect(within(chatScroll).queryByText(/抓取 https:\/\/b\.example 中/)).not.toBeInTheDocument();
+    expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
+
+    act(() => {
       emit?.({
         type: "tool_call",
         runId: "run_1",

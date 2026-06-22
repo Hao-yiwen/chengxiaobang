@@ -1,6 +1,8 @@
 import {
   CheckCircleIcon,
   CommentTextIcon,
+  FolderOpenSmallIcon,
+  PointerOutlineIcon,
   PlusIcon,
   RefreshIcon,
   WarningCircleIcon
@@ -13,12 +15,13 @@ import feishuLogoUrl from "../../../assets/feishu-logo.png";
 import connectPhoneIllustrationUrl from "../../../assets/connect-phone-illustration.png";
 import connectWechatIllustrationUrl from "../../../assets/connect-wechat-illustration.png";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
 const MIN_INSTALL_POLL_MS = 3000;
 const QR_VISIBLE_TTL_SECONDS = 10 * 60;
-const CONNECT_TARGETS = ["wechat", "feishu"] as const satisfies readonly ConnectPhoneTarget[];
+const CONNECT_TARGETS = ["feishu", "wechat"] as const satisfies readonly ConnectPhoneTarget[];
 
 type ConnectTarget = (typeof CONNECT_TARGETS)[number];
 type ConnectPhoneTab = "bindings" | "scan";
@@ -47,10 +50,11 @@ export function ConnectPhoneView() {
   const loadData = useAppStore((state) => state.loadData);
   const loadConnectPhoneConfig = useAppStore((state) => state.loadConnectPhoneConfig);
   const selectSession = useAppStore((state) => state.selectSession);
+  const bindPhoneSessionToFolder = useAppStore((state) => state.bindPhoneSessionToFolder);
   const startConnectPhoneInstall = useAppStore((state) => state.startConnectPhoneInstall);
   const pollConnectPhoneInstall = useAppStore((state) => state.pollConnectPhoneInstall);
 
-  const [activeTarget, setActiveTarget] = useState<ConnectTarget>("wechat");
+  const [activeTarget, setActiveTarget] = useState<ConnectTarget>("feishu");
   const [activeTab, setActiveTab] = useState<ConnectPhoneTab>("scan");
   const [configLoaded, setConfigLoaded] = useState(false);
   const [install, setInstall] = useState<InstallState>(INITIAL_INSTALL_STATE);
@@ -80,18 +84,6 @@ export function ConnectPhoneView() {
   }, []);
 
   useEffect(() => {
-    if (!configLoaded || activeTarget !== "wechat") {
-      return;
-    }
-    const wechatConfigured = isTargetConfigured("wechat", { feishuConfig, wechatConfig });
-    const feishuConfigured = isTargetConfigured("feishu", { feishuConfig, wechatConfig });
-    if (!wechatConfigured && feishuConfigured) {
-      console.info("[connect-phone] 检测到已有飞书连接，默认切到飞书管理");
-      setActiveTarget("feishu");
-    }
-  }, [activeTarget, configLoaded, feishuConfig, wechatConfig]);
-
-  useEffect(() => {
     cancelInstallAttempt();
     autoInstallKeyRef.current = undefined;
     setInstall(INITIAL_INSTALL_STATE);
@@ -115,11 +107,6 @@ export function ConnectPhoneView() {
 
   useEffect(() => {
     if (!configLoaded || isConfigured || activeTab !== "scan" || install.status !== "idle") {
-      return;
-    }
-    const wechatConfigured = isTargetConfigured("wechat", { feishuConfig, wechatConfig });
-    const feishuConfigured = isTargetConfigured("feishu", { feishuConfig, wechatConfig });
-    if (activeTarget === "wechat" && !wechatConfigured && feishuConfigured) {
       return;
     }
     const autoInstallKey = `${activeTarget}:${isConfigured ? "bound" : "new"}`;
@@ -176,6 +163,11 @@ export function ConnectPhoneView() {
   function openBoundSession(sessionId: string): void {
     console.info("[connect-phone] 打开绑定会话", { target: activeTarget, sessionId });
     void selectSession(sessionId);
+  }
+
+  function bindBoundSessionFolder(sessionId: string): void {
+    console.info("[connect-phone] 设置绑定会话文件夹", { target: activeTarget, sessionId });
+    void bindPhoneSessionToFolder(sessionId);
   }
 
   async function startInstall(target: ConnectTarget): Promise<void> {
@@ -341,6 +333,7 @@ export function ConnectPhoneView() {
                 sessions={boundSessions}
                 onRefresh={refreshBindings}
                 onOpenSession={openBoundSession}
+                onBindFolder={bindBoundSessionFolder}
               />
             )}
           </div>
@@ -476,6 +469,7 @@ function BoundSessionsPanel(props: {
   sessions: Session[];
   onRefresh: () => void;
   onOpenSession: (sessionId: string) => void;
+  onBindFolder: (sessionId: string) => void;
 }) {
   const { t } = useTranslation();
   const emptyHint =
@@ -514,31 +508,60 @@ function BoundSessionsPanel(props: {
       ) : (
         <div className="space-y-2" data-testid={`${props.target}-binding-list`}>
           {props.sessions.map((session) => (
-            <button
+            <div
               key={session.id}
-              type="button"
-              onClick={() => props.onOpenSession(session.id)}
-              className="flex w-full min-w-0 items-center gap-3 rounded-sm border bg-background px-3 py-2.5 text-left transition-colors hover:bg-canvas-soft-2"
+              className="flex w-full min-w-0 items-center gap-2 rounded-sm border bg-background px-3 py-2.5 transition-colors hover:bg-canvas-soft-2"
             >
-              <span className="flex size-8 flex-none items-center justify-center rounded-xs bg-canvas-soft-2 text-muted-foreground">
-                <CommentTextIcon className="size-4" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-caption font-medium text-foreground">
-                  {session.title}
+              <button
+                type="button"
+                onClick={() => props.onOpenSession(session.id)}
+                className="flex min-w-0 flex-1 items-center gap-3 text-left"
+              >
+                <span className="flex size-8 flex-none items-center justify-center rounded-xs bg-canvas-soft-2 text-muted-foreground">
+                  <CommentTextIcon className="size-4" />
                 </span>
-                <span className="mt-0.5 block truncate text-micro text-muted-foreground">
-                  {t(
-                    props.target === "wechat"
-                      ? "connectPhone.wechatBoundSessionHint"
-                      : "connectPhone.feishuBoundSessionHint"
-                  )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-caption font-medium text-foreground">
+                    {session.title}
+                  </span>
+                  <span className="mt-0.5 block truncate text-micro text-muted-foreground">
+                    {t(
+                      props.target === "wechat"
+                        ? "connectPhone.wechatBoundSessionHint"
+                        : "connectPhone.feishuBoundSessionHint"
+                    )}
+                  </span>
                 </span>
-              </span>
-              <span className="flex-none text-micro font-medium text-link">
-                {t("connectPhone.openSession")}
-              </span>
-            </button>
+              </button>
+              <div className="flex flex-none items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={t("connectPhone.openSession")}
+                      onClick={() => props.onOpenSession(session.id)}
+                      className="flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                    >
+                      <PointerOutlineIcon className="size-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("connectPhone.openSession")}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={t("connectPhone.bindFolderForSession", { title: session.title })}
+                      onClick={() => props.onBindFolder(session.id)}
+                      className="flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                    >
+                      <FolderOpenSmallIcon className="size-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("connectPhone.bindFolder")}</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
           ))}
         </div>
       )}

@@ -112,6 +112,26 @@ describe("ApprovalDock", () => {
     });
   });
 
+  it("submits a permission choice immediately on double click", () => {
+    const approve = vi.fn();
+    const activeProject = project();
+    useAppStore.setState({
+      projects: [activeProject],
+      activeProjectId: activeProject.id,
+      pendingTool: pendingTool(),
+      approve
+    });
+    render(<ApprovalDock />);
+
+    fireEvent.doubleClick(screen.getByRole("button", { name: /始终允许本项目/ }));
+
+    expect(approve).toHaveBeenCalledWith("tool_1", {
+      approved: true,
+      approvalScope: "project"
+    });
+    expect(screen.queryByTestId("approval-dock")).not.toBeInTheDocument();
+  });
+
   it("supports arrow key selection and Enter confirmation", () => {
     const approve = vi.fn();
     const activeProject = project();
@@ -221,5 +241,24 @@ describe("ApprovalDock", () => {
       }
     });
     expect(useAppStore.getState().planMode).toBe(true);
+  });
+
+  it("rejects ExitPlanMode with Escape and keeps plan mode enabled", () => {
+    const approve = vi.fn();
+    useAppStore.setState({
+      planMode: true,
+      pendingTool: pendingTool({
+        name: "ExitPlanMode",
+        args: { plan: "# 示例计划\n\n## Summary\n先确认。" }
+      }),
+      approve
+    });
+    render(<ApprovalDock />);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(approve).toHaveBeenCalledWith("tool_1", { approved: false });
+    expect(useAppStore.getState().planMode).toBe(true);
+    expect(screen.queryByTestId("plan-approval-dock")).not.toBeInTheDocument();
   });
 });

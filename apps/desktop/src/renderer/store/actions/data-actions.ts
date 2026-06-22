@@ -6,7 +6,7 @@ import { buildSessionMarkdown, exportFilename } from "../../lib/session-export";
 import i18n from "../../i18n";
 import { apiClientRef, replaceRunEventSubscription, setApiClient } from "../client";
 import type { AppState, AppStoreGet, AppStoreSet, View } from "../types";
-import { upsertSession } from "../helpers/collections";
+import { upsertProject, upsertSession } from "../helpers/collections";
 import { resolveContextAttachments } from "../helpers/attachments";
 import {
   HOME_COMPOSER_DRAFT_SCOPE,
@@ -594,6 +594,61 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         set((state) => ({
           sessions: state.sessions.map((session) => (session.id === id ? updated : session))
         }));
+      },
+
+      async bindPhoneSessionToFolder(id) {
+        const client = apiClientRef.current;
+        const session = get().sessions.find((item) => item.id === id);
+        if (!client || !session) {
+          console.warn("[store] 手机会话绑定文件夹失败：缺少 ApiClient 或会话", {
+            sessionId: id,
+            hasClient: Boolean(client)
+          });
+          return;
+        }
+        if (!session.feishuChatId && !session.wechatChatId) {
+          console.warn("[store] 拒绝为普通会话绑定手机文件夹入口", { sessionId: id });
+          return;
+        }
+        if (!window.chengxiaobang?.pickDirectory) {
+          set({ notice: i18n.t("notice.openFolderDesktopOnly") });
+          return;
+        }
+        console.info("[store] 手机会话开始选择绑定文件夹", {
+          sessionId: id,
+          source: session.wechatChatId ? "wechat" : "feishu",
+          currentProjectId: session.projectId
+        });
+        const dir = await window.chengxiaobang.pickDirectory();
+        if (!dir) {
+          console.debug("[store] 手机会话绑定文件夹已取消", { sessionId: id });
+          return;
+        }
+        try {
+          const project = await client.createProject({ path: dir, name: basenameOf(dir) || dir });
+          const updated = await client.updateSession(id, { projectId: project.id });
+          console.info("[store] 手机会话已绑定文件夹", {
+            sessionId: id,
+            projectId: project.id,
+            path: project.path
+          });
+          set((state) => ({
+            projects: upsertProject(state.projects, project),
+            sessions: upsertSession(state.sessions, updated),
+            activeProjectId:
+              state.activeSessionId === id ? updated.projectId ?? undefined : state.activeProjectId
+          }));
+          if (get().activeSessionId === id) {
+            await get().refreshSlashCommands(project.id);
+          }
+        } catch (error) {
+          console.warn("[store] 手机会话绑定文件夹失败", {
+            sessionId: id,
+            dir,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          set({ notice: i18n.t("notice.openFolderFailed") });
+        }
       },
 
       async setSessionPinned(id, pinned) {

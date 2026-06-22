@@ -165,6 +165,20 @@ describe("RunEventTranslator reasoning 计时", () => {
           }
         }
       } as never);
+      await translator.emit({
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "toolcall_delta",
+          contentIndex: 1,
+          delta: "{\"file_path\":\"out.txt\"",
+          partial: {
+            content: [
+              { type: "thinking", thinking: "先想清楚" },
+              { type: "toolCall", id: "call_1", name: "Write", arguments: { file_path: "out.txt" } }
+            ]
+          }
+        }
+      } as never);
       vi.advanceTimersByTime(30000);
       await translator.emit({
         type: "message_end",

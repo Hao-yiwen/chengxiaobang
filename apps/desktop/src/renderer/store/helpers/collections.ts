@@ -1,4 +1,4 @@
-import type { Message, Session, ToolCall } from "@chengxiaobang/shared";
+import type { Message, Project, Session, ToolCall } from "@chengxiaobang/shared";
 
 export function appendMessage(messages: Message[], message: Message): Message[] {
   if (messages.some((item) => item.id === message.id)) {
@@ -20,4 +20,11 @@ export function upsertSession(sessions: Session[], session: Session): Session[] 
   }
   // 新会话的第一次运行尚未出现在侧边栏列表里，需要插到最前面。
   return [session, ...sessions];
+}
+
+export function upsertProject(projects: Project[], project: Project): Project[] {
+  if (projects.some((item) => item.id === project.id)) {
+    return projects.map((item) => (item.id === project.id ? project : item));
+  }
+  return [project, ...projects];
 }
