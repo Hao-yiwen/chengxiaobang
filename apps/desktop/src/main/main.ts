@@ -88,6 +88,9 @@ import {
 
 const MAX_CONTEXT_FILE_BYTES = 256 * 1024;
 const DEFAULT_BLANK_PROJECT_NAME = "未命名项目";
+// 应用正式展示名。app.getName() 在 dev 下返回 package.json 的 "@chengxiaobang/desktop"，
+// 会让 macOS 菜单栏与「关于」面板显示成 "@chengxiaobang"，因此统一用此常量覆盖。
+const PRODUCT_NAME = "程小帮";
 const desktopLogging = initializeDesktopLogging({ logDir: defaultLogDir() });
 
 if (desktopLogging) {
@@ -764,7 +767,7 @@ async function createWindow(): Promise<void> {
       : {})
   });
   installApplicationMenu({
-    appName: app.getName(),
+    appName: PRODUCT_NAME,
     platform: process.platform,
     updateService,
     requestNewChat: requestNewChatFromMenu
@@ -1244,6 +1247,12 @@ function applyDevDockIcon(): void {
 }
 
 app.whenReady().then(() => {
+  // 覆盖「关于」面板的展示名与版本，避免 dev 下显示成 "@chengxiaobang/desktop"。
+  app.setAboutPanelOptions({
+    applicationName: PRODUCT_NAME,
+    applicationVersion: app.getVersion()
+  });
+  console.info("[main] 设置关于面板", { applicationName: PRODUCT_NAME, version: app.getVersion() });
   applyDevDockIcon();
   return createWindow();
 }).catch((error) => {
