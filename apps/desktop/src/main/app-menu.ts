@@ -1,4 +1,5 @@
 import { Menu, type MenuItemConstructorOptions } from "electron";
+import { PRODUCT_NAME } from "@chengxiaobang/shared/product";
 
 export interface ApplicationMenuUpdateService {
   checkForUpdates(options: { manual: boolean }): Promise<unknown>;
@@ -30,7 +31,7 @@ export function createApplicationMenuTemplate(
 }
 
 function createMacApplicationMenuTemplate(options: ApplicationMenuOptions): MenuItemConstructorOptions[] {
-  const appName = options.appName || "程小帮";
+  const appName = options.appName || PRODUCT_NAME;
   return [
     {
       label: appName,

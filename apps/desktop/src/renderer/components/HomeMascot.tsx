@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@chengxiaobang/shared";
 import mascotUrl from "../../../assets/home-mascot-cutout.png";
 import { cn } from "@/lib/utils";
 
@@ -8,7 +9,7 @@ export function HomeMascot({ className }: { className?: string }) {
   return (
     <img
       src={mascotUrl}
-      alt="程小帮人物"
+      alt={`${PRODUCT_NAME}人物`}
       className={cn("size-24 object-contain", className)}
     />
   );

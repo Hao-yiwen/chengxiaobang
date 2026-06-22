@@ -1,5 +1,6 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
+import { PRODUCT_NAME } from "@chengxiaobang/shared";
 import zh from "./locales/zh.json";
 import en from "./locales/en.json";
 
@@ -27,7 +28,8 @@ export function setupI18n(lng: Locale = DEFAULT_LOCALE): typeof i18n {
       resources,
       lng,
       fallbackLng: DEFAULT_LOCALE,
-      interpolation: { escapeValue: false },
+      // productName 作为全局默认插值变量,文案里用 {{productName}} 即可统一引用应用名。
+      interpolation: { escapeValue: false, defaultVariables: { productName: PRODUCT_NAME } },
       returnNull: false
     });
   } else if (i18n.language !== lng) {

@@ -151,11 +151,11 @@
     "messageLabel": "Message input",
     "placeholder": "Type anything",
     "placeholderRotation": [
-      "Type anything, let 程小帮 handle it",
+      "Type anything, let {{productName}} handle it",
       "Try: tidy up this folder for me",
       "Try: draft a weekly project report"
     ],
-    "runningPlaceholder": "程小帮 is working on the current request…",
+    "runningPlaceholder": "{{productName}} is working on the current request…",
     "queuePlaceholder": "Request follow-up changes",
     "queueSend": "Queue message",
     "queuePosition": "Queued {{index}}",
@@ -211,7 +211,7 @@
     "planWatermark": "Plan mode · think before doing",
     "planModeOff": "Turn off plan mode",
     "addFile": "Add file",
-    "askUserWaiting": "程小帮 is waiting for your answer…",
+    "askUserWaiting": "{{productName}} is waiting for your answer…",
     "manageModels": "Manage models…",
     "insertSlash": "/skills",
     "insertAt": "@files",
@@ -263,7 +263,7 @@
   },
   "onboarding": {
     "title": "Add a model to get started",
-    "desc": "Enter an API key for any model to start using 程小帮. You can also open Settings for full configuration.",
+    "desc": "Enter an API key for any model to start using {{productName}}. You can also open Settings for full configuration.",
     "type": "Type",
     "model": "Model",
     "getApiKey": "Get API key",
@@ -303,7 +303,7 @@
     },
     "scrollToBottom": "Scroll to bottom",
     "roleUser": "You",
-    "roleAssistant": "程小帮",
+    "roleAssistant": "{{productName}}",
     "roleTool": "Tool",
     "roleSystem": "System",
     "previewFile": "Preview file",
@@ -493,7 +493,7 @@
     "openFailedFallback": "Unknown error"
   },
   "app": {
-    "disclaimer": "程小帮 can make mistakes. Check important info."
+    "disclaimer": "{{productName}} can make mistakes. Check important info."
   },
   "setup": {
     "title": "Set up a model",
@@ -514,10 +514,10 @@
       "title": "Let’s tune this workspace to you",
       "desc": "Set a few basics and connect a model before the first conversation.",
       "start": "Start setup",
-      "imageAlt": "程小帮 onboarding illustration"
+      "imageAlt": "{{productName}} onboarding illustration"
     },
     "profile": {
-      "title": "What will you mostly use 程小帮 for?",
+      "title": "What will you mostly use {{productName}} for?",
       "desc": "These choices only shape the local first-run experience. You can still adjust models and tools later.",
       "primaryLabel": "Main use",
       "scenarioLabel": "Common scenarios",
@@ -1130,14 +1130,14 @@
     "deleteConfirm": "Delete custom skill \"{{name}}\"? Its files will be removed from disk.",
     "manage": "Manage skills",
     "addCustom": "Add skill",
-    "addCustomHint": "Paste a GitHub link with a SKILL.md to import quickly, or let 程小帮 create one for you in chat.",
+    "addCustomHint": "Paste a GitHub link with a SKILL.md to import quickly, or let {{productName}} create one for you in chat.",
     "importUrlLabel": "GitHub URL",
     "importUrlHint": "Repository, directory, or SKILL.md file links are supported; the repo must be public.",
     "import": "Import",
     "importing": "Importing…",
     "or": "or",
     "chatCreateTitle": "Create via chat",
-    "chatCreateHint": "Describe the skill you want in natural language, or send 程小帮 a GitHub link — it will fetch the content, draft, and install the skill for you.",
+    "chatCreateHint": "Describe the skill you want in natural language, or send {{productName}} a GitHub link — it will fetch the content, draft, and install the skill for you.",
     "chatCreateCta": "Create in chat",
     "chatCreatePrompt": "I want to create a new skill. My requirements are: ",
     "viewDetail": "View details of \"{{name}}\"",

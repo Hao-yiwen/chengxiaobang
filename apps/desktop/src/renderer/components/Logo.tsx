@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@chengxiaobang/shared";
 import iconUrl from "../../../assets/icon.png";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +10,7 @@ export function Logo({ className }: { className?: string }) {
   return (
     <img
       src={iconUrl}
-      alt="程小帮"
+      alt={PRODUCT_NAME}
       className={cn("size-8 rounded-lg object-cover", className)}
     />
   );
