@@ -643,29 +643,34 @@ function historicalTodoToolCall(partial: Partial<ToolCall>): ToolCall {
 }
 
 describe("right panel", () => {
-  it("opens on the menu page, navigates back from a tool and closes", async () => {
+  it("opens an empty picker, adds and closes a tab, and closes the panel", async () => {
     const client = createClient();
 
     render(<App client={client} />);
     await screen.findByText("项目对话");
     await selectSession("项目对话");
 
+    // 空面板展示工具选择器(非 git 项目:终端/浏览器/文件/侧边会话)。
     fireEvent.click(await screen.findByTitle("打开侧边面板"));
     expect(await screen.findByRole("button", { name: "侧边会话" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
 
+    // 选「终端」新建一个终端 tab。
     installTerminalBridge();
     fireEvent.click(screen.getByRole("button", { name: "终端" }));
     expect(await screen.findByLabelText("终端")).toBeInTheDocument();
+    expect(useAppStore.getState().rightPanelMode).toBe("terminal");
+    expect(useAppStore.getState().rightPanelTabs).toHaveLength(1);
 
-    fireEvent.click(screen.getByTitle("返回菜单"));
+    // 关闭该 tab,回到空选择器。
+    fireEvent.click(screen.getByTitle("关闭标签页"));
+    await waitFor(() => expect(useAppStore.getState().rightPanelTabs).toHaveLength(0));
     expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
 
+    // 关闭整个面板。
     fireEvent.click(screen.getByTitle("关闭面板"));
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "浏览器" })).not.toBeInTheDocument()
-    );
+    await waitFor(() => expect(useAppStore.getState().rightPanelOpen).toBe(false));
   });
 
   it("hides the top-right toolbar before opening the right panel", async () => {
@@ -1482,7 +1487,7 @@ describe("right panel", () => {
     expect(screen.queryByRole("button", { name: "审查" })).not.toBeInTheDocument();
   });
 
-  it("does not fall back from changes while git availability is still pending", async () => {
+  it("keeps the changes tab open even after git resolves to not-a-repo", async () => {
     const gitInfoResolvers: Array<(value: { isRepo: boolean }) => void> = [];
     const getGitInfo = vi.fn(
       () =>
@@ -1511,9 +1516,9 @@ describe("right panel", () => {
       }
     });
 
-    await waitFor(() => expect(useAppStore.getState().rightPanelMode).toBeNull());
-    expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "审查" })).not.toBeInTheDocument();
+    // tab 模型下不再自动回退:审查 tab 保留,由 ChangesPanel 自行提示非 Git 仓库。
+    expect(useAppStore.getState().rightPanelMode).toBe("changes");
+    expect(screen.getByText("审查")).toBeInTheDocument();
   });
 
   it("lists active project files in the file preview panel and opens them with project context", async () => {
@@ -2206,7 +2211,9 @@ describe("right panel", () => {
         previewFile: undefined
       });
     });
-    expect(useAppStore.getState().rightPanelBySession[session.id]?.mode).toBe("files");
+    expect(
+      useAppStore.getState().rightPanelBySession[session.id]?.tabs.map((tab) => tab.kind)
+    ).toContain("files");
 
     act(() => {
       useAppStore.getState().setView("chat");

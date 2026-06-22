@@ -37,6 +37,7 @@ import type {
   QueuedRunItem,
   RightPanelMode,
   RightPanelSessionState,
+  RightPanelTab,
   TerminalEntry,
   Theme,
   View
@@ -113,6 +114,9 @@ export const initialState =  {
   projectSortMode: "created" as ProjectSortMode,
   rightPanelOpen: false,
   rightPanelMode: null as RightPanelMode | null,
+  rightPanelTabs: [] as RightPanelTab[],
+  rightPanelActiveTabId: undefined as string | undefined,
+  rightPanelMaximized: false,
   rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH,
   previewFile: undefined as PreviewFileState | undefined,
   filePreviewEntrySource: undefined,

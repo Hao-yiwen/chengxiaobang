@@ -1,6 +1,5 @@
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { createId } from "@chengxiaobang/shared";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { selectActiveProject, useAppStore } from "@/store";
@@ -125,12 +124,20 @@ function rgba(value: string, alpha: number): string {
   return `rgba(${value}, ${alpha})`;
 }
 
+interface TerminalPanelProps {
+  /** 来自 tab 的稳定 PTY id:切 tab 不重建,关 tab 才销毁。 */
+  terminalId: string;
+  /** 当前 tab 是否可见;隐藏时容器尺寸为 0,需在重新可见时主动 fit。 */
+  visible: boolean;
+}
+
 /** 右侧真实 PTY 终端：main 进程持有 node-pty，renderer 只负责 xterm 渲染和输入转发。 */
-export function TerminalPanel() {
+export function TerminalPanel({ terminalId, visible }: TerminalPanelProps) {
   const { t } = useTranslation();
   const project = useAppStore(selectActiveProject);
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
   // t 只用于退出/启动失败的文案;用 ref 持有最新 t,避免它进入下方 effect 依赖——否则切换
   // 界面语言会重建 PTY,丢掉当前终端会话、滚动缓冲与运行中的命令。
   const tRef = useRef(t);
@@ -141,7 +148,6 @@ export function TerminalPanel() {
       return undefined;
     }
     const bridge = window.chengxiaobang;
-    const terminalId = createId("pty");
     const terminal = new Terminal({
       cursorBlink: true,
       convertEol: false,
@@ -156,6 +162,7 @@ export function TerminalPanel() {
     terminal.open(containerRef.current);
     terminal.focus();
     terminalRef.current = terminal;
+    fitAddonRef.current = fitAddon;
 
     let disposed = false;
     let frame = 0;
@@ -245,9 +252,38 @@ export function TerminalPanel() {
       if (terminalRef.current === terminal) {
         terminalRef.current = null;
       }
+      if (fitAddonRef.current === fitAddon) {
+        fitAddonRef.current = null;
+      }
     };
     // 故意不依赖 t:文案通过 tRef 读取最新值,语言切换不应重建终端。
-  }, [project]);
+    // 依赖 terminalId:同一 tab 的 id 稳定,切 tab(hidden 切显隐)不重建,只有真正卸载(关 tab)才销毁 PTY。
+  }, [project, terminalId]);
+
+  // 隐藏期间容器尺寸为 0,ResizeObserver 不可靠;重新可见时主动 fit 一次并聚焦。
+  useEffect(() => {
+    if (!visible) {
+      return undefined;
+    }
+    const frame = requestAnimationFrame(() => {
+      const terminal = terminalRef.current;
+      const fitAddon = fitAddonRef.current;
+      if (!terminal || !fitAddon) {
+        return;
+      }
+      try {
+        fitAddon.fit();
+        void window.chengxiaobang?.terminalResize?.(terminalId, terminal.cols, terminal.rows);
+        terminal.focus();
+      } catch (error) {
+        console.warn("[terminal] 重新可见时 fit 失败", {
+          terminalId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [visible, terminalId]);
 
   if (!project) {
     return (

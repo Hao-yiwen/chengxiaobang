@@ -1,7 +1,7 @@
 import type { WebContents } from "electron";
 import { chmod, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { platform } from "node:os";
+import { hostname, platform, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import * as nodePty from "node-pty";
 import type { TrustedIpcRegistrar } from "./trusted-ipc";
@@ -276,5 +276,16 @@ export function registerTerminalIpc(
   ipc.handle("terminal:close", (_event, id: unknown) =>
     manager.close(typeof id === "string" ? id : "", "renderer-close")
   );
+  // 终端 tab 标题用的 user@host;沙箱 preload 取不到 node:os,只能由主进程提供。
+  ipc.handle("terminal:host-label", () => {
+    try {
+      const user = userInfo().username || "user";
+      const host = (hostname() || "local").split(".")[0];
+      return `${user}@${host}`;
+    } catch (error) {
+      console.warn("[terminal] 读取主机标签失败，使用回退值", error);
+      return "terminal";
+    }
+  });
   return manager;
 }

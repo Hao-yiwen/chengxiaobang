@@ -22,13 +22,91 @@ import {
   DEFAULT_RIGHT_PANEL_WIDTH,
   RIGHT_PANEL_FILE_WIDTH,
   RIGHT_PANEL_REVIEW_WIDTH,
+  activeRightPanelTabKind,
   clampRightPanelWidth,
+  closeRightPanelTab as closeRightPanelTabPure,
+  openOrFocusRightPanelTab,
   rightPanelWidthForOpen,
   rememberRightPanel,
-  restoredRightPanel
+  restoredRightPanel,
+  type OpenRightPanelTabInput
 } from "../helpers/right-panel";
+import type { RightPanelMode } from "../types";
 import { selectActiveProject, selectActiveSession } from "../selectors";
 import { upsertSession } from "../helpers/collections";
+
+/** 从路径取末段作为文件 tab 标题。 */
+function basename(path: string): string {
+  const segments = path.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? path;
+}
+
+function targetWidthForKind(kind: RightPanelMode): number | undefined {
+  return kind === "changes"
+    ? RIGHT_PANEL_REVIEW_WIDTH
+    : kind === "files"
+      ? RIGHT_PANEL_FILE_WIDTH
+      : undefined;
+}
+
+/** 打开或聚焦一个 tab,产出统一的右侧面板状态补丁(含活动 tab 镜像与宽度)。 */
+function openTabPatch(
+  state: AppState,
+  input: OpenRightPanelTabInput,
+  targetWidth = targetWidthForKind(input.kind)
+): RightPanelPatch {
+  const { tabs, activeTabId } = openOrFocusRightPanelTab(state.rightPanelTabs, input);
+  return {
+    rightPanelOpen: true,
+    rightPanelTabs: tabs,
+    rightPanelActiveTabId: activeTabId,
+    rightPanelMode: activeRightPanelTabKind(tabs, activeTabId),
+    rightPanelWidth: rightPanelWidthForOpen(state.rightPanelWidth, state.rightPanelOpen, targetWidth)
+  };
+}
+
+// 终端 tab 标题用的 user@host:沙箱 preload 取不到 node:os,只能异步问主进程,这里缓存一次。
+let cachedTerminalHostLabel: string | undefined;
+
+/** 终端 tab 需要稳定 PTY id 与 user@host 标签;其余工具只带 kind。标题首拿不到时先留空,稍后异步补。 */
+function openTabInputForKind(kind: RightPanelMode): OpenRightPanelTabInput {
+  if (kind !== "terminal") {
+    return { kind };
+  }
+  return {
+    kind,
+    terminalId: createId("pty"),
+    ...(cachedTerminalHostLabel ? { title: cachedTerminalHostLabel } : {})
+  };
+}
+
+/** 异步取本机 user@host 标签并回填所有尚无标题的终端 tab(终端 tab 不持久化,无需进会话快照)。 */
+function ensureTerminalHostLabel(set: AppStoreSet): void {
+  if (cachedTerminalHostLabel) {
+    return;
+  }
+  const fetchLabel = window.chengxiaobang?.terminalHostLabel;
+  if (!fetchLabel) {
+    return;
+  }
+  void Promise.resolve(fetchLabel())
+    .then((label) => {
+      if (!label) {
+        return;
+      }
+      cachedTerminalHostLabel = label;
+      set((state) => ({
+        rightPanelTabs: state.rightPanelTabs.map((tab) =>
+          tab.kind === "terminal" && !tab.title ? { ...tab, title: label } : tab
+        )
+      }));
+    })
+    .catch((error: unknown) => {
+      console.warn("[store] 读取终端主机标签失败", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+}
 
 export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {
   return {
@@ -51,8 +129,8 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
               fromView,
               toView: view,
               sessionId,
-              savedMode: shouldRememberRightPanel
-                ? rightPanelBySession[sessionId ?? ""]?.mode
+              savedTabCount: shouldRememberRightPanel
+                ? rightPanelBySession[sessionId ?? ""]?.tabs.length
                 : undefined,
               restoredMode: restoredRightPanelPatch?.rightPanelMode,
               previewPath:
@@ -309,6 +387,9 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           activeRunLastAssistant: undefined,
           rightPanelOpen: false,
           rightPanelMode: null,
+          rightPanelTabs: [],
+          rightPanelActiveTabId: undefined,
+          rightPanelMaximized: false,
           previewFile: undefined,
           filePreviewEntrySource: undefined,
           browserUrl: "",
@@ -339,52 +420,119 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
       },
       toggleRightPanel: () =>
         set((state) => {
-          const patch: RightPanelPatch = state.rightPanelOpen
-            ? { rightPanelOpen: false }
-            : {
-                rightPanelOpen: true,
-                rightPanelMode: null,
-                rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH
-              };
+          if (state.rightPanelOpen) {
+            const patch: RightPanelPatch = { rightPanelOpen: false };
+            return {
+              ...patch,
+              rightPanelMaximized: false,
+              rightPanelBySession: rememberRightPanel(state, undefined, patch)
+            };
+          }
+          // 打开:有记忆的 tab 直接恢复显示;没有则开一个空面板(顶栏 + 让用户新建)。
+          const patch: RightPanelPatch = {
+            rightPanelOpen: true,
+            rightPanelWidth:
+              state.rightPanelTabs.length > 0
+                ? rightPanelWidthForOpen(state.rightPanelWidth, state.rightPanelOpen)
+                : DEFAULT_RIGHT_PANEL_WIDTH
+          };
           return {
             ...patch,
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
           };
         }),
-      openRightPanel: (mode) =>
+      openRightPanel: (mode) => {
+        if (mode === null) {
+          // 旧「回菜单」语义已由顶栏 + 承接,这里不再改变状态。
+          return;
+        }
         set((state) => {
-          const targetWidth =
-            mode === "changes"
-              ? RIGHT_PANEL_REVIEW_WIDTH
-              : mode === "files"
-                ? RIGHT_PANEL_FILE_WIDTH
-                : undefined;
-          const patch: RightPanelPatch = {
-            rightPanelOpen: true,
-            rightPanelMode: mode,
-            rightPanelWidth: rightPanelWidthForOpen(
-              state.rightPanelWidth,
-              state.rightPanelOpen,
-              targetWidth
-            )
-          };
-          console.info("[store] 打开右侧面板", {
+          const patch = openTabPatch(state, openTabInputForKind(mode));
+          console.info("[store] 打开/聚焦右侧面板 tab", {
             mode,
-            targetWidth,
-            nextWidth: patch.rightPanelWidth ?? state.rightPanelWidth,
-            filePreviewEntrySource: mode === "files" ? "panel" : undefined
+            activeTabId: patch.rightPanelActiveTabId,
+            tabCount: patch.rightPanelTabs?.length,
+            nextWidth: patch.rightPanelWidth ?? state.rightPanelWidth
           });
           return {
             ...patch,
             filePreviewEntrySource: mode === "files" ? "panel" : undefined,
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
           };
+        });
+        if (mode === "terminal") {
+          ensureTerminalHostLabel(set);
+        }
+      },
+      newRightPanelTab: (kind) => {
+        set((state) => {
+          const patch = openTabPatch(state, openTabInputForKind(kind));
+          console.info("[store] 新建右侧面板 tab", {
+            kind,
+            activeTabId: patch.rightPanelActiveTabId,
+            tabCount: patch.rightPanelTabs?.length
+          });
+          return {
+            ...patch,
+            filePreviewEntrySource: kind === "files" ? "panel" : undefined,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        });
+        if (kind === "terminal") {
+          ensureTerminalHostLabel(set);
+        }
+      },
+      closeRightPanelTab: (tabId) =>
+        set((state) => {
+          const result = closeRightPanelTabPure(
+            state.rightPanelTabs,
+            state.rightPanelActiveTabId,
+            tabId
+          );
+          if (result.closed?.kind === "terminal" && result.closed.terminalId) {
+            // 关 tab 才真正销毁 PTY;切 tab 仅隐藏不销毁。
+            console.info("[store] 关闭终端 tab,销毁 PTY", {
+              tabId,
+              terminalId: result.closed.terminalId
+            });
+            void window.chengxiaobang?.terminalClose?.(result.closed.terminalId);
+          }
+          const patch: RightPanelPatch = {
+            rightPanelTabs: result.tabs,
+            rightPanelActiveTabId: result.activeTabId,
+            rightPanelMode: activeRightPanelTabKind(result.tabs, result.activeTabId)
+          };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        }),
+      setActiveRightPanelTab: (tabId) =>
+        set((state) => {
+          if (!state.rightPanelTabs.some((tab) => tab.id === tabId)) {
+            return {};
+          }
+          const patch: RightPanelPatch = {
+            rightPanelActiveTabId: tabId,
+            rightPanelMode: activeRightPanelTabKind(state.rightPanelTabs, tabId)
+          };
+          return {
+            ...patch,
+            rightPanelBySession: rememberRightPanel(state, undefined, patch)
+          };
+        }),
+      toggleRightPanelMaximized: () =>
+        set((state) => {
+          const next = !state.rightPanelMaximized;
+          console.info("[store] 切换右侧面板最大化", { maximized: next });
+          return { rightPanelMaximized: next };
         }),
       closeRightPanel: () =>
         set((state) => {
           const patch: RightPanelPatch = { rightPanelOpen: false };
           return {
             ...patch,
+            rightPanelMaximized: false,
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
           };
         }),
@@ -394,6 +542,8 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           const patch: RightPanelPatch = { rightPanelWidth: nextWidth };
           return {
             ...patch,
+            // 手动拖拽宽度即退出最大化。
+            rightPanelMaximized: false,
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
           };
         }),
@@ -421,18 +571,12 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         });
         set((state) => {
           const patch: RightPanelPatch = {
+            ...openTabPatch(state, { kind: "files", title: basename(path) }),
             previewFile: {
               path,
               ...(project?.path ? { projectPath: project.path } : {}),
               ...(sessionId ? { sessionId } : {})
-            },
-            rightPanelOpen: true,
-            rightPanelMode: "files",
-            rightPanelWidth: rightPanelWidthForOpen(
-              state.rightPanelWidth,
-              state.rightPanelOpen,
-              RIGHT_PANEL_FILE_WIDTH
-            )
+            }
           };
           return {
             ...patch,
@@ -456,17 +600,11 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         const openFilePreviewFallback = () =>
           set((state) => {
             const patch: RightPanelPatch = {
+              ...openTabPatch(state, { kind: "files", title: basename(path) }),
               previewFile: {
                 path,
                 ...previewContext
-              },
-              rightPanelOpen: true,
-              rightPanelMode: "files",
-              rightPanelWidth: rightPanelWidthForOpen(
-                state.rightPanelWidth,
-                state.rightPanelOpen,
-                RIGHT_PANEL_FILE_WIDTH
-              )
+              }
             };
             return {
               ...patch,
@@ -519,11 +657,9 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           });
           set((state) => {
             const patch: RightPanelPatch = {
+              ...openTabPatch(state, { kind: "browser" }),
               previewFile: undefined,
-              browserUrl: result.url,
-              rightPanelOpen: true,
-              rightPanelMode: "browser",
-              rightPanelWidth: rightPanelWidthForOpen(state.rightPanelWidth, state.rightPanelOpen)
+              browserUrl: result.url
             };
             return {
               ...patch,

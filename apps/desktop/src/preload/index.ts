@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld("chengxiaobang", {
   terminalResize: (id: string, cols: number, rows: number) =>
     ipcRenderer.invoke("terminal:resize", id, cols, rows),
   terminalClose: (id: string) => ipcRenderer.invoke("terminal:close", id),
+  terminalHostLabel: () => ipcRenderer.invoke("terminal:host-label"),
   onTerminalData: (listener: (event: { id: string; data: string }) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: { id: string; data: string }) => {
       listener(payload);

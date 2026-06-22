@@ -435,6 +435,7 @@ function ModelStep(props: {
           </Label>
           <ProviderCascadeSelect
             value={draft?.kind}
+            withinModalDialog
             ariaLabel={t("settings.providers.type")}
             options={PROVIDER_KIND_OPTIONS}
             placeholder={t("settings.providers.cascadePlaceholder")}

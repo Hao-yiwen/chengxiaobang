@@ -139,18 +139,34 @@ export interface PreviewFileState {
   allowCwdFallback?: boolean;
 }
 
+/** 右侧面板里的一个 tab。单例工具(changes/browser/files/chat)每种至多一个;terminal 可多开。 */
+export interface RightPanelTab {
+  id: string;
+  kind: RightPanelMode;
+  /** tab 标题:终端为 user@host,其余用工具名(由组件按 kind 兜底翻译)。 */
+  title?: string;
+  /** 仅 terminal:稳定的 PTY id,切 tab 不重建,关 tab 才销毁。 */
+  terminalId?: string;
+}
+
 export interface RightPanelSessionState {
   open: boolean;
-  mode: RightPanelMode | null;
   width: number;
+  tabs: RightPanelTab[];
+  activeTabId?: string;
   previewFile?: PreviewFileState;
   browserUrl: string;
 }
 
 export type LegacyRightPanelMode = RightPanelMode | "progress" | "artifacts";
-export type LegacyRightPanelSessionState = Omit<RightPanelSessionState, "mode"> & {
+/** v8 及更早的每会话快照结构(单值 mode),仅用于持久化迁移。 */
+export interface LegacyRightPanelSessionState {
+  open: boolean;
   mode: LegacyRightPanelMode | null;
-};
+  width: number;
+  previewFile?: PreviewFileState;
+  browserUrl: string;
+}
 
 export interface AppState {
   // 数据
@@ -230,8 +246,14 @@ export interface AppState {
   projectSortMode: ProjectSortMode;
   // 右侧工作区面板（当前会话状态 + 每会话记忆）
   rightPanelOpen: boolean;
-  /** null 表示右侧面板的工具菜单页。 */
+  /** 当前活动 tab 的 kind 镜像;无 tab 时为 null。由 tab 相关 action 同步维护。 */
   rightPanelMode: RightPanelMode | null;
+  /** 当前会话已打开的 tab 列表(顺序即展示顺序)。 */
+  rightPanelTabs: RightPanelTab[];
+  /** 当前活动 tab id。 */
+  rightPanelActiveTabId?: string;
+  /** 面板是否处于最大化(占满至聊天最小宽);瞬态,不持久化、不跨会话。 */
+  rightPanelMaximized: boolean;
   rightPanelWidth: number;
   previewFile?: PreviewFileState;
   filePreviewEntrySource?: FilePreviewEntrySource;
@@ -295,11 +317,19 @@ export interface AppState {
   toggleSidebar(): void;
   /** 设置项目区排序方式。 */
   setProjectSortMode(mode: ProjectSortMode): void;
-  /** 关闭时打开菜单页；打开时关闭面板。 */
+  /** 关闭时打开面板;打开时关闭面板。 */
   toggleRightPanel(): void;
-  /** 打开指定工具页；传 null 时回到菜单页。 */
+  /** 打开或聚焦对应工具的 tab;传 null 为 no-op(新建入口由顶栏 + 承接)。 */
   openRightPanel(mode: RightPanelMode | null): void;
   closeRightPanel(): void;
+  /** 新建一个 tab(终端每次新建,其余单例则聚焦已有)。 */
+  newRightPanelTab(kind: RightPanelMode): void;
+  /** 关闭指定 tab;终端 tab 关闭时销毁其 PTY。 */
+  closeRightPanelTab(tabId: string): void;
+  /** 切换当前活动 tab。 */
+  setActiveRightPanelTab(tabId: string): void;
+  /** 切换面板最大化/还原。 */
+  toggleRightPanelMaximized(): void;
   setRightPanelWidth(width: number): void;
   setBrowserUrl(url: string): void;
   openFilePreview(path: string, options?: { source?: FilePreviewEntrySource }): void;
@@ -420,7 +450,13 @@ export interface AppState {
 export type RightPanelPatch = Partial<
   Pick<
     AppState,
-    "rightPanelOpen" | "rightPanelMode" | "rightPanelWidth" | "previewFile" | "browserUrl"
+    | "rightPanelOpen"
+    | "rightPanelMode"
+    | "rightPanelTabs"
+    | "rightPanelActiveTabId"
+    | "rightPanelWidth"
+    | "previewFile"
+    | "browserUrl"
   >
 >;
 

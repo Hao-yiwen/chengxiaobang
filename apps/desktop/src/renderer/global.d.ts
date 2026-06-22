@@ -189,6 +189,8 @@ declare global {
       terminalWrite?(id: string, data: string): Promise<TerminalIpcResult>;
       terminalResize?(id: string, cols: number, rows: number): Promise<TerminalIpcResult>;
       terminalClose?(id: string): Promise<TerminalIpcResult>;
+      /** 返回 `user@host` 形式的本机标签（主进程 IPC），用于终端 tab 标题。 */
+      terminalHostLabel?(): Promise<string>;
       onTerminalData?(listener: (event: TerminalDataEvent) => void): () => void;
       onTerminalExit?(listener: (event: TerminalExitEvent) => void): () => void;
       onUpdateState?(listener: (state: DesktopUpdateState) => void): () => void;

@@ -1,7 +1,11 @@
 import { createJSONStorage, type PersistOptions } from "zustand/middleware";
 import { DEFAULT_LOCALE } from "../i18n";
 import { DEFAULT_CODE_PREVIEW_SETTINGS, sanitizeCodePreviewSettings } from "../lib/code-preview-settings";
-import { migrateRightPanelMemory, sanitizePersistedAppState } from "./helpers/right-panel";
+import {
+  migrateRightPanelMemory,
+  persistableRightPanelTabs,
+  sanitizePersistedAppState
+} from "./helpers/right-panel";
 import type { AppState, ModelSelection } from "./types";
 
 function homeModelSelectionFromLegacyState(state: Partial<AppState>): ModelSelection | undefined {
@@ -30,8 +34,16 @@ function migrateCodePreviewSettings(state: Partial<AppState>): Partial<AppState>
 export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
   name: "chengxiaobang.app",
   storage: createJSONStorage(() => localStorage),
-  version: 8,
-  partialize: (state) => ({
+  version: 9,
+  partialize: (state) => {
+    // 顶层 tab 也要剔除终端(PTY 不能跨重启恢复),并把 activeTabId 落到剩余 tab。
+    const persistedTabs = persistableRightPanelTabs(state.rightPanelTabs);
+    const persistedActiveTabId = persistedTabs.some(
+      (tab) => tab.id === state.rightPanelActiveTabId
+    )
+      ? state.rightPanelActiveTabId
+      : persistedTabs[persistedTabs.length - 1]?.id;
+    return {
     view: state.view,
     activeSessionId: state.view === "home" ? undefined : state.activeSessionId,
     activeProjectId: state.activeProjectId,
@@ -44,6 +56,8 @@ export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
     sidebarOpen: state.sidebarOpen,
     rightPanelOpen: state.rightPanelOpen,
     rightPanelMode: state.rightPanelMode,
+    rightPanelTabs: persistedTabs,
+    rightPanelActiveTabId: persistedActiveTabId,
     rightPanelWidth: state.rightPanelWidth,
     rightPanelBySession: state.rightPanelBySession,
     queuedRunsBySession: state.queuedRunsBySession,
@@ -56,7 +70,8 @@ export const appPersistOptions: PersistOptions<AppState, Partial<AppState>> = {
     onboardingDismissed: state.onboardingDismissed,
     onboardingStep: state.onboardingStep,
     onboardingProfile: state.onboardingProfile
-  }),
+    };
+  },
   migrate: (persisted, version) => {
     if (version === 1 && persisted) {
       // v1 没有 rightPanelOpen：mode 非空就表示面板可见。

@@ -24,6 +24,12 @@ interface ProviderCascadeSelectProps {
   placeholder: string;
   ariaLabel: string;
   className?: string;
+  // 当本组件被放进模态 Dialog（如首启弹窗）时置为 true：
+  // 1) 面板 portal 到 body，碰撞边界变为视口而非被裁剪的弹窗，面板才能左对齐下拉框
+  //    向右展开，不会被推到左侧盖住插画；
+  // 2) 同时把 Popover 设为 modal，使其成为最上层、接管外部点击，避免点击面板被模态
+  //    Dialog 当成「点到弹窗外」而误关闭，面板内部也恢复可点击。
+  withinModalDialog?: boolean;
   onValueChange(kind: ProviderKind, modelIds: string[]): void;
   onSelectedModelIdsChange?(modelIds: string[]): void;
 }
@@ -46,6 +52,7 @@ export function ProviderCascadeSelect({
   placeholder,
   ariaLabel,
   className,
+  withinModalDialog = false,
   onValueChange,
   onSelectedModelIdsChange
 }: ProviderCascadeSelectProps) {
@@ -151,7 +158,7 @@ export function ProviderCascadeSelect({
   };
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover open={open} onOpenChange={handleOpenChange} modal={withinModalDialog}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -172,7 +179,7 @@ export function ProviderCascadeSelect({
       <PopoverContent
         align="start"
         className="provider-cascade-popup p-0"
-        portalled={false}
+        portalled={withinModalDialog}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <div className="provider-cascade-menus">

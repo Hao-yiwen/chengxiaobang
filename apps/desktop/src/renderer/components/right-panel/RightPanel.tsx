@@ -1,6 +1,8 @@
 import {
-  ArrowLeftIcon,
+  ExpandCornersIcon,
+  ExpandInwardIcon,
   PanelRightOutlineIcon,
+  PlusIcon,
   XMarkIcon
 } from "@/assets/file-type-icons";
 import {
@@ -12,15 +14,29 @@ import {
   type CSSProperties
 } from "react";
 import { useTranslation } from "react-i18next";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { BrowserPanel } from "./BrowserPanel";
 import { ChangesPanel } from "./ChangesPanel";
 import { FilePreviewPanel } from "./FilePreviewPanel";
-import { RightPanelMenu } from "./RightPanelMenu";
+import {
+  RIGHT_PANEL_MENU_ITEMS,
+  RightPanelMenu,
+  rightPanelModeIcon
+} from "./RightPanelMenu";
 import { SideChatPanel } from "./SideChatPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { cn } from "@/lib/utils";
-import { getApiClient, selectActiveProject, useAppStore, type RightPanelMode } from "@/store";
-import { visibleRightPanelWidth } from "@/store/helpers/right-panel";
+import {
+  getApiClient,
+  selectActiveProject,
+  useAppStore,
+  type RightPanelMode,
+  type RightPanelTab
+} from "@/store";
+import {
+  maximizedRightPanelWidth,
+  visibleRightPanelWidth
+} from "@/store/helpers/right-panel";
 
 type RightPanelLabelKey =
   | "rightPanel.changes"
@@ -58,25 +74,33 @@ function availableModesForContext(hasProject: boolean, isGitRepo: boolean): Righ
 }
 
 /**
- * 右侧工作区面板：一个可调整宽度的槽位，先展示菜单，再承载变更、终端、
- * 浏览器、文件预览和侧边会话等工具页。
+ * 右侧工作区面板：一个可调整宽度的槽位，顶栏是动态 tab 栏，内容区常驻挂载所有 tab、
+ * 用 hidden 切显隐（终端切 tab 不销毁 PTY），承载变更、终端、浏览器、文件预览和侧边会话。
  */
 export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
   const { t } = useTranslation();
   const open = useAppStore((state) => state.rightPanelOpen);
+  const view = useAppStore((state) => state.view);
   const mode = useAppStore((state) => state.rightPanelMode);
+  const tabs = useAppStore((state) => state.rightPanelTabs);
+  const activeTabId = useAppStore((state) => state.rightPanelActiveTabId);
+  const maximized = useAppStore((state) => state.rightPanelMaximized);
   const width = useAppStore((state) => state.rightPanelWidth);
   const previewFile = useAppStore((state) => state.previewFile);
   const filePreviewEntrySource = useAppStore((state) => state.filePreviewEntrySource);
   const project = useAppStore(selectActiveProject);
   const clientReady = useAppStore((state) => state.clientReady);
-  const openRightPanel = useAppStore((state) => state.openRightPanel);
   const closeRightPanel = useAppStore((state) => state.closeRightPanel);
   const setRightPanelWidth = useAppStore((state) => state.setRightPanelWidth);
+  const newRightPanelTab = useAppStore((state) => state.newRightPanelTab);
+  const closeRightPanelTab = useAppStore((state) => state.closeRightPanelTab);
+  const setActiveRightPanelTab = useAppStore((state) => state.setActiveRightPanelTab);
+  const toggleRightPanelMaximized = useAppStore((state) => state.toggleRightPanelMaximized);
   const [gitRepoStatusByProject, setGitRepoStatusByProject] = useState<
     Record<string, GitRepoStatus>
   >({});
   const [resizing, setResizing] = useState(false);
+  const [newTabMenuOpen, setNewTabMenuOpen] = useState(false);
   const [projectFilesOpenState, setProjectFilesOpenState] = useState<ProjectFilesOpenState>({
     key: "",
     open: false
@@ -89,15 +113,11 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
   const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
   const projectId = project?.id;
   const gitRepoStatus = projectId ? gitRepoStatusByProject[projectId] : undefined;
-  const checkingGitRepo = Boolean(
-    projectId && clientReady && (!gitRepoStatus || gitRepoStatus === "loading")
-  );
   const isGitRepo = gitRepoStatus === "repo";
   const availableModes = useMemo(
     () => availableModesForContext(Boolean(project), isGitRepo),
     [isGitRepo, project]
   );
-  const directFilePreview = mode === "files" && Boolean(previewFile?.path);
   const showProjectFilesToggle = mode === "files" && Boolean(project);
   const projectFilesEntryKey = useMemo(
     () =>
@@ -124,24 +144,6 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     projectFilesOpenState.key === projectFilesEntryKey
       ? projectFilesOpenState.open
       : defaultProjectFilesOpen;
-  const modeFallbackReason = (() => {
-    if (mode === null || directFilePreview || mode === "browser" || mode === "chat") {
-      return undefined;
-    }
-    if (!project) {
-      return "missing-project";
-    }
-    if (mode === "terminal" || mode === "files") {
-      return undefined;
-    }
-    if (mode === "changes" && (!clientReady || checkingGitRepo || !gitRepoStatus)) {
-      return "pending";
-    }
-    if (mode === "changes" && isGitRepo) {
-      return undefined;
-    }
-    return "not-git-repo";
-  })();
 
   useLayoutEffect(() => {
     if (projectFilesOpenState.key === projectFilesEntryKey) {
@@ -208,29 +210,6 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     );
   }, [clientReady, gitRepoStatus, project?.path, projectId]);
 
-  useEffect(() => {
-    if (!modeFallbackReason || modeFallbackReason === "pending") {
-      return;
-    }
-    console.info("[right-panel] 当前面板模式不适用于当前上下文，返回菜单", {
-      mode,
-      projectId,
-      clientReady,
-      gitRepoStatus,
-      phase,
-      reason: modeFallbackReason
-    });
-    openRightPanel(null);
-  }, [
-    clientReady,
-    gitRepoStatus,
-    mode,
-    modeFallbackReason,
-    openRightPanel,
-    phase,
-    projectId
-  ]);
-
   const shouldRender = phase !== "closed";
 
   useLayoutEffect(() => {
@@ -264,7 +243,9 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     };
   }, [mode, shouldRender, width]);
 
-  const visualWidth = visibleRightPanelWidth(width, containerWidth);
+  const visualWidth = maximized
+    ? maximizedRightPanelWidth(containerWidth)
+    : visibleRightPanelWidth(width, containerWidth);
 
   useEffect(() => {
     if (!shouldRender) {
@@ -275,6 +256,7 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
       mode ?? "menu",
       open ? "open" : "closing",
       phase,
+      maximized ? "max" : "normal",
       width,
       visualWidth
     ].join(":");
@@ -286,16 +268,16 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
       mode,
       targetWidth: width,
       visibleWidth: visualWidth,
+      maximized,
       closing: !open,
       phase
     });
-  }, [mode, open, phase, shouldRender, visualWidth, width]);
+  }, [maximized, mode, open, phase, shouldRender, visualWidth, width]);
 
   if (!shouldRender) {
     return null;
   }
 
-  const title = mode ? t(TITLE_KEYS[mode]) : t("rightPanel.menuTitle");
   const panelStyle = {
     "--right-panel-width": `${visualWidth}px`,
     width: "var(--right-panel-width)"
@@ -333,6 +315,43 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     setProjectFilesOpenState({ key: projectFilesEntryKey, open: nextOpen });
   }
 
+  function tabLabel(tab: RightPanelTab): string {
+    if (tab.kind === "terminal") {
+      return tab.title ?? t("rightPanel.terminal");
+    }
+    return t(TITLE_KEYS[tab.kind]);
+  }
+
+  function renderTabBody(tab: RightPanelTab, active: boolean) {
+    switch (tab.kind) {
+      case "changes":
+        return <ChangesPanel />;
+      case "terminal":
+        return <TerminalPanel terminalId={tab.terminalId ?? tab.id} visible={active} />;
+      case "browser":
+        return <BrowserPanel />;
+      case "files":
+        return (
+          <FilePreviewPanel
+            projectFilesOpen={projectFilesOpen}
+            onProjectFilesOpenChange={(nextOpen) =>
+              setProjectFilesOpenState({ key: projectFilesEntryKey, open: nextOpen })
+            }
+          />
+        );
+      case "chat":
+        return <SideChatPanel />;
+      default:
+        return null;
+    }
+  }
+
+  const newTabItems = RIGHT_PANEL_MENU_ITEMS.filter((item) => availableModes.includes(item.mode));
+  // 仅会话页(chat)是「多 tab 工作区」:展示 tab 栏、+ 新建与最大化;
+  // 首页只用来做单次文件/产物预览,顶栏从简(标题 + 关闭),不显示 + 与最大化。
+  const tabMode = view === "chat";
+  const activeTab = tabs.find((tab) => tab.id === activeTabId);
+
   return (
     <aside
       ref={panelRef}
@@ -357,22 +376,81 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
           onPointerDown={onResizeStart}
           className="absolute left-0 top-0 z-10 h-full w-1.5 cursor-col-resize"
         />
-        <header className="flex h-14 min-w-0 flex-none items-center justify-between gap-2 border-b px-4">
-          <div className="flex min-w-0 items-center gap-1.5">
-            {mode ? (
-              <button
-                type="button"
-                title={t("rightPanel.backToMenu")}
-                onClick={() => openRightPanel(null)}
-                className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <ArrowLeftIcon className="size-4" />
-              </button>
-            ) : null}
-            <h2 className="truncate font-mono text-mono-label uppercase text-foreground">
-              {title}
-            </h2>
-          </div>
+        <header className="flex h-14 min-w-0 flex-none items-center justify-between gap-1 border-b px-2">
+          {tabMode ? (
+            /* 会话页:tab 栏,每个已打开工具一个 chip,末尾 + 新建。 */
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {tabs.map((tab) => {
+                const active = tab.id === activeTabId;
+                const Icon = rightPanelModeIcon(tab.kind);
+                return (
+                  <div
+                    key={tab.id}
+                    role="tab"
+                    aria-selected={active}
+                    title={tabLabel(tab)}
+                    onClick={() => setActiveRightPanelTab(tab.id)}
+                    className={cn(
+                      "group flex h-8 max-w-[160px] flex-none cursor-pointer items-center gap-1.5 rounded-sm border px-2.5 font-mono text-mono-label transition-colors",
+                      active
+                        ? "border-border bg-muted text-foreground"
+                        : "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="size-3.5 flex-none" />
+                    <span className="truncate normal-case">{tabLabel(tab)}</span>
+                    <button
+                      type="button"
+                      title={t("rightPanel.closeTab")}
+                      aria-label={t("rightPanel.closeTab")}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        closeRightPanelTab(tab.id);
+                      }}
+                      className="flex size-4 flex-none items-center justify-center rounded-xs text-muted-foreground opacity-60 transition-colors hover:bg-background hover:text-foreground hover:opacity-100"
+                    >
+                      <XMarkIcon className="size-3" />
+                    </button>
+                  </div>
+                );
+              })}
+              <Popover open={newTabMenuOpen} onOpenChange={setNewTabMenuOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    title={t("rightPanel.newTab")}
+                    aria-label={t("rightPanel.newTab")}
+                    className="flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <PlusIcon className="size-4" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-44 p-1">
+                  {newTabItems.map((item) => (
+                    <button
+                      key={item.mode}
+                      type="button"
+                      onClick={() => {
+                        newRightPanelTab(item.mode);
+                        setNewTabMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xs px-2.5 py-1.5 text-left text-caption text-foreground transition-colors hover:bg-muted"
+                    >
+                      <item.icon className="size-4 text-muted-foreground" />
+                      <span>{t(TITLE_KEYS[item.mode])}</span>
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+            </div>
+          ) : (
+            /* 首页:单次预览,从简标题,不展示 tab 栏 / + / 最大化。 */
+            <div className="flex min-w-0 flex-1 items-center px-1.5">
+              <h2 className="truncate font-mono text-mono-label uppercase text-foreground">
+                {activeTab ? tabLabel(activeTab) : t("rightPanel.menuTitle")}
+              </h2>
+            </div>
+          )}
           <div className="flex flex-none items-center gap-1">
             {showProjectFilesToggle ? (
               <button
@@ -394,6 +472,22 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
                 <PanelRightOutlineIcon className="size-4" />
               </button>
             ) : null}
+            {tabMode ? (
+              <button
+                type="button"
+                title={t(maximized ? "rightPanel.restore" : "rightPanel.maximize")}
+                aria-label={t(maximized ? "rightPanel.restore" : "rightPanel.maximize")}
+                aria-pressed={maximized}
+                onClick={toggleRightPanelMaximized}
+                className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                {maximized ? (
+                  <ExpandInwardIcon className="size-4" />
+                ) : (
+                  <ExpandCornersIcon className="size-4" />
+                )}
+              </button>
+            ) : null}
             <button
               type="button"
               title={t("rightPanel.close")}
@@ -405,23 +499,23 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
           </div>
         </header>
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          {mode === null ? (
-            <RightPanelMenu availableModes={availableModes} />
-          ) : mode === "changes" ? (
-            <ChangesPanel />
-          ) : mode === "terminal" ? (
-            <TerminalPanel />
-          ) : mode === "browser" ? (
-            <BrowserPanel />
-          ) : mode === "files" ? (
-            <FilePreviewPanel
-              projectFilesOpen={projectFilesOpen}
-              onProjectFilesOpenChange={(nextOpen) =>
-                setProjectFilesOpenState({ key: projectFilesEntryKey, open: nextOpen })
-              }
-            />
+          {tabs.length === 0 ? (
+            <RightPanelMenu availableModes={availableModes} onPick={newRightPanelTab} />
           ) : (
-            <SideChatPanel />
+            tabs.map((tab) => {
+              const active = tab.id === activeTabId;
+              // 用内联 display 而非 hidden 属性切显隐:避免被任意 CSS 覆盖导致非活动 tab 仍占位、
+              // 看起来「切不动」;非活动 tab 仍挂载(终端 PTY 不被销毁)。
+              return (
+                <div
+                  key={tab.id}
+                  className="h-full min-h-0"
+                  style={{ display: active ? undefined : "none" }}
+                >
+                  {renderTabBody(tab, active)}
+                </div>
+              );
+            })
           )}
         </div>
       </div>

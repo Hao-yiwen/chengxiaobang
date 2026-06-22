@@ -18,6 +18,7 @@ export type {
   ProjectSortMode,
   QueuedRunItem,
   RightPanelMode,
+  RightPanelTab,
   TerminalEntry,
   Theme,
   View
