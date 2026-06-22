@@ -5,6 +5,10 @@ import type { StateStore } from "../repository/state-store";
 import { computeNextRunAt, normalizeRunAt, validateCron, validateRunAt } from "../tasks/schedule";
 import { textResult } from "./tool-result";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/schedule-tools" });
+
 const createParams = Type.Object({
   kind: Type.Union([Type.Literal("once"), Type.Literal("recurring")], {
     description:
@@ -81,7 +85,7 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
     execute: async (_toolCallId, params) => {
       if (runtime.feishuChatId || runtime.wechatChatId) {
         const channel = runtime.wechatChatId ? "微信" : "飞书";
-        console.warn(
+        log.warn(
           `[schedule-tools] ${channel}会话拒绝创建定时任务 sessionId=${runtime.sessionId}`
         );
         throw new Error(`${channel}会话暂不支持定时任务（执行结果无法回发${channel}），请在桌面端会话中创建。`);
@@ -89,20 +93,20 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
 
       if (params.kind === "once") {
         if (!params.run_at) {
-          console.warn(
+          log.warn(
             `[schedule-tools] 一次性任务缺少 run_at sessionId=${runtime.sessionId} name=${params.name}`
           );
           throw new Error("一次性定时任务必须传入 run_at（带时区的 ISO 8601 绝对时间）。");
         }
         if (params.cron) {
-          console.warn(
+          log.warn(
             `[schedule-tools] 一次性任务不接受 cron sessionId=${runtime.sessionId} name=${params.name} cron=${params.cron}`
           );
           throw new Error("一次性定时任务请使用 run_at，不要传入 cron。");
         }
         const runAtError = validateRunAt(params.run_at);
         if (runAtError) {
-          console.warn(`[schedule-tools] run_at 校验失败 runAt=${params.run_at}: ${runAtError}`);
+          log.warn(`[schedule-tools] run_at 校验失败 runAt=${params.run_at}: ${runAtError}`);
           throw new Error(runAtError);
         }
         const runAt = normalizeRunAt(params.run_at);
@@ -115,7 +119,7 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
           fullAccess: params.full_access ?? false,
           nextRunAt: runAt
         });
-        console.info(
+        log.info(
           `[schedule-tools] 已创建一次性任务 id=${task.id} sessionId=${runtime.sessionId} runAt=${runAt} fullAccess=${task.fullAccess}`
         );
         return textResult(
@@ -128,20 +132,20 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
       }
 
       if (!params.cron) {
-        console.warn(
+        log.warn(
           `[schedule-tools] 周期任务缺少 cron sessionId=${runtime.sessionId} name=${params.name}`
         );
         throw new Error("周期定时任务必须传入 cron（5 字段 cron 表达式）。");
       }
       if (params.run_at) {
-        console.warn(
+        log.warn(
           `[schedule-tools] 周期任务不接受 run_at sessionId=${runtime.sessionId} name=${params.name} runAt=${params.run_at}`
         );
         throw new Error("周期定时任务请使用 cron，不要传入 run_at。");
       }
       const cronError = validateCron(params.cron);
       if (cronError) {
-        console.warn(`[schedule-tools] cron 校验失败 cron=${params.cron}: ${cronError}`);
+        log.warn(`[schedule-tools] cron 校验失败 cron=${params.cron}: ${cronError}`);
         throw new Error(cronError);
       }
       const task = await runtime.store.createScheduledTask({
@@ -154,7 +158,7 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
         nextRunAt: computeNextRunAt(params.cron, new Date())
       });
       const upcoming = previewRuns(params.cron, 2);
-      console.info(
+      log.info(
         `[schedule-tools] 已创建周期任务 id=${task.id} sessionId=${runtime.sessionId} cron=${params.cron} fullAccess=${task.fullAccess}`
       );
       return textResult(
@@ -205,10 +209,10 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
     execute: async (_toolCallId, params) => {
       const deleted = await runtime.store.deleteScheduledTask(params.id);
       if (!deleted) {
-        console.warn(`[schedule-tools] 取消定时任务失败：不存在 id=${params.id}`);
+        log.warn(`[schedule-tools] 取消定时任务失败：不存在 id=${params.id}`);
         throw new Error(`定时任务不存在：${params.id}`);
       }
-      console.info(`[schedule-tools] 已取消定时任务 id=${params.id}`);
+      log.info(`[schedule-tools] 已取消定时任务 id=${params.id}`);
       return textResult(`已取消定时任务 ${params.id}。`);
     }
   };

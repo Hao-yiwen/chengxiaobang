@@ -1,9 +1,18 @@
 import { basename } from "node:path";
 import { Hono } from "hono";
-import { projectInputSchema, projectUpdateSchema, type Project } from "@chengxiaobang/shared";
-import { collectGitChanges, detectGitRepository } from "../../tools/git-changes";
+import {
+  gitChangeScopeSchema,
+  projectInputSchema,
+  projectUpdateSchema,
+  type Project
+} from "@chengxiaobang/shared";
+import { collectGitChanges, collectGitFileDiff, detectGitRepository } from "../../tools/git-changes";
 import { listProjectDirectoryEntries, listProjectFiles } from "../../tools/workspace";
 import type { AppContext } from "../context";
+
+import { getLogger } from "../../logging/logger";
+
+const log = getLogger({ module: "api/routes/projects" });
 
 export function projectRoutes(context: AppContext): Hono {
   const app = new Hono();
@@ -47,13 +56,47 @@ export function projectRoutes(context: AppContext): Hono {
     return c.json({ changes: await collectGitChanges(project.path) });
   });
 
+  app.get("/:projectId/git/changes/diff", async (c) => {
+    const project = await context.store.getProject(c.req.param("projectId"));
+    if (!project) {
+      return c.json({ error: "项目不存在" }, 404);
+    }
+    const scope = gitChangeScopeSchema.safeParse(c.req.query("scope"));
+    const path = c.req.query("path");
+    if (!scope.success || !path) {
+      return c.json({ error: "缺少有效的 scope 或 path" }, 400);
+    }
+    try {
+      const file = await collectGitFileDiff(project.path, { scope: scope.data, path });
+      if (!file) {
+        return c.json({ error: "变更文件不存在" }, 404);
+      }
+      log.debug("[projects] Git 单文件 diff 读取完成", {
+        projectId: project.id,
+        scope: scope.data,
+        path,
+        emptyDiff: file.diff.length === 0
+      });
+      return c.json({ file });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn("[projects] Git 单文件 diff 读取失败", {
+        projectId: project.id,
+        scope: scope.data,
+        path,
+        error: message
+      });
+      return c.json({ error: message }, 500);
+    }
+  });
+
   app.get("/:projectId/git/info", async (c) => {
     const project = await context.store.getProject(c.req.param("projectId"));
     if (!project) {
       return c.json({ error: "项目不存在" }, 404);
     }
     const isRepo = await detectGitRepository(project.path);
-    console.debug(`[projects] Git 信息读取完成 projectId=${project.id} isRepo=${isRepo}`);
+    log.debug(`[projects] Git 信息读取完成 projectId=${project.id} isRepo=${isRepo}`);
     return c.json({ info: { isRepo } });
   });
 
@@ -70,19 +113,19 @@ export function projectRoutes(context: AppContext): Hono {
   app.get("/:projectId/files/tree", async (c) => {
     const project = await context.store.getProject(c.req.param("projectId"));
     if (!project) {
-      console.warn(`[projects] 文件树读取失败：项目不存在 projectId=${c.req.param("projectId")}`);
+      log.warn(`[projects] 文件树读取失败：项目不存在 projectId=${c.req.param("projectId")}`);
       return c.json({ error: "项目不存在" }, 404);
     }
     const path = c.req.query("path") ?? ".";
     try {
       const entries = await listProjectDirectoryEntries(project.path, path);
-      console.debug(
+      log.debug(
         `[projects] 文件树目录读取完成 projectId=${project.id} path=${path} count=${entries.length}`
       );
       return c.json({ entries });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(
+      log.warn(
         `[projects] 文件树目录读取失败 projectId=${project.id} path=${path}: ${message}`
       );
       return c.json({ error: message }, 400);

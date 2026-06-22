@@ -1,5 +1,5 @@
 import { BrowserWindow } from "electron";
-import { normalizeErrorMessage } from "@chengxiaobang/shared";
+import { normalizeErrorMessage } from "@chengxiaobang/shared/error";
 import type { ProgressInfo, UpdateInfo } from "electron-updater";
 import type { DesktopUpdateState } from "../common/update";
 import type { TrustedIpcRegistrar } from "./trusted-ipc";

@@ -71,9 +71,10 @@ export function DiffView({
       aria-label={t("chat.diffView")}
       data-testid="pierre-diff-view"
       className={cn(
-        "min-w-0 overflow-auto bg-background font-mono text-micro",
+        "min-w-0 bg-background font-mono text-micro",
+        diffViewOverflowClass(height),
         hideScrollbar ? "scrollbar-hidden [scrollbar-gutter:auto]" : "[scrollbar-gutter:stable]",
-        height === "fill" ? "h-full" : "max-h-[420px]"
+        diffViewHeightClass(height)
       )}
       style={style}
     >
@@ -99,6 +100,20 @@ export function DiffView({
       )}
     </div>
   );
+}
+
+function diffViewHeightClass(height: DiffViewHeight): string {
+  if (height === "fill") {
+    return "h-full";
+  }
+  if (height === "review") {
+    return "";
+  }
+  return "max-h-[420px]";
+}
+
+function diffViewOverflowClass(height: DiffViewHeight): string {
+  return height === "review" ? "overflow-visible" : "overflow-auto";
 }
 
 function RawPatchFallback({ block }: { block: Extract<PatchDiffBlock, { kind: "raw" }> }) {

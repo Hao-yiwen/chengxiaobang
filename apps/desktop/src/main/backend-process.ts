@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import {
+  type LogLevelName,
   type LogWriter,
   type TerminalLogWriter,
   writeStructuredLog,
@@ -615,21 +616,25 @@ export function logBackendChunk(
   context: BackendLogContext = {}
 ): void {
   for (const line of splitBackendLogLines(chunk)) {
-    const level = stream === "stderr" ? "warn" : "info";
+    const parsed = parseBackendPinoLogLine(line);
+    const level = parsed?.level ?? (stream === "stderr" ? "warn" : "info");
+    const fields = {
+      stream,
+      port: context.port,
+      pid: context.pid,
+      ...(parsed?.fields ?? {})
+    };
+    const message = parsed?.message ?? line;
     writeStructuredLog(
       context.logger,
       level,
-      {
-        stream,
-        port: context.port,
-        pid: context.pid
-      },
-      line
+      fields,
+      message
     );
     if (context.terminal) {
-      context.terminal[level](`[chengxiaobang-backend] ${line}`);
+      context.terminal[level](`[chengxiaobang-backend] ${message}`);
     } else {
-      writeTerminalLog(level, `[chengxiaobang-backend] ${line}`);
+      writeTerminalLog(level, `[chengxiaobang-backend] ${message}`);
     }
   }
 }
@@ -655,6 +660,52 @@ async function healthStatusMessage(response: Response): Promise<string> {
 function splitBackendLogLines(chunk: Buffer | string): string[] {
   const message = String(chunk).trim();
   return message ? message.split(/\r?\n/) : [];
+}
+
+function parseBackendPinoLogLine(
+  line: string
+): { level: LogLevelName; fields: Record<string, unknown>; message: string } | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return undefined;
+  }
+  const record = parsed as Record<string, unknown>;
+  if (typeof record.msg !== "string" || !isPinoLevel(record.level)) {
+    return undefined;
+  }
+  const { level, time, pid, hostname, msg, ...fields } = record;
+  return {
+    level: pinoLevelToLogLevel(level),
+    message: msg,
+    fields: {
+      ...fields,
+      ...(typeof time === "string" || typeof time === "number" ? { backendTime: time } : {}),
+      ...(typeof pid === "number" ? { backendPid: pid } : {}),
+      ...(typeof hostname === "string" ? { backendHostname: hostname } : {})
+    }
+  };
+}
+
+function isPinoLevel(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function pinoLevelToLogLevel(level: number): LogLevelName {
+  if (level >= 50) {
+    return "error";
+  }
+  if (level >= 40) {
+    return "warn";
+  }
+  if (level <= 20) {
+    return "debug";
+  }
+  return "info";
 }
 
 function formatOutputTail(lines: string[]): string {

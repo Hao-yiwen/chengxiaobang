@@ -13,28 +13,40 @@ import {
 } from "@chengxiaobang/shared";
 import type { AgentRunner } from "../../agent/agent-runner";
 import type { EventHub } from "../../events/event-hub";
+import { bindLogContext, errorToLogFields, getLogger } from "../../logging/logger";
 import type { AppContext } from "../context";
 
 const HEARTBEAT_MS = 15_000;
+const log = getLogger({ module: "run-routes" });
 
 export function runRoutes(context: AppContext): Hono {
   const app = new Hono();
 
   app.post("/runs/stream", async (c) => {
     const input = runRequestSchema.parse(await c.req.json());
+    bindLogContext({
+      sessionId: input.sessionId,
+      clientRequestId: input.clientRequestId
+    });
     return runStreamResponse(context.runner, input, c.req.raw.signal);
   });
 
   app.post("/runs", async (c) => {
     const input = runRequestSchema.parse(await c.req.json());
+    bindLogContext({
+      sessionId: input.sessionId,
+      clientRequestId: input.clientRequestId
+    });
     const started = await startRunAndPublish(context, input);
     return c.json(started);
   });
 
   app.get("/runs/active", async (c) => {
     const sessionId = c.req.query("sessionId")?.trim() || undefined;
+    bindLogContext({ sessionId });
     const runs = await context.runner.listActiveRunSnapshots(sessionId);
-    console.info("[run-routes] 返回活跃 run 快照", {
+    log.info("返回活跃 run 快照", {
+      action: "active_runs.list",
       sessionId,
       count: runs.length
     });
@@ -52,14 +64,18 @@ export function runRoutes(context: AppContext): Hono {
   );
 
   app.post("/runs/:runId/abort", (c) => {
-    return c.json({ aborted: context.runner.abort(c.req.param("runId")) });
+    const runId = c.req.param("runId");
+    bindLogContext({ runId });
+    return c.json({ aborted: context.runner.abort(runId) });
   });
 
   app.post("/runs/:runId/steering", async (c) => {
     const runId = c.req.param("runId");
     const input = runSteeringRequestSchema.parse(await c.req.json());
+    bindLogContext({ runId, clientRequestId: input.clientRequestId });
     const accepted = context.runner.enqueueSteering(runId, input);
-    console.info("[run-routes] 收到运行中引导", {
+    log.info("收到运行中引导", {
+      action: "run.steering",
       runId,
       accepted,
       clientRequestId: input.clientRequestId,
@@ -75,12 +91,16 @@ export function runRoutes(context: AppContext): Hono {
 
   app.post("/approvals/:toolCallId", async (c) => {
     const decision = approvalDecisionSchema.parse(await c.req.json());
-    console.info(
-      `[run-routes] 收到审批决议 toolCallId=${c.req.param("toolCallId")} approved=${decision.approved}` +
-        `${decision.approvalScope ? ` scope=${decision.approvalScope}` : ""}`
-    );
+    const toolCallId = c.req.param("toolCallId");
+    bindLogContext({ toolCallId });
+    log.info("收到审批决议", {
+      action: "approval.decide",
+      toolCallId,
+      approved: decision.approved,
+      approvalScope: decision.approvalScope
+    });
     return c.json({
-      accepted: context.runner.approvals.decide(c.req.param("toolCallId"), decision)
+      accepted: context.runner.approvals.decide(toolCallId, decision)
     });
   });
 
@@ -105,7 +125,8 @@ function runStreamResponse(
     if (!capturedRunId) {
       return;
     }
-    console.warn("[api] /api/runs/stream 消费者断开，中止后端 run", {
+    log.warn("/api/runs/stream 消费者断开，中止后端 run", {
+      action: "run_stream.abort_on_disconnect",
       runId: capturedRunId,
       reason
     });
@@ -139,15 +160,21 @@ function runStreamResponse(
         for await (const event of runner.stream(input)) {
           if (event.type === "run_started") {
             capturedRunId = event.runId;
+            bindLogContext({
+              runId: event.runId,
+              sessionId: event.sessionId,
+              clientRequestId: event.clientRequestId
+            });
           }
           safeEnqueue(encoder.encode(encodeSseEvent(event)));
         }
       } catch (error) {
         // 合并:用 PR#5 的错误归一化 + 结构化日志,同时保留本分支的 safeEnqueue(消费者已取消时不抛)。
         const normalizedError = normalizeErrorMessage(error);
-        console.error("[api] /api/runs/stream 运行失败", {
-          error,
-          displayError: normalizedError
+        log.error("/api/runs/stream 运行失败", {
+          action: "run_stream.failed",
+          displayError: normalizedError,
+          ...errorToLogFields(error)
         });
         safeEnqueue(
           encoder.encode(encodeSseEvent({ type: "setup_error", error: normalizedError }))
@@ -197,10 +224,11 @@ function eventStreamResponse(
           afterId: options.lastEventId
         })) {
           controller.enqueue(encoder.encode(encodeSseEvent(envelope.event, envelope.id)));
-        }
-      } catch (error) {
-        console.warn("[api] /api/events 事件流中断", {
-          error: error instanceof Error ? error.message : String(error)
+      }
+    } catch (error) {
+        log.warn("/api/events 事件流中断", {
+          action: "events.stream_interrupted",
+          ...errorToLogFields(error)
         });
       } finally {
         clearInterval(heartbeat);
@@ -234,6 +262,11 @@ function startRunAndPublish(context: AppContext, input: RunRequest): Promise<Run
           }
           if (event.type === "run_started") {
             startedRunId = event.runId;
+            bindLogContext({
+              runId: event.runId,
+              sessionId: event.sessionId,
+              clientRequestId: event.clientRequestId
+            });
             context.eventHub.publish(event);
             if (!settled) {
               settled = true;
@@ -258,25 +291,28 @@ function startRunAndPublish(context: AppContext, input: RunRequest): Promise<Run
         const normalizedError = normalizeErrorMessage(error);
         if (!settled) {
           settled = true;
-          console.error("[api] /api/runs 启动失败", {
-            error,
-            displayError: normalizedError
+          log.error("/api/runs 启动失败", {
+            action: "run.start_failed",
+            displayError: normalizedError,
+            ...errorToLogFields(error)
           });
           reject(error);
           return;
         }
-        console.error("[api] /api/runs 后台运行失败", {
-          error,
-          displayError: normalizedError
+        log.error("/api/runs 后台运行失败", {
+          action: "run.background_failed",
+          displayError: normalizedError,
+          ...errorToLogFields(error)
         });
         if (startedRunId) {
           // 持久化与推送给前端的 run_end 都用归一化后的精简错误,完整 error 已在上方日志。
           await context.store
             .updateRunStatus(startedRunId, "failed", undefined, normalizedError)
             .catch((storeError) => {
-              console.warn("[api] 后台运行失败状态写入失败", {
+              log.warn("后台运行失败状态写入失败", {
+                action: "run.persist_failed_status_failed",
                 runId: startedRunId,
-                error: storeError instanceof Error ? storeError.message : String(storeError)
+                ...errorToLogFields(storeError)
               });
             });
           context.eventHub.publish({

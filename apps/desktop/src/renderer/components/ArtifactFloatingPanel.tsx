@@ -8,6 +8,7 @@ import {
   type CollectedArtifact,
   type CollectedArtifactDeclarations
 } from "@/lib/artifact";
+import { useVerifiedArtifacts } from "@/hooks/use-verified-artifacts";
 import { iconForPath } from "@/lib/file-icon";
 import { useAppStore } from "@/store";
 
@@ -99,6 +100,14 @@ export function ArtifactFloatingPanel() {
     () => mergeArtifactCollections(settledCollection, liveCollection),
     [liveCollection, settledCollection]
   );
+  const verified = useVerifiedArtifacts(collection.artifacts, "floating-panel");
+  const verifiedCollection = useMemo<CollectedArtifactDeclarations>(
+    () => ({
+      artifacts: verified.artifacts,
+      diagnostics: collection.diagnostics
+    }),
+    [collection.diagnostics, verified.artifacts]
+  );
   const settledHasDeclarationMarkup = useMemo(
     () => hasArtifactDeclarationMarkup(settledSources),
     [settledSources]
@@ -107,17 +116,20 @@ export function ArtifactFloatingPanel() {
     () => liveSources.length > 0 && hasArtifactDeclarationMarkup(liveSources),
     [liveSources]
   );
-  const logKey = collectionLogKey(collection);
+  const logKey = collectionLogKey(verifiedCollection);
 
   useEffect(() => {
+    if (verified.pending) {
+      return;
+    }
     if (
-      collection.artifacts.length === 0 &&
-      collection.diagnostics.length === 0 &&
+      verifiedCollection.artifacts.length === 0 &&
+      verifiedCollection.diagnostics.length === 0 &&
       !settledHasDeclarationMarkup
     ) {
       return;
     }
-    logArtifactCollectionResult("floating-panel", collection, {
+    logArtifactCollectionResult("floating-panel", verifiedCollection, {
       messageCount: settledSources.length + liveSources.length,
       toolCallCount: settledToolHistory.length,
       hasDeclarationMarkup: settledHasDeclarationMarkup || liveHasDeclarationMarkup
@@ -128,10 +140,11 @@ export function ArtifactFloatingPanel() {
     logKey,
     settledHasDeclarationMarkup,
     settledSources.length,
-    settledToolHistory.length
+    settledToolHistory.length,
+    verified.pending
   ]);
 
-  if (collection.artifacts.length === 0) {
+  if (verified.pending || verifiedCollection.artifacts.length === 0) {
     return null;
   }
 
@@ -146,7 +159,7 @@ export function ArtifactFloatingPanel() {
           {t("rightPanel.artifacts")}
         </div>
         <p className="mt-0.5 truncate text-caption text-body">
-          {t("rightPanel.artifactsCount", { count: collection.artifacts.length })}
+          {t("rightPanel.artifactsCount", { count: verifiedCollection.artifacts.length })}
         </p>
       </header>
       <div
@@ -154,7 +167,7 @@ export function ArtifactFloatingPanel() {
         className="min-h-0 overflow-y-auto overflow-x-hidden px-3 py-3 [scrollbar-gutter:stable]"
       >
         <div className="flex flex-col gap-2">
-          {collection.artifacts.map((artifact) => {
+          {verifiedCollection.artifacts.map((artifact) => {
             const Icon = iconForPath(artifact.path, artifact.kind);
             return (
               <button

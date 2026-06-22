@@ -2,7 +2,9 @@ import { useEffect, useMemo } from "react";
 import { ArtifactCard } from "@/components/ArtifactCard";
 import { Markdown } from "@/components/Markdown";
 import { StreamingMarkdown } from "@/components/StreamingMarkdown";
+import { useVerifiedArtifacts } from "@/hooks/use-verified-artifacts";
 import {
+  cleanMarkdownForVerifiedArtifacts,
   logArtifactDeclarationResult,
   parseArtifactDeclarations
 } from "@/lib/artifact";
@@ -20,6 +22,11 @@ export function AssistantMarkdownWithArtifacts({
 }) {
   const parsed = useMemo(() => parseArtifactDeclarations(text), [text]);
   const source = messageId ?? (streaming ? "streaming" : "assistant");
+  const verified = useVerifiedArtifacts(parsed.artifactDeclarations, source);
+  const cleanMarkdown = useMemo(
+    () => cleanMarkdownForVerifiedArtifacts(text, parsed, verified.artifacts),
+    [parsed, text, verified.artifacts]
+  );
 
   useEffect(() => {
     if (streaming) {
@@ -31,17 +38,17 @@ export function AssistantMarkdownWithArtifacts({
     logArtifactDeclarationResult(source, parsed);
   }, [parsed, source, streaming]);
 
-  const markdown = !parsed.cleanMarkdown.trim()
+  const markdown = !cleanMarkdown.trim()
     ? null
     : streaming
-      ? <StreamingMarkdown text={parsed.cleanMarkdown} showCaret={showCaret} />
-      : <Markdown text={parsed.cleanMarkdown} />;
+      ? <StreamingMarkdown text={cleanMarkdown} showCaret={showCaret} />
+      : <Markdown text={cleanMarkdown} />;
   return (
     <>
       {markdown}
-      {parsed.artifacts.length > 0 ? (
+      {verified.artifacts.length > 0 ? (
         <div className="mt-3 flex max-w-full flex-col items-start gap-2">
-          {parsed.artifacts.map((artifact) => (
+          {verified.artifacts.map((artifact) => (
             <ArtifactCard key={artifact.path} artifact={artifact} />
           ))}
         </div>

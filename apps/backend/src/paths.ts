@@ -3,6 +3,10 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { getLogger } from "./logging/logger";
+
+const log = getLogger({ module: "paths" });
+
 /**
  * 根目录默认是 ~/.chengxiaobang;CHENGXIAOBANG_HOME 可整体重定向,
  * 测试环境依赖它避免把 session 工作目录写进用户真实的 home。
@@ -38,7 +42,7 @@ export function builtinResourceRoot(): string {
   }
   // 探测失败说明打包布局变动或 skills 目录被裁剪;此时 skills/skills-market/prompts 会
   // 全部静默加载为空且难以定位,这里显式报错暴露根定位失败,而不是默默回退。
-  console.error("[paths] 无法定位内置资源根:未在候选目录下找到 skills/,内置技能与提示将为空", {
+  log.error("[paths] 无法定位内置资源根:未在候选目录下找到 skills/,内置技能与提示将为空", {
     moduleDir,
     candidates
   });

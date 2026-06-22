@@ -31,6 +31,7 @@ export default defineConfig({
     alias: {
       // 子路径要排在前面,确保比宽泛的 "@chengxiaobang/shared" 先命中,直接解析到源码,
       // 这样未先 build shared(无 dist)时测试也能跑。
+      "@chengxiaobang/shared/error": fromRoot("packages/shared/src/error.ts"),
       "@chengxiaobang/shared/product": fromRoot("packages/shared/src/product.ts"),
       "@chengxiaobang/shared": fromRoot("packages/shared/src/index.ts"),
       "@chengxiaobang/backend": fromRoot("apps/backend/src"),

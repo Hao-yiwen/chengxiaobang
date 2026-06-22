@@ -3,6 +3,10 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { resolveToolPath } from "./workspace";
 import { textResult } from "./tool-result";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/ocr-tools" });
+
 export interface OcrToolRuntime {
   serviceUrl: string;
   token: string;
@@ -41,21 +45,21 @@ export function createOcrTools(
     execute: async (_id, params) => {
       const target = resolveToolPath(workspacePath, params.path).target;
       const startedAt = Date.now();
-      console.info("[ocr-tool] 请求 OCR 服务", {
+      log.info("[ocr-tool] 请求 OCR 服务", {
         requestedPath: params.path,
         target,
         serviceUrl: runtime.serviceUrl
       });
       const result = await requestOcr(runtime, target);
       if (!result.ok) {
-        console.warn("[ocr-tool] OCR 服务返回失败", {
+        log.warn("[ocr-tool] OCR 服务返回失败", {
           path: target,
           error: result.error,
           elapsedMs: Date.now() - startedAt
         });
         throw new Error(result.error);
       }
-      console.info("[ocr-tool] OCR 服务返回成功", {
+      log.info("[ocr-tool] OCR 服务返回成功", {
         path: target,
         pageCount: result.pageCount,
         processedPages: result.processedPages,

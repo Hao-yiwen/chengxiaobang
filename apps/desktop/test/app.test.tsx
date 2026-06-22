@@ -608,7 +608,7 @@ describe("App", () => {
     });
   });
 
-  it("copies the active conversation as Markdown from the session actions menu", async () => {
+  it("copies the session id and active conversation Markdown from the session actions menu", async () => {
     const session = createSessionFixture();
     const messages: Message[] = [
       createMessageFixture(),
@@ -634,10 +634,16 @@ describe("App", () => {
 
     await openSessionActionsMenu();
     openMenuSubmenu("复制");
+    fireEvent.click(await screen.findByText("复制 Session ID"));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(session.id));
+
+    await openSessionActionsMenu();
+    openMenuSubmenu("复制");
     fireEvent.click(await screen.findByText("复制对话 Markdown"));
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-    const markdown = writeText.mock.calls[0]?.[0];
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
+    const markdown = writeText.mock.calls[1]?.[0];
     expect(markdown).toContain("# 菜单对话");
     expect(markdown).toContain("请总结这个改动");
     expect(markdown).toContain("已经完成菜单实现");
@@ -687,10 +693,11 @@ describe("App", () => {
 
     await openSessionActionsMenu();
     openMenuSubmenu("分支");
-    fireEvent.click(await screen.findByText("从最后一条用户消息分支"));
+    expect(screen.queryByText("从最后一条用户消息分支")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByText("从最后一条消息分支"));
 
     await waitFor(() =>
-      expect(forkSession).toHaveBeenCalledWith(session.id, userMessage.id)
+      expect(forkSession).toHaveBeenCalledWith(session.id, assistantMessage.id)
     );
   });
 

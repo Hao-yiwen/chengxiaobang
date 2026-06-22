@@ -26,6 +26,7 @@ import {
   type ToolCall
 } from "@chengxiaobang/shared";
 import type { StateStore } from "../repository/state-store";
+import { errorToLogFields, getLogger } from "../logging/logger";
 import { toTokenUsage } from "../model/pi-model";
 import { assessToolApprovalRisk } from "../tools/approval-policy";
 import {
@@ -57,6 +58,7 @@ const TOOL_ACTIVITY_PREVIEW_KEYS = [
   "skill"
 ] as const;
 const TOOL_ACTIVITY_PREVIEW_MAX = 120;
+const log = getLogger({ module: "pi-events" });
 
 /** 连续以相同参数重复调用同一工具，达到此次数注入一次软提醒。 */
 const REPEATED_TOOL_THRESHOLD = 3;
@@ -162,7 +164,8 @@ export class RunEventTranslator {
     ) {
       reminders.push(TODO_IDLE_REMINDER);
       this.lastTodoReminderTurn = this.turnCount;
-      console.info("[pi-events] 触发 todo 空闲软提醒", {
+      log.info("触发 todo 空闲软提醒", {
+        action: "reminder.todo_idle",
         runId: this.options.runId,
         turnCount: this.turnCount,
         lastTodoWriteTurn: this.lastTodoWriteTurn
@@ -185,7 +188,8 @@ export class RunEventTranslator {
     if (this.repeatedToolCount >= REPEATED_TOOL_THRESHOLD && !this.repeatToolReminded) {
       this.pendingReminders.push(buildRepeatedToolReminder(toolName, this.repeatedToolCount));
       this.repeatToolReminded = true;
-      console.info("[pi-events] 触发重复工具调用软提醒", {
+      log.info("触发重复工具调用软提醒", {
+        action: "reminder.repeated_tool",
         runId: this.options.runId,
         toolName,
         count: this.repeatedToolCount
@@ -195,7 +199,8 @@ export class RunEventTranslator {
     if (this.toolCallsInRun >= overloadAt && !this.overloadReminded) {
       this.pendingReminders.push(buildToolOverloadReminder(this.toolCallsInRun));
       this.overloadReminded = true;
-      console.info("[pi-events] 触发工具调用过载软提醒", {
+      log.info("触发工具调用过载软提醒", {
+        action: "reminder.tool_overload",
         runId: this.options.runId,
         toolCalls: this.toolCallsInRun,
         overloadAt
@@ -321,7 +326,8 @@ export class RunEventTranslator {
       args = decision.editedSteps ? { ...entity.args, steps: decision.editedSteps } : entity.args;
       const parsed = proposePlanArgsSchema.safeParse(args);
       if (!parsed.success) {
-        console.warn("[pi-events] 用户确认后的计划参数非法，阻止执行", {
+        log.warn("用户确认后的计划参数非法，阻止执行", {
+          action: "plan.confirm_invalid_args",
           toolCallId: entity.id,
           modelToolCallId: context.toolCall.id,
           error: parsed.error.message
@@ -338,7 +344,8 @@ export class RunEventTranslator {
       }
       this.options.planConfirmed = true;
       this.options.onPlanApproved?.(context.toolCall.id, parsed.data);
-      console.info("[pi-events] 计划已确认", {
+      log.info("计划已确认", {
+        action: "plan.confirmed",
         toolCallId: entity.id,
         modelToolCallId: context.toolCall.id,
         chars: parsed.data.markdown.length
@@ -348,7 +355,8 @@ export class RunEventTranslator {
     if (entity.name === "AskUserQuestion" && decision.answer) {
       args = { ...entity.args, answer: decision.answer };
       this.options.onAskUserAnswered?.(context.toolCall.id, decision.answer);
-      console.info("[pi-events] 用户已回答 AskUserQuestion", {
+      log.info("用户已回答 AskUserQuestion", {
+        action: "ask_user.answered",
         toolCallId: entity.id,
         modelToolCallId: context.toolCall.id,
         answerCount: decision.answer.answers.length
@@ -383,7 +391,8 @@ export class RunEventTranslator {
     const message = input.message as AssistantMessage;
     if (message.stopReason === "toolUse" && this.turnCount >= this.options.maxToolIterations) {
       this.maxIterationsHit = true;
-      console.warn("[pi-events] 已达到模型工具调用上限，停止本次 run", {
+      log.warn("已达到模型工具调用上限，停止本次 run", {
+        action: "run.max_tool_iterations_hit",
         runId: this.options.runId,
         sessionId: this.options.sessionId,
         model: this.options.model,
@@ -484,7 +493,8 @@ export class RunEventTranslator {
         ...(pendingStatus === "running" ? { startedAt: active.startedAt ?? at } : {}),
         updatedAt: at
       });
-      console.warn("[pi-events] 收到重复的工具执行开始事件，复用当前工具调用", {
+      log.warn("收到重复的工具执行开始事件，复用当前工具调用", {
+        action: "tool.start_duplicate",
         runId: this.options.runId,
         modelToolCallId: toolCallId,
         toolCallId: reused.id,
@@ -507,8 +517,10 @@ export class RunEventTranslator {
     this.toolCalls.set(toolCallId, toolCall);
     await this.options.store.insertToolCall(toolCall);
     this.trackToolForReminders(toolName, normalizedArgs);
-    console.info("[pi-events] 工具执行开始", {
+    log.info("工具执行开始", {
+      action: "tool.start",
       runId: this.options.runId,
+      sessionId: this.options.sessionId,
       modelToolCallId: toolCallId,
       toolCallId: toolCall.id,
       toolName,
@@ -539,17 +551,19 @@ export class RunEventTranslator {
       try {
         decision = await this.options.smartApproval(entity);
       } catch (error) {
-        console.warn("[pi-events] 智能审批裁决异常，降级为人工审批", {
+        log.warn("智能审批裁决异常，降级为人工审批", {
+          action: "smart_approval.fallback",
           runId: this.options.runId,
           modelToolCallId,
           toolCallId: entity.id,
           toolName: entity.name,
-          error: error instanceof Error ? error.message : String(error)
+          ...errorToLogFields(error)
         });
       }
     }
 
-    console.info("[pi-events] 智能审批裁决", {
+    log.info("智能审批裁决", {
+      action: "smart_approval.decided",
       runId: this.options.runId,
       modelToolCallId,
       toolCallId: entity.id,
@@ -626,7 +640,8 @@ export class RunEventTranslator {
       return;
     }
     this.toolActivitySignatures.set(update.contentIndex, signature);
-    console.debug("[pi-events] 工具参数活动更新", {
+    log.debug("工具参数活动更新", {
+      action: "tool.activity_update",
       runId: this.options.runId,
       contentIndex: update.contentIndex,
       modelToolCallId: toolCall?.id,
@@ -655,7 +670,8 @@ export class RunEventTranslator {
   ): Promise<void> {
     const entity = this.toolCalls.get(toolCallId);
     if (!entity) {
-      console.warn("[pi-events] 收到未知工具执行结束事件，已忽略", {
+      log.warn("收到未知工具执行结束事件，已忽略", {
+        action: "tool.end_unknown",
         runId: this.options.runId,
         modelToolCallId: toolCallId
       });
@@ -669,7 +685,8 @@ export class RunEventTranslator {
       // 已拒绝:被拦截的工具已发出 rejected 迁移,pi 后续的 error result 不能覆盖它。
       // 仍处于待审批:执行结束事件不应把审批态直接写成 completed/failed 而丢掉审批记录
       //(正常顺序下不会发生,这里是对事件乱序的防御)。
-      console.warn("[pi-events] 工具执行结束事件命中非运行态，跳过覆盖", {
+      log.warn("工具执行结束事件命中非运行态，跳过覆盖", {
+        action: "tool.end_non_running",
         runId: this.options.runId,
         toolCallId,
         status: entity.status
@@ -698,7 +715,8 @@ export class RunEventTranslator {
   ): FileChange | undefined {
     if (!isToolFileChangeDetails(details)) {
       if (details !== undefined && (entity.name === "Write" || entity.name === "Edit")) {
-        console.warn("[pi-events] 文件工具结果缺少可用 diff details", {
+        log.warn("文件工具结果缺少可用 diff details", {
+          action: "tool.file_change_missing_details",
           runId: this.options.runId,
           toolCallId: entity.id,
           toolName: entity.name
@@ -716,7 +734,8 @@ export class RunEventTranslator {
       ...(details.truncated ? { truncated: true } : {})
     };
     this.trackRunFileChange(entity.id, details);
-    console.info("[pi-events] 已记录工具文件 diff", {
+    log.info("已记录工具文件 diff", {
+      action: "tool.file_change_recorded",
       runId: this.options.runId,
       toolCallId: entity.id,
       toolName: entity.name,
@@ -776,10 +795,11 @@ export class RunEventTranslator {
     this.finished = true;
     // 失败时完整错误先写日志,持久化与推送给前端的 run_end 事件只保留归一化后的精简文案。
     if (outcome.status === "failed" && outcome.error !== undefined) {
-      console.error("[pi-events] run 结束于失败状态", {
+      log.error("run 结束于失败状态", {
+        action: "run.failed",
         runId: this.options.runId,
         sessionId: this.options.sessionId,
-        error: outcome.error
+        errorMessage: outcome.error
       });
     }
     const normalizedError =
@@ -800,7 +820,8 @@ export class RunEventTranslator {
       fileChanges.length > 0 ? fileChanges : undefined
     );
     if (usage?.costUsd !== undefined) {
-      console.info("[agent-runner] 已记录 run 用量费用", {
+      log.info("已记录 run 用量费用", {
+        action: "run.usage_cost_recorded",
         runId: this.options.runId,
         sessionId: this.options.sessionId,
         costUsd: usage.costUsd
@@ -829,7 +850,8 @@ export class RunEventTranslator {
       )
       .filter((change): change is FileChange => Boolean(change));
     if (fileChanges.length > 0) {
-      console.info("[pi-events] 已聚合本轮文件 diff", {
+      log.info("已聚合本轮文件 diff", {
+        action: "run.file_changes_finalized",
         runId: this.options.runId,
         fileCount: fileChanges.length,
         paths: fileChanges.map((change) => change.path)

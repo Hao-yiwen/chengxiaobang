@@ -9,6 +9,10 @@ import type { StateStore } from "../repository/state-store";
 import type { SecretStore } from "../secrets/secret-store";
 import { searchTavily } from "./tavily-client";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "web-search/web-search-config-service" });
+
 const SETTINGS_KEY = "web-search";
 const SECRET_ACCOUNT = "web-search:tavily";
 
@@ -37,7 +41,7 @@ export class WebSearchConfigService {
     try {
       return webSearchConfigSchema.parse(JSON.parse(raw));
     } catch (error) {
-      console.warn("[web-search-config] 配置解析失败，已回退到默认值", {
+      log.warn("[web-search-config] 配置解析失败，已回退到默认值", {
         error: error instanceof Error ? error.message : String(error)
       });
       return defaultWebSearchConfig();
@@ -59,7 +63,7 @@ export class WebSearchConfigService {
       updatedAt: nowIso()
     };
     await this.store.setSetting(SETTINGS_KEY, JSON.stringify(config));
-    console.info("[web-search-config] 已保存网络搜索配置", {
+    log.info("[web-search-config] 已保存网络搜索配置", {
       enabled: config.enabled,
       hasApiKey: Boolean(config.apiKeyRef)
     });
@@ -73,7 +77,7 @@ export class WebSearchConfigService {
     }
     const apiKey = await this.getApiKey(config);
     if (!apiKey) {
-      console.warn("[web-search-config] 网络搜索已启用但缺少 Tavily API Key，跳过工具注册");
+      log.warn("[web-search-config] 网络搜索已启用但缺少 Tavily API Key，跳过工具注册");
       return undefined;
     }
     return (input) => searchTavily({ ...input, apiKey });
@@ -84,9 +88,9 @@ export class WebSearchConfigService {
     if (!searcher) {
       throw new Error("请先启用网络搜索并保存 Tavily API Key");
     }
-    console.info("[web-search-config] 开始测试 Tavily 网络搜索");
+    log.info("[web-search-config] 开始测试 Tavily 网络搜索");
     await searcher({ query: "Tavily Search API", maxResults: 1 });
-    console.info("[web-search-config] Tavily 网络搜索测试通过");
+    log.info("[web-search-config] Tavily 网络搜索测试通过");
   }
 
   async getApiKey(config: WebSearchConfig): Promise<string | undefined> {

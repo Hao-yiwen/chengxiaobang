@@ -2,6 +2,10 @@ import { readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Message as PiMessage } from "@earendil-works/pi-ai";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "agent/project-instructions" });
+
 /** 项目指令文件名,按优先级:AGENTS.md 优先,缺失再用 CLAUDE.md(同目录二选一,不合并)。 */
 const INSTRUCTION_FILE_NAMES = ["AGENTS.md", "CLAUDE.md"] as const;
 
@@ -42,13 +46,13 @@ export async function findInstructionFile(
     for (const name of INSTRUCTION_FILE_NAMES) {
       const candidate = join(dir, name);
       if (await isFile(candidate)) {
-        console.info("[project-instructions] 命中项目指令文件", { filePath: candidate });
+        log.info("[project-instructions] 命中项目指令文件", { filePath: candidate });
         return readInstructionFile(candidate);
       }
     }
     // 指令文件应在仓库范围内:到达仓库根后不再越界向上。
     if (await isDirectory(join(dir, ".git"))) {
-      console.debug("[project-instructions] 到达 Git 仓库根,停止向上查找", { dir });
+      log.debug("[project-instructions] 到达 Git 仓库根,停止向上查找", { dir });
       break;
     }
     const parent = dirname(dir);
@@ -57,7 +61,7 @@ export async function findInstructionFile(
     }
     dir = parent;
   }
-  console.debug("[project-instructions] 未找到项目指令文件", { startDir });
+  log.debug("[project-instructions] 未找到项目指令文件", { startDir });
   return undefined;
 }
 
@@ -67,7 +71,7 @@ async function readInstructionFile(filePath: string): Promise<ProjectInstruction
     return { filePath, content: raw, truncated: false };
   }
   const truncated = Buffer.from(raw, "utf8").subarray(0, MAX_INSTRUCTION_BYTES).toString("utf8");
-  console.warn("[project-instructions] 项目指令文件过大,已截断", {
+  log.warn("[project-instructions] 项目指令文件过大,已截断", {
     filePath,
     maxBytes: MAX_INSTRUCTION_BYTES
   });

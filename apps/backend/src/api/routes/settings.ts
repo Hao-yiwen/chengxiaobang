@@ -12,12 +12,16 @@ import {
 } from "@chengxiaobang/shared";
 import type { AppContext } from "../context";
 
+import { getLogger } from "../../logging/logger";
+
+const log = getLogger({ module: "api/routes/settings" });
+
 export function settingsRoutes(context: AppContext): Hono {
   const app = new Hono();
 
   app.post("/connect-phone/install/start", async (c) => {
     const input = connectPhoneInstallStartInputSchema.parse(await c.req.json());
-    console.info("[settings-routes] 生成连接手机扫码连接", { target: input.target });
+    log.info("[settings-routes] 生成连接手机扫码连接", { target: input.target });
     if (input.target === "wechat") {
       if (!context.wechatService) {
         return c.json({ ok: false, target: "wechat", message: "微信连接服务不可用" });
@@ -35,7 +39,7 @@ export function settingsRoutes(context: AppContext): Hono {
 
   app.post("/connect-phone/install/poll", async (c) => {
     const input = connectPhoneInstallPollInputSchema.parse(await c.req.json());
-    console.debug("[settings-routes] 轮询连接手机扫码连接", {
+    log.debug("[settings-routes] 轮询连接手机扫码连接", {
       target: input.target,
       deviceCodePrefix: input.deviceCode.slice(0, 8)
     });
@@ -69,7 +73,7 @@ export function settingsRoutes(context: AppContext): Hono {
     });
     await context.feishuService.restart();
     const status = context.feishuService.getStatus();
-    console.info("[settings-routes] 连接手机飞书扫码连接已保存并重启", {
+    log.info("[settings-routes] 连接手机飞书扫码连接已保存并重启", {
       appId: config.appId,
       domain: config.domain,
       status: status.status
@@ -102,7 +106,7 @@ export function settingsRoutes(context: AppContext): Hono {
       return c.json({ error: "飞书扫码安装服务不可用" }, 404);
     }
     const input = feishuInstallStartInputSchema.parse(await c.req.json());
-    console.info("[settings-routes] 生成飞书扫码连接", { domain: input.domain });
+    log.info("[settings-routes] 生成飞书扫码连接", { domain: input.domain });
     return c.json(await context.feishuInstallService.start(input.domain));
   });
 
@@ -111,7 +115,7 @@ export function settingsRoutes(context: AppContext): Hono {
       return c.json({ error: "飞书服务不可用" }, 404);
     }
     const input = feishuInstallPollInputSchema.parse(await c.req.json());
-    console.debug("[settings-routes] 轮询飞书扫码连接", {
+    log.debug("[settings-routes] 轮询飞书扫码连接", {
       deviceCodePrefix: input.deviceCode.slice(0, 8)
     });
     const result = await context.feishuInstallService.poll(input.deviceCode);
@@ -129,7 +133,7 @@ export function settingsRoutes(context: AppContext): Hono {
     });
     await context.feishuService.restart();
     const status = context.feishuService.getStatus();
-    console.info("[settings-routes] 飞书扫码连接已保存并重启", {
+    log.info("[settings-routes] 飞书扫码连接已保存并重启", {
       appId: config.appId,
       domain: config.domain,
       status: status.status
@@ -182,13 +186,13 @@ export function settingsRoutes(context: AppContext): Hono {
   app.get("/usage-stats", async (c) => {
     const rawOffset = Number(c.req.query("timezoneOffsetMinutes") ?? 0);
     const timezoneOffsetMinutes = Number.isFinite(rawOffset) ? Math.trunc(rawOffset) : 0;
-    console.info("[settings-routes] 拉取全局 Token 与预估费用统计", {
+    log.info("[settings-routes] 拉取全局 Token 与预估费用统计", {
       timezoneOffsetMinutes
     });
     const stats = usageStatsSchema.parse(
       await context.usageCostLedgerService.buildUsageStats({ timezoneOffsetMinutes })
     );
-    console.info("[settings-routes] 全局用量统计返回完成", {
+    log.info("[settings-routes] 全局用量统计返回完成", {
       totalRunCount: stats.dataQuality.totalRunCount,
       todayCostCny: stats.today.costCny,
       todayTokens: stats.today.totalTokens
@@ -214,13 +218,13 @@ export function settingsRoutes(context: AppContext): Hono {
 
   app.get("/providers/:providerId/models", async (c) => {
     const providerId = c.req.param("providerId");
-    console.info(`[settings-routes] 拉取 provider 模型列表 providerId=${providerId}`);
+    log.info(`[settings-routes] 拉取 provider 模型列表 providerId=${providerId}`);
     return c.json({ models: await context.providerService.listModels(providerId) });
   });
 
   app.get("/providers/:providerId/model-options", async (c) => {
     const providerId = c.req.param("providerId");
-    console.info(`[settings-routes] 拉取 provider 模型选项 providerId=${providerId}`);
+    log.info(`[settings-routes] 拉取 provider 模型选项 providerId=${providerId}`);
     return c.json({ models: await context.providerService.listModelOptions(providerId) });
   });
 

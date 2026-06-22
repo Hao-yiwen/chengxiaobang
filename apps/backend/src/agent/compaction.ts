@@ -12,6 +12,10 @@ import type { StateStore, StoredMessage } from "../repository/state-store";
 import { buildModel, buildModelStreamOptions, toTokenUsage } from "../model/pi-model";
 import type { UsageCostAttempt, UsageCostLedgerService } from "../usage/usage-cost-ledger";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "agent/compaction" });
+
 /** /compact keeps this many most-recent messages out of the summary. */
 const COMPACT_KEEP_RECENT = 4;
 
@@ -66,7 +70,7 @@ export function compactableMessages(
         break;
       }
     }
-    console.warn("[compaction] compactedUpToMessageId 悬空，降级到最近摘要行", {
+    log.warn("[compaction] compactedUpToMessageId 悬空，降级到最近摘要行", {
       compactedUpToMessageId,
       cutoffIndex
     });
@@ -137,7 +141,7 @@ export async function* compactSessionHistory(options: {
       }
     });
   } catch (error) {
-    console.error("[compaction] 创建压缩费用 attempt 失败，继续执行压缩", {
+    log.error("[compaction] 创建压缩费用 attempt 失败，继续执行压缩", {
       runId,
       sessionId: session.id,
       error: error instanceof Error ? error.message : String(error)
@@ -154,7 +158,7 @@ export async function* compactSessionHistory(options: {
             statusCode: response.status,
             receivedResponse: true
           });
-          console.debug("[compaction] 已记录压缩模型 HTTP 响应状态", {
+          log.debug("[compaction] 已记录压缩模型 HTTP 响应状态", {
             runId,
             sessionId: session.id,
             attemptIndex: attempt.attemptIndex,
@@ -290,7 +294,7 @@ export async function* runCompaction(options: {
     yield { type: "run_end", runId, status: "completed", usage: result.usage };
   } catch (error) {
     // 完整错误先写日志,持久化与推送给前端的 run_end 只保留归一化后的精简文案。
-    console.error("[compaction] 压缩运行失败", { runId, error });
+    log.error("[compaction] 压缩运行失败", { runId, error });
     const errorText = normalizeErrorMessage(error);
     await store.updateRunStatus(runId, "failed", undefined, errorText);
     yield {

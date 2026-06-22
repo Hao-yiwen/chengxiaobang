@@ -11,6 +11,10 @@ import {
 import { buildModel, buildModelStreamOptions } from "../model/pi-model";
 import { assessToolApprovalRisk } from "../tools/approval-policy";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "agent/smart-approval" });
+
 const SMART_APPROVAL_TIMEOUT_MS = 8_000;
 const SMART_APPROVAL_MAX_TOKENS = 64;
 
@@ -38,7 +42,7 @@ export function createSmartApprovalJudge(): SmartApprovalJudge {
 export async function decideSmartApproval(input: SmartApprovalInput): Promise<ToolCallApproval> {
   const rule = ruleDecision(input.toolName, input.args, input.workspacePath);
   if (rule) {
-    console.info("[smart-approval] 规则裁决完成", {
+    log.info("[smart-approval] 规则裁决完成", {
       runId: input.runId,
       toolCallId: input.toolCallId,
       toolName: input.toolName,
@@ -53,7 +57,7 @@ export async function decideSmartApproval(input: SmartApprovalInput): Promise<To
   const timeout = withTimeout(input.signal, SMART_APPROVAL_TIMEOUT_MS);
   try {
     const approvalProvider = buildSmartApprovalProvider(input.provider);
-    console.info("[smart-approval] 开始模型裁决", {
+    log.info("[smart-approval] 开始模型裁决", {
       runId: input.runId,
       toolCallId: input.toolCallId,
       toolName: input.toolName,
@@ -90,7 +94,7 @@ export async function decideSmartApproval(input: SmartApprovalInput): Promise<To
       }
     );
     const decision = normalizeModelDecision(parseModelDecision(message));
-    console.info("[smart-approval] 模型裁决完成", {
+    log.info("[smart-approval] 模型裁决完成", {
       runId: input.runId,
       toolCallId: input.toolCallId,
       toolName: input.toolName,
@@ -99,7 +103,7 @@ export async function decideSmartApproval(input: SmartApprovalInput): Promise<To
     return decision;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn("[smart-approval] 模型裁决失败，升级人工审批", {
+    log.warn("[smart-approval] 模型裁决失败，升级人工审批", {
       runId: input.runId,
       toolCallId: input.toolCallId,
       toolName: input.toolName,

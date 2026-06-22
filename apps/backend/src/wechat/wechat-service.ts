@@ -9,6 +9,10 @@ import type {
 import { wechatConfigFromInstall } from "./wechat-bridge";
 import type { WechatConfigService } from "./wechat-config-service";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "wechat/wechat-service" });
+
 const BUSY_REPLY = "上一条消息还在处理中，请稍候再试。";
 const UNSUPPORTED_REPLY = "目前只支持文本消息。";
 const READ_ONLY_CANCELLED = "该操作需要修改本地文件或执行命令，微信会话默认只读，已取消。";
@@ -31,7 +35,7 @@ export class WechatService {
     const config = await this.options.configService.load();
     if (!config.enabled || !config.accountId) {
       this.status = { status: "disconnected" };
-      console.info("[wechat] 微信连接未启用");
+      log.info("[wechat] 微信连接未启用");
       return;
     }
     this.status = { status: "connecting", accountId: config.accountId };
@@ -40,11 +44,11 @@ export class WechatService {
         void this.handleMessage(message);
       });
       this.status = { status: "connected", accountId: config.accountId };
-      console.info("[wechat] 微信连接已启动", { accountId: config.accountId });
+      log.info("[wechat] 微信连接已启动", { accountId: config.accountId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.status = { status: "error", accountId: config.accountId, error: message };
-      console.warn("[wechat] 微信连接启动失败", {
+      log.warn("[wechat] 微信连接启动失败", {
         accountId: config.accountId,
         error: message
       });
@@ -77,7 +81,7 @@ export class WechatService {
     const config = await this.options.configService.save(wechatConfigFromInstall(result));
     await this.restart();
     const status = this.getStatus();
-    console.info("[wechat] 微信扫码连接已保存并重启", {
+    log.info("[wechat] 微信扫码连接已保存并重启", {
       accountId: config.accountId,
       status: status.status
     });
@@ -103,7 +107,7 @@ export class WechatService {
         this.busyChats.delete(message.chatId);
       }
     } catch (error) {
-      console.warn("[wechat] 处理微信消息失败", {
+      log.warn("[wechat] 处理微信消息失败", {
         chatId: message.chatId,
         messageId: message.messageId,
         error: error instanceof Error ? error.message : String(error)
@@ -123,7 +127,7 @@ export class WechatService {
       accessMode: "approval",
       wechatChatId: message.chatId
     });
-    console.info("[wechat] 已创建微信绑定会话", {
+    log.info("[wechat] 已创建微信绑定会话", {
       sessionId: session.id,
       chatId: message.chatId,
       title: session.title
@@ -150,7 +154,7 @@ export class WechatService {
           (event.toolCall.status === "pending_approval" ||
             event.toolCall.status === "pending_smart_approval")
         ) {
-          console.info("[wechat] 只读会话自动拒绝工具", {
+          log.info("[wechat] 只读会话自动拒绝工具", {
             toolCallId: event.toolCall.id,
             tool: event.toolCall.name
           });
@@ -168,12 +172,12 @@ export class WechatService {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn("[wechat] 微信会话运行失败", { sessionId, error: message });
+      log.warn("[wechat] 微信会话运行失败", { sessionId, error: message });
       return message;
     }
     if (texts.length > 0) {
       const joined = texts.join("\n\n");
-      console.info("[wechat] 微信会话运行完成", {
+      log.info("[wechat] 微信会话运行完成", {
         sessionId,
         chars: joined.length,
         hasError: Boolean(errorText)
@@ -193,7 +197,7 @@ export class WechatService {
     try {
       await this.options.bridge.sendText(chatId, text);
     } catch (error) {
-      console.warn("[wechat] 发送微信回复失败", {
+      log.warn("[wechat] 发送微信回复失败", {
         chatId,
         reason,
         error: error instanceof Error ? error.message : String(error)

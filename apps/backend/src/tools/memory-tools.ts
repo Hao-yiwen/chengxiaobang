@@ -4,6 +4,10 @@ import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { textResult } from "./tool-result";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/memory-tools" });
+
 /** 模型可见的记忆虚拟根目录，对齐 Anthropic memory tool 的 /memories 约定。 */
 export const MEMORY_ROOT = "/memories";
 
@@ -68,7 +72,7 @@ export function resolveMemoryPath(memoryDir: string, virtualPath: string): strin
   const base = resolve(memoryDir);
   const target = resolve(base, `.${normalized.slice(MEMORY_ROOT.length)}`);
   if (target !== base && !target.startsWith(`${base}${sep}`)) {
-    console.warn(`[memory-tools] 拒绝越界的记忆路径 path=${virtualPath}`);
+    log.warn(`[memory-tools] 拒绝越界的记忆路径 path=${virtualPath}`);
     throw new Error(`路径越出了 ${MEMORY_ROOT} 目录范围：${virtualPath}`);
   }
   return target;
@@ -190,7 +194,7 @@ async function createCommand(memoryDir: string, params: MemoryParams): Promise<s
   }
   await mkdir(dirname(target), { recursive: true });
   await writeFile(target, fileText, "utf8");
-  console.info(`[memory-tools] 已创建记忆文件 path=${virtualPath} chars=${fileText.length}`);
+  log.info(`[memory-tools] 已创建记忆文件 path=${virtualPath} chars=${fileText.length}`);
   return `已创建记忆文件 ${virtualPath}`;
 }
 
@@ -218,7 +222,7 @@ async function strReplaceCommand(memoryDir: string, params: MemoryParams): Promi
     );
   }
   await writeFile(target, content.replace(oldStr, newStr), "utf8");
-  console.info(`[memory-tools] 已编辑记忆文件 path=${virtualPath}`);
+  log.info(`[memory-tools] 已编辑记忆文件 path=${virtualPath}`);
   return `已更新记忆文件 ${virtualPath}`;
 }
 
@@ -237,7 +241,7 @@ async function insertCommand(memoryDir: string, params: MemoryParams): Promise<s
   }
   lines.splice(insertLine, 0, ...insertText.replace(/\n$/, "").split("\n"));
   await writeFile(target, lines.join("\n"), "utf8");
-  console.info(`[memory-tools] 已向记忆文件插入内容 path=${virtualPath} line=${insertLine}`);
+  log.info(`[memory-tools] 已向记忆文件插入内容 path=${virtualPath} line=${insertLine}`);
   return `已向 ${virtualPath} 第 ${insertLine} 行后插入内容`;
 }
 
@@ -251,7 +255,7 @@ async function deleteCommand(memoryDir: string, params: MemoryParams): Promise<s
     throw new Error(`路径 ${virtualPath} 不存在`);
   }
   await rm(target, { recursive: true });
-  console.info(`[memory-tools] 已删除记忆 path=${virtualPath}`);
+  log.info(`[memory-tools] 已删除记忆 path=${virtualPath}`);
   return `已删除 ${virtualPath}`;
 }
 
@@ -268,7 +272,7 @@ async function renameCommand(memoryDir: string, params: MemoryParams): Promise<s
   }
   await mkdir(dirname(destination), { recursive: true });
   await rename(source, destination);
-  console.info(`[memory-tools] 已重命名记忆 from=${oldVirtual} to=${newVirtual}`);
+  log.info(`[memory-tools] 已重命名记忆 from=${oldVirtual} to=${newVirtual}`);
   return `已把 ${oldVirtual} 重命名为 ${newVirtual}`;
 }
 

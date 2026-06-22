@@ -4,6 +4,10 @@ import type { TerminalExecResult } from "@chengxiaobang/shared";
 import { detectGitRepository, parsePorcelainStatus } from "../tools/git-changes";
 import { runCommand } from "../tools/shell";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "agent/environment-context" });
+
 /** 注入系统提示 `# 环境信息` 段的运行环境快照。 */
 export interface EnvironmentContext {
   isGitRepo: boolean;
@@ -61,7 +65,7 @@ async function collectGitContext(
   try {
     isRepo = await detectGitRepository(workspacePath);
   } catch (error) {
-    console.warn("[environment-context] 探测 Git 仓库失败,按非仓库处理", {
+    log.warn("[environment-context] 探测 Git 仓库失败,按非仓库处理", {
       workspacePath,
       error: errorText(error)
     });
@@ -74,7 +78,7 @@ async function collectGitContext(
     const block = await renderGitStatusBlock(workspacePath);
     return { isRepo, ...(block ? { block } : {}) };
   } catch (error) {
-    console.warn("[environment-context] 采集 Git 状态失败,跳过 Git 快照", {
+    log.warn("[environment-context] 采集 Git 状态失败,跳过 Git 快照", {
       workspacePath,
       error: errorText(error)
     });

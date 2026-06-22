@@ -3,6 +3,10 @@ import type {
   FeishuInstallStartResult
 } from "@chengxiaobang/shared";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "feishu/feishu-install-service" });
+
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 type FeishuInstallCredentialResult =
@@ -49,7 +53,7 @@ export class FeishuInstallService {
   }
 
   async start(domain: FeishuInstallDomain): Promise<FeishuInstallStartResult> {
-    console.info("[feishu-install] 开始生成扫码连接", { domain });
+    log.info("[feishu-install] 开始生成扫码连接", { domain });
     try {
       const endpoint = `${DOMAIN_ENDPOINTS[domain].accounts}${REGISTRATION_PATH}`;
       const data = await this.postForm(endpoint, {
@@ -73,7 +77,7 @@ export class FeishuInstallService {
         );
       }
       this.rememberTarget(deviceCode, domain);
-      console.info("[feishu-install] 扫码连接已生成", {
+      log.info("[feishu-install] 扫码连接已生成", {
         domain,
         deviceCodePrefix: shortDeviceCode(deviceCode),
         userCode: userCode || undefined
@@ -88,7 +92,7 @@ export class FeishuInstallService {
       };
     } catch (error) {
       const message = errorMessage(error);
-      console.warn("[feishu-install] 生成扫码连接失败", { domain, error: message });
+      log.warn("[feishu-install] 生成扫码连接失败", { domain, error: message });
       return { ok: false, message };
     }
   }
@@ -97,13 +101,13 @@ export class FeishuInstallService {
     const normalizedDeviceCode = deviceCode.trim();
     const targetDomain = this.installTargets.get(normalizedDeviceCode);
     if (!targetDomain) {
-      console.warn("[feishu-install] 轮询扫码状态失败，deviceCode 不存在或已过期");
+      log.warn("[feishu-install] 轮询扫码状态失败，deviceCode 不存在或已过期");
       return { done: false, error: "扫码状态已过期，请重新生成二维码" };
     }
 
     const first = await this.pollDomain(normalizedDeviceCode, targetDomain);
     if (!first.done && "retryDomain" in first) {
-      console.info("[feishu-install] 检测到 Lark 租户，切换轮询域名", {
+      log.info("[feishu-install] 检测到 Lark 租户，切换轮询域名", {
         deviceCodePrefix: shortDeviceCode(normalizedDeviceCode)
       });
       this.rememberTarget(normalizedDeviceCode, first.retryDomain);
@@ -127,7 +131,7 @@ export class FeishuInstallService {
       return this.parsePollResponse(result, deviceCode, domain);
     } catch (error) {
       const message = errorMessage(error);
-      console.warn("[feishu-install] 轮询扫码状态失败", {
+      log.warn("[feishu-install] 轮询扫码状态失败", {
         domain,
         deviceCodePrefix: shortDeviceCode(deviceCode),
         error: message
@@ -145,7 +149,7 @@ export class FeishuInstallService {
     const error = recordString(data, "error");
     if (error) {
       if (error === "authorization_pending" || error === "slow_down") {
-        console.debug("[feishu-install] 扫码授权仍在等待", {
+        log.debug("[feishu-install] 扫码授权仍在等待", {
           domain,
           deviceCodePrefix: shortDeviceCode(deviceCode),
           error
@@ -154,7 +158,7 @@ export class FeishuInstallService {
       }
       this.installTargets.delete(deviceCode);
       const message = friendlyPollError(error, recordString(data, "error_description"));
-      console.warn("[feishu-install] 扫码授权返回错误", {
+      log.warn("[feishu-install] 扫码授权返回错误", {
         domain,
         deviceCodePrefix: shortDeviceCode(deviceCode),
         error
@@ -181,7 +185,7 @@ export class FeishuInstallService {
 
     if (appId && appSecret) {
       this.installTargets.delete(deviceCode);
-      console.info("[feishu-install] 扫码授权成功", {
+      log.info("[feishu-install] 扫码授权成功", {
         domain: resolvedDomain,
         appId,
         deviceCodePrefix: shortDeviceCode(deviceCode)

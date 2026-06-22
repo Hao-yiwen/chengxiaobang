@@ -7,6 +7,10 @@ import type {
 } from "@chengxiaobang/shared";
 import wechatPackageJson from "@tencent-weixin/openclaw-weixin/package.json";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "wechat/wechat-bridge" });
+
 type JsonRecord = Record<string, unknown>;
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -119,7 +123,7 @@ export class WechatBridgeRuntime implements WechatBridge {
   }
 
   async startInstall(): Promise<ConnectPhoneInstallStartResult> {
-    console.info("[wechat-bridge] 开始生成微信扫码连接");
+    log.info("[wechat-bridge] 开始生成微信扫码连接");
     try {
       this.readPackageInfo();
       this.purgeExpiredLogins();
@@ -140,7 +144,7 @@ export class WechatBridgeRuntime implements WechatBridge {
         qrcodeUrl,
         startedAt: Date.now()
       });
-      console.info("[wechat-bridge] 微信扫码连接已生成", {
+      log.info("[wechat-bridge] 微信扫码连接已生成", {
         deviceCodePrefix: shortId(deviceCode),
         expiresIn: QR_VISIBLE_TTL_SECONDS
       });
@@ -155,7 +159,7 @@ export class WechatBridgeRuntime implements WechatBridge {
       };
     } catch (error) {
       const message = errorMessage(error);
-      console.warn("[wechat-bridge] 生成微信扫码连接失败", { error: message });
+      log.warn("[wechat-bridge] 生成微信扫码连接失败", { error: message });
       return { ok: false, target: "wechat", message };
     }
   }
@@ -164,20 +168,20 @@ export class WechatBridgeRuntime implements WechatBridge {
     const key = deviceCode.trim();
     const login = this.activeLogins.get(key);
     if (!login) {
-      console.warn("[wechat-bridge] 微信扫码轮询失败，deviceCode 不存在", {
+      log.warn("[wechat-bridge] 微信扫码轮询失败，deviceCode 不存在", {
         deviceCodePrefix: shortId(key)
       });
       return { done: false, error: "扫码状态已过期，请重新生成二维码" };
     }
     if (!this.isLoginFresh(login)) {
       this.activeLogins.delete(key);
-      console.info("[wechat-bridge] 微信二维码已过期", { deviceCodePrefix: shortId(key) });
+      log.info("[wechat-bridge] 微信二维码已过期", { deviceCodePrefix: shortId(key) });
       return { done: false, error: "二维码已过期，请重新生成" };
     }
 
     const status = await this.pollQrStatus(login.currentApiBaseUrl ?? WECHAT_API_BASE_URL, login.qrcode);
     const statusText = recordString(status, "status");
-    console.debug("[wechat-bridge] 微信扫码状态轮询完成", {
+    log.debug("[wechat-bridge] 微信扫码状态轮询完成", {
       deviceCodePrefix: shortId(key),
       status: statusText || "empty"
     });
@@ -213,7 +217,7 @@ export class WechatBridgeRuntime implements WechatBridge {
           recordString(status, "account_id");
         const account = await this.findConfiguredAccount(hintedAccountId);
         if (!account) {
-          console.warn("[wechat-bridge] 微信账号已绑定但本地缺少可用授权信息", {
+          log.warn("[wechat-bridge] 微信账号已绑定但本地缺少可用授权信息", {
             deviceCodePrefix: shortId(key),
             hintedAccountId: hintedAccountId || undefined
           });
@@ -222,7 +226,7 @@ export class WechatBridgeRuntime implements WechatBridge {
             error: "微信账号已绑定，但本地授权信息不可用，请重新扫码连接。"
           };
         }
-        console.info("[wechat-bridge] 微信账号已绑定过当前连接，复用本地授权账号", {
+        log.info("[wechat-bridge] 微信账号已绑定过当前连接，复用本地授权账号", {
           accountId: account.accountId,
           hintedAccountId: hintedAccountId || undefined
         });
@@ -246,7 +250,7 @@ export class WechatBridgeRuntime implements WechatBridge {
     if (!account.configured || !account.token) {
       const fallback = await this.findConfiguredAccount();
       if (fallback && fallback.accountId !== requestedAccountId) {
-        console.warn("[wechat-bridge] 微信配置账号缺少 token，改用本地已授权账号启动轮询", {
+        log.warn("[wechat-bridge] 微信配置账号缺少 token，改用本地已授权账号启动轮询", {
           requestedAccountId,
           accountId: fallback.accountId
         });
@@ -259,14 +263,14 @@ export class WechatBridgeRuntime implements WechatBridge {
     const activeAccountId = account.accountId;
     const existing = this.monitors.get(activeAccountId);
     if (existing && !existing.controller.signal.aborted) {
-      console.info("[wechat-bridge] 微信消息轮询已在运行", { accountId: activeAccountId });
+      log.info("[wechat-bridge] 微信消息轮询已在运行", { accountId: activeAccountId });
       return;
     }
     const controller = new AbortController();
     const promise = this.monitorAccount(account, onMessage, controller.signal)
       .catch((error) => {
         if (!controller.signal.aborted) {
-          console.error("[wechat-bridge] 微信消息轮询已停止", {
+          log.error("[wechat-bridge] 微信消息轮询已停止", {
             accountId: activeAccountId,
             error: errorMessage(error)
           });
@@ -278,7 +282,7 @@ export class WechatBridgeRuntime implements WechatBridge {
         }
       });
     this.monitors.set(activeAccountId, { accountId: activeAccountId, controller, promise });
-    console.info("[wechat-bridge] 微信消息轮询已启动", { accountId: activeAccountId });
+    log.info("[wechat-bridge] 微信消息轮询已启动", { accountId: activeAccountId });
   }
 
   async stop(): Promise<void> {
@@ -288,7 +292,7 @@ export class WechatBridgeRuntime implements WechatBridge {
       monitor.controller.abort();
     }
     await Promise.allSettled(monitors.map((monitor) => monitor.promise));
-    console.info("[wechat-bridge] 微信消息轮询已全部停止", { count: monitors.length });
+    log.info("[wechat-bridge] 微信消息轮询已全部停止", { count: monitors.length });
   }
 
   async sendText(chatId: string, content: string): Promise<void> {
@@ -316,7 +320,7 @@ export class WechatBridgeRuntime implements WechatBridge {
     const token = recordString(status, "bot_token");
     if (!rawAccountId || !token) {
       this.activeLogins.delete(deviceCode);
-      console.warn("[wechat-bridge] 微信扫码确认后缺少账号或 token", {
+      log.warn("[wechat-bridge] 微信扫码确认后缺少账号或 token", {
         hasAccountId: Boolean(rawAccountId),
         hasToken: Boolean(token)
       });
@@ -328,7 +332,7 @@ export class WechatBridgeRuntime implements WechatBridge {
     await this.saveAccount(accountId, { token, baseUrl, userId });
     await this.clearStaleAccountsForUserId(accountId, userId);
     this.activeLogins.delete(deviceCode);
-    console.info("[wechat-bridge] 微信扫码授权成功", {
+    log.info("[wechat-bridge] 微信扫码授权成功", {
       accountId,
       userId: userId || undefined
     });
@@ -358,7 +362,7 @@ export class WechatBridgeRuntime implements WechatBridge {
         const errcode = Number(response.errcode ?? 0);
         if (ret !== 0 || errcode !== 0) {
           consecutiveFailures += 1;
-          console.warn("[wechat-bridge] 微信消息轮询返回非成功状态", {
+          log.warn("[wechat-bridge] 微信消息轮询返回非成功状态", {
             accountId: account.accountId,
             ret,
             errcode,
@@ -384,7 +388,7 @@ export class WechatBridgeRuntime implements WechatBridge {
             }
             const inbound = this.toInboundMessage(account.accountId, messageRecord);
             if (!inbound.chatId) {
-              console.warn("[wechat-bridge] 跳过缺少发送人的微信消息", {
+              log.warn("[wechat-bridge] 跳过缺少发送人的微信消息", {
                 accountId: account.accountId,
                 messageId: recordScalarString(messageRecord, "message_id") || undefined
               });
@@ -395,7 +399,7 @@ export class WechatBridgeRuntime implements WechatBridge {
               this.contextTokens.set(contextTokenKey(account.accountId, inbound.chatId), contextToken);
               await this.persistContextTokens(account.accountId);
             }
-            console.info("[wechat-bridge] 收到微信消息", {
+            log.info("[wechat-bridge] 收到微信消息", {
               accountId: account.accountId,
               chatId: inbound.chatId,
               messageId: inbound.messageId,
@@ -403,7 +407,7 @@ export class WechatBridgeRuntime implements WechatBridge {
             });
             onMessage(inbound);
           } catch (error) {
-            console.warn("[wechat-bridge] 解析单条微信消息失败，已跳过", {
+            log.warn("[wechat-bridge] 解析单条微信消息失败，已跳过", {
               accountId: account.accountId,
               error: errorMessage(error)
             });
@@ -418,7 +422,7 @@ export class WechatBridgeRuntime implements WechatBridge {
           return;
         }
         consecutiveFailures += 1;
-        console.warn("[wechat-bridge] 微信消息轮询异常，将重试", {
+        log.warn("[wechat-bridge] 微信消息轮询异常，将重试", {
           accountId: account.accountId,
           error: errorMessage(error),
           consecutiveFailures
@@ -464,7 +468,7 @@ export class WechatBridgeRuntime implements WechatBridge {
       if (error instanceof Error && error.name === "TimeoutError") {
         return { status: "wait" };
       }
-      console.warn("[wechat-bridge] 微信二维码状态轮询失败，按等待处理", {
+      log.warn("[wechat-bridge] 微信二维码状态轮询失败，按等待处理", {
         error: errorMessage(error)
       });
       return { status: "wait" };
@@ -514,7 +518,7 @@ export class WechatBridgeRuntime implements WechatBridge {
       },
       { token: account.token, timeoutMs: DEFAULT_API_TIMEOUT_MS, label: "sendMessage" }
     );
-    console.info("[wechat-bridge] 已发送微信文本消息", {
+    log.info("[wechat-bridge] 已发送微信文本消息", {
       accountId: account.accountId,
       chatId,
       clientId,

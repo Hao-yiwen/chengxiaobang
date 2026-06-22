@@ -4,6 +4,10 @@ import { skillCreateInputSchema, skillImportInputSchema } from "@chengxiaobang/s
 import { SkillMarketError } from "../../tools/skill-market-service";
 import type { AppContext } from "../context";
 
+import { getLogger } from "../../logging/logger";
+
+const log = getLogger({ module: "api/routes/skills" });
+
 const marketToggleSchema = z.object({ enabled: z.boolean() });
 const disabledToggleSchema = z.object({ disabled: z.boolean() });
 
@@ -40,7 +44,7 @@ export function skillRoutes(context: AppContext): Hono {
       return c.json({ skills });
     } catch (error) {
       if (error instanceof SkillMarketError) {
-        console.warn(`[skills-routes] 切换市场技能失败 name=${name}: ${error.message}`);
+        log.warn(`[skills-routes] 切换市场技能失败 name=${name}: ${error.message}`);
         return c.json({ error: error.message }, 400);
       }
       throw error;
@@ -57,7 +61,7 @@ export function skillRoutes(context: AppContext): Hono {
       return c.json({ skill });
     } catch (error) {
       if (error instanceof SkillMarketError) {
-        console.warn(`[skills-routes] 导入自定义技能失败 url=${input.url}: ${error.message}`);
+        log.warn(`[skills-routes] 导入自定义技能失败 url=${input.url}: ${error.message}`);
         return c.json({ error: error.message }, 400);
       }
       throw error;
@@ -74,7 +78,7 @@ export function skillRoutes(context: AppContext): Hono {
       return c.json({ skill });
     } catch (error) {
       if (error instanceof SkillMarketError) {
-        console.warn(`[skills-routes] 创建自定义技能失败 name=${input.name}: ${error.message}`);
+        log.warn(`[skills-routes] 创建自定义技能失败 name=${input.name}: ${error.message}`);
         return c.json({ error: error.message }, 400);
       }
       throw error;
@@ -90,7 +94,7 @@ export function skillRoutes(context: AppContext): Hono {
       return c.json({ deleted: await context.skillMarketService.deleteCustom(name) });
     } catch (error) {
       if (error instanceof SkillMarketError) {
-        console.warn(`[skills-routes] 删除自定义技能失败 name=${name}: ${error.message}`);
+        log.warn(`[skills-routes] 删除自定义技能失败 name=${name}: ${error.message}`);
         return c.json({ error: error.message }, 400);
       }
       throw error;

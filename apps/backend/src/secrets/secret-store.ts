@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "secrets/secret-store" });
+
 const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
 
@@ -73,7 +77,7 @@ export class MacOSKeychainSecretStore implements SecretStore {
       secret,
       "-U"
     ]);
-    console.info("[secret-store] 已保存 macOS Keychain 密钥", {
+    log.info("[secret-store] 已保存 macOS Keychain 密钥", {
       service: this.service,
       account
     });
@@ -83,7 +87,7 @@ export class MacOSKeychainSecretStore implements SecretStore {
   async getSecret(ref: string): Promise<string | undefined> {
     const parsed = parseKeychainSecretRef(ref);
     if (!parsed) {
-      console.warn("[secret-store] macOS Keychain 密钥引用格式无效", { ref });
+      log.warn("[secret-store] macOS Keychain 密钥引用格式无效", { ref });
       return undefined;
     }
     try {
@@ -97,7 +101,7 @@ export class MacOSKeychainSecretStore implements SecretStore {
       ]);
       return stdout.trim();
     } catch (error) {
-      console.warn("[secret-store] 读取 macOS Keychain 密钥失败", {
+      log.warn("[secret-store] 读取 macOS Keychain 密钥失败", {
         service: parsed.service,
         account: parsed.account,
         error: error instanceof Error ? error.message : String(error)
@@ -124,14 +128,14 @@ export class WindowsCredentialSecretStore implements SecretStore {
         }
       );
     } catch (error) {
-      console.warn("[secret-store] 保存 Windows Credential Manager 密钥失败", {
+      log.warn("[secret-store] 保存 Windows Credential Manager 密钥失败", {
         service: this.service,
         account,
         error: error instanceof Error ? error.message : String(error)
       });
       throw error;
     }
-    console.info("[secret-store] 已保存 Windows Credential Manager 密钥", {
+    log.info("[secret-store] 已保存 Windows Credential Manager 密钥", {
       service: this.service,
       account
     });
@@ -141,7 +145,7 @@ export class WindowsCredentialSecretStore implements SecretStore {
   async getSecret(ref: string): Promise<string | undefined> {
     const parsed = parseWindowsCredentialSecretRef(ref);
     if (!parsed) {
-      console.warn("[secret-store] Windows Credential Manager 密钥引用格式无效", { ref });
+      log.warn("[secret-store] Windows Credential Manager 密钥引用格式无效", { ref });
       return undefined;
     }
     try {
@@ -158,7 +162,7 @@ export class WindowsCredentialSecretStore implements SecretStore {
       const secret = typeof stdout === "string" ? stdout : stdout.toString("utf8");
       return secret === "" ? undefined : secret;
     } catch (error) {
-      console.warn("[secret-store] 读取 Windows Credential Manager 密钥失败", {
+      log.warn("[secret-store] 读取 Windows Credential Manager 密钥失败", {
         service: parsed.service,
         account: parsed.account,
         error: error instanceof Error ? error.message : String(error)

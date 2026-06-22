@@ -5,9 +5,12 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import { errorToLogFields, getLogger } from "../logging/logger";
 import { globFiles, resolveToolPath, type ToolPathResolution } from "./workspace";
 import { buildToolFileChangeDetails, type ToolFileChangeDetails } from "./file-change";
 import { textResult } from "./tool-result";
+
+const log = getLogger({ module: "fs-tools" });
 
 const lsParams = Type.Object({
   path: Type.Optional(
@@ -141,7 +144,9 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
         before,
         after: params.content
       });
-      console.info("[fs-tools] Write 写入完成", {
+      log.info("Write 写入完成", {
+        action: "fs.write_completed",
+        toolName: "Write",
         path: params.file_path,
         target,
         contentLength: params.content.length,
@@ -165,7 +170,9 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
       const source = await readFile(target, "utf8");
       const occurrences = countOccurrences(source, params.old_string);
       if (occurrences === 0) {
-        console.warn("[fs-tools] Edit 未找到要替换的内容", {
+        log.warn("Edit 未找到要替换的内容", {
+          action: "fs.edit_missing_old_string",
+          toolName: "Edit",
           path: params.file_path,
           oldStringLength: params.old_string.length
         });
@@ -187,7 +194,9 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
         before: source,
         after: next
       });
-      console.info("[fs-tools] Edit 编辑完成", {
+      log.info("Edit 编辑完成", {
+        action: "fs.edit_completed",
+        toolName: "Edit",
         path: params.file_path,
         target,
         occurrences,
@@ -262,9 +271,11 @@ async function readTextBeforeWrite(target: string): Promise<string> {
     if (isMissingPathError(error)) {
       return "";
     }
-    console.warn("[fs-tools] Write 读取写入前内容失败", {
+    log.warn("Write 读取写入前内容失败", {
+      action: "fs.read_before_write_failed",
+      toolName: "Write",
       target,
-      error: error instanceof Error ? error.message : String(error)
+      ...errorToLogFields(error)
     });
     throw error;
   }
@@ -303,7 +314,8 @@ function resolveFsToolPathWithMeta(
 ): ToolPathResolution {
   const resolved = resolveToolPath(workspacePath, path);
   if (resolved.outsideWorkspace) {
-    console.info("[fs-tools] 工具访问工作目录外绝对路径", {
+    log.info("工具访问工作目录外绝对路径", {
+      action: "fs.outside_workspace",
       toolName,
       path,
       target: resolved.target,
@@ -333,7 +345,9 @@ async function readLineRange(
   const offset = requestedOffset ?? 1;
   const rawLimit = requestedLimit ?? DEFAULT_READ_LINE_LIMIT;
   if (!Number.isInteger(offset) || !Number.isInteger(rawLimit) || offset < 1 || rawLimit < 1) {
-    console.warn("[fs-tools] Read 分段读取参数非法", {
+    log.warn("Read 分段读取参数非法", {
+      action: "fs.read_invalid_range",
+      toolName: "Read",
       path,
       requestedOffset,
       requestedLimit
@@ -342,7 +356,9 @@ async function readLineRange(
   }
   const limit = Math.min(rawLimit, MAX_READ_LINE_LIMIT);
   if (rawLimit > MAX_READ_LINE_LIMIT) {
-    console.info("[fs-tools] Read 读取行数过大，已按上限裁剪", {
+    log.info("Read 读取行数过大，已按上限裁剪", {
+      action: "fs.read_limit_clamped",
+      toolName: "Read",
       path,
       requestedLimit: rawLimit,
       limit

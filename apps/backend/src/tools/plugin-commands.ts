@@ -2,6 +2,10 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PromptTemplate } from "@earendil-works/pi-agent-core/node";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/plugin-commands" });
+
 /**
  * 一条插件命令：template 复用 pi 的 PromptTemplate 形状（{name, description, content}），
  * 这样上层可直接用 formatPromptTemplateInvocation 做 `$1/$@/$ARGUMENTS` 替换；
@@ -42,7 +46,7 @@ export async function loadPluginCommands(root: string): Promise<PluginCommand[]>
     try {
       raw = await readFile(filePath, "utf8");
     } catch (error) {
-      console.warn(`[plugin] 读取插件命令失败 path=${filePath}: ${String(error)}`);
+      log.warn(`[plugin] 读取插件命令失败 path=${filePath}: ${String(error)}`);
       continue;
     }
     const meta = parsePluginCommandFile(raw);

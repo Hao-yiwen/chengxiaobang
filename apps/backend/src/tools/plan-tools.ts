@@ -8,6 +8,10 @@ import {
 } from "@chengxiaobang/shared";
 import { textResult } from "./tool-result";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/plan-tools" });
+
 const proposePlanParams = Type.Object({
   plan: Type.String({
     description:
@@ -85,7 +89,7 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
     parameters: proposePlanParams,
     execute: async (toolCallId, params) => {
       const plan = runtime.getApprovedPlanArgs(toolCallId) ?? proposePlanArgsSchema.parse(params);
-      console.info(`[plan-tools] 计划已确认 toolCallId=${toolCallId} chars=${plan.markdown.length}`);
+      log.info(`[plan-tools] 计划已确认 toolCallId=${toolCallId} chars=${plan.markdown.length}`);
       return textResult(`用户已确认此计划，请立即按计划执行。\n\n${plan.markdown}`);
     }
   };
@@ -98,14 +102,14 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
     execute: async (toolCallId) => {
       const answer = runtime.getAskUserAnswer(toolCallId);
       if (!answer) {
-        console.warn(`[plan-tools] AskUserQuestion 缺少用户回答 toolCallId=${toolCallId}`);
+        log.warn(`[plan-tools] AskUserQuestion 缺少用户回答 toolCallId=${toolCallId}`);
         throw new Error("用户未提供回答");
       }
       const lines = answer.answers.map((item, index) => {
         const question = item.question ? `${item.question} ` : "";
         return `${index + 1}. ${question}${askUserAnswerItemText(item)}`;
       });
-      console.info("[plan-tools] 收到用户结构化回答", {
+      log.info("[plan-tools] 收到用户结构化回答", {
         toolCallId,
         answerCount: answer.answers.length
       });
@@ -128,10 +132,10 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
     execute: async (_toolCallId, params) => {
       const content = await runtime.loadSkill(params.skill, params.args);
       if (!content) {
-        console.warn(`[plan-tools] 技能不存在 skill=${params.skill}`);
+        log.warn(`[plan-tools] 技能不存在 skill=${params.skill}`);
         throw new Error(`技能不存在：${params.skill}`);
       }
-      console.info(`[plan-tools] 加载技能 skill=${params.skill} chars=${content.length}`);
+      log.info(`[plan-tools] 加载技能 skill=${params.skill} chars=${content.length}`);
       return textResult(content);
     }
   };

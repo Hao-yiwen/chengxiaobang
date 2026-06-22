@@ -4,6 +4,7 @@ import {
   parseWindowsCredentialSecretRef,
   WindowsCredentialSecretStore
 } from "../src/secrets/secret-store";
+import { captureBackendLogs } from "./helpers/logging";
 
 describe("parseKeychainSecretRef", () => {
   it("keeps colons inside the Keychain account name", () => {
@@ -76,23 +77,31 @@ describe("WindowsCredentialSecretStore", () => {
     const execFileImpl = vi.fn(async (..._args: unknown[]) => {
       throw new Error("credential write failed");
     });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { entries, restore } = captureBackendLogs();
     const store = new WindowsCredentialSecretStore("程小帮", execFileImpl as never);
 
-    await expect(store.setSecret("provider:deepseek", "secret-value")).rejects.toThrow(
-      "credential write failed"
-    );
+    try {
+      await expect(store.setSecret("provider:deepseek", "secret-value")).rejects.toThrow(
+        "credential write failed"
+      );
 
-    expect(warn).toHaveBeenCalledWith(
-      "[secret-store] 保存 Windows Credential Manager 密钥失败",
-      expect.objectContaining({
-        service: "程小帮",
-        account: "provider:deepseek",
-        error: "credential write failed"
-      })
-    );
-    expect(JSON.stringify(warn.mock.calls)).not.toContain("secret-value");
-    warn.mockRestore();
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            level: "warn",
+            message: "[secret-store] 保存 Windows Credential Manager 密钥失败",
+            fields: expect.objectContaining({
+              service: "程小帮",
+              account: "provider:deepseek",
+              errorMessage: "credential write failed"
+            })
+          })
+        ])
+      );
+      expect(JSON.stringify(entries)).not.toContain("secret-value");
+    } finally {
+      restore();
+    }
   });
 
   it("returns undefined when reading a Windows credential fails", async () => {

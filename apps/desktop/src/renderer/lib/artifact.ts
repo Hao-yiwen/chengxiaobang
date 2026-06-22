@@ -1,6 +1,7 @@
 import type { ToolCall } from "@chengxiaobang/shared";
 import {
   basenameOf,
+  isArtifactPreviewKind,
   isAbsolutePathLike,
   previewKindForPath,
   type PreviewKind
@@ -15,6 +16,24 @@ export interface Artifact {
   /** 用于界面展示的文件名。 */
   name: string;
   kind: ArtifactKind;
+}
+
+export interface ArtifactDeclaration extends Artifact {
+  declarationStart: number;
+  declarationEnd: number;
+  groupStart: number;
+  groupEnd: number;
+}
+
+export interface ArtifactDeclarationGroup {
+  start: number;
+  end: number;
+  artifacts: Artifact[];
+}
+
+interface Range {
+  start: number;
+  end: number;
 }
 
 export interface ArtifactSourceMessage {
@@ -38,6 +57,8 @@ export type ArtifactDeclarationDiagnostic =
 export interface ParsedArtifactDeclarations {
   cleanMarkdown: string;
   artifacts: Artifact[];
+  artifactDeclarations: ArtifactDeclaration[];
+  declarationGroups: ArtifactDeclarationGroup[];
   diagnostics: ArtifactDeclarationDiagnostic[];
 }
 
@@ -57,16 +78,10 @@ export type ArtifactSourceToolCall = Pick<
   "id" | "name" | "args" | "status" | "createdAt" | "updatedAt"
 >;
 
-const TOOL_FALLBACK_ARTIFACT_KINDS = new Set<ArtifactKind>([
-  "html",
-  "pdf",
-  "image",
-  "audio",
-  "video",
-  "spreadsheet",
-  "docx",
-  "presentation"
-]);
+const ARTIFACT_BLOCK_PATTERN = /<artifacts\b[^>]*>[\s\S]*?<\/artifacts>/giu;
+const ARTIFACT_TAG_PATTERN = /<artifact\b[^>]*\/>/giu;
+const ARTIFACT_DECLARATION_PATTERN =
+  /<artifacts\b[^>]*>[\s\S]*?<\/artifacts>|<artifact\b[^>]*\/>/giu;
 
 /** 面向产物协议的文件类型推导别名，实际预览类型仍由文件预览模块决定。 */
 export function artifactKind(path: string): ArtifactKind {
@@ -81,57 +96,128 @@ function artifactFromPathWithKind(path: string, kind: ArtifactKind): Artifact {
   return { path, name: basenameOf(path), kind };
 }
 
+function artifactFromDeclaredPath(path: string): Artifact | undefined {
+  const kind = artifactKind(path);
+  return isArtifactPreviewKind(kind) ? artifactFromPathWithKind(path, kind) : undefined;
+}
+
 export function parseArtifactDeclarations(markdown: string): ParsedArtifactDeclarations {
+  const sourceMarkdown = stripTrailingPartialArtifactDeclaration(markdown);
   const artifacts: Artifact[] = [];
+  const artifactDeclarations: ArtifactDeclaration[] = [];
+  const declarationGroups: ArtifactDeclarationGroup[] = [];
   const diagnostics: ArtifactDeclarationDiagnostic[] = [];
+  const removedRanges: Range[] = [];
+  const blockRanges: Range[] = [];
   const seen = new Set<string>();
 
-  const acceptTag = (tag: string) => {
+  const acceptTag = (tag: string): Artifact | undefined => {
     const path = pathAttribute(tag);
     if (path === undefined) {
       diagnostics.push({ type: "missing_path", tag });
-      return;
+      return undefined;
     }
     const normalized = normalizeArtifactPath(path);
     if (!normalized) {
       diagnostics.push({ type: "invalid_path", path });
-      return;
+      return undefined;
+    }
+    const artifact = artifactFromDeclaredPath(normalized);
+    if (!artifact) {
+      diagnostics.push({ type: "invalid_path", path: normalized });
+      return undefined;
     }
     if (seen.has(normalized)) {
       diagnostics.push({ type: "duplicate_path", path: normalized });
-      return;
+      return undefined;
     }
     seen.add(normalized);
-    artifacts.push(artifactFromPath(normalized));
+    artifacts.push(artifact);
+    return artifact;
   };
 
-  const blockPattern = /<artifacts\b[^>]*>[\s\S]*?<\/artifacts>/giu;
-  let cleanMarkdown = stripTrailingPartialArtifactDeclaration(markdown).replace(
-    blockPattern,
-    (block, offset: number) => {
-      if (isInsideFence(markdown, offset)) {
-        return block;
-      }
-      for (const tag of block.matchAll(/<artifact\b[^>]*\/>/giu)) {
-        acceptTag(tag[0]);
-      }
-      return "";
+  for (const blockMatch of sourceMarkdown.matchAll(ARTIFACT_BLOCK_PATTERN)) {
+    if (blockMatch.index === undefined) {
+      continue;
     }
-  );
+    const block = blockMatch[0];
+    const start = blockMatch.index;
+    const end = start + block.length;
+    blockRanges.push({ start, end });
+    if (isIgnoredArtifactContext(sourceMarkdown, start)) {
+      continue;
+    }
+    const groupArtifacts: Artifact[] = [];
+    for (const tagMatch of block.matchAll(ARTIFACT_TAG_PATTERN)) {
+      if (tagMatch.index === undefined) {
+        continue;
+      }
+      const tag = tagMatch[0];
+      const artifact = acceptTag(tag);
+      if (!artifact) {
+        continue;
+      }
+      const declarationStart = start + tagMatch.index;
+      groupArtifacts.push(artifact);
+      artifactDeclarations.push({
+        ...artifact,
+        declarationStart,
+        declarationEnd: declarationStart + tag.length,
+        groupStart: start,
+        groupEnd: end
+      });
+    }
+    if (groupArtifacts.length > 0) {
+      declarationGroups.push({ start, end, artifacts: groupArtifacts });
+      removedRanges.push({ start, end });
+    }
+  }
 
-  cleanMarkdown = cleanMarkdown.replace(/<artifact\b[^>]*\/>/giu, (tag, offset: number) => {
-    if (isInsideFence(cleanMarkdown, offset)) {
-      return tag;
+  for (const tagMatch of sourceMarkdown.matchAll(ARTIFACT_TAG_PATTERN)) {
+    if (tagMatch.index === undefined) {
+      continue;
     }
-    acceptTag(tag);
-    return "";
-  });
+    const tag = tagMatch[0];
+    const start = tagMatch.index;
+    const end = start + tag.length;
+    if (isIgnoredArtifactContext(sourceMarkdown, start) || isInsideRanges(start, blockRanges)) {
+      continue;
+    }
+    const artifact = acceptTag(tag);
+    if (!artifact) {
+      continue;
+    }
+    artifactDeclarations.push({
+      ...artifact,
+      declarationStart: start,
+      declarationEnd: end,
+      groupStart: start,
+      groupEnd: end
+    });
+    declarationGroups.push({ start, end, artifacts: [artifact] });
+    removedRanges.push({ start, end });
+  }
 
   return {
-    cleanMarkdown: tidyMarkdownAfterArtifactRemoval(cleanMarkdown),
+    cleanMarkdown: removeArtifactRanges(sourceMarkdown, removedRanges),
     artifacts,
+    artifactDeclarations,
+    declarationGroups,
     diagnostics
   };
+}
+
+export function cleanMarkdownForVerifiedArtifacts(
+  markdown: string,
+  parsed: ParsedArtifactDeclarations,
+  verifiedArtifacts: Artifact[]
+): string {
+  const sourceMarkdown = stripTrailingPartialArtifactDeclaration(markdown);
+  const verifiedPaths = new Set(verifiedArtifacts.map((artifact) => artifact.path));
+  const verifiedRanges = parsed.declarationGroups
+    .filter((group) => group.artifacts.every((artifact) => verifiedPaths.has(artifact.path)))
+    .map(({ start, end }) => ({ start, end }));
+  return removeArtifactRanges(sourceMarkdown, verifiedRanges);
 }
 
 export function collectArtifactsFromAssistantMessages(
@@ -167,7 +253,7 @@ export function hasArtifactDeclarationMarkup(messages: ArtifactSourceMessage[]):
   return messages.some(
     (message) =>
       message.role === "assistant" &&
-      Boolean(message.content && /<artifacts?\b/iu.test(message.content))
+      Boolean(message.content && hasParseableArtifactDeclaration(message.content))
   );
 }
 
@@ -286,7 +372,7 @@ function toolArtifactKind(toolName: string, path: string): ArtifactKind | undefi
     return undefined;
   }
   const kind = artifactKind(path);
-  return TOOL_FALLBACK_ARTIFACT_KINDS.has(kind) ? kind : undefined;
+  return isArtifactPreviewKind(kind) ? kind : undefined;
 }
 
 function newestFirst<T extends { declaredAt?: string }>(items: T[]): T[] {
@@ -314,6 +400,7 @@ function normalizeArtifactPath(path: string): string | undefined {
   if (
     isAbsolutePathLike(normalized) ||
     normalized === "." ||
+    normalized === "..." ||
     normalized === ".." ||
     normalized.startsWith("../") ||
     normalized.includes("/../") ||
@@ -336,13 +423,13 @@ function decodeXmlAttribute(value: string): string {
 function stripTrailingPartialArtifactDeclaration(markdown: string): string {
   const blockStart = markdown.lastIndexOf("<artifacts");
   const blockEnd = markdown.lastIndexOf("</artifacts>");
-  if (blockStart > blockEnd && !isInsideFence(markdown, blockStart)) {
+  if (blockStart > blockEnd && !isIgnoredArtifactContext(markdown, blockStart)) {
     return markdown.slice(0, blockStart);
   }
 
   const singleStart = markdown.lastIndexOf("<artifact");
   const singleEnd = markdown.lastIndexOf("/>");
-  if (singleStart > singleEnd && !isInsideFence(markdown, singleStart)) {
+  if (singleStart > singleEnd && !isIgnoredArtifactContext(markdown, singleStart)) {
     return markdown.slice(0, singleStart);
   }
   return markdown;
@@ -355,8 +442,51 @@ function tidyMarkdownAfterArtifactRemoval(markdown: string): string {
     .trimEnd();
 }
 
+function removeArtifactRanges(markdown: string, ranges: Range[]): string {
+  if (ranges.length === 0) {
+    return tidyMarkdownAfterArtifactRemoval(markdown);
+  }
+  const ordered = [...ranges].sort((left, right) => right.start - left.start);
+  let cleanMarkdown = markdown;
+  for (const range of ordered) {
+    cleanMarkdown = `${cleanMarkdown.slice(0, range.start)}${cleanMarkdown.slice(range.end)}`;
+  }
+  return tidyMarkdownAfterArtifactRemoval(cleanMarkdown);
+}
+
+function isInsideRanges(offset: number, ranges: Range[]): boolean {
+  return ranges.some((range) => offset >= range.start && offset < range.end);
+}
+
 function isInsideFence(markdown: string, offset: number): boolean {
   const before = markdown.slice(0, offset);
   const fences = before.match(/^```/gmu);
   return Boolean(fences && fences.length % 2 === 1);
+}
+
+function hasParseableArtifactDeclaration(markdown: string): boolean {
+  for (const match of stripTrailingPartialArtifactDeclaration(markdown).matchAll(
+    ARTIFACT_DECLARATION_PATTERN
+  )) {
+    if (match.index !== undefined && !isIgnoredArtifactContext(markdown, match.index)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isIgnoredArtifactContext(markdown: string, offset: number): boolean {
+  return isInsideFence(markdown, offset) || isInsideInlineCode(markdown, offset);
+}
+
+function isInsideInlineCode(markdown: string, offset: number): boolean {
+  const lineStart = markdown.lastIndexOf("\n", offset - 1) + 1;
+  const before = markdown.slice(lineStart, offset);
+  let tickCount = 0;
+  for (let index = 0; index < before.length; index += 1) {
+    if (before[index] === "`" && before[index - 1] !== "\\") {
+      tickCount += 1;
+    }
+  }
+  return tickCount % 2 === 1;
 }

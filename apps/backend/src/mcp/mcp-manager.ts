@@ -6,6 +6,10 @@ import { loadPluginMcpServers } from "./plugin-loader";
 import { substituteServerSpec } from "./variable-substitution";
 import type { McpServerDescription, McpServerSpec } from "./types";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "mcp/mcp-manager" });
+
 export interface McpManagerOptions {
   /** MCP server 数据目录根：实际目录为 <dataDir>/mcp/<pluginName>。 */
   dataDir: string;
@@ -33,7 +37,7 @@ export class McpManager {
     try {
       specs = await this.discoverSpecs();
     } catch (error) {
-      console.error("[mcp] 发现 MCP server 失败", {
+      log.error("[mcp] 发现 MCP server 失败", {
         error: error instanceof Error ? error.message : String(error)
       });
       return [];
@@ -46,7 +50,7 @@ export class McpManager {
           tools.push(...connection.listToolHandles());
         }
       } catch (error) {
-        console.error("[mcp] 启动 MCP server 失败", {
+        log.error("[mcp] 启动 MCP server 失败", {
           key: spec.key,
           error: error instanceof Error ? error.message : String(error)
         });
@@ -69,7 +73,7 @@ export class McpManager {
     workspacePath: string
   ): Promise<McpConnection | undefined> {
     if (spec.transport !== "stdio") {
-      console.warn("[mcp] 跳过非 stdio MCP server", { key: spec.key, serverName: spec.serverName });
+      log.warn("[mcp] 跳过非 stdio MCP server", { key: spec.key, serverName: spec.serverName });
       return undefined;
     }
     const userConfig = await this.options.getUserConfig(spec.pluginName);
@@ -81,7 +85,7 @@ export class McpManager {
       userConfig
     });
     if (missing.length > 0) {
-      console.warn("[mcp] MCP server 缺少 user_config，暂不启动", { key: spec.key, missing });
+      log.warn("[mcp] MCP server 缺少 user_config，暂不启动", { key: spec.key, missing });
       return undefined;
     }
 
@@ -119,7 +123,7 @@ export class McpManager {
   }
 
   async shutdown(): Promise<void> {
-    console.info("[mcp] 关闭所有 MCP server", { count: this.connections.size });
+    log.info("[mcp] 关闭所有 MCP server", { count: this.connections.size });
     await Promise.all(
       [...this.connections.values()].map((connection) => connection.close().catch(() => undefined))
     );

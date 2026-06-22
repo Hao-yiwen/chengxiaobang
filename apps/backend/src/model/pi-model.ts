@@ -10,6 +10,17 @@ import {
   type TokenUsage
 } from "@chengxiaobang/shared";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "model/pi-model" });
+
+const DEFAULT_MODEL_MAX_RETRIES = 5;
+
+type ModelStreamOptions = Pick<
+  SimpleStreamOptions,
+  "reasoning" | "onPayload" | "onResponse" | "maxRetries"
+>;
+
 /** 将 YAML 供应商配置转换成 pi 模型描述。 */
 export function buildModel(provider: ProviderConfig): Model<Api> {
   const api = provider.api ?? "openai-completions";
@@ -20,14 +31,15 @@ export function buildModel(provider: ProviderConfig): Model<Api> {
   const piInputModalities = inputModalities.filter(
     (modality): modality is "text" | "image" => modality === "text" || modality === "image"
   );
-  console.info("[pi-model] 构建模型能力", {
+  log.info("[pi-model] 构建模型能力", {
     providerId: provider.id,
     kind: provider.kind,
     api,
     model: provider.model,
     inputModalities,
     piInputModalities,
-    reasoningMode: effectiveReasoningMode(provider) ?? "default"
+    reasoningMode: effectiveReasoningMode(provider) ?? "default",
+    maxRetries: DEFAULT_MODEL_MAX_RETRIES
   });
   return {
     id: provider.model,
@@ -50,24 +62,23 @@ export function buildModel(provider: ProviderConfig): Model<Api> {
   };
 }
 
-export function buildModelStreamOptions(
-  provider: ProviderConfig
-): Pick<SimpleStreamOptions, "reasoning" | "onPayload" | "onResponse"> {
+export function buildModelStreamOptions(provider: ProviderConfig): ModelStreamOptions {
+  const base = { maxRetries: DEFAULT_MODEL_MAX_RETRIES };
   const mode = supportedReasoningMode(provider);
   if (!mode) {
-    return {};
+    return base;
   }
   if (provider.kind === "kimi") {
-    return { onPayload: createKimiPayloadHook(provider, mode) };
+    return { ...base, onPayload: createKimiPayloadHook(provider, mode) };
   }
   if (provider.kind === "minimax") {
-    return { onPayload: createMiniMaxPayloadHook(mode) };
+    return { ...base, onPayload: createMiniMaxPayloadHook(mode) };
   }
   if (mode === "off") {
-    return {};
+    return base;
   }
   const reasoning = toPiThinkingLevel(provider, mode);
-  return reasoning ? { reasoning } : {};
+  return reasoning ? { ...base, reasoning } : base;
 }
 
 export function toTokenUsage(usage: Usage): TokenUsage {
@@ -100,7 +111,7 @@ function supportedReasoningMode(provider: ProviderConfig): ReasoningMode | undef
   }
   const option = resolveProviderConfigModelOption(provider, provider.model);
   if (!option.reasoningModes.includes(mode)) {
-    console.warn(
+    log.warn(
       `[pi-model] 忽略不支持的推理模式 providerId=${provider.id} kind=${provider.kind} model=${provider.model} reasoningMode=${mode}`
     );
     return undefined;
@@ -152,7 +163,7 @@ function createKimiPayloadHook(
   return (payload) => {
     const normalized = provider.model.toLowerCase();
     if (normalized === "kimi-k2.7-code") {
-      console.warn(
+      log.warn(
         `[pi-model] Kimi K2.7 Code 固定开启推理，已跳过 thinking 参数 providerId=${provider.id}`
       );
       return undefined;
@@ -163,7 +174,7 @@ function createKimiPayloadHook(
     if (mode === "auto") {
       return patchPayload(payload, { thinking: { type: "enabled" } });
     }
-    console.warn(
+    log.warn(
       `[pi-model] Kimi 不支持该推理档位 providerId=${provider.id} model=${provider.model} reasoningMode=${mode}`
     );
     return undefined;
@@ -180,7 +191,7 @@ function createMiniMaxPayloadHook(
     if (mode === "auto") {
       return patchPayload(payload, { thinking: { type: "adaptive" }, reasoning_split: true });
     }
-    console.warn(`[pi-model] MiniMax M3 不支持该推理档位 reasoningMode=${mode}`);
+    log.warn(`[pi-model] MiniMax M3 不支持该推理档位 reasoningMode=${mode}`);
     return undefined;
   };
 }
@@ -198,7 +209,7 @@ export async function testProvider(provider: ProviderConfig, apiKey?: string): P
     throw new Error("请先填写 API Key");
   }
   const endpoint = providerModelsEndpoint(provider);
-  console.info("[pi-model] 开始测试供应商连接", {
+  log.info("[pi-model] 开始测试供应商连接", {
     providerId: provider.id,
     kind: provider.kind,
     api: provider.api ?? "openai-completions",
@@ -208,7 +219,7 @@ export async function testProvider(provider: ProviderConfig, apiKey?: string): P
     headers: providerAuthHeaders(provider, apiKey)
   });
   if (!response.ok) {
-    console.warn("[pi-model] 测试供应商连接失败", {
+    log.warn("[pi-model] 测试供应商连接失败", {
       providerId: provider.id,
       kind: provider.kind,
       api: provider.api ?? "openai-completions",
@@ -217,7 +228,7 @@ export async function testProvider(provider: ProviderConfig, apiKey?: string): P
     });
     throw new Error(`连接失败 ${response.status}: ${response.statusText}`);
   }
-  console.info("[pi-model] 测试供应商连接成功", {
+  log.info("[pi-model] 测试供应商连接成功", {
     providerId: provider.id,
     kind: provider.kind,
     api: provider.api ?? "openai-completions"
@@ -230,11 +241,11 @@ export async function listProviderModels(
   apiKey?: string
 ): Promise<string[]> {
   if (!apiKey) {
-    console.warn(`[pi-model] 拉取模型列表失败：缺少 API Key providerId=${provider.id}`);
+    log.warn(`[pi-model] 拉取模型列表失败：缺少 API Key providerId=${provider.id}`);
     throw new Error("请先填写 API Key");
   }
   const endpoint = providerModelsEndpoint(provider);
-  console.info("[pi-model] 开始拉取模型列表", {
+  log.info("[pi-model] 开始拉取模型列表", {
     providerId: provider.id,
     kind: provider.kind,
     api: provider.api ?? "openai-completions",
@@ -244,14 +255,14 @@ export async function listProviderModels(
     headers: providerAuthHeaders(provider, apiKey)
   });
   if (!response.ok) {
-    console.warn(
+    log.warn(
       `[pi-model] 拉取模型列表失败 providerId=${provider.id} status=${response.status} statusText=${response.statusText}`
     );
     throw new Error(`连接失败 ${response.status}: ${response.statusText}`);
   }
   const payload = await response.json();
   const models = parseProviderModelList(provider, payload);
-  console.info(
+  log.info(
     `[pi-model] 拉取模型列表成功 providerId=${provider.id} api=${
       provider.api ?? "openai-completions"
     } count=${models.length}`

@@ -46,6 +46,10 @@ import type {
   UsageStatsSourceRun
 } from "./state-store";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "repository/sqlite-state-store" });
+
 const DEFAULT_SESSION_SEARCH_LIMIT = 30;
 const MAX_SESSION_SEARCH_LIMIT = 100;
 
@@ -128,7 +132,7 @@ export class SqliteStateStore implements StateStore {
   async renameProject(id: string, name: string): Promise<Project> {
     const current = await this.getProject(id);
     if (!current) {
-      console.warn("[sqlite-state-store] 重命名项目失败：项目不存在", id);
+      log.warn("[sqlite-state-store] 重命名项目失败：项目不存在", id);
       throw new Error("项目不存在");
     }
     const next: Project = { ...current, name, updatedAt: nowIso() };
@@ -138,20 +142,20 @@ export class SqliteStateStore implements StateStore {
       id
     ]);
     await this.flush();
-    console.log("[sqlite-state-store] 已重命名项目:", id, "->", name);
+    log.info("[sqlite-state-store] 已重命名项目:", id, "->", name);
     return next;
   }
 
   async setProjectPinned(id: string, pinned: boolean): Promise<Project> {
     const current = await this.getProject(id);
     if (!current) {
-      console.warn("[sqlite-state-store] 置顶项目失败：项目不存在", id);
+      log.warn("[sqlite-state-store] 置顶项目失败：项目不存在", id);
       throw new Error("项目不存在");
     }
     // 刻意不写 updated_at：置顶不应把项目顶到普通列表最前。
     this.run("update projects set pinned_at = ? where id = ?", [pinned ? nowIso() : null, id]);
     await this.flush();
-    console.log("[sqlite-state-store] 已更新项目置顶:", id, "->", pinned);
+    log.info("[sqlite-state-store] 已更新项目置顶:", id, "->", pinned);
     // 重读返回：取消置顶时 {...current} 会残留旧 pinnedAt。
     return (await this.getProject(id))!;
   }
@@ -175,12 +179,12 @@ export class SqliteStateStore implements StateStore {
   ): Promise<SessionSearchResult[]> {
     const needle = query.trim();
     if (!needle) {
-      console.debug("[sqlite-state-store] 跳过空会话搜索");
+      log.debug("[sqlite-state-store] 跳过空会话搜索");
       return [];
     }
     const rawLimit = Number.isFinite(limit) ? Math.trunc(limit) : DEFAULT_SESSION_SEARCH_LIMIT;
     const safeLimit = Math.max(1, Math.min(MAX_SESSION_SEARCH_LIMIT, rawLimit));
-    console.debug("[sqlite-state-store] 开始搜索会话", {
+    log.debug("[sqlite-state-store] 开始搜索会话", {
       query: needle,
       limit: safeLimit
     });
@@ -234,7 +238,7 @@ export class SqliteStateStore implements StateStore {
       [needle, needle, needle, needle, safeLimit]
     );
     const results = rows.map((row) => mapSessionSearchResult(row, needle));
-    console.info("[sqlite-state-store] 会话搜索完成", {
+    log.info("[sqlite-state-store] 会话搜索完成", {
       query: needle,
       resultCount: results.length
     });
@@ -430,13 +434,13 @@ export class SqliteStateStore implements StateStore {
   async setSessionPinned(id: string, pinned: boolean): Promise<Session> {
     const current = await this.getSession(id);
     if (!current) {
-      console.warn("[sqlite-state-store] 置顶会话失败：会话不存在", id);
+      log.warn("[sqlite-state-store] 置顶会话失败：会话不存在", id);
       throw new Error("会话不存在");
     }
     // 刻意不写 updated_at：置顶不应把会话顶到普通列表最前。
     this.run("update sessions set pinned_at = ? where id = ?", [pinned ? nowIso() : null, id]);
     await this.flush();
-    console.log("[sqlite-state-store] 已更新会话置顶:", id, "->", pinned);
+    log.info("[sqlite-state-store] 已更新会话置顶:", id, "->", pinned);
     // 重读返回：取消置顶时 {...current} 会残留旧 pinnedAt。
     return (await this.getSession(id))!;
   }
@@ -453,7 +457,7 @@ export class SqliteStateStore implements StateStore {
     }
     this.run("delete from projects where id = ?", [id]);
     await this.flush();
-    console.log("[sqlite-state-store] 已删除项目及其会话:", id, `(${sessions.length} 个会话)`);
+    log.info("[sqlite-state-store] 已删除项目及其会话:", id, `(${sessions.length} 个会话)`);
     return true;
   }
 
@@ -548,7 +552,7 @@ export class SqliteStateStore implements StateStore {
       messageId
     ])[0];
     if (!row) {
-      console.warn("[sqlite-state-store] 更新消息反馈失败：消息不存在", {
+      log.warn("[sqlite-state-store] 更新消息反馈失败：消息不存在", {
         sessionId,
         messageId,
         feedback
@@ -557,7 +561,7 @@ export class SqliteStateStore implements StateStore {
     }
     const current = mapMessage(row);
     if (current.role !== "assistant") {
-      console.warn("[sqlite-state-store] 更新消息反馈失败：仅支持助手消息", {
+      log.warn("[sqlite-state-store] 更新消息反馈失败：仅支持助手消息", {
         sessionId,
         messageId,
         role: current.role,
@@ -576,14 +580,14 @@ export class SqliteStateStore implements StateStore {
       messageId
     ])[0];
     if (!updatedRow) {
-      console.error("[sqlite-state-store] 消息反馈写入后重读失败", {
+      log.error("[sqlite-state-store] 消息反馈写入后重读失败", {
         sessionId,
         messageId,
         feedback
       });
       throw new Error("消息不存在");
     }
-    console.info("[sqlite-state-store] 已更新消息反馈", {
+    log.info("[sqlite-state-store] 已更新消息反馈", {
       sessionId,
       messageId,
       previousFeedback: current.feedback,
@@ -621,7 +625,7 @@ export class SqliteStateStore implements StateStore {
          and (created_at >= ? or updated_at >= ?)`,
       [sessionId, cutoff, cutoff]
     );
-    console.info("[state-store] 已回退会话消息并清理相关运行", {
+    log.info("[state-store] 已回退会话消息并清理相关运行", {
       sessionId,
       messageId,
       deletedMessageCount: doomed.length,
@@ -634,7 +638,7 @@ export class SqliteStateStore implements StateStore {
     const session = await this.getSession(sessionId);
     if (session?.compactedUpToMessageId && doomedIds.has(session.compactedUpToMessageId)) {
       await this.updateSession(sessionId, { compactedUpToMessageId: null });
-      console.info("[state-store] 回退删除了压缩指针指向的消息，已清空 compactedUpToMessageId", {
+      log.info("[state-store] 回退删除了压缩指针指向的消息，已清空 compactedUpToMessageId", {
         sessionId,
         clearedPointer: session.compactedUpToMessageId
       });
@@ -699,7 +703,7 @@ export class SqliteStateStore implements StateStore {
       );
     }
     if (errorText) {
-      console.warn("[state-store] 运行失败原因已持久化", {
+      log.warn("[state-store] 运行失败原因已持久化", {
         runId: id,
         sessionId,
         error: errorText
@@ -792,7 +796,7 @@ export class SqliteStateStore implements StateStore {
       throw new Error("费用账本写入失败");
     }
     const entry = mapUsageCostEntry(rows[0]);
-    console.debug("[state-store] 费用账本已写入", {
+    log.debug("[state-store] 费用账本已写入", {
       runId: entry.runId,
       sessionId: entry.sessionId,
       attemptIndex: entry.attemptIndex,
@@ -997,7 +1001,7 @@ export class SqliteStateStore implements StateStore {
       ]
     );
     await this.flush();
-    console.log(
+    log.info(
       `[sqlite-state-store] 已创建定时任务 id=${task.id} sessionId=${task.sessionId} kind=${task.kind}` +
         (task.cron ? ` cron=${task.cron}` : "") +
         (task.runAt ? ` runAt=${task.runAt}` : "")
@@ -1012,7 +1016,7 @@ export class SqliteStateStore implements StateStore {
     const current = await this.getScheduledTask(id);
     if (!current) {
       // 任务可能在执行途中被删除：no-op 而非抛错，调度器收尾写状态时容忍。
-      console.warn("[sqlite-state-store] 更新定时任务跳过：任务不存在", id);
+      log.warn("[sqlite-state-store] 更新定时任务跳过：任务不存在", id);
       return undefined;
     }
     const next: ScheduledTask = {
@@ -1060,7 +1064,7 @@ export class SqliteStateStore implements StateStore {
     }
     this.run("delete from scheduled_tasks where id = ?", [id]);
     await this.flush();
-    console.log("[sqlite-state-store] 已删除定时任务:", id);
+    log.info("[sqlite-state-store] 已删除定时任务:", id);
     return true;
   }
 
@@ -1138,7 +1142,7 @@ export class SqliteStateStore implements StateStore {
       await rename(tmpPath, this.dbPath);
     });
     this.flushQueue = task.catch((error) => {
-      console.error("[sqlite-store] flush 失败，后续写入仍会继续排队", {
+      log.error("[sqlite-store] flush 失败，后续写入仍会继续排队", {
         dbPath: this.dbPath,
         error: error instanceof Error ? error.message : String(error)
       });

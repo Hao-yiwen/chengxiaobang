@@ -1,6 +1,10 @@
 import { createId } from "@chengxiaobang/shared";
 import { AsyncEventQueue } from "../agent/async-queue";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "events/event-hub" });
+
 export interface EventEnvelope<T> {
   id: string;
   event: T;
@@ -37,7 +41,7 @@ export class EventHub<T> {
       queue.push(envelope);
     }
     this.subscribers.set(id, queue);
-    console.info("[event-hub] 新增事件流订阅", {
+    log.info("[event-hub] 新增事件流订阅", {
       subscriberId: id,
       subscriberCount: this.subscribers.size,
       afterId: options.afterId,
@@ -50,7 +54,7 @@ export class EventHub<T> {
       }
       queue.end();
       options.signal?.removeEventListener("abort", cleanup);
-      console.info("[event-hub] 事件流订阅已关闭", {
+      log.info("[event-hub] 事件流订阅已关闭", {
         subscriberId: id,
         subscriberCount: this.subscribers.size
       });
@@ -97,7 +101,7 @@ export class EventHub<T> {
     }
     const lastSeen = Number.parseInt(afterId, 10);
     if (!Number.isFinite(lastSeen)) {
-      console.warn("[event-hub] 忽略非法事件回放位置", { afterId });
+      log.warn("[event-hub] 忽略非法事件回放位置", { afterId });
       return [];
     }
     return this.replayBuffer.filter((envelope) => Number.parseInt(envelope.id, 10) > lastSeen);

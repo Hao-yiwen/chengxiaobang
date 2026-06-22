@@ -15,6 +15,10 @@ import {
 import type { SecretStore } from "../secrets/secret-store";
 import { listProviderModels, testProvider } from "./pi-model";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "model/provider-service" });
+
 type TestProviderFn = (provider: ProviderConfig, apiKey?: string) => Promise<void>;
 type ListModelsFn = (provider: ProviderConfig, apiKey?: string) => Promise<string[]>;
 export type ProviderRepository = Pick<
@@ -48,7 +52,7 @@ export class ProviderService {
     const model = models.includes(parsed.model) ? parsed.model : models[0]!;
     const modelOverrides = filterModelOverrides(parsed.modelOverrides, models);
 
-    console.info(
+    log.info(
       `[provider-service] 保存供应商 providerId=${id} kind=${parsed.kind} selectedModelCount=${
         models.length
       } defaultModel=${model} modelOverrides=${Object.keys(modelOverrides ?? {}).length} hasApiKey=${Boolean(apiKeyRef)}`
@@ -87,7 +91,7 @@ export class ProviderService {
       ? await this.secrets.getSecret(provider.apiKeyRef)
       : undefined;
     if (!apiKey) {
-      console.warn(`[provider-service] 测试连接失败：缺少 API Key providerId=${id}`);
+      log.warn(`[provider-service] 测试连接失败：缺少 API Key providerId=${id}`);
       throw new Error("请先填写 API Key");
     }
     await this.testProviderFn(provider, apiKey);
@@ -96,14 +100,14 @@ export class ProviderService {
   async listModels(id: string): Promise<string[]> {
     const provider = await this.providers.getProvider(id);
     if (!provider) {
-      console.warn(`[provider-service] listModels 失败：模型配置不存在 id=${id}`);
+      log.warn(`[provider-service] listModels 失败：模型配置不存在 id=${id}`);
       throw new Error("模型配置不存在");
     }
     const apiKey = provider.apiKeyRef
       ? await this.secrets.getSecret(provider.apiKeyRef)
       : undefined;
     if (!apiKey) {
-      console.warn(`[provider-service] listModels 失败：缺少 API Key providerId=${id}`);
+      log.warn(`[provider-service] listModels 失败：缺少 API Key providerId=${id}`);
       throw new Error("请先填写 API Key");
     }
     return this.listModelsFn(provider, apiKey);
@@ -112,7 +116,7 @@ export class ProviderService {
   async listModelOptions(id: string): Promise<ProviderModelOption[]> {
     const provider = await this.providers.getProvider(id);
     if (!provider) {
-      console.warn(`[provider-service] listModelOptions 失败：模型配置不存在 id=${id}`);
+      log.warn(`[provider-service] listModelOptions 失败：模型配置不存在 id=${id}`);
       throw new Error("模型配置不存在");
     }
     const apiKey = provider.apiKeyRef
@@ -123,7 +127,7 @@ export class ProviderService {
       try {
         liveModels = await this.listModelsFn(provider, apiKey);
       } catch (error) {
-        console.warn(
+        log.warn(
           `[provider-service] 拉取在线模型失败，使用静态目录 providerId=${id} error=${
             error instanceof Error ? error.message : String(error)
           }`
@@ -135,7 +139,7 @@ export class ProviderService {
       [...liveModels, ...(provider.models ?? [])],
       provider.model
     );
-    console.info(
+    log.info(
       `[provider-service] 返回模型选项 providerId=${id} kind=${provider.kind} count=${options.length}`
     );
     return options;
@@ -155,7 +159,7 @@ function normalizeSelectedModels(
     (modelId) => allowed.size === 0 || allowed.has(modelId)
   );
   if (models.length === 0) {
-    console.warn("[provider-service] 保存供应商失败：没有可启用模型", {
+    log.warn("[provider-service] 保存供应商失败：没有可启用模型", {
       kind: parsed.kind,
       submittedModelCount: submitted.length,
       allowedModelCount: allowed.size

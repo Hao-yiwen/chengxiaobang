@@ -8,12 +8,14 @@ import {
   runShellCommand,
   type BackgroundShellCommandSnapshot
 } from "./shell";
+import { getLogger } from "../logging/logger";
 import { resolveToolPath } from "./workspace";
 import { textResult } from "./tool-result";
 
 const SHELL_BLOCKING_DEFAULT_WAIT_MS = 120_000;
 const SHELL_BLOCKING_MAX_WAIT_MS = 600_000;
 const COMMAND_LOG_MAX_CHARS = 200;
+const log = getLogger({ module: "shell-tools" });
 
 type ShellExecutionMode = "async" | "background" | "blocking";
 
@@ -68,7 +70,9 @@ async function runShell(
   requestOptions: ShellRunRequestOptions = {}
 ): Promise<string> {
   const normalized = normalizeShellRunOptions(command, cwd, options, requestOptions);
-  console.info("[shell-tools] 准备执行 shell 命令", {
+  log.info("准备执行 shell 命令", {
+    action: "shell_tool.run",
+    toolName: "Bash",
     mode: normalized.mode,
     timeoutMs: normalized.backgroundAfterMs,
     cwd,
@@ -105,7 +109,9 @@ export function createShellTools(
     parameters: shellParams,
     execute: async (_id, params, signal) => {
       if (params.dangerouslyDisableSandbox) {
-        console.warn("[shell-tools] Bash 收到 dangerouslyDisableSandbox，但不会绕过审批或安全规则", {
+        log.warn("Bash 收到 dangerouslyDisableSandbox，但不会绕过审批或安全规则", {
+          action: "shell_tool.sandbox_flag_ignored",
+          toolName: "Bash",
           command: commandForLog(params.command)
         });
       }
@@ -211,7 +217,8 @@ function normalizeShellRunOptions(
       ? "blocking"
       : "async";
   if (!isShellExecutionMode(mode)) {
-    console.warn("[shell-tools] shell mode 参数非法", {
+    log.warn("shell mode 参数非法", {
+      action: "shell_tool.invalid_mode",
       command: commandForLog(command)
     });
     throw new Error("shell mode 参数非法，必须是 async、background 或 blocking");
@@ -237,7 +244,8 @@ function normalizeBlockingWaitMs(
 ): number {
   const value = timeoutMs ?? SHELL_BLOCKING_DEFAULT_WAIT_MS;
   if (!Number.isInteger(value) || value < 1 || value > SHELL_BLOCKING_MAX_WAIT_MS) {
-    console.warn("[shell-tools] Bash timeout 参数非法", {
+    log.warn("Bash timeout 参数非法", {
+      action: "shell_tool.invalid_timeout",
       timeout: value,
       maxTimeoutMs: SHELL_BLOCKING_MAX_WAIT_MS,
       cwd,
@@ -288,7 +296,8 @@ function resolveShellCwd(
 ): string {
   const resolved = resolveToolPath(workspacePath, path);
   if (resolved.outsideWorkspace) {
-    console.info("[shell-tools] 工具使用工作目录外 cwd", {
+    log.info("工具使用工作目录外 cwd", {
+      action: "shell_tool.outside_workspace_cwd",
       toolName,
       path,
       cwd: resolved.target

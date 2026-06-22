@@ -5,6 +5,7 @@ import { createWriteStream } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import type { TerminalExecResult } from "@chengxiaobang/shared";
+import { errorToLogFields, getLogger } from "../logging/logger";
 
 export const DEFAULT_COMMAND_TIMEOUT_MS = 120_000;
 
@@ -19,6 +20,7 @@ const COMMAND_LOG_MAX_CHARS = 200;
 const SHELL_CAPTURE_MAX_BYTES = 256 * 1024;
 export const DEFAULT_SHELL_BACKGROUND_AFTER_MS = 15_000;
 export const SHELL_BACKGROUND_OUTPUT_DIR = ".chengxiaobang/shell-outputs";
+const log = getLogger({ module: "shell" });
 
 export interface RunCommandOptions {
   timeoutMs?: number;
@@ -90,7 +92,8 @@ export function runCommand(
   const options = normalizeRunCommandOptions(optionsOrTimeoutMs);
   const timeoutMs = options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
   if (options.signal?.aborted) {
-    console.info("[shell] 命令启动前已收到中止信号", {
+    log.info("命令启动前已收到中止信号", {
+      action: "shell.command_aborted_before_start",
       cwd,
       command: commandForLog(command)
     });
@@ -156,7 +159,8 @@ export function runCommand(
       if (!terminationReason) {
         terminationReason = reason;
       }
-      console.warn("[shell] 命令需要终止，准备发送信号", {
+      log.warn("命令需要终止，准备发送信号", {
+        action: "shell.terminate_signal",
         cwd: workingDirectory,
         command: commandForLog(originalCommand),
         pid: target.pid,
@@ -210,7 +214,8 @@ export async function runShellCommand(
   await writeFile(outputPath, "", "utf8");
 
   if (options.signal?.aborted) {
-    console.info("[shell] 命令启动前已收到中止信号", {
+    log.info("命令启动前已收到中止信号", {
+      action: "shell.command_aborted_before_start",
       cwd,
       command: commandForLog(command)
     });
@@ -253,12 +258,13 @@ export async function runShellCommand(
       const errorText = error instanceof Error ? error.message : String(error);
       snapshot.error = errorText;
       snapshot.updatedAt = nowIso();
-      console.error("[shell] 命令输出文件写入失败", {
+      log.error("命令输出文件写入失败", {
+        action: "shell.output_write_failed",
         id,
         cwd,
         command: commandForLog(command),
         outputPath,
-        error: errorText
+        ...errorToLogFields(error)
       });
     });
 
@@ -269,7 +275,8 @@ export async function runShellCommand(
       releasedToBackground = true;
       backgroundShellCommands.set(id, record);
       cleanupAbortListener();
-      console.info("[shell] 命令超过前台等待阈值，已转入后台继续执行", {
+      log.info("命令超过前台等待阈值，已转入后台继续执行", {
+        action: "shell.background_released",
         id,
         cwd,
         command: commandForLog(command),
@@ -319,11 +326,12 @@ export async function runShellCommand(
       snapshot.finishedAt = snapshot.updatedAt;
       outputStream.end(`\n[程小帮] 命令启动失败：${errorText}\n`);
       if (releasedToBackground) {
-        console.error("[shell] 后台命令启动失败", {
+        log.error("后台命令启动失败", {
+          action: "shell.background_start_failed",
           id,
           cwd,
           command: commandForLog(command),
-          error: errorText
+          ...errorToLogFields(error)
         });
         return;
       }
@@ -346,7 +354,8 @@ export async function runShellCommand(
       snapshot.finishedAt = at;
       outputStream.end();
       if (releasedToBackground) {
-        console.info("[shell] 后台命令已结束", {
+        log.info("后台命令已结束", {
+          action: "shell.background_finished",
           id,
           cwd,
           command: commandForLog(command),
@@ -394,11 +403,12 @@ export function cancelBackgroundShellCommand(
 ): BackgroundShellCommandSnapshot | undefined {
   const record = backgroundShellCommands.get(id);
   if (!record) {
-    console.warn("[shell] 请求终止未知后台命令", { id });
+    log.warn("请求终止未知后台命令", { action: "shell.background_cancel_missing", id });
     return undefined;
   }
   if (record.snapshot.status !== "running") {
-    console.info("[shell] 请求终止后台命令，但命令已经结束", {
+    log.info("请求终止后台命令，但命令已经结束", {
+      action: "shell.background_cancel_already_finished",
       id,
       status: record.snapshot.status,
       exitCode: record.snapshot.exitCode
@@ -459,7 +469,8 @@ function appendCapturedOutput(capture: OutputCapture, chunk: unknown): void {
     capture.bytes = SHELL_CAPTURE_MAX_BYTES;
   }
   capture.truncated = true;
-  console.warn("[shell] 前台命令输出超过捕获上限，已截断", {
+  log.warn("前台命令输出超过捕获上限，已截断", {
+    action: "shell.output_truncated",
     maxBytes: SHELL_CAPTURE_MAX_BYTES
   });
 }
@@ -501,11 +512,12 @@ function sendSignalToProcessGroup(
     if (code === "ESRCH") {
       return;
     }
-    console.warn("[shell] 进程组信号发送失败，尝试仅终止 shell 进程", {
+    log.warn("进程组信号发送失败，尝试仅终止 shell 进程", {
+      action: "shell.group_signal_failed",
       pid: child.pid,
       signal,
       reason,
-      error: error instanceof Error ? error.message : String(error)
+      ...errorToLogFields(error)
     });
     try {
       child.kill(signal);
@@ -515,11 +527,12 @@ function sendSignalToProcessGroup(
           ? String(fallbackError.code)
           : undefined;
       if (fallbackCode !== "ESRCH") {
-        console.warn("[shell] shell 进程信号发送也失败", {
+        log.warn("shell 进程信号发送也失败", {
+          action: "shell.kill_fallback_failed",
           pid: child.pid,
           signal,
           reason,
-          error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+          ...errorToLogFields(fallbackError)
         });
       }
     }
@@ -545,7 +558,8 @@ function terminateTrackedProcess(
   cwd: string,
   signal: NodeJS.Signals
 ): void {
-  console.warn("[shell] 准备终止 shell 命令", {
+  log.warn("准备终止 shell 命令", {
+    action: "shell.terminate",
     id: record.snapshot.id,
     cwd,
     command: commandForLog(command),

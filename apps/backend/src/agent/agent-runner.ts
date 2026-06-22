@@ -42,6 +42,7 @@ import {
 import type { StateStore } from "../repository/state-store";
 import type { SecretStore } from "../secrets/secret-store";
 import type { ProviderRepository } from "../model/provider-service";
+import { bindLogContext, errorToLogFields, getLogger } from "../logging/logger";
 import { buildModel, buildModelStreamOptions, toTokenUsage } from "../model/pi-model";
 import {
   createAgentTools,
@@ -97,6 +98,7 @@ export const DEFAULT_SESSION_TITLE = "新对话";
 
 /** 标题模型调用上限，避免标题任务无限拖住事件流收尾。 */
 const TITLE_TIMEOUT_MS = 15_000;
+const log = getLogger({ module: "agent-runner" });
 
 export interface AgentRunnerOptions {
   /** 为工作区构造工具集合，默认使用内置工具注册表。 */
@@ -178,10 +180,16 @@ export class AgentRunner {
   abort(runId: string): boolean {
     const controller = this.abortControllers.get(runId);
     if (!controller) {
-      console.warn("[agent-runner] 收到中止请求，但 run 不在当前进程执行中", { runId });
+      log.warn("收到中止请求，但 run 不在当前进程执行中", {
+        action: "run.abort_missing",
+        runId
+      });
       return false;
     }
-    console.info("[agent-runner] 收到中止请求，正在通知运行链路", { runId });
+    log.info("收到中止请求，正在通知运行链路", {
+      action: "run.abort",
+      runId
+    });
     controller.abort(new Error("用户中止运行"));
     this.abortControllers.delete(runId);
     return true;
@@ -211,7 +219,8 @@ export class AgentRunner {
       ]);
       const run = runs.find((item) => item.id === runId);
       if (!run || run.status !== "running") {
-        console.warn("[agent-runner] 活跃 run 快照跳过非运行中记录", {
+        log.warn("活跃 run 快照跳过非运行中记录", {
+          action: "active_run.snapshot_skip",
           runId,
           sessionId: active.sessionId,
           status: run?.status
@@ -226,7 +235,8 @@ export class AgentRunner {
       });
     }
 
-    console.info("[agent-runner] 已查询活跃 run 快照", {
+    log.info("已查询活跃 run 快照", {
+      action: "active_run.snapshot_list",
       sessionId,
       requestedCount: entries.length,
       returnedCount: snapshots.length
@@ -244,7 +254,8 @@ export class AgentRunner {
     if (queued.length === 0) {
       return { messages: [], enableOcrTool: false };
     }
-    console.info("[agent-runner] 开始注入运行中引导", {
+    log.info("开始注入运行中引导", {
+      action: "steering.inject_start",
       runId: options.runId,
       sessionId: options.sessionId,
       count: queued.length
@@ -278,7 +289,8 @@ export class AgentRunner {
           message: toClientMessage(persisted)
         });
         messages.push(piMessage);
-        console.info("[agent-runner] 已注入运行中引导", {
+        log.info("已注入运行中引导", {
+          action: "steering.injected",
           runId: options.runId,
           sessionId: options.sessionId,
           clientRequestId: item.clientRequestId,
@@ -289,11 +301,12 @@ export class AgentRunner {
           nativeAttachmentCount: item.attachments?.length ?? 0
         });
       } catch (error) {
-        console.error("[agent-runner] 运行中引导持久化失败，已跳过该条", {
+        log.error("运行中引导持久化失败，已跳过该条", {
+          action: "steering.persist_failed",
           runId: options.runId,
           sessionId: options.sessionId,
           clientRequestId: item.clientRequestId,
-          error: error instanceof Error ? error.message : String(error)
+          ...errorToLogFields(error)
         });
       }
     }
@@ -307,7 +320,10 @@ export class AgentRunner {
   ): Promise<SessionDebugContext | undefined> {
     const session = await this.store.getSession(sessionId);
     if (!session) {
-      console.warn(`[agent-runner] Debug 上下文请求的会话不存在 sessionId=${sessionId}`);
+      log.warn("Debug 上下文请求的会话不存在", {
+        action: "debug_context.session_missing",
+        sessionId
+      });
       return undefined;
     }
     const { project, workspacePath } = await this.resolveSessionWorkspace(session);
@@ -364,9 +380,13 @@ export class AgentRunner {
       ...(await this.memoryPromptInput())
     });
 
-    console.info(
-      `[agent-runner] 已构造 Debug 上下文 sessionId=${session.id} messages=${rows.length} tools=${availableTools.length} planMode=${planMode}`
-    );
+    log.info("已构造 Debug 上下文", {
+      action: "debug_context.built",
+      sessionId: session.id,
+      messages: rows.length,
+      tools: availableTools.length,
+      planMode
+    });
     return {
       session,
       project: project ?? null,
@@ -399,12 +419,18 @@ export class AgentRunner {
   ): Promise<SessionContextUsage | undefined> {
     const session = await this.store.getSession(sessionId);
     if (!session) {
-      console.warn(`[agent-runner] 上下文用量请求的会话不存在 sessionId=${sessionId}`);
+      log.warn("上下文用量请求的会话不存在", {
+        action: "context_usage.session_missing",
+        sessionId
+      });
       return undefined;
     }
     const providerBase = await this.resolveProviderForSession(session, options.providerId);
     if (!providerBase) {
-      console.warn(`[agent-runner] 上下文用量请求缺少可用模型 sessionId=${sessionId}`);
+      log.warn("上下文用量请求缺少可用模型", {
+        action: "context_usage.provider_missing",
+        sessionId
+      });
       throw new Error("请先配置至少一个模型");
     }
     const effectiveReasoningMode =
@@ -474,7 +500,8 @@ export class AgentRunner {
       sessionCostCny,
       compactedUpToMessageId: session.compactedUpToMessageId
     });
-    console.info("[agent-runner] 已估算会话上下文用量", {
+    log.info("已估算会话上下文用量", {
+      action: "context_usage.estimated",
       sessionId: session.id,
       providerId: provider.id,
       model: provider.model,
@@ -531,6 +558,10 @@ export class AgentRunner {
     if (!session) {
       throw new Error("会话不存在");
     }
+    bindLogContext({
+      sessionId: session.id,
+      clientRequestId: input.clientRequestId
+    });
     const effectiveModel = input.model ?? session.model ?? selectedProvider.model;
     const effectiveReasoningMode =
       input.reasoningMode ?? session.reasoningMode ?? selectedProvider.reasoningMode;
@@ -550,7 +581,8 @@ export class AgentRunner {
     );
     const displayContentForLog = input.displayContent ?? input.prompt;
     if (nativeImageAttachments.length > 0 && !modelInputModalities.includes("image")) {
-      console.warn("[agent-runner] 文本模型收到原生图片附件，已拒绝本次运行", {
+      log.warn("文本模型收到原生图片附件，已拒绝本次运行", {
+        action: "run.reject_native_image",
         providerId: selectedProvider.id,
         model: effectiveModel,
         attachmentCount: nativeImageAttachments.length,
@@ -558,17 +590,27 @@ export class AgentRunner {
       });
       throw new Error("当前模型不支持图片原生输入，附件需要先经过 OCR");
     }
-    console.info(
-      `[agent-runner] 使用模型 providerId=${selectedProvider.id} model=${effectiveModel} modelSource=${
-        input.model ? "run" : session.model ? "session" : "provider"
-      } reasoningMode=${effectiveReasoningMode ?? "default"} reasoningSource=${
-        input.reasoningMode ? "run" : session.reasoningMode ? "session" : selectedProvider.reasoningMode ? "provider" : "default"
-      } maxToolIterations=${maxToolIterations} inputModalities=${modelInputModalities.join(",")} nativeImageAttachments=${
-        nativeImageAttachments.length
-      } displayAttachments=${displayAttachments.length} enableOcrTool=${enableOcrTool} promptChars=${input.prompt.length} displayChars=${
-        displayContentForLog.length
-      }`
-    );
+    log.info("使用模型", {
+      action: "run.model_selected",
+      providerId: selectedProvider.id,
+      model: effectiveModel,
+      modelSource: input.model ? "run" : session.model ? "session" : "provider",
+      reasoningMode: effectiveReasoningMode ?? "default",
+      reasoningSource: input.reasoningMode
+        ? "run"
+        : session.reasoningMode
+          ? "session"
+          : selectedProvider.reasoningMode
+            ? "provider"
+            : "default",
+      maxToolIterations,
+      inputModalities: modelInputModalities,
+      nativeImageAttachments: nativeImageAttachments.length,
+      displayAttachments: displayAttachments.length,
+      enableOcrTool,
+      promptChars: input.prompt.length,
+      displayChars: displayContentForLog.length
+    });
     // headless（定时任务）执行不得污染会话设置：providerId/accessMode 等
     // 只属于这一次 run，不写回会话。
     const activeSession =
@@ -598,22 +640,31 @@ export class AgentRunner {
             title: immediateTitle
           });
           placeholderTitle = immediateTitle;
-          console.info("[agent-runner] 已写入临时会话标题", {
+          log.info("已写入临时会话标题", {
+            action: "session_title.placeholder_written",
             sessionId: activeSession.id,
             title: immediateTitle,
             promptChars: titleDisplayPrompt.length
           });
         } catch (error) {
-          console.warn("[agent-runner] 临时会话标题写入失败，继续运行", {
+          log.warn("临时会话标题写入失败，继续运行", {
+            action: "session_title.placeholder_failed",
             sessionId: activeSession.id,
             title: immediateTitle,
-            error: error instanceof Error ? error.message : String(error)
+            ...errorToLogFields(error)
           });
         }
       }
     }
 
     const runId = createId("run");
+    bindLogContext({
+      runId,
+      sessionId: activeSession.id,
+      clientRequestId: input.clientRequestId,
+      providerId: selectedProvider.id,
+      model: effectiveModel
+    });
     // 在这里创建而不是放进 runPiLoop，便于并发标题任务把 session_updated 推入同一条事件流。
     const queue = new AsyncEventQueue<StreamEvent>();
 
@@ -710,9 +761,11 @@ export class AgentRunner {
       }
 
       if (!project) {
-        console.info(
-          `[agent-runner] 为独立会话准备工作目录 sessionId=${activeSession.id} path=${workspacePath}`
-        );
+        log.info("为独立会话准备工作目录", {
+          action: "workspace.prepare_session_dir",
+          sessionId: activeSession.id,
+          path: workspacePath
+        });
         await mkdir(workspacePath, { recursive: true });
       }
       const approvedPlans = new Map<string, ProposePlanArgs>();
@@ -789,11 +842,13 @@ export class AgentRunner {
         // running,必须显式收尾为 failed/aborted 并发 run_end,否则前端永久卡运行态。
         const message = error instanceof Error ? error.message : String(error);
         const aborted = controller.signal.aborted;
-        console.error("[agent-runner] 自动压缩失败，收尾 run", {
+        log.error("自动压缩失败，收尾 run", {
+          action: "auto_compact.failed_finish_run",
           runId,
           sessionId: activeSession.id,
           aborted,
-          error: message
+          errorMessage: message,
+          ...errorToLogFields(error)
         });
         if (aborted) {
           await this.store.updateRunStatus(runId, "aborted");
@@ -872,9 +927,11 @@ export class AgentRunner {
         signal: AbortSignal.timeout(TITLE_TIMEOUT_MS)
       });
       if (!title) {
-        console.warn(
-          `[agent-runner] 会话标题生成结果为空，尝试使用兜底标题 sessionId=${options.sessionId}`
-        );
+        log.warn("会话标题生成结果为空，尝试使用兜底标题", {
+          action: "session_title.empty",
+          runId: options.runId,
+          sessionId: options.sessionId
+        });
         await this.saveFallbackTitle(options);
         return;
       }
@@ -887,10 +944,12 @@ export class AgentRunner {
         source: "ai"
       });
     } catch (error) {
-      console.warn(
-        `[agent-runner] 会话标题生成失败，尝试使用兜底标题 sessionId=${options.sessionId}:`,
-        error
-      );
+      log.warn("会话标题生成失败，尝试使用兜底标题", {
+        action: "session_title.generate_failed",
+        runId: options.runId,
+        sessionId: options.sessionId,
+        ...errorToLogFields(error)
+      });
       await this.saveFallbackTitle(options);
     }
   }
@@ -904,7 +963,11 @@ export class AgentRunner {
   }): Promise<void> {
     const fallbackTitle = normalizeTitle(options.prompt);
     if (!fallbackTitle) {
-      console.warn(`[agent-runner] 无法从用户首句生成兜底标题 sessionId=${options.sessionId}`);
+      log.warn("无法从用户首句生成兜底标题", {
+        action: "session_title.fallback_empty",
+        runId: options.runId,
+        sessionId: options.sessionId
+      });
       return;
     }
     // 从 generateAndSaveTitle 的 catch 路径调用，不能再向外 reject，
@@ -919,10 +982,12 @@ export class AgentRunner {
         source: "fallback"
       });
     } catch (error) {
-      console.warn(
-        `[agent-runner] 兜底标题写入失败，保留占位标题 sessionId=${options.sessionId}:`,
-        error
-      );
+      log.warn("兜底标题写入失败，保留占位标题", {
+        action: "session_title.fallback_write_failed",
+        runId: options.runId,
+        sessionId: options.sessionId,
+        ...errorToLogFields(error)
+      });
     }
   }
 
@@ -944,7 +1009,9 @@ export class AgentRunner {
       current.title !== options.placeholderTitle &&
       current.title !== DEFAULT_SESSION_TITLE
     ) {
-      console.info("[agent-runner] 会话标题已被改动，跳过自动标题覆盖", {
+      log.info("会话标题已被改动，跳过自动标题覆盖", {
+        action: "session_title.skip_changed",
+        runId: options.runId,
         sessionId: options.sessionId,
         currentTitle: current.title,
         candidate: options.title,
@@ -954,9 +1021,13 @@ export class AgentRunner {
     }
     const session = await this.store.updateSession(options.sessionId, { title: options.title });
     options.emit({ type: "session_updated", runId: options.runId, session });
-    console.info(
-      `[agent-runner] 已写入会话标题(${options.source}) sessionId=${options.sessionId} title=${options.title}`
-    );
+    log.info("已写入会话标题", {
+      action: "session_title.written",
+      runId: options.runId,
+      sessionId: options.sessionId,
+      title: options.title,
+      source: options.source
+    });
   }
 
   private async resolveProviderForSession(
@@ -987,7 +1058,11 @@ export class AgentRunner {
       const listing = await renderMemoryListing(this.memoryDir);
       return { memory: listing ? { listing } : {} };
     } catch (error) {
-      console.warn(`[agent-runner] 读取记忆目录快照失败 dir=${this.memoryDir}:`, error);
+      log.warn("读取记忆目录快照失败", {
+        action: "memory_snapshot.read_failed",
+        dir: this.memoryDir,
+        ...errorToLogFields(error)
+      });
       return { memory: {} };
     }
   }
@@ -1004,15 +1079,17 @@ export class AgentRunner {
       if (!file) {
         return undefined;
       }
-      console.info("[agent-runner] 注入项目指令到对话最前", {
+      log.info("注入项目指令到对话最前", {
+        action: "project_instruction.inject",
         filePath: file.filePath,
         truncated: file.truncated
       });
       return buildProjectInstructionMessage(file);
     } catch (error) {
-      console.warn("[agent-runner] 读取项目指令失败，已跳过", {
+      log.warn("读取项目指令失败，已跳过", {
+        action: "project_instruction.read_failed",
         workspacePath,
-        error: error instanceof Error ? error.message : String(error)
+        ...errorToLogFields(error)
       });
       return undefined;
     }
@@ -1077,7 +1154,8 @@ export class AgentRunner {
       compactedUpToMessageId: options.session.compactedUpToMessageId
     });
     if (!shouldAutoCompactContext(usage)) {
-      console.debug("[agent-runner] 上下文未达到自动压缩阈值", {
+      log.debug("上下文未达到自动压缩阈值", {
+        action: "auto_compact.skip_under_threshold",
         sessionId: options.session.id,
         model: options.provider.model,
         estimatedTokens: usage.estimatedTokens,
@@ -1092,7 +1170,8 @@ export class AgentRunner {
 
     const candidates = compactableMessages(rows, options.session.compactedUpToMessageId);
     if (candidates.length === 0) {
-      console.warn("[agent-runner] 上下文超过阈值但没有可压缩历史", {
+      log.warn("上下文超过阈值但没有可压缩历史", {
+        action: "auto_compact.no_candidates",
         sessionId: options.session.id,
         model: options.provider.model,
         estimatedTokens: usage.estimatedTokens,
@@ -1105,7 +1184,8 @@ export class AgentRunner {
       };
     }
 
-    console.info("[agent-runner] 触发自动上下文压缩", {
+    log.info("触发自动上下文压缩", {
+      action: "auto_compact.start",
       sessionId: options.session.id,
       model: options.provider.model,
       estimatedTokens: usage.estimatedTokens,
@@ -1125,13 +1205,15 @@ export class AgentRunner {
       introDelta: "当前上下文已接近模型上限，正在自动压缩较早对话...\n"
     });
     if (result.status === "aborted") {
-      console.warn("[agent-runner] 自动上下文压缩被中止", {
+      log.warn("自动上下文压缩被中止", {
+        action: "auto_compact.aborted",
         sessionId: options.session.id,
         runId: options.runId
       });
       return { aborted: true };
     }
-    console.info("[agent-runner] 自动上下文压缩完成", {
+    log.info("自动上下文压缩完成", {
+      action: "auto_compact.completed",
       sessionId: options.session.id,
       runId: options.runId,
       compacted: result.compacted,
@@ -1191,11 +1273,12 @@ export class AgentRunner {
         });
         finalizedAttemptIndexes.add(latestAttempt.attemptIndex);
       } catch (error) {
-        console.error("[agent-runner] 费用账本错误收口失败", {
+        log.error("费用账本错误收口失败", {
+          action: "usage_cost.finish_error_failed",
           runId: options.runId,
           sessionId: options.sessionId,
           attemptIndex: latestAttempt.attemptIndex,
-          error: error instanceof Error ? error.message : String(error)
+          ...errorToLogFields(error)
         });
       }
     };
@@ -1228,7 +1311,8 @@ export class AgentRunner {
       onAssistantMessageEnd: async (message) => {
         const attempt = latestAttempt;
         if (!attempt) {
-          console.warn("[agent-runner] assistant 结束时没有可用费用 attempt，已跳过账本收口", {
+          log.warn("assistant 结束时没有可用费用 attempt，已跳过账本收口", {
+            action: "usage_cost.missing_attempt",
             runId: options.runId,
             sessionId: options.sessionId,
             stopReason: message.stopReason
@@ -1257,19 +1341,21 @@ export class AgentRunner {
             finalizedAttemptIndexes.add(attempt.attemptIndex);
             return;
           }
-          console.warn("[agent-runner] 模型响应缺少 usage，暂保留 pending 费用账本", {
+          log.warn("模型响应缺少 usage，暂保留 pending 费用账本", {
+            action: "usage_cost.missing_usage",
             runId: options.runId,
             sessionId: options.sessionId,
             attemptIndex: attempt.attemptIndex,
             stopReason: message.stopReason
           });
         } catch (error) {
-          console.error("[agent-runner] 费用账本 usage 收口失败", {
+          log.error("费用账本 usage 收口失败", {
+            action: "usage_cost.finish_usage_failed",
             runId: options.runId,
             sessionId: options.sessionId,
             attemptIndex: attempt.attemptIndex,
             stopReason: message.stopReason,
-            error: error instanceof Error ? error.message : String(error)
+            ...errorToLogFields(error)
           });
         }
       },
@@ -1310,7 +1396,8 @@ export class AgentRunner {
               statusCode: response.status,
               receivedResponse: true
             });
-            console.debug("[agent-runner] 已记录模型 HTTP 响应状态", {
+            log.debug("已记录模型 HTTP 响应状态", {
+              action: "model_response.record_status",
               runId: options.runId,
               sessionId: options.sessionId,
               attemptIndex: latestAttempt.attemptIndex,
@@ -1337,11 +1424,12 @@ export class AgentRunner {
               }
             });
           } catch (error) {
-            console.error("[agent-runner] 创建模型请求费用 attempt 失败，继续模型调用", {
+            log.error("创建模型请求费用 attempt 失败，继续模型调用", {
+              action: "usage_cost.start_attempt_failed",
               runId: options.runId,
               sessionId: options.sessionId,
               attemptIndex,
-              error: error instanceof Error ? error.message : String(error)
+              ...errorToLogFields(error)
             });
           }
           return llmMessages;
@@ -1375,7 +1463,8 @@ export class AgentRunner {
           });
           if (drained.enableOcrTool && !enableOcrTool) {
             enableOcrTool = true;
-            console.info("[agent-runner] 运行中引导附件触发 OCR 工具可见", {
+            log.info("运行中引导附件触发 OCR 工具可见", {
+              action: "steering.enable_ocr",
               runId: options.runId,
               sessionId: options.sessionId
             });
@@ -1395,11 +1484,12 @@ export class AgentRunner {
       .then(async () => {
         if (!translator.finished) {
           const error = "模型循环已结束，但未返回终态事件。";
-          console.error("[agent-runner] 运行缺少终态事件，执行兜底收尾", {
+          log.error("运行缺少终态事件，执行兜底收尾", {
+            action: "run.missing_terminal_event",
             runId: options.runId,
             sessionId: options.sessionId,
             aborted: options.controller.signal.aborted,
-            error
+            errorMessage: error
           });
           try {
             await finishCurrentAttemptWithError({
@@ -1440,7 +1530,12 @@ export class AgentRunner {
             return;
           }
         }
-        console.error("[agent-runner] 运行失败:", error);
+        log.error("运行失败", {
+          action: "run.infrastructure_failed",
+          runId: options.runId,
+          sessionId: options.sessionId,
+          ...errorToLogFields(error)
+        });
         queue.end();
       });
 
@@ -1468,11 +1563,13 @@ export class AgentRunner {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn("[agent-runner] 智能审批裁决异常，降级为人工审批", {
+      log.warn("智能审批裁决异常，降级为人工审批", {
+        action: "smart_approval.fallback",
         runId: options.runId,
         toolCallId: options.toolCall.id,
         toolName: options.toolCall.name,
-        error: message
+        errorMessage: message,
+        ...errorToLogFields(error)
       });
       return {
         kind: "smart",
@@ -1493,9 +1590,11 @@ export class AgentRunner {
     }
     let content = formatSkillInvocation(skill);
     if (content.length > MAX_SKILL_RESULT_CHARS) {
-      console.warn(
-        `[agent-runner] 技能内容过长，已截断 name=${name} chars=${content.length}`
-      );
+      log.warn("技能内容过长，已截断", {
+        action: "skill_content.truncated",
+        name,
+        chars: content.length
+      });
       content = `${content.slice(0, MAX_SKILL_RESULT_CHARS)}\n\n（技能说明已截断）`;
     }
     return content;

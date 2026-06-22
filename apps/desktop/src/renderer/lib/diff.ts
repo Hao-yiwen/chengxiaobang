@@ -1,6 +1,6 @@
 import { parsePatchFiles, type FileContents, type FileDiffMetadata } from "@pierre/diffs";
 
-export type DiffViewHeight = "inline" | "fill";
+export type DiffViewHeight = "inline" | "review" | "fill";
 
 export interface TextDiffSource {
   kind: "text";

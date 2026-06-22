@@ -8,6 +8,10 @@ import {
 } from "@chengxiaobang/shared";
 import type { UsageCostEntry } from "../repository/state-store";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "usage/usage-stats" });
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const UNKNOWN_MODEL = "unknown";
 
@@ -68,7 +72,7 @@ export function buildUsageStatsFromCostEntries(
     }
     const createdAt = new Date(entry.entryCreatedAt);
     if (Number.isNaN(createdAt.getTime())) {
-      console.warn("[usage-stats] 跳过 entryCreatedAt 非法的费用记录", {
+      log.warn("[usage-stats] 跳过 entryCreatedAt 非法的费用记录", {
         runId: entry.runId,
         attemptIndex: entry.attemptIndex,
         entryCreatedAt: entry.entryCreatedAt
@@ -330,7 +334,7 @@ function roundCurrency(value: number): number {
 
 function normalizeTimezoneOffset(value: number): number {
   if (!Number.isFinite(value)) {
-    console.warn("[usage-stats] 收到非法时区偏移，已回退到 UTC", { value });
+    log.warn("[usage-stats] 收到非法时区偏移，已回退到 UTC", { value });
     return 0;
   }
   return Math.trunc(Math.max(-840, Math.min(840, value)));

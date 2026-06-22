@@ -1,3 +1,7 @@
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "web-search/tavily-client" });
+
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const TAVILY_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RESULTS = 5;
@@ -42,7 +46,7 @@ export async function searchTavily(input: TavilySearchInput): Promise<string> {
   const timeout = setTimeout(() => controller.abort(), TAVILY_TIMEOUT_MS);
   const abort = () => controller.abort();
   input.signal?.addEventListener("abort", abort, { once: true });
-  console.info("[web-search] 发起 Tavily 搜索", {
+  log.info("[web-search] 发起 Tavily 搜索", {
     query,
     maxResults,
     allowedDomainCount: allowedDomains.length,
@@ -70,7 +74,7 @@ export async function searchTavily(input: TavilySearchInput): Promise<string> {
       })
     });
     const durationMs = Date.now() - startedAt;
-    console.info("[web-search] Tavily 搜索响应", {
+    log.info("[web-search] Tavily 搜索响应", {
       query,
       status: response.status,
       ok: response.ok,
@@ -87,7 +91,7 @@ export async function searchTavily(input: TavilySearchInput): Promise<string> {
     const body = (await response.json()) as TavilyResponse;
     return formatTavilyResponse(query, body, durationMs);
   } catch (error) {
-    console.warn("[web-search] Tavily 搜索失败", {
+    log.warn("[web-search] Tavily 搜索失败", {
       query,
       error: error instanceof Error ? error.message : String(error)
     });

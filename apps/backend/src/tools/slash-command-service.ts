@@ -22,6 +22,10 @@ import type {
 import { builtinResourceRoot } from "../paths";
 import { loadPluginCommands } from "./plugin-commands";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/slash-command-service" });
+
 export interface SlashCommandLookup {
   prompt: string;
   matched: boolean;
@@ -197,7 +201,7 @@ export class SlashCommandService {
           }))
         );
       } catch (error) {
-        console.warn("[slash-command-service] 加载斜杠资源失败", {
+        log.warn("[slash-command-service] 加载斜杠资源失败", {
           source: source.name,
           root: source.root,
           error: error instanceof Error ? error.message : String(error)
@@ -242,7 +246,7 @@ export class SlashCommandService {
           skill
         }));
     } catch (error) {
-      console.warn("[slash-command-service] 加载市场技能失败", {
+      log.warn("[slash-command-service] 加载市场技能失败", {
         root: this.marketRoot,
         error: error instanceof Error ? error.message : String(error)
       });
@@ -290,7 +294,7 @@ export class SlashCommandService {
           }))
         );
       } catch (error) {
-        console.warn("[slash-command-service] 加载插件技能失败", {
+        log.warn("[slash-command-service] 加载插件技能失败", {
           pluginName,
           root,
           error: error instanceof Error ? error.message : String(error)
@@ -311,7 +315,7 @@ export class SlashCommandService {
           }))
         );
       } catch (error) {
-        console.warn("[slash-command-service] 加载插件命令失败", {
+        log.warn("[slash-command-service] 加载插件命令失败", {
           pluginName,
           root,
           error: error instanceof Error ? error.message : String(error)

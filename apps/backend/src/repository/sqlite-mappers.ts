@@ -23,6 +23,10 @@ import type {
 } from "./state-store";
 import type { Row } from "./sqlite-types";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "repository/sqlite-mappers" });
+
 export function mapProject(row: Row): Project {
   return {
     id: String(row.id),
@@ -295,7 +299,7 @@ function parseProviderModelOverrides(
   try {
     return providerModelOverridesSchema.parse(JSON.parse(raw));
   } catch (error) {
-    console.warn(
+    log.warn(
       `[sqlite-state-store] 解析 providers.model_overrides 失败 providerId=${providerId} error=${
         error instanceof Error ? error.message : String(error)
       }`
@@ -324,7 +328,7 @@ function parseMessageAttachments(value: unknown): MessageAttachment[] {
     const parsed = JSON.parse(String(value));
     return zodMessageAttachments(parsed);
   } catch (error) {
-    console.warn("[sqlite-state-store] 消息附件 JSON 解析失败，已按空附件处理", {
+    log.warn("[sqlite-state-store] 消息附件 JSON 解析失败，已按空附件处理", {
       error: error instanceof Error ? error.message : String(error)
     });
     return [];
@@ -339,7 +343,7 @@ function parseRunUsage(value: unknown): TokenUsage | undefined {
   try {
     return tokenUsageSchema.parse(JSON.parse(String(value)));
   } catch (error) {
-    console.warn("[state-store] 解析 run usage 失败", { error });
+    log.warn("[state-store] 解析 run usage 失败", { error });
     return undefined;
   }
 }
@@ -348,7 +352,7 @@ function parseFileChange(value: unknown): FileChange | undefined {
   try {
     return fileChangeSchema.parse(JSON.parse(String(value)));
   } catch (error) {
-    console.warn("[state-store] 解析 tool_call fileChange 失败", {
+    log.warn("[state-store] 解析 tool_call fileChange 失败", {
       error: error instanceof Error ? error.message : String(error)
     });
     return undefined;
@@ -359,7 +363,7 @@ function parseFileChanges(value: unknown): FileChange[] | undefined {
   try {
     return fileChangeSchema.array().parse(JSON.parse(String(value)));
   } catch (error) {
-    console.warn("[state-store] 解析 run fileChanges 失败", {
+    log.warn("[state-store] 解析 run fileChanges 失败", {
       error: error instanceof Error ? error.message : String(error)
     });
     return undefined;
@@ -370,7 +374,7 @@ function parseToolCallApproval(value: unknown): ToolCall["approval"] {
   try {
     return toolCallApprovalSchema.parse(JSON.parse(String(value)));
   } catch (error) {
-    console.warn("[state-store] 解析 tool_call approval 失败", { error });
+    log.warn("[state-store] 解析 tool_call approval 失败", { error });
     return undefined;
   }
 }
@@ -381,10 +385,10 @@ function parseProviderModels(raw: string, providerId: string): string[] | undefi
     if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
       return parsed;
     }
-    console.warn(`[sqlite-state-store] providers.models 不是字符串数组 providerId=${providerId}`);
+    log.warn(`[sqlite-state-store] providers.models 不是字符串数组 providerId=${providerId}`);
     return undefined;
   } catch (error) {
-    console.warn(
+    log.warn(
       `[sqlite-state-store] 解析 providers.models 失败 providerId=${providerId} error=${
         error instanceof Error ? error.message : String(error)
       }`

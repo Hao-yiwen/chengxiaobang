@@ -1,4 +1,4 @@
-import { isStreamEvent } from "@chengxiaobang/shared";
+import { createId, isStreamEvent } from "@chengxiaobang/shared";
 import type {
   AppEvent,
   ApprovalDecision,
@@ -14,7 +14,10 @@ import type {
   FeishuInstallStartInput,
   FeishuInstallStartResult,
   FeishuStatus,
+  GitChangeDiffResult,
+  GitChangeScope,
   GitChangesResult,
+  GitFileChange,
   GitInfo,
   Message,
   MessageFeedback,
@@ -79,6 +82,11 @@ export interface ApiClient {
   getGitInfo?(projectId: string): Promise<GitInfo>;
   /** 当前项目的未提交 git 变更（变更面板用）。 */
   getGitChanges(projectId: string): Promise<GitChangesResult>;
+  /** 当前项目单个变更文件的 diff（审查面板展开文件时懒加载）。 */
+  getGitChangeDiff?(
+    projectId: string,
+    input: { scope: GitChangeScope; path: string }
+  ): Promise<GitFileChange>;
   updateSession(id: string, input: SessionUpdate): Promise<Session>;
   deleteSession(id: string): Promise<boolean>;
   searchSessions?(query: string): Promise<SessionSearchResult[]>;
@@ -218,6 +226,7 @@ export async function createApiClient(): Promise<ApiClient> {
       headers: {
         ...headers,
         "Content-Type": "application/json",
+        "x-request-id": createId("req"),
         ...objectHeaders(init?.headers)
       }
     });
@@ -275,7 +284,10 @@ export async function createApiClient(): Promise<ApiClient> {
               lastEventId: lastAppEventId
             });
             const response = await fetch(`${baseURL}${eventPath}`, {
-              headers,
+              headers: {
+                ...headers,
+                "x-request-id": createId("req")
+              },
               signal: controller.signal
             });
             if (!response.ok || !response.body) {
@@ -377,6 +389,17 @@ export async function createApiClient(): Promise<ApiClient> {
           `/api/projects/${encodeURIComponent(projectId)}/git/changes`
         )
       ).changes;
+    },
+    async getGitChangeDiff(projectId, input) {
+      const query = new URLSearchParams({
+        scope: input.scope,
+        path: input.path
+      });
+      return (
+        await request<GitChangeDiffResult>(
+          `/api/projects/${encodeURIComponent(projectId)}/git/changes/diff?${query.toString()}`
+        )
+      ).file;
     },
     async updateSession(id, input) {
       return (
@@ -758,7 +781,8 @@ export async function createApiClient(): Promise<ApiClient> {
         method: "POST",
         headers: {
           ...headers,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "x-request-id": createId("req")
         },
         body: JSON.stringify(input)
       });

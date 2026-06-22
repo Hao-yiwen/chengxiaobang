@@ -1,6 +1,10 @@
 import { createTwoFilesPatch } from "diff";
 import type { FileChange, FileChangeOperation } from "@chengxiaobang/shared";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/file-change" });
+
 export const FILE_CHANGE_PATCH_MAX_BYTES = 512 * 1024;
 
 export type ToolFileChangeDetails = Omit<FileChange, "operation" | "toolCallIds"> & {
@@ -52,7 +56,7 @@ function buildFileChangeSummary(input: {
   after: string;
 }): Omit<FileChange, "toolCallIds"> | undefined {
   if (input.before === input.after) {
-    console.info("[file-change] 文件内容无变化，跳过 diff", {
+    log.info("[file-change] 文件内容无变化，跳过 diff", {
       path: input.path,
       operation: input.operation
     });
@@ -70,7 +74,7 @@ function buildFileChangeSummary(input: {
       { context: 3 }
     );
   } catch (error) {
-    console.warn("[file-change] 生成文件 diff 失败", {
+    log.warn("[file-change] 生成文件 diff 失败", {
       path: input.path,
       operation: input.operation,
       error: error instanceof Error ? error.message : String(error)
@@ -82,7 +86,7 @@ function buildFileChangeSummary(input: {
   const truncated = patchBytes > FILE_CHANGE_PATCH_MAX_BYTES;
   const displayPatch = truncated ? truncateUtf8(patch, FILE_CHANGE_PATCH_MAX_BYTES) : patch;
   if (truncated) {
-    console.warn("[file-change] 文件 diff 过大，已截断展示内容", {
+    log.warn("[file-change] 文件 diff 过大，已截断展示内容", {
       path: input.path,
       operation: input.operation,
       patchBytes,
@@ -91,7 +95,7 @@ function buildFileChangeSummary(input: {
       deletions: stats.deletions
     });
   } else {
-    console.info("[file-change] 已生成文件 diff", {
+    log.info("[file-change] 已生成文件 diff", {
       path: input.path,
       operation: input.operation,
       patchBytes,

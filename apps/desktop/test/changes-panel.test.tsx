@@ -67,6 +67,12 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     listProjectDirectory: vi.fn(async () => []),
     getGitInfo: vi.fn(async () => ({ isRepo: true })),
     getGitChanges: vi.fn(async () => ({ isRepo: false, files: [] })),
+    getGitChangeDiff: vi.fn(async (_projectId, input) => ({
+      path: input.path,
+      scope: input.scope,
+      status: " M",
+      diff: ""
+    })),
     updateSession: vi.fn() as never,
     deleteSession: vi.fn() as never,
     listMessages: vi.fn(async () => []),
@@ -118,7 +124,7 @@ beforeEach(() => {
 });
 
 describe("changes panel", () => {
-  it("lists changed files with status labels and expands a diff", async () => {
+  it("renders changed files as a tree and expands a diff", async () => {
     const changes: GitChangesResult = {
       isRepo: true,
       files: [
@@ -126,72 +132,199 @@ describe("changes panel", () => {
           path: "src/a.ts",
           scope: "staged",
           status: "MM",
-          diff: patchFor("src/a.ts", "-base line", "+staged line")
+          diff: "",
+          additions: 1,
+          deletions: 1
         },
         {
           path: "src/a.ts",
           scope: "unstaged",
           status: "MM",
-          diff: patchFor("src/a.ts", "-staged line", "+unstaged line")
+          diff: "",
+          additions: 1,
+          deletions: 1
         },
         {
-          path: "fresh.txt",
+          path: "src/components/Button.tsx",
+          scope: "unstaged",
+          status: " M",
+          diff: "",
+          additions: 1,
+          deletions: 1
+        },
+        {
+          path: "README.md",
           scope: "unstaged",
           status: "??",
-          diff: untrackedPatchFor("fresh.txt", ["alpha"])
+          diff: ""
         },
         { path: "blob.bin", scope: "unstaged", status: "??", diff: "" }
       ]
     };
     const getGitChanges = vi.fn(async () => changes);
-    const client = createClient({ getGitChanges });
+    const diffFiles = new Map<string, GitChangesResult["files"][number]>([
+      [
+        "staged:src/a.ts",
+        {
+          path: "src/a.ts",
+          scope: "staged",
+          status: "MM",
+          diff: patchFor("src/a.ts", "-base line", "+staged line"),
+          additions: 1,
+          deletions: 1
+        }
+      ],
+      [
+        "unstaged:src/a.ts",
+        {
+          path: "src/a.ts",
+          scope: "unstaged",
+          status: "MM",
+          diff: patchFor("src/a.ts", "-staged line", "+unstaged line"),
+          additions: 1,
+          deletions: 1
+        }
+      ],
+      [
+        "unstaged:blob.bin",
+        { path: "blob.bin", scope: "unstaged", status: "??", diff: "" }
+      ]
+    ]);
+    const getGitChangeDiff = vi.fn(async (_projectId: string, input: { scope: string; path: string }) => {
+      const file = diffFiles.get(`${input.scope}:${input.path}`);
+      if (!file) {
+        throw new Error("missing fixture");
+      }
+      return file;
+    });
+    const client = createClient({ getGitChanges, getGitChangeDiff: getGitChangeDiff as never });
 
     render(<App client={client} />);
     await screen.findByText("项目对话");
     await openChangesPane();
 
-    expect(await screen.findByText("3 个文件有变更")).toBeInTheDocument();
+    expect(await screen.findByText("4 个文件有变更")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "折叠变更分组 暂存的更改" })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "折叠变更分组 更改" })).toBeInTheDocument();
     expect(screen.getByText("暂存的更改")).toBeInTheDocument();
     expect(screen.getByText("更改")).toBeInTheDocument();
-    expect(screen.getByText("1 个文件")).toBeInTheDocument();
-    expect(screen.getByText("3 个文件")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("button", { name: "折叠变更分组 暂存的更改" })).getByText("1 个文件")
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("button", { name: "折叠变更分组 更改" })).getByText("4 个文件")
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("src")).toHaveLength(2);
+    expect(screen.getByText("components")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "折叠变更目录 更改 src" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "折叠变更目录 更改 src/components" })).toBeInTheDocument();
     const modifiedFiles = await screen.findAllByText("a.ts");
     expect(modifiedFiles).toHaveLength(2);
+    expect(await screen.findByText("Button.tsx")).toBeInTheDocument();
     expect(screen.queryByText("src/a.ts")).not.toBeInTheDocument();
-    expect(screen.getAllByTitle("src/a.ts")).toHaveLength(2);
+    expect(
+      screen.getByRole("button", { name: "展开变更文件 暂存的更改 src/a.ts" })
+    ).not.toHaveAttribute("title");
     expect(screen.getAllByText("修改").length).toBeGreaterThanOrEqual(2);
-    expect(await screen.findByText("fresh.txt")).toBeInTheDocument();
+    expect(await screen.findByText("README.md")).toBeInTheDocument();
     expect(await screen.findByText("blob.bin")).toBeInTheDocument();
+    const blobButton = screen.getByRole("button", { name: "展开变更文件 更改 blob.bin" });
+    expect(within(blobButton).queryByText("+0")).not.toBeInTheDocument();
+    expect(within(blobButton).queryByText("-0")).not.toBeInTheDocument();
     expect(getGitChanges).toHaveBeenCalledWith(project.id);
     expect(screen.queryByPlaceholderText("筛选文件…")).not.toBeInTheDocument();
     expect(screen.queryByText("staged line")).not.toBeInTheDocument();
     expect(screen.queryByText("unstaged line")).not.toBeInTheDocument();
+    expect(getGitChangeDiff).not.toHaveBeenCalled();
+
+    const changesGroup = screen.getByRole("button", { name: "折叠变更分组 更改" }).closest("section");
+    expect(changesGroup).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "折叠变更目录 更改 src" }));
+    expect(within(changesGroup as HTMLElement).queryByText("Button.tsx")).not.toBeInTheDocument();
+    expect(within(changesGroup as HTMLElement).queryByText("components")).not.toBeInTheDocument();
+    expect(screen.queryByText("unstaged line")).not.toBeInTheDocument();
+    expect(getGitChangeDiff).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "展开变更目录 更改 src" }));
+    expect(await within(changesGroup as HTMLElement).findByText("Button.tsx")).toBeInTheDocument();
 
     scrollIntoView.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "展开变更文件 暂存的更改 src/a.ts" }));
+    await waitFor(() =>
+      expect(getGitChangeDiff).toHaveBeenCalledWith(project.id, {
+        scope: "staged",
+        path: "src/a.ts"
+      })
+    );
     const diff = await screen.findByLabelText("变更对比");
+    expect(diff).toHaveClass("overflow-visible");
     expect(diff).toHaveTextContent("staged line");
     expect(diff).toHaveTextContent("base line");
     expect(diff).not.toHaveTextContent("unstaged line");
+    // 展开后文件行头自身吸顶：sticky 只在该文件 diff 滚过顶部时悬浮，而非常驻顶端
+    const stagedHeader = screen.getByRole("button", {
+      name: "折叠变更文件 暂存的更改 src/a.ts"
+    });
+    expect(stagedHeader).toHaveClass("sticky", "top-0");
+    // 未展开的文件行头不吸顶
+    expect(
+      screen.getByRole("button", { name: "展开变更文件 更改 src/a.ts" })
+    ).not.toHaveClass("sticky");
     await waitFor(() =>
       expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" })
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "折叠变更文件 暂存的更改 src/a.ts" }));
+    fireEvent.click(stagedHeader);
+    expect(screen.queryByLabelText("变更对比")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "展开变更文件 更改 src/a.ts" }));
+    await waitFor(() =>
+      expect(getGitChangeDiff).toHaveBeenCalledWith(project.id, {
+        scope: "unstaged",
+        path: "src/a.ts"
+      })
+    );
     const unstagedDiff = await screen.findByLabelText("变更对比");
     expect(unstagedDiff).toHaveTextContent("unstaged line");
     expect(unstagedDiff).toHaveTextContent("staged line");
     expect(unstagedDiff).not.toHaveTextContent("base line");
 
-    const changesGroup = screen.getByRole("button", { name: "折叠变更分组 更改" }).closest("section");
-    expect(changesGroup).not.toBeNull();
-    expect(within(changesGroup as HTMLElement).getByText("fresh.txt")).toBeInTheDocument();
+    expect(within(changesGroup as HTMLElement).getByText("README.md")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "展开变更文件 更改 blob.bin" }));
-    expect(await screen.findByText("二进制或过大文件，不展示内容")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(getGitChangeDiff).toHaveBeenCalledWith(project.id, {
+        scope: "unstaged",
+        path: "blob.bin"
+      })
+    );
+    expect(
+      await screen.findByText("没有可展示的文本差异；文件可能是二进制、过大，或只有元数据变更。")
+    ).toBeInTheDocument();
+  });
+
+  it("shows an inline error when a single file diff fails to load", async () => {
+    const changes: GitChangesResult = {
+      isRepo: true,
+      files: [{ path: "src/fail.ts", scope: "unstaged", status: " M", diff: "" }]
+    };
+    const getGitChangeDiff = vi.fn(async () => {
+      throw new Error("boom");
+    });
+    const client = createClient({
+      getGitChanges: vi.fn(async () => changes),
+      getGitChangeDiff: getGitChangeDiff as never
+    });
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await openChangesPane();
+
+    fireEvent.click(await screen.findByRole("button", { name: "展开变更文件 更改 src/fail.ts" }));
+
+    expect(await screen.findByText("加载文件差异失败：boom")).toBeInTheDocument();
+    expect(getGitChangeDiff).toHaveBeenCalledWith(project.id, {
+      scope: "unstaged",
+      path: "src/fail.ts"
+    });
   });
 
   it("reloads on refresh", async () => {
@@ -200,7 +333,16 @@ describe("changes panel", () => {
       .mockResolvedValueOnce({ isRepo: true, files: [] })
       .mockResolvedValueOnce({
         isRepo: true,
-        files: [{ path: "new.ts", scope: "staged", status: "A ", diff: untrackedPatchFor("new.ts", ["x"]) }]
+        files: [
+          {
+            path: "new.ts",
+            scope: "staged",
+            status: "A ",
+            diff: "",
+            additions: 1,
+            deletions: 0
+          }
+        ]
       });
     const client = createClient({ getGitChanges: getGitChanges as never });
 
@@ -237,16 +379,5 @@ function patchFor(path: string, removed: string, added: string): string {
     "@@ -1 +1 @@",
     removed,
     added
-  ].join("\n");
-}
-
-function untrackedPatchFor(path: string, lines: string[]): string {
-  return [
-    `diff --git a/${path} b/${path}`,
-    "new file mode 100644",
-    "--- /dev/null",
-    `+++ b/${path}`,
-    `@@ -0,0 +1,${lines.length} @@`,
-    ...lines.map((line) => `+${line}`)
   ].join("\n");
 }

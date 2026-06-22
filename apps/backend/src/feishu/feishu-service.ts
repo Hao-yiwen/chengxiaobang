@@ -10,6 +10,10 @@ import type {
 import type { FeishuConfigService } from "./feishu-config-service";
 import { chunkFeishuText } from "./feishu-text";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "feishu/feishu-service" });
+
 const BUSY_REPLY = "上一条消息还在处理中，请稍候再试。";
 const UNSUPPORTED_REPLY = "目前只支持文本消息。";
 const READ_ONLY_CANCELLED = "该操作需要修改本地文件或执行命令，飞书会话默认只读，已取消。";
@@ -119,7 +123,7 @@ export class FeishuService {
       }
     } catch (error) {
       // One bad message must never kill the dispatcher.
-      console.warn("[feishu] 处理消息失败", error);
+      log.warn("[feishu] 处理消息失败", error);
     }
   }
 
@@ -172,7 +176,7 @@ export class FeishuService {
         ) {
           // Read-only enforcement: nobody is around to approve, so mutating
           // tools are denied and the model gets the standard rejection text.
-          console.log(
+          log.info(
             `[feishu] 只读会话自动拒绝工具 toolCallId=${event.toolCall.id} tool=${event.toolCall.name}`
           );
           this.options.runner.approvals.decide(event.toolCall.id, { approved: false });

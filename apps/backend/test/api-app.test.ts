@@ -19,6 +19,7 @@ import { MemorySecretStore } from "../src/secrets/secret-store";
 import { SkillMarketService } from "../src/tools/skill-market-service";
 import { runCommand } from "../src/tools/shell";
 import { SlashCommandService } from "../src/tools/slash-command-service";
+import { captureBackendLogs } from "./helpers/logging";
 import { scriptedStreamFn } from "./helpers/scripted-stream";
 
 function createTestApp(options: Parameters<typeof createApp>[0]): (request: Request) => Promise<Response> {
@@ -108,6 +109,56 @@ describe("createApp", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({ error: "不允许的请求来源" });
+  });
+
+  it("uses frontend request id and route session id in request logs", async () => {
+    const { entries, restore } = captureBackendLogs();
+    const session = await store.createSession({
+      projectId: null,
+      title: "日志上下文",
+      accessMode: "approval"
+    });
+    try {
+      const response = await app(
+        new Request(`http://local/api/sessions/${session.id}/messages`, {
+          method: "GET",
+          headers: { "x-request-id": "req_front_1" }
+        })
+      );
+
+      expect(response.status).toBe(200);
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            level: "info",
+            message: "HTTP 请求结束",
+            fields: expect.objectContaining({
+              requestId: "req_front_1",
+              sessionId: session.id,
+              method: "GET",
+              path: `/api/sessions/${session.id}/messages`,
+              status: 200,
+              durationMs: expect.any(Number)
+            })
+          })
+        ])
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  it("generates backend request id when the header is missing", async () => {
+    const { entries, restore } = captureBackendLogs();
+    try {
+      const response = await app(new Request("http://local/api/health", { method: "GET" }));
+
+      expect(response.status).toBe(200);
+      const finished = entries.find((entry) => entry.message === "HTTP 请求结束");
+      expect(finished?.fields.requestId).toEqual(expect.stringMatching(/^req_/));
+    } finally {
+      restore();
+    }
   });
 
   it("updates and deletes sessions through HTTP API", async () => {
@@ -425,6 +476,47 @@ describe("createApp", () => {
     expect(missing.status).toBe(404);
   }, 20_000);
 
+  it("reports a single git change diff for a project file", async () => {
+    const repoRoot = join(dir, "repo-diff");
+    await mkdir(repoRoot, { recursive: true });
+    const project = await store.createProject({ name: "repo", path: repoRoot });
+    expect((await runCommand("git init", repoRoot)).exitCode).toBe(0);
+    await writeFile(join(repoRoot, "space name.txt"), "old\n");
+    expect((await runCommand("git -c user.name=t -c user.email=t@t.com add .", repoRoot)).exitCode).toBe(0);
+    expect(
+      (await runCommand('git -c user.name=t -c user.email=t@t.com commit -m "base"', repoRoot))
+        .exitCode
+    ).toBe(0);
+    await writeFile(join(repoRoot, "space name.txt"), "new\n");
+
+    const query = new URLSearchParams({ scope: "unstaged", path: "space name.txt" });
+    const response = await app(
+      new Request(`http://local/api/projects/${project.id}/git/changes/diff?${query}`, {
+        method: "GET"
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.file.path).toBe("space name.txt");
+    expect(body.file.scope).toBe("unstaged");
+    expect(body.file.diff).toContain("-old");
+    expect(body.file.diff).toContain("+new");
+
+    const invalidScope = await app(
+      new Request(
+        `http://local/api/projects/${project.id}/git/changes/diff?scope=bad&path=space%20name.txt`,
+        { method: "GET" }
+      )
+    );
+    expect(invalidScope.status).toBe(400);
+
+    const missingProject = await app(
+      new Request(`http://local/api/projects/nope/git/changes/diff?${query}`, { method: "GET" })
+    );
+    expect(missingProject.status).toBe(404);
+  }, 20_000);
+
   it("forks a standalone session over HTTP and copies its workspace", async () => {
     const sessionWorkspacePath = (sessionId: string) => join(dir, "sessions", sessionId);
     const workspaceApp = createTestApp({
@@ -546,21 +638,16 @@ describe("createApp", () => {
     const first = await store.addMessage({ sessionId: session.id, role: "user", content: "一" });
     await mkdir(sharedWorkspacePath, { recursive: true });
     await writeFile(join(sharedWorkspacePath, "note.txt"), "hello");
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    try {
-      const response = await workspaceApp(
-        jsonRequest(`/api/sessions/${session.id}/fork`, "POST", { messageId: first.id })
-      );
+    const response = await workspaceApp(
+      jsonRequest(`/api/sessions/${session.id}/fork`, "POST", { messageId: first.id })
+    );
 
-      expect(response.status).toBe(500);
-      await expect(response.json()).resolves.toMatchObject({
-        error: "派生工作区目标目录已存在，已取消派生"
-      });
-      await expect(store.listSessions(null)).resolves.toHaveLength(1);
-    } finally {
-      errorSpy.mockRestore();
-    }
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "派生工作区目标目录已存在，已取消派生"
+    });
+    await expect(store.listSessions(null)).resolves.toHaveLength(1);
   });
 
   it("serves and saves the feishu config without exposing the secret", async () => {
@@ -919,7 +1006,7 @@ describe("createApp", () => {
 
   it("streams setup failures as setup_error before a run exists", async () => {
     await store.deleteProvider("deepseek");
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { entries, restore } = captureBackendLogs();
 
     try {
       const response = await app(
@@ -935,15 +1022,20 @@ describe("createApp", () => {
       expect(body).toContain('"type":"setup_error"');
       expect(body).toContain("请先配置至少一个模型");
       expect(body).not.toContain('"runId":"setup"');
-      expect(errorSpy).toHaveBeenCalledWith(
-        "[api] /api/runs/stream 运行失败",
-        expect.objectContaining({
-          error: expect.any(Error),
-          displayError: "请先配置至少一个模型"
-        })
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            level: "error",
+            message: "/api/runs/stream 运行失败",
+            fields: expect.objectContaining({
+              displayError: "请先配置至少一个模型",
+              errorMessage: "请先配置至少一个模型"
+            })
+          })
+        ])
       );
     } finally {
-      errorSpy.mockRestore();
+      restore();
     }
   });
 
@@ -1018,6 +1110,56 @@ describe("createApp", () => {
     expect(events.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
   });
 
+  it("keeps request id, client request id, run id and session id on POST /api/runs logs", async () => {
+    const scripted = scriptedStreamFn([{ text: "你好！" }]);
+    const runApp = createTestApp({
+      store,
+      providerService: new ProviderService(store, secrets, vi.fn()),
+      runner: new AgentRunner(store, secrets, { streamFn: scripted.streamFn })
+    });
+    const { entries, restore } = captureBackendLogs();
+    try {
+      const response = await runApp(
+        new Request("http://local/api/runs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-request-id": "req_run_1"
+          },
+          body: JSON.stringify({
+            prompt: "你好",
+            clientRequestId: "client_log_1",
+            accessMode: "approval"
+          })
+        })
+      );
+      expect(response.status).toBe(200);
+      const started = (await response.json()) as { runId: string; sessionId: string };
+
+      await vi.waitFor(async () => {
+        const run = (await store.listRuns(started.sessionId)).find((item) => item.id === started.runId);
+        expect(run?.status).toBe("completed");
+      });
+
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            message: "登记活跃 run",
+            fields: expect.objectContaining({
+              requestId: "req_run_1",
+              clientRequestId: "client_log_1",
+              runId: started.runId,
+              sessionId: started.sessionId,
+              module: "active-runs"
+            })
+          })
+        ])
+      );
+    } finally {
+      restore();
+    }
+  });
+
   it("replays missed global SSE events after the last event id", async () => {
     const scripted = scriptedStreamFn([{ thinking: "想一想", text: "你好！" }]);
     const eventApp = createTestApp({
@@ -1078,7 +1220,7 @@ describe("createApp", () => {
 
   it("returns an HTTP error when POST /api/runs fails before run_started", async () => {
     await store.deleteProvider("deepseek");
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { entries, restore } = captureBackendLogs();
 
     try {
       const response = await app(
@@ -1090,15 +1232,20 @@ describe("createApp", () => {
 
       expect(response.status).toBe(500);
       await expect(response.json()).resolves.toMatchObject({ error: "请先配置至少一个模型" });
-      expect(errorSpy).toHaveBeenCalledWith(
-        "[api] /api/runs 启动失败",
-        expect.objectContaining({
-          error: expect.any(Error),
-          displayError: "请先配置至少一个模型"
-        })
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            level: "error",
+            message: "/api/runs 启动失败",
+            fields: expect.objectContaining({
+              displayError: "请先配置至少一个模型",
+              errorMessage: "请先配置至少一个模型"
+            })
+          })
+        ])
       );
     } finally {
-      errorSpy.mockRestore();
+      restore();
     }
   });
 

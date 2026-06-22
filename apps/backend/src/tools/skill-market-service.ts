@@ -11,6 +11,10 @@ import type {
 import type { StateStore } from "../repository/state-store";
 import { builtinResourceRoot } from "../paths";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/skill-market-service" });
+
 /** 激活的市场技能名集合，JSON 数组存 settings KV。 */
 const ENABLED_SETTING_KEY = "skills.enabledMarketSkills";
 /** 被单项停用的插件来源技能名集合（黑名单），JSON 数组存 settings KV。 */
@@ -107,7 +111,7 @@ export class SkillMarketService {
       try {
         raw = await readFile(filePath, "utf8");
       } catch (error) {
-        console.warn(`[skill-market] 读取技能正文失败 path=${filePath}: ${String(error)}`);
+        log.warn(`[skill-market] 读取技能正文失败 path=${filePath}: ${String(error)}`);
         return undefined;
       }
       const isEnabled = source === "market" ? enabled.has(name) : true;
@@ -129,7 +133,7 @@ export class SkillMarketService {
       try {
         raw = await readFile(filePath, "utf8");
       } catch (error) {
-        console.warn(`[skill-market] 读取插件技能正文失败 path=${filePath}: ${String(error)}`);
+        log.warn(`[skill-market] 读取插件技能正文失败 path=${filePath}: ${String(error)}`);
         return undefined;
       }
       return {
@@ -138,7 +142,7 @@ export class SkillMarketService {
         filePath
       };
     }
-    console.warn(`[skill-market] 未找到技能详情 name=${name}`);
+    log.warn(`[skill-market] 未找到技能详情 name=${name}`);
     return undefined;
   }
 
@@ -152,7 +156,7 @@ export class SkillMarketService {
       const parsed = JSON.parse(raw);
       return new Set(Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : []);
     } catch (error) {
-      console.warn(`[skill-market] 激活技能配置解析失败，按空集处理: ${String(error)}`);
+      log.warn(`[skill-market] 激活技能配置解析失败，按空集处理: ${String(error)}`);
       return new Set();
     }
   }
@@ -169,7 +173,7 @@ export class SkillMarketService {
       current.delete(name);
     }
     await this.store.setSetting(ENABLED_SETTING_KEY, JSON.stringify([...current].sort()));
-    console.info(`[skill-market] ${enabled ? "激活" : "停用"}市场技能 name=${name}`);
+    log.info(`[skill-market] ${enabled ? "激活" : "停用"}市场技能 name=${name}`);
     return this.list();
   }
 
@@ -187,7 +191,7 @@ export class SkillMarketService {
       current.delete(name);
     }
     await this.store.setSetting(DISABLED_SKILLS_KEY, JSON.stringify([...current].sort()));
-    console.info(`[skill-market] ${disabled ? "停用" : "启用"}技能 name=${name}`);
+    log.info(`[skill-market] ${disabled ? "停用" : "启用"}技能 name=${name}`);
     return this.list();
   }
 
@@ -205,7 +209,7 @@ export class SkillMarketService {
       current.delete(name);
     }
     await this.store.setSetting(DISABLED_COMMANDS_KEY, JSON.stringify([...current].sort()));
-    console.info(`[skill-market] ${disabled ? "停用" : "启用"}命令 name=${name}`);
+    log.info(`[skill-market] ${disabled ? "停用" : "启用"}命令 name=${name}`);
   }
 
   private async pluginRoots(): Promise<Array<{ pluginName: string; root: string }>> {
@@ -236,7 +240,7 @@ export class SkillMarketService {
     let hitUrl: string | undefined;
     const failures: string[] = [];
     for (const candidate of candidates) {
-      console.info(`[skill-market] 尝试拉取技能文件 url=${candidate}`);
+      log.info(`[skill-market] 尝试拉取技能文件 url=${candidate}`);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), SKILL_IMPORT_TIMEOUT_MS);
       try {
@@ -254,7 +258,7 @@ export class SkillMarketService {
       }
     }
     if (!content) {
-      console.warn(`[skill-market] 技能文件拉取失败: ${failures.join("; ")}`);
+      log.warn(`[skill-market] 技能文件拉取失败: ${failures.join("; ")}`);
       if (failures.some((failure) => failure.includes("超过大小上限"))) {
         throw new SkillMarketError(`技能文件超过大小上限（${formatBytes(SKILL_IMPORT_MAX_BYTES)}）`);
       }
@@ -268,7 +272,7 @@ export class SkillMarketService {
       throw new SkillMarketError("文件缺少有效的 frontmatter（需要 name 和 description 字段）");
     }
     const summary = await this.installCustom(meta, content);
-    console.info(`[skill-market] 导入自定义技能成功 name=${summary.name} from=${hitUrl}`);
+    log.info(`[skill-market] 导入自定义技能成功 name=${summary.name} from=${hitUrl}`);
     return summary;
   }
 
@@ -299,7 +303,7 @@ export class SkillMarketService {
       throw new SkillMarketError("技能内容生成失败，请检查名称与描述");
     }
     const summary = await this.installCustom(meta, content);
-    console.info(`[skill-market] 创建自定义技能成功 name=${summary.name}`);
+    log.info(`[skill-market] 创建自定义技能成功 name=${summary.name}`);
     return summary;
   }
 
@@ -313,7 +317,7 @@ export class SkillMarketService {
       return false;
     }
     await rm(join(this.customRoot, hit.dirName), { recursive: true, force: true });
-    console.info(`[skill-market] 删除自定义技能 name=${name} dir=${hit.dirName}`);
+    log.info(`[skill-market] 删除自定义技能 name=${name} dir=${hit.dirName}`);
     return true;
   }
 
@@ -368,7 +372,7 @@ function parseNameSet(raw: string | undefined, label: string): Set<string> {
     const parsed = JSON.parse(raw);
     return new Set(Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : []);
   } catch (error) {
-    console.warn(`[skill-market] ${label}解析失败，按空集处理: ${String(error)}`);
+    log.warn(`[skill-market] ${label}解析失败，按空集处理: ${String(error)}`);
     return new Set();
   }
 }
@@ -397,7 +401,7 @@ export async function readSkillDir(root: string): Promise<SkillDirEntry[]> {
     }
     const meta = parseSkillFile(content);
     if (!meta) {
-      console.warn(`[skill-market] 跳过无效技能文件 path=${filePath}`);
+      log.warn(`[skill-market] 跳过无效技能文件 path=${filePath}`);
       continue;
     }
     skills.push({ ...meta, dirName: entry.name });
@@ -531,7 +535,7 @@ async function readResponseTextWithLimit(response: Response, maxBytes: number): 
     total += value.byteLength;
     if (total > maxBytes) {
       await reader.cancel().catch(() => undefined);
-      console.warn("[skill-market] 技能文件超过大小上限，已中止读取", {
+      log.warn("[skill-market] 技能文件超过大小上限，已中止读取", {
         maxBytes,
         totalBytes: total
       });

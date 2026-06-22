@@ -9,7 +9,11 @@ export const gitFileChangeSchema = z.object({
   scope: gitChangeScopeSchema,
   status: z.string().min(2),
   /** 二进制或过大文件无法展示内容时为空。 */
-  diff: z.string()
+  diff: z.string(),
+  /** 由后端基于当前 scope 的文本 diff 计算；无可展示文本差异时不返回。 */
+  additions: z.number().int().nonnegative().optional(),
+  /** 由后端基于当前 scope 的文本 diff 计算；无可展示文本差异时不返回。 */
+  deletions: z.number().int().nonnegative().optional()
 });
 export type GitFileChange = z.infer<typeof gitFileChangeSchema>;
 
@@ -18,6 +22,11 @@ export const gitChangesResultSchema = z.object({
   files: z.array(gitFileChangeSchema)
 });
 export type GitChangesResult = z.infer<typeof gitChangesResultSchema>;
+
+export const gitChangeDiffResultSchema = z.object({
+  file: gitFileChangeSchema
+});
+export type GitChangeDiffResult = z.infer<typeof gitChangeDiffResultSchema>;
 
 export const gitInfoSchema = z.object({
   isRepo: z.boolean()

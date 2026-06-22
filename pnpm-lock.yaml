@@ -104,6 +104,9 @@ importers:
       js-yaml:
         specifier: 4.1.0
         version: 4.1.0
+      pino:
+        specifier: ^10.3.1
+        version: 10.3.1
       pptxgenjs:
         specifier: ^4.0.1
         version: 4.0.1

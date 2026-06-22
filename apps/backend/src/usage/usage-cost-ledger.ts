@@ -23,6 +23,10 @@ import {
 } from "./token-accounting";
 import { buildUsageStatsFromCostEntries } from "./usage-stats";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "usage/usage-cost-ledger" });
+
 export interface UsageCostAttempt {
   runId: string;
   sessionId: string;
@@ -80,7 +84,7 @@ export class UsageCostLedgerService {
       tokenCountSource: attempt.tokenCountSource,
       billable: false
     });
-    console.debug("[usage-cost-ledger] 已创建模型请求费用 attempt", {
+    log.debug("[usage-cost-ledger] 已创建模型请求费用 attempt", {
       runId: attempt.runId,
       sessionId: attempt.sessionId,
       attemptIndex: attempt.attemptIndex,
@@ -129,7 +133,7 @@ export class UsageCostLedgerService {
       tokenCountSource: "provider_usage",
       billable: costSource !== "unpriced"
     });
-    console.info("[usage-cost-ledger] 已按上游 usage 写入费用", {
+    log.info("[usage-cost-ledger] 已按上游 usage 写入费用", {
       runId: entry.runId,
       sessionId: entry.sessionId,
       attemptIndex: entry.attemptIndex,
@@ -180,7 +184,7 @@ export class UsageCostLedgerService {
       tokenCountSource: input.attempt.tokenCountSource,
       billable: classification.billable && costSource !== "unpriced"
     });
-    console.info("[usage-cost-ledger] 已按错误分类写入费用", {
+    log.info("[usage-cost-ledger] 已按错误分类写入费用", {
       runId: entry.runId,
       sessionId: entry.sessionId,
       attemptIndex: entry.attemptIndex,
@@ -203,7 +207,7 @@ export class UsageCostLedgerService {
     now?: Date;
   }): Promise<UsageStats> {
     const entries = await this.store.listUsageCostEntries({ finalizedOnly: true });
-    console.info("[usage-cost-ledger] 开始从费用账本聚合全局统计", {
+    log.info("[usage-cost-ledger] 开始从费用账本聚合全局统计", {
       entryCount: entries.length,
       timezoneOffsetMinutes: options.timezoneOffsetMinutes
     });

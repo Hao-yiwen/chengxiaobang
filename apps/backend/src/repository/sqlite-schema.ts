@@ -1,6 +1,10 @@
 import { nowIso } from "@chengxiaobang/shared";
 import type { Row, SqliteConnection } from "./sqlite-types";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "repository/sqlite-schema" });
+
 export const INTERRUPTED_RUN_ERROR =
   "运行进程已重启，无法继续等待审批或工具结果。请重新发起本次请求。";
 
@@ -240,7 +244,7 @@ function markInterruptedRunsFromPreviousProcess(connection: SqliteConnection): v
     ]
   );
 
-  console.warn("[state-store] 已收敛上个进程遗留的活跃运行", {
+  log.warn("[state-store] 已收敛上个进程遗留的活跃运行", {
     runIds,
     sessionIds,
     interruptedToolCallCount: toolRows.length,

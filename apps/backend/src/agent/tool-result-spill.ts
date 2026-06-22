@@ -6,6 +6,10 @@ import type {
   AgentToolResult
 } from "@earendil-works/pi-agent-core";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "agent/tool-result-spill" });
+
 export const TOOL_RESULT_SPILL_DIR = ".chengxiaobang/tool-results";
 const MAX_INLINE_TOOL_RESULT_CHARS = 24 * 1024;
 const TOOL_RESULT_PREVIEW_CHARS = 4 * 1024;
@@ -45,7 +49,7 @@ export async function protectAgentToolResult<TDetails>(
   try {
     spill = await spillToolResultText(text, context);
   } catch (error) {
-    console.error("[tool-result-spill] 工具结果过长但写入文件失败，已仅返回短预览", {
+    log.error("[tool-result-spill] 工具结果过长但写入文件失败，已仅返回短预览", {
       runId: context.runId,
       toolCallId: context.toolCallId,
       toolName: context.toolName,
@@ -78,7 +82,7 @@ async function spillToolResultText(
     recursive: true
   });
   await writeFile(filePath, text, "utf8");
-  console.warn("[tool-result-spill] 工具结果过长，已写入工作区文件", {
+  log.warn("[tool-result-spill] 工具结果过长，已写入工作区文件", {
     runId: context.runId,
     toolCallId: context.toolCallId,
     toolName: context.toolName,

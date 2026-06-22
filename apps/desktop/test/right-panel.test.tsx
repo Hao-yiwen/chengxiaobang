@@ -337,6 +337,12 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     deleteSession: vi.fn() as never,
     getGitInfo: vi.fn(async () => ({ isRepo: false })),
     getGitChanges: vi.fn(async () => ({ isRepo: false, files: [] })),
+    getGitChangeDiff: vi.fn(async (_projectId, input) => ({
+      path: input.path,
+      scope: input.scope,
+      status: " M",
+      diff: ""
+    })),
     listMessages: vi.fn(async () => []),
     listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [] })),
     listSlashCommands: vi.fn(async () => ({ commands: [], diagnostics: [] })),
@@ -438,6 +444,7 @@ function installPreviewBridge(options: {
   fileUrl?: string;
   thumbnailUrl?: string;
   thumbnailError?: string;
+  missingPaths?: string[];
 } = {}) {
   const bridge = {
     getBackendInfo: vi.fn(async () => undefined),
@@ -446,8 +453,16 @@ function installPreviewBridge(options: {
     readFileText: vi.fn() as never,
     getFilePreviewInfo: vi.fn(async (
       path: string,
-      context?: { projectPath?: string; sessionId?: string }
+      context?: { projectPath?: string; sessionId?: string; allowCwdFallback?: boolean }
     ) => {
+      if (options.missingPaths?.includes(path)) {
+        return {
+          ok: false as const,
+          path,
+          name: path.split(/[\\/]/).pop() ?? path,
+          error: "ENOENT"
+        };
+      }
       const resolvedPath = path.startsWith("/")
         ? path
         : context?.projectPath
@@ -1758,7 +1773,28 @@ describe("right panel", () => {
     );
   });
 
+  it("hides declared artifacts when the file no longer exists", async () => {
+    const bridge = installPreviewBridge({ missingPaths: ["missing.html"] });
+    const client = createClient({
+      listMessages: vi.fn(async () => [artifactMessage("missing.html")])
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+
+    await waitFor(() =>
+      expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("missing.html", {
+        projectPath: project.path,
+        sessionId: session.id,
+        allowCwdFallback: false
+      })
+    );
+    expect(screen.queryByTestId("artifact-floating-panel")).not.toBeInTheDocument();
+    expect(screen.queryByText("点击在右侧预览")).not.toBeInTheDocument();
+  });
+
   it("uses the updated PowerPoint icon in the floating artifact panel", async () => {
+    installPreviewBridge({ kind: "presentation", buffer: previewBuffer("pptx") });
     const client = createClient({
       listMessages: vi.fn(async () => [artifactMessage("slides/demo.pptx")])
     });
@@ -1818,6 +1854,7 @@ describe("right panel", () => {
   });
 
   it("shows artifact floating panel above the progress floating panel", async () => {
+    installPreviewBridge({ kind: "html", fileUrl: "file:///tmp/demo/page.html" });
     const client = createClient({
       listMessages: vi.fn(async () => [artifactMessage("page.html")])
     });
@@ -1869,7 +1906,7 @@ describe("right panel", () => {
     expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
   });
 
-  it("opens a collapsed review list without a persistent project file tree", async () => {
+  it("opens a review file tree without a persistent project file tree", async () => {
     const getGitInfo = vi.fn(async () => ({ isRepo: true }));
     const getGitChanges = vi.fn(async () => ({
       isRepo: true,
@@ -1878,32 +1915,37 @@ describe("right panel", () => {
           path: "src/a.ts",
           scope: "unstaged",
           status: " M",
-          diff: [
-            "diff --git a/src/a.ts b/src/a.ts",
-            "--- a/src/a.ts",
-            "+++ b/src/a.ts",
-            "@@ -1 +1 @@",
-            "-old line",
-            "+new line"
-          ].join("\n")
+          diff: "",
+          additions: 1,
+          deletions: 1
         },
         {
           path: "README.md",
           scope: "unstaged",
           status: "??",
-          diff: [
-            "diff --git a/README.md b/README.md",
-            "new file mode 100644",
-            "--- /dev/null",
-            "+++ b/README.md",
-            "@@ -0,0 +1 @@",
-            "+intro"
-          ].join("\n")
+          diff: "",
+          additions: 1,
+          deletions: 0
         }
       ]
     }));
+    const getGitChangeDiff = vi.fn(async () => ({
+      path: "src/a.ts",
+      scope: "unstaged" as const,
+      status: " M",
+      diff: [
+        "diff --git a/src/a.ts b/src/a.ts",
+        "--- a/src/a.ts",
+        "+++ b/src/a.ts",
+        "@@ -1 +1 @@",
+        "-old line",
+        "+new line"
+      ].join("\n"),
+      additions: 1,
+      deletions: 1
+    }));
     const listProjectDirectory = vi.fn(async () => [] satisfies ProjectFileEntry[]);
-    const client = createClient({ getGitInfo, getGitChanges, listProjectDirectory });
+    const client = createClient({ getGitInfo, getGitChanges, getGitChangeDiff, listProjectDirectory });
 
     render(<App client={client} />);
     await screen.findByText("项目对话");
@@ -1914,8 +1956,11 @@ describe("right panel", () => {
     expect(changedFile).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "折叠变更分组 暂存的更改" })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "折叠变更分组 更改" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "折叠变更目录 更改 src" })).toBeInTheDocument();
     expect(screen.queryByText("src/a.ts")).not.toBeInTheDocument();
-    expect(screen.getByTitle("src/a.ts")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "展开变更文件 更改 src/a.ts" })).not.toHaveAttribute(
+      "title"
+    );
     expect(screen.getAllByText("+2").length).toBeGreaterThan(0);
     expect(screen.getAllByText("-1").length).toBeGreaterThan(0);
     expect(screen.queryByText("new line")).not.toBeInTheDocument();
@@ -1923,6 +1968,12 @@ describe("right panel", () => {
     expect(listProjectDirectory).not.toHaveBeenCalled();
 
     fireEvent.click(changedFile);
+    await waitFor(() =>
+      expect(getGitChangeDiff).toHaveBeenCalledWith(project.id, {
+        scope: "unstaged",
+        path: "src/a.ts"
+      })
+    );
     const diff = await screen.findByLabelText("变更对比");
     expect(diff).toHaveTextContent("new line");
     expect(diff).toHaveTextContent("old line");

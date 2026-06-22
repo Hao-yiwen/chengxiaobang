@@ -397,6 +397,64 @@ describe("resolveBackendCommand", () => {
     ]);
   });
 
+  it("unwraps backend pino JSON lines into searchable backend log fields", () => {
+    const { logger, entries } = createMockLogger();
+    const terminalCalls: Array<{ level: LogLevelName; message: string }> = [];
+    const terminal: TerminalLogWriter = {
+      debug: (message) => terminalCalls.push({ level: "debug", message: String(message) }),
+      info: (message) => terminalCalls.push({ level: "info", message: String(message) }),
+      warn: (message) => terminalCalls.push({ level: "warn", message: String(message) }),
+      error: (message) => terminalCalls.push({ level: "error", message: String(message) })
+    };
+
+    logBackendChunk(
+      "stdout",
+      `${JSON.stringify({
+        level: 30,
+        time: "2026-06-22T09:00:00.000Z",
+        pid: 111,
+        source: "backend",
+        requestId: "req_1",
+        sessionId: "session_1",
+        runId: "run_1",
+        module: "api",
+        action: "request.end",
+        status: 200,
+        msg: "HTTP 请求结束"
+      })}\n`,
+      {
+        logger,
+        terminal,
+        port: 3456,
+        pid: 789
+      }
+    );
+
+    expect(entries).toEqual([
+      {
+        level: "info",
+        fields: {
+          stream: "stdout",
+          port: 3456,
+          pid: 789,
+          source: "backend",
+          requestId: "req_1",
+          sessionId: "session_1",
+          runId: "run_1",
+          module: "api",
+          action: "request.end",
+          status: 200,
+          backendTime: "2026-06-22T09:00:00.000Z",
+          backendPid: 111
+        },
+        message: "HTTP 请求结束"
+      }
+    ]);
+    expect(terminalCalls).toEqual([
+      { level: "info", message: "[chengxiaobang-backend] HTTP 请求结束" }
+    ]);
+  });
+
   it("force kills the backend process group if SIGTERM does not stop it", () => {
     if (process.platform === "win32") {
       return;

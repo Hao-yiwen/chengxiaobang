@@ -13,6 +13,10 @@ import {
   type ProviderRegion
 } from "@chengxiaobang/shared";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "model/provider-config-file" });
+
 type YamlModule = {
   load(source: string): unknown;
   dump(value: unknown, options?: Record<string, unknown>): string;
@@ -39,13 +43,13 @@ export class ProviderConfigFileService {
   async initialize(): Promise<void> {
     await mkdir(dirname(this.configPath), { recursive: true });
     if (await pathExists(this.configPath)) {
-      console.info("[provider-config-file] 使用已有供应商配置", {
+      log.info("[provider-config-file] 使用已有供应商配置", {
         configPath: this.configPath
       });
       return;
     }
     await this.writeConfig(defaultProviderConfigDocument());
-    console.info("[provider-config-file] 已创建默认供应商配置", {
+    log.info("[provider-config-file] 已创建默认供应商配置", {
       configPath: this.configPath,
       providerCount: Object.keys(PROVIDER_CATALOG).length
     });
@@ -84,7 +88,7 @@ export class ProviderConfigFileService {
     if (!saved) {
       throw new Error("供应商配置写入失败");
     }
-    console.info("[provider-config-file] 已写入供应商配置", {
+    log.info("[provider-config-file] 已写入供应商配置", {
       configPath: this.configPath,
       providerId: saved.id,
       kind: saved.kind,
@@ -107,13 +111,13 @@ export class ProviderConfigFileService {
         apiKeyRef: undefined,
         updatedAt: nowIso()
       });
-      console.info("[provider-config-file] 已清空内置供应商密钥引用", {
+      log.info("[provider-config-file] 已清空内置供应商密钥引用", {
         configPath: this.configPath,
         providerId: id
       });
     } else {
       delete document.providers[id];
-      console.info("[provider-config-file] 已删除自定义供应商配置", {
+      log.info("[provider-config-file] 已删除自定义供应商配置", {
         configPath: this.configPath,
         providerId: id
       });
@@ -127,7 +131,7 @@ export class ProviderConfigFileService {
     const raw = await readFile(this.configPath, "utf8");
     const parsed = yaml.load(raw);
     if (!isRecord(parsed) || !isRecord(parsed.providers)) {
-      console.warn("[provider-config-file] 配置文件结构无效，已回退为空 providers", {
+      log.warn("[provider-config-file] 配置文件结构无效，已回退为空 providers", {
         configPath: this.configPath
       });
       return { ...defaultProviderConfigDocument(), providers: {} };
@@ -167,7 +171,7 @@ export class ProviderConfigFileService {
     const models = providerModelIds(entry, defaultEntry);
     const model = optionalString(entry.model) ?? optionalString(entry.defaultModel) ?? models[0];
     if (!model) {
-      console.warn("[provider-config-file] 跳过缺少默认模型的供应商", {
+      log.warn("[provider-config-file] 跳过缺少默认模型的供应商", {
         configPath: this.configPath,
         providerId: id,
         kind
@@ -206,7 +210,7 @@ export class ProviderConfigFileService {
     };
     const parsed = providerConfigSchema.safeParse(rawProvider);
     if (!parsed.success) {
-      console.warn("[provider-config-file] 解析供应商配置失败，已跳过该项", {
+      log.warn("[provider-config-file] 解析供应商配置失败，已跳过该项", {
         configPath: this.configPath,
         providerId: id,
         kind,
@@ -272,7 +276,7 @@ function normalizeProviderAuth(value: unknown): ProviderAuth {
   if (parsed.success) {
     return parsed.data;
   }
-  console.warn("[provider-config-file] 认证配置无效，已回退 Bearer", {
+  log.warn("[provider-config-file] 认证配置无效，已回退 Bearer", {
     error: parsed.error.message
   });
   return { type: "bearer" };

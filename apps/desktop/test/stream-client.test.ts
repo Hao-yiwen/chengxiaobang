@@ -8,7 +8,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function fetchRequestHeaders(fetchMock: ReturnType<typeof vi.fn>, index = 0): Headers {
+  const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>;
+  return new Headers(calls[index]?.[1]?.headers);
+}
+
 describe("readSseStream", () => {
+  it("sends x-request-id on ordinary JSON requests", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ projects: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await createApiClient();
+    await expect(client.listProjects()).resolves.toEqual([]);
+
+    const requestHeaders = fetchRequestHeaders(fetchMock);
+    expect(requestHeaders.get("x-request-id")).toEqual(expect.stringMatching(/^req_/));
+  });
+
   it("handles partial chunks", async () => {
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
@@ -145,9 +166,44 @@ describe("readSseStream", () => {
     await vi.waitFor(() => expect(events).toEqual([runStarted, runEnd]));
     const fetchCalls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>;
     expect(String(fetchCalls[1]?.[0])).toContain("lastEventId=7");
+    expect(new Headers(fetchCalls[0]?.[1]?.headers).get("x-request-id")).toEqual(
+      expect.stringMatching(/^req_/)
+    );
+    expect(new Headers(fetchCalls[1]?.[1]?.headers).get("x-request-id")).toEqual(
+      expect.stringMatching(/^req_/)
+    );
 
     unsubscribe?.();
     vi.useRealTimers();
+  });
+
+  it("sends x-request-id on streamRun requests", async () => {
+    const runEnd: StreamEvent = {
+      type: "run_end",
+      runId: "run_1",
+      status: "completed"
+    };
+    const encoder = new TextEncoder();
+    const fetchMock = vi.fn(async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(encodeSseEvent(runEnd)));
+          controller.close();
+        }
+      });
+      return new Response(stream, { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await createApiClient();
+    const events: StreamEvent[] = [];
+    await client.streamRun({ prompt: "你好", accessMode: "approval" }, (event) => {
+      events.push(event);
+    });
+
+    expect(events).toEqual([runEnd]);
+    const requestHeaders = fetchRequestHeaders(fetchMock);
+    expect(requestHeaders.get("x-request-id")).toEqual(expect.stringMatching(/^req_/));
   });
 
   it("keeps run subscriptions filtered while app subscriptions receive task events", async () => {

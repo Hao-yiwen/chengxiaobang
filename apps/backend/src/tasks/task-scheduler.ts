@@ -10,6 +10,10 @@ import type { EventHub } from "../events/event-hub";
 import type { StateStore } from "../repository/state-store";
 import { computeNextRunAt } from "./schedule";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tasks/task-scheduler" });
+
 /** 单次执行的整体上限：headless run 卡死（网络挂起等）时强制中止，释放任务。 */
 const DEFAULT_RUN_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_TICK_INTERVAL_MS = 60_000;
@@ -58,7 +62,7 @@ export class TaskScheduler {
 
   start(): void {
     this.stopping = false;
-    console.info(`[task-scheduler] 启动，轮询间隔 ${this.intervalMs}ms`);
+    log.info(`[task-scheduler] 启动，轮询间隔 ${this.intervalMs}ms`);
     // 立即 tick：重启期间错过的任务在这里补跑一次。
     void this.tick();
     this.timer = setInterval(() => void this.tick(), this.intervalMs);
@@ -72,23 +76,23 @@ export class TaskScheduler {
     }
     // 在飞行的调度 run 必须中止，否则会在 store 关闭后继续写入。
     for (const runId of this.inflightRunIds) {
-      console.warn(`[task-scheduler] 关停：中止在飞行的调度 run runId=${runId}`);
+      log.warn(`[task-scheduler] 关停：中止在飞行的调度 run runId=${runId}`);
       this.runner.abort(runId);
     }
     const active = [...this.activeExecutions];
     if (active.length > 0) {
-      console.info(`[task-scheduler] 等待在飞行任务收尾 count=${active.length}`);
+      log.info(`[task-scheduler] 等待在飞行任务收尾 count=${active.length}`);
       const settled = await Promise.race([
         Promise.allSettled(active).then(() => true),
         sleep(STOP_WAIT_TIMEOUT_MS).then(() => false)
       ]);
       if (!settled) {
-        console.warn(
+        log.warn(
           `[task-scheduler] 等待任务收尾超时 timeoutMs=${STOP_WAIT_TIMEOUT_MS} remaining=${this.activeExecutions.size}`
         );
       }
     }
-    console.info("[task-scheduler] 已停止");
+    log.info("[task-scheduler] 已停止");
   }
 
   async tick(): Promise<void> {
@@ -109,7 +113,7 @@ export class TaskScheduler {
         await this.runExecution(task, "schedule");
       }
     } catch (error) {
-      console.error("[task-scheduler] tick 失败:", error);
+      log.error("[task-scheduler] tick 失败:", error);
     } finally {
       this.ticking = false;
     }
@@ -139,12 +143,12 @@ export class TaskScheduler {
 
   private async execute(task: ScheduledTask, trigger: ScheduledTaskTrigger): Promise<void> {
     if (this.busyTaskIds.has(task.id)) {
-      console.warn(`[task-scheduler] 跳过：任务执行中 taskId=${task.id}`);
+      log.warn(`[task-scheduler] 跳过：任务执行中 taskId=${task.id}`);
       return;
     }
     if (this.runner.activeSessionIds.has(task.sessionId)) {
       // 不推进 nextRunAt：下个 tick 仍视为到期并重试。
-      console.warn(
+      log.warn(
         `[task-scheduler] 跳过：会话有正在进行的 run taskId=${task.id} sessionId=${task.sessionId}`
       );
       return;
@@ -163,7 +167,7 @@ export class TaskScheduler {
               lastRunAt: now.toISOString()
             };
       await this.store.updateScheduledTask(task.id, beforeRunUpdate);
-      console.info(
+      log.info(
         `[task-scheduler] 开始执行 taskId=${task.id} name=${task.name} kind=${task.kind} sessionId=${task.sessionId} fullAccess=${task.fullAccess}`
       );
       this.publishTaskEvent({
@@ -186,7 +190,7 @@ export class TaskScheduler {
       const runAbort = new AbortController();
       const deadline = new Promise<typeof TIMEOUT>((resolve) => {
         deadlineTimer = setTimeout(() => {
-          console.error(
+          log.error(
             `[task-scheduler] 执行超时（${this.runTimeoutMs}ms），强制结束 taskId=${task.id} runId=${runId ?? "未启动"}`
           );
           // 已知 runId 时显式中止(冗余但无害);并中止执行级信号,使尚未 run_started 的 run 也能收尾。
@@ -246,7 +250,7 @@ export class TaskScheduler {
           ) {
             // 无人值守：任何等待确认的工具一律拒绝（只读语义；fullAccess 下
             // 正常不会出现 pending，这里是防挂死兜底）。
-            console.info(
+            log.info(
               `[task-scheduler] 自动拒绝待审批工具 taskId=${task.id} tool=${event.toolCall.name}`
             );
             this.runner.approvals.decide(event.toolCall.id, { approved: false });
@@ -279,7 +283,7 @@ export class TaskScheduler {
         ...(errorText ? { error: errorText } : {}),
         occurredAt: this.now().toISOString()
       });
-      console.info(
+      log.info(
         `[task-scheduler] 执行结束 taskId=${task.id} status=${status}` +
           (errorText ? ` error=${errorText}` : "")
       );
@@ -298,7 +302,7 @@ export class TaskScheduler {
     if (!this.eventHub) {
       return;
     }
-    console.info("[task-scheduler] 发布定时任务事件", {
+    log.info("[task-scheduler] 发布定时任务事件", {
       type: event.type,
       taskId: event.taskId,
       sessionId: event.sessionId

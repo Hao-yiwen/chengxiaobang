@@ -12,6 +12,14 @@ describe("previewKindForPath", () => {
     expect(previewKindForPath(".prettierignore")).toBe("text");
     expect(previewKindForPath(".npmignore")).toBe("text");
   });
+
+  it("treats common rc and config dotfiles as previewable text", () => {
+    expect(previewKindForPath(".npmrc")).toBe("text");
+    expect(previewKindForPath(".yarnrc")).toBe("text");
+    expect(previewKindForPath(".prettierrc")).toBe("text");
+    expect(previewKindForPath(".editorconfig")).toBe("text");
+    expect(previewKindForPath(".DS_Store")).toBe("unsupported");
+  });
 });
 
 describe("localFilePathFromHref", () => {

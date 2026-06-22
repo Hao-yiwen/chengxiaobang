@@ -1,5 +1,9 @@
 import type { ApprovalDecision } from "@chengxiaobang/shared";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "agent/approval-queue" });
+
 /**
  * 泛化后的审批队列：决议从 boolean 升级为带 payload 的 ApprovalDecision
  * （计划调整意见和 AskUserQuestion 都携带 answer）。abort 与早到决议
@@ -18,7 +22,7 @@ export class ApprovalQueue {
     const early = this.earlyDecisions.get(toolCallId);
     if (early) {
       this.earlyDecisions.delete(toolCallId);
-      console.log(
+      log.info(
         `[approval-queue] 早到决议命中 toolCallId=${toolCallId} approved=${early.decision.approved}`
       );
       return Promise.resolve(early.decision);
@@ -26,13 +30,13 @@ export class ApprovalQueue {
     // 信号可能在 pending 事件发出之后、wait 注册之前就被中止（abort 竞态）：
     // 已中止的信号不会再触发 abort 事件，必须前置检查，否则 wait 永久挂起。
     if (signal.aborted) {
-      console.log(`[approval-queue] 信号已中止，直接拒绝 toolCallId=${toolCallId}`);
+      log.info(`[approval-queue] 信号已中止，直接拒绝 toolCallId=${toolCallId}`);
       return Promise.resolve({ approved: false });
     }
     return new Promise((resolve) => {
       const onAbort = (): void => {
         this.pending.delete(toolCallId);
-        console.log(`[approval-queue] 等待被中止 toolCallId=${toolCallId}`);
+        log.info(`[approval-queue] 等待被中止 toolCallId=${toolCallId}`);
         resolve({ approved: false });
       };
       signal.addEventListener("abort", onAbort, { once: true });
@@ -44,7 +48,7 @@ export class ApprovalQueue {
   }
 
   decide(toolCallId: string, decision: ApprovalDecision): boolean {
-    console.log(
+    log.info(
       `[approval-queue] 收到决议 toolCallId=${toolCallId} approved=${decision.approved}` +
         `${decision.answer ? " 含answer" : ""}${decision.editedSteps ? ` 含legacyEditedSteps(${decision.editedSteps.length})` : ""}`
     );
@@ -59,7 +63,7 @@ export class ApprovalQueue {
         const oldest = this.earlyDecisions.keys().next().value;
         if (oldest !== undefined) {
           this.earlyDecisions.delete(oldest);
-          console.warn(`[approval-queue] 早到决议超过上限，丢弃最旧项 toolCallId=${oldest}`);
+          log.warn(`[approval-queue] 早到决议超过上限，丢弃最旧项 toolCallId=${oldest}`);
         }
       }
       this.earlyDecisions.set(toolCallId, { decision, at: Date.now() });
@@ -76,7 +80,7 @@ export class ApprovalQueue {
     for (const [id, entry] of this.earlyDecisions) {
       if (now - entry.at > ApprovalQueue.EARLY_DECISION_TTL_MS) {
         this.earlyDecisions.delete(id);
-        console.warn(`[approval-queue] 清理过期早到决议 toolCallId=${id}`);
+        log.warn(`[approval-queue] 清理过期早到决议 toolCallId=${id}`);
       }
     }
   }
@@ -86,17 +90,17 @@ export class ApprovalQueue {
 export function normalizeDecision(name: string, decision: ApprovalDecision): ApprovalDecision {
   if (name === "AskUserQuestion") {
     if (decision.approvalScope) {
-      console.warn(`[approval-queue] AskUserQuestion 决议携带 approvalScope，已忽略`);
+      log.warn(`[approval-queue] AskUserQuestion 决议携带 approvalScope，已忽略`);
     }
     if (decision.approved && !decision.answer) {
-      console.warn(`[approval-queue] AskUserQuestion 决议缺少 answer，按拒绝处理`);
+      log.warn(`[approval-queue] AskUserQuestion 决议缺少 answer，按拒绝处理`);
       return { approved: false };
     }
     return { approved: decision.approved, answer: decision.answer };
   }
   if (name === "ExitPlanMode") {
     if (decision.approvalScope) {
-      console.warn(`[approval-queue] ExitPlanMode 决议携带 approvalScope，已忽略`);
+      log.warn(`[approval-queue] ExitPlanMode 决议携带 approvalScope，已忽略`);
     }
     // editedSteps 只为旧客户端保留；新版计划调整通过 answer 反馈给模型。
     return {
@@ -106,7 +110,7 @@ export function normalizeDecision(name: string, decision: ApprovalDecision): App
     };
   }
   if (decision.answer || decision.editedSteps) {
-    console.warn(`[approval-queue] 工具 ${name} 的决议携带无关 payload，已忽略`);
+    log.warn(`[approval-queue] 工具 ${name} 的决议携带无关 payload，已忽略`);
   }
   return {
     approved: decision.approved,

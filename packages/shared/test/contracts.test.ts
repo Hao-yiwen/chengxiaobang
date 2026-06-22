@@ -80,13 +80,17 @@ describe("gitChangesResultSchema", () => {
           path: "src/app.ts",
           scope: "staged",
           status: "MM",
-          diff: "diff --git a/src/app.ts b/src/app.ts\n+staged\n"
+          diff: "diff --git a/src/app.ts b/src/app.ts\n+staged\n",
+          additions: 1,
+          deletions: 0
         },
         {
           path: "src/app.ts",
           scope: "unstaged",
           status: "MM",
-          diff: "diff --git a/src/app.ts b/src/app.ts\n+unstaged\n"
+          diff: "diff --git a/src/app.ts b/src/app.ts\n+unstaged\n",
+          additions: 1,
+          deletions: 0
         }
       ]
     });
@@ -95,6 +99,20 @@ describe("gitChangesResultSchema", () => {
       "staged:src/app.ts",
       "unstaged:src/app.ts"
     ]);
+  });
+
+  it("允许无可展示文本 diff 的 Git 变更记录不带行数统计", () => {
+    const parsed = gitChangesResultSchema.parse({
+      isRepo: true,
+      files: [{ path: "blob.bin", scope: "unstaged", status: "??", diff: "" }]
+    });
+
+    expect(parsed.files[0]).toEqual({
+      path: "blob.bin",
+      scope: "unstaged",
+      status: "??",
+      diff: ""
+    });
   });
 
   it("拒绝缺少 scope 的 Git 变更记录", () => {

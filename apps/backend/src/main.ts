@@ -28,6 +28,10 @@ import { WechatConfigService } from "./wechat/wechat-config-service";
 import { WechatService } from "./wechat/wechat-service";
 import { defaultDataDir, defaultProviderConfigPath } from "./paths";
 
+import { getLogger } from "./logging/logger";
+
+const log = getLogger({ module: "main" });
+
 export interface BackendConfig {
   port: number;
   dataDir: string;
@@ -54,7 +58,7 @@ export async function startBackend(config: BackendConfig) {
   await mkdir(config.dataDir, { recursive: true });
   const authToken = config.token ?? randomUUID();
   if (!config.token) {
-    console.warn("[backend] 未提供访问 token，已生成本次进程临时 token");
+    log.warn("[backend] 未提供访问 token，已生成本次进程临时 token");
   }
   const store = new SqliteStateStore(join(config.dataDir, "chengxiaobang.sqlite"));
   await store.initialize();
@@ -92,7 +96,7 @@ export async function startBackend(config: BackendConfig) {
   let feishuServiceRef: FeishuService | undefined;
   // 长期记忆与 SQLite 同级落在 data-dir 下，跨所有会话共享。
   const memoryDir = join(config.dataDir, "memories");
-  console.info(`[backend] 长期记忆目录 ${memoryDir}`);
+  log.info(`[backend] 长期记忆目录 ${memoryDir}`);
   const runner = new AgentRunner(store, secrets, {
     providerRepository: providerConfigFile,
     memoryDir,
@@ -197,7 +201,12 @@ export function readCliConfig(
 if (isCliEntry()) {
   const config = readCliConfig();
   const backend = await startBackend(config);
-  console.log(JSON.stringify({ ok: true, port: backend.port, token: backend.token }));
+  log.info("后端启动完成", {
+    action: "backend.started",
+    ok: true,
+    port: backend.port,
+    token: backend.token
+  });
   let shuttingDown = false;
   let parentWatchdog: ParentProcessWatchdog | undefined;
   // Bun.serve 在部分直接启动场景下不会单独保持 CLI 进程，保留显式句柄避免启动后退出。
@@ -209,11 +218,11 @@ if (isCliEntry()) {
     shuttingDown = true;
     parentWatchdog?.stop();
     clearInterval(keepAlive);
-    console.info(`[backend] 开始关闭 reason=${reason}`);
+    log.info(`[backend] 开始关闭 reason=${reason}`);
     try {
       await backend.close();
     } catch (error) {
-      console.error(`[backend] 关闭失败 reason=${reason}: ${messageFromError(error)}`);
+      log.error(`[backend] 关闭失败 reason=${reason}: ${messageFromError(error)}`);
     } finally {
       process.exit(0);
     }
@@ -234,12 +243,12 @@ export function startParentProcessWatchdog(
   }
   const intervalMs = options.intervalMs ?? PARENT_PROCESS_WATCHDOG_INTERVAL_MS;
   const killProcess = options.killProcess ?? process.kill;
-  console.info(`[backend] 父进程 watchdog 启动 parentPid=${parentPid} intervalMs=${intervalMs}`);
+  log.info(`[backend] 父进程 watchdog 启动 parentPid=${parentPid} intervalMs=${intervalMs}`);
   const timer = setInterval(() => {
     if (isProcessAlive(parentPid, killProcess)) {
       return;
     }
-    console.warn(`[backend] 父进程已不可用 parentPid=${parentPid}，准备关闭后端`);
+    log.warn(`[backend] 父进程已不可用 parentPid=${parentPid}，准备关闭后端`);
     clearInterval(timer);
     void options.onParentLost("parent-lost");
   }, intervalMs);

@@ -1,15 +1,21 @@
+import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { GitChangeScope, GitChangesResult, GitFileChange } from "@chengxiaobang/shared";
+import { changeStatsFromPatch } from "./file-change";
 import { runCommand } from "./shell";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/git-changes" });
+
 const MAX_UNTRACKED_BYTES = 256 * 1024;
+const GIT_CAPTURE_MAX_BYTES = 4 * 1024 * 1024;
 
 /** runCommand 会合并登录 shell 的 stdout/stderr，所以只接收格式完整的行。 */
 const PORCELAIN_LINE = /^([ MADRCUT?!]{2}) (.+)$/;
 
-/** 关闭路径转义，确保中文等非 ASCII 文件名按原样返回。 */
-const GIT = "git -c core.quotePath=false";
+const GIT_BASE_ARGS = ["-c", "core.quotePath=false"];
 
 /** 解析 `git status --porcelain` 输出；重命名/复制条目取新路径。 */
 export function parsePorcelainStatus(text: string): Array<{ status: string; path: string }> {
@@ -33,7 +39,7 @@ export function parsePorcelainStatus(text: string): Array<{ status: string; path
     entries.push({ status, path: unquoteGitPath(path) });
   }
   if (skipped > 0) {
-    console.warn(`[git-changes] 跳过 ${skipped} 行非 porcelain 格式输出`);
+    log.warn(`[git-changes] 跳过 ${skipped} 行非 porcelain 格式输出`);
   }
   return entries;
 }
@@ -102,20 +108,73 @@ function looksBinary(buffer: Buffer): boolean {
   return false;
 }
 
+interface GitCommandResult {
+  output: string;
+  exitCode: number;
+  truncated?: boolean;
+}
+
+function runGit(args: string[], cwd: string): Promise<GitCommandResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", [...GIT_BASE_ARGS, ...args], {
+      cwd,
+      env: process.env
+    });
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let truncated = false;
+    const append = (chunk: Buffer) => {
+      if (truncated) {
+        return;
+      }
+      const remaining = GIT_CAPTURE_MAX_BYTES - bytes;
+      if (chunk.byteLength <= remaining) {
+        chunks.push(chunk);
+        bytes += chunk.byteLength;
+        return;
+      }
+      if (remaining > 0) {
+        chunks.push(chunk.subarray(0, remaining));
+        bytes = GIT_CAPTURE_MAX_BYTES;
+      }
+      truncated = true;
+      log.warn("[git-changes] git 命令输出超过单文件捕获上限，已截断", {
+        cwd,
+        args: safeGitArgsForLog(args),
+        maxBytes: GIT_CAPTURE_MAX_BYTES
+      });
+    };
+    child.stdout.on("data", append);
+    child.stderr.on("data", append);
+    child.on("error", reject);
+    child.on("close", (code) => {
+      resolve({
+        output: Buffer.concat(chunks).toString("utf8"),
+        exitCode: code ?? -1,
+        ...(truncated ? { truncated } : {})
+      });
+    });
+  });
+}
+
+function safeGitArgsForLog(args: string[]): string[] {
+  return args.map((arg) => (arg.length > 160 ? `${arg.slice(0, 160)}...` : arg));
+}
+
 /** 未跟踪文本文件没有 git diff 块，这里合成完整 unified patch 供前端解析。 */
 async function readUntrackedDiff(projectPath: string, relativePath: string): Promise<string> {
   const absolutePath = join(projectPath, relativePath);
   try {
     const info = await stat(absolutePath);
     if (!info.isFile()) {
-      console.debug("[git-changes] 未跟踪文件不生成文本 diff", {
+      log.debug("[git-changes] 未跟踪文件不生成文本 diff", {
         path: relativePath,
         reason: "not_file"
       });
       return "";
     }
     if (info.size > MAX_UNTRACKED_BYTES) {
-      console.debug("[git-changes] 未跟踪文件不生成文本 diff", {
+      log.debug("[git-changes] 未跟踪文件不生成文本 diff", {
         path: relativePath,
         reason: "too_large",
         size: info.size,
@@ -125,7 +184,7 @@ async function readUntrackedDiff(projectPath: string, relativePath: string): Pro
     }
     const buffer = await readFile(absolutePath);
     if (looksBinary(buffer)) {
-      console.debug("[git-changes] 未跟踪文件不生成文本 diff", {
+      log.debug("[git-changes] 未跟踪文件不生成文本 diff", {
         path: relativePath,
         reason: "binary",
         size: info.size
@@ -134,7 +193,7 @@ async function readUntrackedDiff(projectPath: string, relativePath: string): Pro
     }
     return createUntrackedFilePatch(relativePath, buffer.toString("utf8"));
   } catch (error) {
-    console.warn("[git-changes] 读取未跟踪文件失败", {
+    log.warn("[git-changes] 读取未跟踪文件失败", {
       path: relativePath,
       absolutePath,
       error: error instanceof Error ? error.message : String(error)
@@ -149,7 +208,7 @@ export async function detectGitRepository(projectPath: string): Promise<boolean>
   const isRepo =
     probe.exitCode === 0 && probe.output.split("\n").some((line) => line.trim() === "true");
   if (!isRepo) {
-    console.debug("[git-changes] 项目不是 Git 工作树", { projectPath, exitCode: probe.exitCode });
+    log.debug("[git-changes] 项目不是 Git 工作树", { projectPath, exitCode: probe.exitCode });
   }
   return isRepo;
 }
@@ -162,15 +221,15 @@ function hasScopeChange(status: string, scope: GitChangeScope): boolean {
   return code !== undefined && code !== " " && code !== "?" && code !== "!";
 }
 
-function logDiffCommandFailure(
+function logGitCommandFailure(
   scope: GitChangeScope,
-  result: Awaited<ReturnType<typeof runCommand>>,
+  result: GitCommandResult,
   projectPath: string
 ): void {
   if (result.exitCode === 0) {
     return;
   }
-  console.error("[git-changes] git diff 失败", {
+  log.error("[git-changes] git diff 失败", {
     projectPath,
     scope,
     exitCode: result.exitCode,
@@ -178,26 +237,17 @@ function logDiffCommandFailure(
   });
 }
 
-function createScopedChange(
+function createScopedChangeSummary(
   entry: { status: string; path: string },
   scope: GitChangeScope,
-  blocks: Map<string, string>,
-  projectPath: string
+  statsByPath: Map<string, GitChangeStats>
 ): GitFileChange {
-  const diff = blocks.get(entry.path) ?? "";
-  if (!diff) {
-    console.debug("[git-changes] 未找到可展示的 diff 块", {
-      projectPath,
-      scope,
-      path: entry.path,
-      status: entry.status
-    });
-  }
   return {
     path: entry.path,
     scope,
     status: entry.status,
-    diff
+    diff: "",
+    ...statsByPath.get(entry.path)
   };
 }
 
@@ -206,23 +256,25 @@ export async function collectGitChanges(projectPath: string): Promise<GitChanges
   if (!(await detectGitRepository(projectPath))) {
     return { isRepo: false, files: [] };
   }
-  const [status, unstaged, staged] = await Promise.all([
-    runCommand(`${GIT} status --porcelain`, projectPath),
-    runCommand(`${GIT} diff`, projectPath),
-    runCommand(`${GIT} diff --cached`, projectPath)
+  const [status, unstagedStats, stagedStats] = await Promise.all([
+    runGit(["status", "--porcelain"], projectPath),
+    runGit(["diff", "--numstat"], projectPath),
+    runGit(["diff", "--cached", "--numstat"], projectPath)
   ]);
   if (status.exitCode !== 0) {
-    console.error("[git-changes] git status 失败", {
+    log.error("[git-changes] git status 失败", {
       projectPath,
       exitCode: status.exitCode,
       output: status.output.slice(0, 200)
     });
     return { isRepo: true, files: [] };
   }
-  logDiffCommandFailure("unstaged", unstaged, projectPath);
-  logDiffCommandFailure("staged", staged, projectPath);
-  const stagedBlocks = splitUnifiedDiff(staged.exitCode === 0 ? staged.output : "");
-  const unstagedBlocks = splitUnifiedDiff(unstaged.exitCode === 0 ? unstaged.output : "");
+  logGitCommandFailure("unstaged", unstagedStats, projectPath);
+  logGitCommandFailure("staged", stagedStats, projectPath);
+  const stagedStatsByPath = parseGitNumstat(stagedStats.exitCode === 0 ? stagedStats.output : "");
+  const unstagedStatsByPath = parseGitNumstat(
+    unstagedStats.exitCode === 0 ? unstagedStats.output : ""
+  );
   const files: GitFileChange[] = [];
   const entries = parsePorcelainStatus(status.output);
   for (const entry of entries) {
@@ -230,24 +282,138 @@ export async function collectGitChanges(projectPath: string): Promise<GitChanges
       files.push({
         ...entry,
         scope: "unstaged",
-        diff: await readUntrackedDiff(projectPath, entry.path)
+        diff: ""
       });
       continue;
     }
     if (hasScopeChange(entry.status, "staged")) {
-      files.push(createScopedChange(entry, "staged", stagedBlocks, projectPath));
+      files.push(createScopedChangeSummary(entry, "staged", stagedStatsByPath));
     }
     if (hasScopeChange(entry.status, "unstaged")) {
-      files.push(createScopedChange(entry, "unstaged", unstagedBlocks, projectPath));
+      files.push(createScopedChangeSummary(entry, "unstaged", unstagedStatsByPath));
     }
   }
-  console.info("[git-changes] Git 变更收集完成", {
+  log.info("[git-changes] Git 变更收集完成", {
     projectPath,
+    mode: "summary",
     uniqueFileCount: new Set(entries.map((entry) => entry.path)).size,
     stagedCount: files.filter((file) => file.scope === "staged").length,
-    unstagedCount: files.filter((file) => file.scope === "unstaged").length
+    unstagedCount: files.filter((file) => file.scope === "unstaged").length,
+    additions: files.reduce((total, file) => total + (file.additions ?? 0), 0),
+    deletions: files.reduce((total, file) => total + (file.deletions ?? 0), 0)
   });
   return { isRepo: true, files };
+}
+
+export async function collectGitFileDiff(
+  projectPath: string,
+  input: { scope: GitChangeScope; path: string }
+): Promise<GitFileChange | undefined> {
+  if (!(await detectGitRepository(projectPath))) {
+    return undefined;
+  }
+  const status = await runGit(["status", "--porcelain"], projectPath);
+  if (status.exitCode !== 0) {
+    log.error("[git-changes] git status 失败", {
+      projectPath,
+      exitCode: status.exitCode,
+      output: status.output.slice(0, 200)
+    });
+    return undefined;
+  }
+  const entry = parsePorcelainStatus(status.output).find(
+    (item) => item.path === input.path && hasScopeChange(item.status, input.scope)
+  );
+  if (!entry) {
+    log.warn("[git-changes] 单文件 diff 请求未匹配到变更", {
+      projectPath,
+      path: input.path,
+      scope: input.scope
+    });
+    return undefined;
+  }
+
+  let diff = "";
+  let reason: string | undefined;
+  if (entry.status === "??") {
+    diff = await readUntrackedDiff(projectPath, input.path);
+    if (!diff) {
+      reason = "untracked_no_text_diff";
+    }
+  } else {
+    const args =
+      input.scope === "staged"
+        ? ["diff", "--cached", "--", input.path]
+        : ["diff", "--", input.path];
+    const result = await runGit(args, projectPath);
+    if (result.exitCode !== 0) {
+      log.error("[git-changes] 单文件 git diff 失败", {
+        projectPath,
+        path: input.path,
+        scope: input.scope,
+        exitCode: result.exitCode,
+        output: result.output.slice(0, 200)
+      });
+      throw new Error("git diff 失败");
+    }
+    diff = splitUnifiedDiff(result.output).get(input.path) ?? "";
+    if (!diff) {
+      reason = result.truncated ? "truncated" : "no_text_diff";
+    }
+  }
+
+  const file: GitFileChange = {
+    path: input.path,
+    scope: input.scope,
+    status: entry.status,
+    diff,
+    ...statsFromTextDiff(diff)
+  };
+  log.info("[git-changes] 单文件 Git diff 收集完成", {
+    projectPath,
+    path: input.path,
+    scope: input.scope,
+    status: entry.status,
+    additions: file.additions,
+    deletions: file.deletions,
+    emptyDiff: diff.length === 0,
+    reason
+  });
+  return file;
+}
+
+function statsFromTextDiff(diff: string): Pick<GitFileChange, "additions" | "deletions"> {
+  if (!diff) {
+    return {};
+  }
+  const stats = changeStatsFromPatch(diff);
+  if (stats.additions === 0 && stats.deletions === 0) {
+    return {};
+  }
+  return stats;
+}
+
+type GitChangeStats = { additions: number; deletions: number };
+
+function parseGitNumstat(text: string): Map<string, GitChangeStats> {
+  const stats = new Map<string, GitChangeStats>();
+  for (const line of text.split("\n")) {
+    if (!line.trim()) {
+      continue;
+    }
+    const [added, deleted, ...pathParts] = line.split("\t");
+    const path = pathParts.join("\t");
+    if (!path || added === "-" || deleted === "-") {
+      continue;
+    }
+    const additions = Number(added);
+    const deletions = Number(deleted);
+    if (!Number.isFinite(additions) || !Number.isFinite(deletions)) {
+      continue;
+    }
+    stats.set(unquoteGitPath(path), { additions, deletions });
+  }
+  return stats;
 }
 
 function createUntrackedFilePatch(relativePath: string, content: string): string {

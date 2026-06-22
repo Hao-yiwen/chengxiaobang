@@ -3,6 +3,10 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { deriveTodoState, todoWriteArgsSchema, type ToolCall } from "@chengxiaobang/shared";
 import { textResult } from "./tool-result";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/todo-tools" });
+
 const todoStatusParams = Type.Union([
   Type.Literal("pending"),
   Type.Literal("in_progress"),
@@ -67,10 +71,10 @@ export function createTodoTools(runtime: TodoToolRuntime = {}): AgentTool<any>[]
     execute: async (_toolCallId, params) => {
       const parsed = todoWriteArgsSchema.safeParse(params);
       if (!parsed.success) {
-        console.warn("[todo-tools] TodoWrite 参数非法", { error: parsed.error.message });
+        log.warn("[todo-tools] TodoWrite 参数非法", { error: parsed.error.message });
         throw new Error("TodoWrite 参数非法：" + parsed.error.message);
       }
-      console.info("[todo-tools] 写入 todo 快照", {
+      log.info("[todo-tools] 写入 todo 快照", {
         itemCount: parsed.data.todos.length,
         inProgressCount: parsed.data.todos.filter((todo) => todo.status === "in_progress").length
       });

@@ -6,6 +6,10 @@ import type {
 } from "@earendil-works/pi-ai";
 import type { StoredMessage } from "../repository/state-store";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "agent/history" });
+
 /**
  * 从持久化消息行重建 pi 对话。
  *
@@ -26,7 +30,7 @@ export function buildAgentMessages(
     // 压缩指针悬空(指向的消息已被回退删除):降级为截断到最近一条摘要行,
     // 避免 cutoff 失效导致早期历史连同摘要一起被全量回灌模型(可能直接超上限)。
     cutoffIndex = summary ? rows.indexOf(summary) : -1;
-    console.warn("[history] compactedUpToMessageId 悬空，降级到最近摘要行", {
+    log.warn("[history] compactedUpToMessageId 悬空，降级到最近摘要行", {
       compactedUpToMessageId,
       cutoffIndex
     });

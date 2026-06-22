@@ -157,6 +157,51 @@ describe("toTokenUsage", () => {
   });
 });
 
+describe("buildModelStreamOptions", () => {
+  it("defaults plain and reasoning model requests to five retries", () => {
+    expect(buildModelStreamOptions(provider())).toMatchObject({ maxRetries: 5 });
+    expect(buildModelStreamOptions(provider({ reasoningMode: "high" }))).toMatchObject({
+      maxRetries: 5,
+      reasoning: "high"
+    });
+  });
+
+  it("keeps vendor payload hooks while applying the retry default", async () => {
+    const kimi = provider({
+      id: "kimi",
+      kind: "kimi",
+      name: "Kimi",
+      baseURL: "https://api.moonshot.ai/v1",
+      model: "kimi-k2.6",
+      reasoningMode: "off"
+    });
+    const kimiOptions = buildModelStreamOptions(kimi);
+    expect(kimiOptions.maxRetries).toBe(5);
+    await expect(
+      Promise.resolve(kimiOptions.onPayload?.({ model: kimi.model }, buildModel(kimi)))
+    ).resolves.toMatchObject({ thinking: { type: "disabled" } });
+
+    const minimax = provider({
+      id: "minimax",
+      kind: "minimax",
+      name: "MiniMax",
+      baseURL: "https://api.minimaxi.com/v1",
+      model: "MiniMax-M3",
+      reasoningMode: "auto"
+    });
+    const minimaxOptions = buildModelStreamOptions(minimax);
+    expect(minimaxOptions.maxRetries).toBe(5);
+    await expect(
+      Promise.resolve(
+        minimaxOptions.onPayload?.({ model: minimax.model }, buildModel(minimax))
+      )
+    ).resolves.toMatchObject({
+      thinking: { type: "adaptive" },
+      reasoning_split: true
+    });
+  });
+});
+
 describe("testProvider", () => {
   it("requires an api key and probes /models", async () => {
     await expect(testProvider(provider())).rejects.toThrow("请先填写 API Key");

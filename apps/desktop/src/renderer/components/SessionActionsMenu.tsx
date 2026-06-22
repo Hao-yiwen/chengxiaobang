@@ -46,16 +46,12 @@ export function SessionActionsMenu({ session }: { session: Session }) {
   const setNotice = useAppStore((state) => state.setNotice);
   const [renameOpen, setRenameOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState(session.title);
-  const [copiedKey, setCopiedKey] = useState<"title" | "markdown" | undefined>();
+  const [copiedKey, setCopiedKey] = useState<"title" | "sessionId" | "markdown" | undefined>();
 
   const lastMessage = useMemo(() => latestForkableMessage(messages), [messages]);
-  const lastUserMessage = useMemo(
-    () => latestForkableMessage(messages.filter((message) => message.role === "user")),
-    [messages]
-  );
   const forkDisabled = isRunning;
 
-  async function copyText(kind: "title" | "markdown", text: string): Promise<void> {
+  async function copyText(kind: "title" | "sessionId" | "markdown", text: string): Promise<void> {
     if (!navigator.clipboard?.writeText) {
       console.warn("[session-actions-menu] 复制失败：当前环境没有剪贴板能力", {
         sessionId: session.id,
@@ -105,14 +101,14 @@ export function SessionActionsMenu({ session }: { session: Session }) {
     setRenameOpen(false);
   }
 
-  async function forkFrom(message: Message | undefined, source: "last" | "lastUser"): Promise<void> {
+  async function forkFrom(message: Message | undefined): Promise<void> {
     if (!message || forkDisabled) {
       return;
     }
     console.info("[session-actions-menu] 从当前会话创建分支", {
       sessionId: session.id,
       messageId: message.id,
-      source
+      source: "last"
     });
     await forkSession(message.id);
   }
@@ -174,6 +170,14 @@ export function SessionActionsMenu({ session }: { session: Session }) {
               <span>{t("sessionMenu.copy")}</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="min-w-[180px]">
+              <DropdownMenuItem onSelect={() => void copyText("sessionId", session.id)}>
+                {copiedKey === "sessionId" ? (
+                  <CheckMediumIcon className="size-4" />
+                ) : (
+                  <CopyIcon className="size-4" />
+                )}
+                <span>{t("sessionMenu.copySessionId")}</span>
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void copyText("title", session.title)}>
                 {copiedKey === "title" ? (
                   <CheckMediumIcon className="size-4" />
@@ -200,17 +204,10 @@ export function SessionActionsMenu({ session }: { session: Session }) {
             <DropdownMenuSubContent className="min-w-[190px]">
               <DropdownMenuItem
                 disabled={forkDisabled || !lastMessage}
-                onSelect={() => void forkFrom(lastMessage, "last")}
+                onSelect={() => void forkFrom(lastMessage)}
               >
                 <PullRequestOpenIcon className="size-4" />
                 <span>{t("sessionMenu.branchLastMessage")}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={forkDisabled || !lastUserMessage}
-                onSelect={() => void forkFrom(lastUserMessage, "lastUser")}
-              >
-                <PullRequestOpenIcon className="size-4" />
-                <span>{t("sessionMenu.branchLastUserMessage")}</span>
               </DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuSub>

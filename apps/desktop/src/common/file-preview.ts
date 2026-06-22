@@ -76,21 +76,31 @@ const CODE_EXTENSIONS = new Set([
 ]);
 const TEXT_EXTENSIONS = new Set([
   "conf",
+  "babelrc",
+  "browserslistrc",
   "dockerignore",
+  "editorconfig",
   "env",
+  "eslintrc",
   "eslintignore",
   "gitignore",
   "ini",
   "lock",
   "log",
+  "node-version",
+  "npmrc",
   "npmignore",
   "prettierignore",
+  "prettierrc",
+  "stylelintrc",
   "sql",
   "text",
   "toml",
+  "tool-versions",
   "txt",
   "yaml",
-  "yml"
+  "yml",
+  "yarnrc"
 ]);
 
 const DESCRIPTORS: Record<PreviewKind, PreviewDescriptor> = {
@@ -108,6 +118,20 @@ const DESCRIPTORS: Record<PreviewKind, PreviewDescriptor> = {
   presentation: { kind: "presentation", label: "演示文稿", canPreview: true, binary: true },
   unsupported: { kind: "unsupported", label: "未知文件", canPreview: false, binary: true }
 };
+
+// 可作为产物卡展示的预览类型。这里使用归一化后的 kind，不直接列扩展名。
+const ARTIFACT_PREVIEW_KINDS = new Set<PreviewKind>([
+  "html",
+  "pdf",
+  "image",
+  "audio",
+  "video",
+  "spreadsheet",
+  "docx",
+  "presentation",
+  "markdown",
+  "json"
+]);
 
 export function basenameOf(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, "");
@@ -153,6 +177,10 @@ export function previewDescriptorForPath(path: string): PreviewDescriptor {
 
 export function previewDescriptorForKind(kind: PreviewKind): PreviewDescriptor {
   return DESCRIPTORS[kind];
+}
+
+export function isArtifactPreviewKind(kind: PreviewKind): boolean {
+  return ARTIFACT_PREVIEW_KINDS.has(kind);
 }
 
 export function isTextualPreviewKind(kind: PreviewKind): boolean {

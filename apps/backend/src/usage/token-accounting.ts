@@ -1,5 +1,9 @@
 import { getEncoding, type Tiktoken } from "js-tiktoken";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "usage/token-accounting" });
+
 export type TokenCountSource = "js_tiktoken" | "fallback_estimate";
 
 export interface TokenCountResult {
@@ -33,7 +37,7 @@ export class TokenAccountingService {
         source: "js_tiktoken"
       };
     } catch (error) {
-      console.warn("[token-accounting] tiktoken 计数失败，回退到字符估算", {
+      log.warn("[token-accounting] tiktoken 计数失败，回退到字符估算", {
         error: error instanceof Error ? error.message : String(error),
         chars: serialized.length
       });

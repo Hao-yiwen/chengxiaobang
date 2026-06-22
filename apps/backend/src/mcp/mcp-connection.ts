@@ -8,6 +8,10 @@ import { resolveCommand } from "./runtime-resolver";
 import { bridgeMcpTool, type McpCallResult } from "./mcp-tool-bridge";
 import type { McpServerStatus, McpToolHandle, ResolvedMcpServer } from "./types";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "mcp/mcp-connection" });
+
 const CONNECT_TIMEOUT_MS = 15_000;
 const CALL_TIMEOUT_MS = 60_000;
 /** 每个 server 最多采集的 stderr 行数，避免噪声刷屏。 */
@@ -67,7 +71,7 @@ export class McpConnection {
     if (command.unsupported) {
       this.status = "unsupported";
       this.lastError = command.reason;
-      console.warn("[mcp] 跳过不支持的 MCP server", {
+      log.warn("[mcp] 跳过不支持的 MCP server", {
         key: this.key,
         command: resolved.command,
         reason: command.reason
@@ -75,7 +79,7 @@ export class McpConnection {
       return;
     }
 
-    console.info("[mcp] 启动 MCP server", {
+    log.info("[mcp] 启动 MCP server", {
       key: this.key,
       command: command.command,
       argsCount: command.args.length,
@@ -91,11 +95,11 @@ export class McpConnection {
     });
     transport.stderr?.on("data", (chunk: Buffer) => this.onStderr(chunk));
     transport.onerror = (error) => {
-      console.error("[mcp] MCP transport 错误", { key: this.key, error: error.message });
+      log.error("[mcp] MCP transport 错误", { key: this.key, error: error.message });
     };
     transport.onclose = () => {
       if (this.status === "ready") {
-        console.warn("[mcp] MCP server 连接关闭", { key: this.key, pid: this.pid });
+        log.warn("[mcp] MCP server 连接关闭", { key: this.key, pid: this.pid });
         this.status = "closed";
       }
     };
@@ -113,7 +117,7 @@ export class McpConnection {
         inputSchema: tool.inputSchema
       }));
       this.status = "ready";
-      console.info("[mcp] MCP server 就绪", {
+      log.info("[mcp] MCP server 就绪", {
         key: this.key,
         pid: this.pid,
         toolCount: this.handles.length
@@ -121,7 +125,7 @@ export class McpConnection {
     } catch (error) {
       this.status = "failed";
       this.lastError = error instanceof Error ? error.message : String(error);
-      console.error("[mcp] MCP server 连接失败", { key: this.key, error: this.lastError });
+      log.error("[mcp] MCP server 连接失败", { key: this.key, error: this.lastError });
       await this.close().catch(() => undefined);
     }
   }
@@ -149,21 +153,21 @@ export class McpConnection {
     if (!this.client || this.status !== "ready") {
       throw new Error(`MCP server ${this.key} 未就绪，无法调用工具 ${toolName}`);
     }
-    console.info("[mcp] 调用 MCP 工具", { key: this.key, tool: toolName });
+    log.info("[mcp] 调用 MCP 工具", { key: this.key, tool: toolName });
     try {
       const result = await this.client.callTool(
         { name: toolName, arguments: args },
         undefined,
         { signal, timeout: CALL_TIMEOUT_MS }
       );
-      console.info("[mcp] MCP 工具完成", {
+      log.info("[mcp] MCP 工具完成", {
         key: this.key,
         tool: toolName,
         isError: Boolean(result.isError)
       });
       return result as McpCallResult;
     } catch (error) {
-      console.error("[mcp] MCP 工具调用失败", {
+      log.error("[mcp] MCP 工具调用失败", {
         key: this.key,
         tool: toolName,
         error: error instanceof Error ? error.message : String(error)
@@ -176,7 +180,7 @@ export class McpConnection {
     try {
       await this.client?.close();
     } catch (error) {
-      console.warn("[mcp] 关闭 MCP client 失败", {
+      log.warn("[mcp] 关闭 MCP client 失败", {
         key: this.key,
         error: error instanceof Error ? error.message : String(error)
       });
@@ -197,6 +201,6 @@ export class McpConnection {
       return;
     }
     this.stderrLines += 1;
-    console.warn("[mcp] MCP server stderr", { key: this.key, pid: this.pid, line: line.slice(0, 500) });
+    log.warn("[mcp] MCP server stderr", { key: this.key, pid: this.pid, line: line.slice(0, 500) });
   }
 }

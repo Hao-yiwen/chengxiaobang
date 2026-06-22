@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 import { nowIso } from "@chengxiaobang/shared";
 import type { StateStore } from "../repository/state-store";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "agent/project-approval-trust" });
+
 const SETTINGS_KEY = "approval.projectTrustedToolCalls.v1";
 
 type SettingsStore = Pick<StateStore, "getSetting" | "setSetting">;
@@ -39,7 +43,7 @@ export class ProjectApprovalTrustService {
         rule.argsHash === argsHash
     );
     if (trusted) {
-      console.info("[project-approval-trust] 命中项目级信任规则", {
+      log.info("[project-approval-trust] 命中项目级信任规则", {
         projectId: input.projectId,
         toolName: input.toolName,
         argsHash
@@ -50,7 +54,7 @@ export class ProjectApprovalTrustService {
 
   async trust(input: ProjectApprovalTrustInput): Promise<boolean> {
     if (!input.projectId) {
-      console.warn("[project-approval-trust] 缺少项目，无法记录项目级信任规则", {
+      log.warn("[project-approval-trust] 缺少项目，无法记录项目级信任规则", {
         toolName: input.toolName
       });
       return false;
@@ -65,7 +69,7 @@ export class ProjectApprovalTrustService {
           rule.argsHash === argsHash
       )
     ) {
-      console.debug("[project-approval-trust] 项目级信任规则已存在", {
+      log.debug("[project-approval-trust] 项目级信任规则已存在", {
         projectId: input.projectId,
         toolName: input.toolName,
         argsHash
@@ -79,7 +83,7 @@ export class ProjectApprovalTrustService {
       createdAt: nowIso()
     });
     await this.store.setSetting(SETTINGS_KEY, JSON.stringify(rules));
-    console.info("[project-approval-trust] 已记录项目级信任规则", {
+    log.info("[project-approval-trust] 已记录项目级信任规则", {
       projectId: input.projectId,
       toolName: input.toolName,
       argsHash
@@ -99,12 +103,12 @@ export class ProjectApprovalTrustService {
     try {
       const parsed = JSON.parse(raw) as unknown;
       if (!Array.isArray(parsed)) {
-        console.warn("[project-approval-trust] settings 格式非法，已忽略");
+        log.warn("[project-approval-trust] settings 格式非法，已忽略");
         return [];
       }
       return parsed.filter(isRule);
     } catch (error) {
-      console.warn("[project-approval-trust] settings JSON 解析失败，已忽略", {
+      log.warn("[project-approval-trust] settings JSON 解析失败，已忽略", {
         error: error instanceof Error ? error.message : String(error)
       });
       return [];

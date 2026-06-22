@@ -18,6 +18,10 @@ import { builtinResourceRoot } from "../paths";
 import { readSkillDir } from "./skill-market-service";
 import { loadPluginCommands } from "./plugin-commands";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/plugin-service" });
+
 /** 已启用插件名集合，JSON 数组存 settings KV。 */
 const ENABLED_KEY = "plugins.enabled";
 /** 各插件的 userConfig 取值，JSON 对象 `{[plugin]:{[key]:value}}` 存 settings KV。 */
@@ -104,7 +108,7 @@ export class PluginService {
     const [discovered, enabled] = await Promise.all([this.discover(), this.enabledPluginNames()]);
     const hit = discovered.find((plugin) => plugin.name === name);
     if (!hit) {
-      console.warn(`[plugin] 未找到插件详情 name=${name}`);
+      log.warn(`[plugin] 未找到插件详情 name=${name}`);
       return undefined;
     }
     const [summary, skills, commands, mcpServerNames, configValues] = await Promise.all([
@@ -136,7 +140,7 @@ export class PluginService {
       const parsed = JSON.parse(raw);
       return new Set(Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : []);
     } catch (error) {
-      console.warn(`[plugin] 启用集合解析失败，按空集处理: ${String(error)}`);
+      log.warn(`[plugin] 启用集合解析失败，按空集处理: ${String(error)}`);
       return new Set();
     }
   }
@@ -153,7 +157,7 @@ export class PluginService {
       current.delete(name);
     }
     await this.store.setSetting(ENABLED_KEY, JSON.stringify([...current].sort()));
-    console.info(`[plugin] ${enabled ? "启用" : "停用"}插件 name=${name}`);
+    log.info(`[plugin] ${enabled ? "启用" : "停用"}插件 name=${name}`);
     return this.list();
   }
 
@@ -178,7 +182,7 @@ export class PluginService {
     const all = await this.allConfigValues();
     all[name] = values;
     await this.store.setSetting(OPTIONS_KEY, JSON.stringify(all));
-    console.info(`[plugin] 更新插件配置 name=${name} keys=${Object.keys(values).join(",") || "(空)"}`);
+    log.info(`[plugin] 更新插件配置 name=${name} keys=${Object.keys(values).join(",") || "(空)"}`);
     const updated = await this.getDetail(name);
     if (!updated) {
       throw new PluginError(`更新配置后未能读取插件详情 name=${name}`);
@@ -226,7 +230,7 @@ export class PluginService {
       await mkdir(this.installedRoot, { recursive: true });
       await rm(dest, { recursive: true, force: true });
       await cp(manifestDir, dest, { recursive: true });
-      console.info(
+      log.info(
         `[plugin] 安装插件成功 name=${manifest.name} from=${input.url ?? input.path} dest=${dest}`
       );
       return this.toSummary({ name: manifest.name, source: "installed", root: dest, manifest }, false);
@@ -259,7 +263,7 @@ export class PluginService {
       delete all[name];
       await this.store.setSetting(OPTIONS_KEY, JSON.stringify(all));
     }
-    console.info(`[plugin] 卸载插件 name=${name} root=${hit.root}`);
+    log.info(`[plugin] 卸载插件 name=${name} root=${hit.root}`);
     return true;
   }
 
@@ -288,14 +292,14 @@ export class PluginService {
       const parsed = JSON.parse(raw);
       return parsed && typeof parsed === "object" ? (parsed as Record<string, PluginConfigValues>) : {};
     } catch (error) {
-      console.warn(`[plugin] 配置解析失败，按空处理: ${String(error)}`);
+      log.warn(`[plugin] 配置解析失败，按空处理: ${String(error)}`);
       return {};
     }
   }
 
   private async downloadAndExtract(url: string, tempDir: string): Promise<string> {
     const zipUrl = resolvePluginZipballUrl(url);
-    console.info(`[plugin] 下载插件 zipball url=${zipUrl}`);
+    log.info(`[plugin] 下载插件 zipball url=${zipUrl}`);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), PLUGIN_DOWNLOAD_TIMEOUT_MS);
     let buffer: Buffer;
@@ -339,14 +343,14 @@ async function readManifest(pluginDir: string): Promise<PluginManifest | undefin
     try {
       json = JSON.parse(raw);
     } catch (error) {
-      console.warn(`[plugin] plugin.json 不是合法 JSON path=${manifestPath}: ${String(error)}`);
+      log.warn(`[plugin] plugin.json 不是合法 JSON path=${manifestPath}: ${String(error)}`);
       continue;
     }
     const parsed = pluginManifestSchema.safeParse(json);
     if (parsed.success) {
       return parsed.data;
     }
-    console.warn(`[plugin] manifest 校验失败 path=${manifestPath}: ${parsed.error.message}`);
+    log.warn(`[plugin] manifest 校验失败 path=${manifestPath}: ${parsed.error.message}`);
   }
   return undefined;
 }
@@ -445,7 +449,7 @@ async function readResponseBufferWithLimit(response: Response, maxBytes: number)
     total += value.byteLength;
     if (total > maxBytes) {
       await reader.cancel().catch(() => undefined);
-      console.warn("[plugin] 插件包超过大小上限，已中止下载", { maxBytes, totalBytes: total });
+      log.warn("[plugin] 插件包超过大小上限，已中止下载", { maxBytes, totalBytes: total });
       throw new PluginError(`插件包超过大小上限（${formatBytes(maxBytes)}）`);
     }
     chunks.push(value);

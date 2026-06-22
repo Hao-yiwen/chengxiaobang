@@ -22,7 +22,19 @@ export default defineConfig({
     "hono",
     "adm-zip",
     "js-yaml",
-    "js-tiktoken"
+    "js-tiktoken",
+    "pino",
+    "@pinojs/redact",
+    "atomic-sleep",
+    "on-exit-leak-free",
+    "pino-abstract-transport",
+    "pino-std-serializers",
+    "process-warning",
+    "quick-format-unescaped",
+    "real-require",
+    "safe-stable-stringify",
+    "sonic-boom",
+    "thread-stream"
   ],
   // Optional native peers of ws (pulled in via the lark SDK); ws degrades
   // gracefully at runtime when they're absent, but esbuild must not resolve them.

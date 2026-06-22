@@ -2,6 +2,10 @@ import { lstat, mkdir, readFile, readdir, realpath, stat } from "node:fs/promise
 import { basename, dirname, isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
 import type { ProjectFileEntry } from "@chengxiaobang/shared";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/workspace" });
+
 /** Build-output and dependency dirs that file walks always skip. */
 const IGNORED_DIRS = new Set([
   "node_modules",
@@ -97,7 +101,7 @@ export function resolveToolPath(
   try {
     return { target: safeResolve(base, targetPath, platform), outsideWorkspace: false };
   } catch (error) {
-    console.warn("[workspace] 拒绝越界的相对工具路径", { basePath: base, targetPath });
+    log.warn("[workspace] 拒绝越界的相对工具路径", { basePath: base, targetPath });
     throw error;
   }
 }
@@ -108,13 +112,13 @@ export async function resolveExistingWorkspacePath(
 ): Promise<string> {
   const base = await realpath(resolve(basePath));
   if (isAbsolute(targetPath)) {
-    console.warn("[workspace] 拒绝工具访问显式绝对路径", { basePath: base, targetPath });
+    log.warn("[workspace] 拒绝工具访问显式绝对路径", { basePath: base, targetPath });
     throw new Error("路径超出当前项目范围");
   }
   const target = safeResolve(base, targetPath);
   const resolvedTarget = await realpath(target);
   if (!isSameOrChildPath(base, resolvedTarget)) {
-    console.warn("[workspace] 拒绝访问真实路径超出工作目录的目标", {
+    log.warn("[workspace] 拒绝访问真实路径超出工作目录的目标", {
       basePath: base,
       targetPath,
       resolvedTarget
@@ -131,7 +135,7 @@ export async function resolveWritableWorkspacePath(
 ): Promise<string> {
   const base = await realpath(resolve(basePath));
   if (isAbsolute(targetPath)) {
-    console.warn("[workspace] 拒绝工具写入显式绝对路径", { basePath: base, targetPath });
+    log.warn("[workspace] 拒绝工具写入显式绝对路径", { basePath: base, targetPath });
     throw new Error("路径超出当前项目范围");
   }
   const target = safeResolve(base, targetPath);
@@ -143,7 +147,7 @@ export async function resolveWritableWorkspacePath(
   try {
     const resolvedTarget = await realpath(target);
     if (!isSameOrChildPath(base, resolvedTarget)) {
-      console.warn("[workspace] 拒绝写入真实路径超出工作目录的目标", {
+      log.warn("[workspace] 拒绝写入真实路径超出工作目录的目标", {
         basePath: base,
         targetPath,
         resolvedTarget
@@ -157,7 +161,7 @@ export async function resolveWritableWorkspacePath(
   }
   const resolvedParent = await realpath(parent);
   if (!isSameOrChildPath(base, resolvedParent)) {
-    console.warn("[workspace] 拒绝写入真实父目录超出工作目录的目标", {
+    log.warn("[workspace] 拒绝写入真实父目录超出工作目录的目标", {
       basePath: base,
       targetPath,
       resolvedParent
@@ -173,7 +177,7 @@ export async function createWorkspaceDirectory(
 ): Promise<string> {
   const base = await realpath(resolve(basePath));
   if (isAbsolute(targetPath)) {
-    console.warn("[workspace] 拒绝工具创建显式绝对路径目录", { basePath: base, targetPath });
+    log.warn("[workspace] 拒绝工具创建显式绝对路径目录", { basePath: base, targetPath });
     throw new Error("路径超出当前项目范围");
   }
   const target = safeResolve(base, targetPath);
@@ -181,7 +185,7 @@ export async function createWorkspaceDirectory(
   await mkdir(target, { recursive: true });
   const resolvedTarget = await realpath(target);
   if (!isSameOrChildPath(base, resolvedTarget)) {
-    console.warn("[workspace] 拒绝创建真实路径超出工作目录的目录", {
+    log.warn("[workspace] 拒绝创建真实路径超出工作目录的目录", {
       basePath: base,
       targetPath,
       resolvedTarget
@@ -198,7 +202,7 @@ async function assertNearestExistingAncestorInside(base: string, target: string)
       await lstat(current);
       const resolved = await realpath(current);
       if (!isSameOrChildPath(base, resolved)) {
-        console.warn("[workspace] 拒绝穿过真实路径超出工作目录的父级", {
+        log.warn("[workspace] 拒绝穿过真实路径超出工作目录的父级", {
           basePath: base,
           target,
           ancestor: current,

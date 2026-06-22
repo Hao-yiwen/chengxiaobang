@@ -7,6 +7,10 @@ import {
 import { PluginError } from "../../tools/plugin-service";
 import type { AppContext } from "../context";
 
+import { getLogger } from "../../logging/logger";
+
+const log = getLogger({ module: "api/routes/plugins" });
+
 export function pluginRoutes(context: AppContext): Hono {
   const app = new Hono();
 
@@ -38,7 +42,7 @@ export function pluginRoutes(context: AppContext): Hono {
       return c.json({ plugin });
     } catch (error) {
       if (error instanceof PluginError) {
-        console.warn(
+        log.warn(
           `[plugins-routes] 安装插件失败 input=${JSON.stringify(input)}: ${error.message}`
         );
         return c.json({ error: error.message }, 400);
@@ -56,7 +60,7 @@ export function pluginRoutes(context: AppContext): Hono {
       return c.json({ uninstalled: await context.pluginService.uninstall(name) });
     } catch (error) {
       if (error instanceof PluginError) {
-        console.warn(`[plugins-routes] 卸载插件失败 name=${name}: ${error.message}`);
+        log.warn(`[plugins-routes] 卸载插件失败 name=${name}: ${error.message}`);
         return c.json({ error: error.message }, 400);
       }
       throw error;
@@ -74,7 +78,7 @@ export function pluginRoutes(context: AppContext): Hono {
       return c.json({ plugins });
     } catch (error) {
       if (error instanceof PluginError) {
-        console.warn(`[plugins-routes] 切换插件启停失败 name=${name}: ${error.message}`);
+        log.warn(`[plugins-routes] 切换插件启停失败 name=${name}: ${error.message}`);
         return c.json({ error: error.message }, 400);
       }
       throw error;
@@ -92,7 +96,7 @@ export function pluginRoutes(context: AppContext): Hono {
       return c.json({ plugin });
     } catch (error) {
       if (error instanceof PluginError) {
-        console.warn(`[plugins-routes] 更新插件配置失败 name=${name}: ${error.message}`);
+        log.warn(`[plugins-routes] 更新插件配置失败 name=${name}: ${error.message}`);
         return c.json({ error: error.message }, 400);
       }
       throw error;

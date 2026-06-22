@@ -16,6 +16,10 @@ import {
   ForkWorkspaceCopyError
 } from "../session-workspace-copy";
 
+import { getLogger } from "../../logging/logger";
+
+const log = getLogger({ module: "api/routes/sessions" });
+
 /** The payload column is model-context internals — never expose it to clients. */
 function toClientMessage({ payload: _payload, ...message }: StoredMessage): Message {
   return message;
@@ -36,7 +40,7 @@ export function sessionRoutes(context: AppContext): Hono {
     const limitParam = c.req.query("limit");
     const limit = limitParam === undefined ? undefined : Number(limitParam);
     if (!query.trim()) {
-      console.debug("[sessions-route] 跳过空会话搜索请求");
+      log.debug("[sessions-route] 跳过空会话搜索请求");
       return c.json({ results: [] });
     }
     try {
@@ -44,13 +48,13 @@ export function sessionRoutes(context: AppContext): Hono {
         query,
         Number.isFinite(limit) ? limit : undefined
       );
-      console.info("[sessions-route] 会话搜索请求完成", {
+      log.info("[sessions-route] 会话搜索请求完成", {
         query: query.trim(),
         resultCount: results.length
       });
       return c.json({ results });
     } catch (error) {
-      console.error("[sessions-route] 会话搜索请求失败", {
+      log.error("[sessions-route] 会话搜索请求失败", {
         query: query.trim(),
         error: error instanceof Error ? error.message : String(error)
       });
@@ -80,7 +84,7 @@ export function sessionRoutes(context: AppContext): Hono {
     const input = messageFeedbackUpdateSchema.parse(await c.req.json());
     try {
       const message = await context.store.setMessageFeedback(sessionId, messageId, input.feedback);
-      console.info("[sessions-route] 已更新消息反馈", {
+      log.info("[sessions-route] 已更新消息反馈", {
         sessionId,
         messageId,
         feedback: input.feedback
@@ -88,7 +92,7 @@ export function sessionRoutes(context: AppContext): Hono {
       return c.json({ message: toClientMessage(message) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn("[sessions-route] 更新消息反馈失败", {
+      log.warn("[sessions-route] 更新消息反馈失败", {
         sessionId,
         messageId,
         feedback: input.feedback,
@@ -119,7 +123,7 @@ export function sessionRoutes(context: AppContext): Hono {
     if (!usage) {
       return c.json({ error: "会话不存在" }, 404);
     }
-    console.debug("[sessions-route] 返回会话上下文用量", {
+    log.debug("[sessions-route] 返回会话上下文用量", {
       sessionId,
       model: usage.model,
       estimatedTokens: usage.estimatedTokens,
@@ -175,7 +179,7 @@ export function sessionRoutes(context: AppContext): Hono {
         forkSession
       });
       if (workspaceCopy.status === "copied") {
-        console.info("[sessions-route] 已复制派生会话工作区", {
+        log.info("[sessions-route] 已复制派生会话工作区", {
           sourceSessionId: sourceSession.id,
           forkSessionId: forkSession.id,
           method: workspaceCopy.method,
@@ -185,7 +189,7 @@ export function sessionRoutes(context: AppContext): Hono {
           scannedEntries: workspaceCopy.scannedEntries
         });
       } else {
-        console.debug("[sessions-route] 跳过派生会话工作区复制", {
+        log.debug("[sessions-route] 跳过派生会话工作区复制", {
           sourceSessionId: sourceSession.id,
           forkSessionId: forkSession.id,
           reason: workspaceCopy.reason,
@@ -200,13 +204,13 @@ export function sessionRoutes(context: AppContext): Hono {
         try {
           rolledBack = await context.store.deleteSession(forkSession.id);
         } catch (rollbackError) {
-          console.error("[sessions-route] 回滚派生会话失败", {
+          log.error("[sessions-route] 回滚派生会话失败", {
             sourceSessionId: sourceSession.id,
             forkSessionId: forkSession.id,
             error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
           });
         }
-        console.error("[sessions-route] 派生会话工作区复制失败，已取消派生", {
+        log.error("[sessions-route] 派生会话工作区复制失败，已取消派生", {
           sourceSessionId: sourceSession.id,
           forkSessionId: forkSession.id,
           rolledBack,

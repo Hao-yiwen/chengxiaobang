@@ -3,6 +3,10 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { SkillMarketError, type SkillMarketService } from "./skill-market-service";
 import { textResult } from "./tool-result";
 
+import { getLogger } from "../logging/logger";
+
+const log = getLogger({ module: "tools/skill-tools" });
+
 const createParams = Type.Object({
   url: Type.Optional(
     Type.String({
@@ -45,7 +49,7 @@ export function createSkillTools(runtime: SkillToolRuntime): AgentTool<any>[] {
     execute: async (_toolCallId, params) => {
       try {
         if (params.url?.trim()) {
-          console.info(`[skill-tools] 经链接安装技能 url=${params.url}`);
+          log.info(`[skill-tools] 经链接安装技能 url=${params.url}`);
           const skill = await runtime.skillMarketService.importFromUrl({ url: params.url.trim() });
           return textResult(
             `已从链接安装技能「${skill.name}」：${skill.description}。用户可在「技能」页查看，或在对话中用 /${skill.name} 调用。`
@@ -56,7 +60,7 @@ export function createSkillTools(runtime: SkillToolRuntime): AgentTool<any>[] {
             "手动创建技能需要同时提供 name、description 和 content；或改用 url 从 GitHub 导入。"
           );
         }
-        console.info(`[skill-tools] 手动创建技能 name=${params.name}`);
+        log.info(`[skill-tools] 手动创建技能 name=${params.name}`);
         const skill = await runtime.skillMarketService.createCustom({
           name: params.name.trim(),
           description: params.description.trim(),
@@ -67,7 +71,7 @@ export function createSkillTools(runtime: SkillToolRuntime): AgentTool<any>[] {
         );
       } catch (error) {
         if (error instanceof SkillMarketError) {
-          console.warn(`[skill-tools] 创建技能失败：${error.message}`);
+          log.warn(`[skill-tools] 创建技能失败：${error.message}`);
           throw new Error(error.message);
         }
         throw error;
