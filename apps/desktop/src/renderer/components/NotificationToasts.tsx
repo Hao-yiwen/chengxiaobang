@@ -55,7 +55,7 @@ export function NotificationToasts() {
           }}
         >
           <InfoCircleIcon className="mt-0.5 size-[18px] flex-none text-link" />
-          <div className="min-w-0">
+          <div className="min-w-0 max-h-[200px] overflow-y-auto">
             <ToastTitle>{notice}</ToastTitle>
           </div>
           <ToastCloseButton />
@@ -82,7 +82,7 @@ function NotificationToastItem(props: { toast: NotificationToast; onDismiss(): v
       }}
     >
       <Icon className={cn("mt-0.5 size-[18px] flex-none", toneByKind[props.toast.kind])} />
-      <div className="min-w-0">
+      <div className="min-w-0 max-h-[200px] overflow-y-auto">
         <ToastTitle>{props.toast.title}</ToastTitle>
         {props.toast.description ? (
           <ToastDescription>{props.toast.description}</ToastDescription>

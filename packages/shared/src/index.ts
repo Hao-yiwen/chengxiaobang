@@ -1,6 +1,7 @@
 export * from "./access-mode";
 export * from "./connect-phone";
 export * from "./debug";
+export * from "./error";
 export * from "./feishu";
 export * from "./git";
 export * from "./message";

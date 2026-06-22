@@ -12,6 +12,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import {
   askUserAnswerText,
+  normalizeErrorMessage,
   nowIso,
   proposePlanArgsSchema,
   type AccessMode,
@@ -763,6 +764,16 @@ export class RunEventTranslator {
       return;
     }
     this.finished = true;
+    // 失败时完整错误先写日志,持久化与推送给前端的 run_end 事件只保留归一化后的精简文案。
+    if (outcome.status === "failed" && outcome.error !== undefined) {
+      console.error("[pi-events] run 结束于失败状态", {
+        runId: this.options.runId,
+        sessionId: this.options.sessionId,
+        error: outcome.error
+      });
+    }
+    const normalizedError =
+      outcome.error !== undefined ? normalizeErrorMessage(outcome.error) : undefined;
     const usage =
       outcome.status === "completed"
         ? mergeTokenUsage(
@@ -775,7 +786,7 @@ export class RunEventTranslator {
       this.options.runId,
       outcome.status,
       usage,
-      outcome.error,
+      normalizedError,
       fileChanges.length > 0 ? fileChanges : undefined
     );
     if (usage?.costUsd !== undefined) {
@@ -789,7 +800,7 @@ export class RunEventTranslator {
       type: "run_end",
       runId: this.options.runId,
       status: outcome.status,
-      ...(outcome.error !== undefined ? { error: outcome.error } : {}),
+      ...(normalizedError !== undefined ? { error: normalizedError } : {}),
       ...(usage ? { usage } : {}),
       ...(fileChanges.length > 0 ? { fileChanges } : {})
     });

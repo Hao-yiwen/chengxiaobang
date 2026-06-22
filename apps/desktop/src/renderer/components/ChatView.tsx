@@ -871,7 +871,7 @@ function RunErrorNotice({
     >
       <XMarkIcon className="mt-0.5 size-3.5 flex-none" />
       <div className="min-w-0 flex-1">
-        <p className="break-words font-mono text-micro">{notice.message}</p>
+        <p className="max-h-[200px] overflow-y-auto break-words font-mono text-micro">{notice.message}</p>
         {canRetry ? (
           <button
             type="button"
