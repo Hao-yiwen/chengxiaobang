@@ -3,6 +3,7 @@ import {
   approvalDecisionSchema,
   encodeSseEvent,
   isStreamEvent,
+  normalizeErrorMessage,
   type AppEvent,
   type RunRequest,
   type RunStartResponse,
@@ -142,10 +143,14 @@ function runStreamResponse(
           safeEnqueue(encoder.encode(encodeSseEvent(event)));
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error("[api] /api/runs/stream 运行失败:", message);
+        // 合并:用 PR#5 的错误归一化 + 结构化日志,同时保留本分支的 safeEnqueue(消费者已取消时不抛)。
+        const normalizedError = normalizeErrorMessage(error);
+        console.error("[api] /api/runs/stream 运行失败", {
+          error,
+          displayError: normalizedError
+        });
         safeEnqueue(
-          encoder.encode(encodeSseEvent({ type: "setup_error", error: message }))
+          encoder.encode(encodeSseEvent({ type: "setup_error", error: normalizedError }))
         );
       } finally {
         clearInterval(heartbeat);
@@ -250,17 +255,24 @@ function startRunAndPublish(context: AppContext, input: RunRequest): Promise<Run
           reject(new Error("运行启动失败：后端没有返回 run_started 事件"));
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const normalizedError = normalizeErrorMessage(error);
         if (!settled) {
           settled = true;
-          console.error("[api] /api/runs 启动失败:", message);
+          console.error("[api] /api/runs 启动失败", {
+            error,
+            displayError: normalizedError
+          });
           reject(error);
           return;
         }
-        console.error("[api] /api/runs 后台运行失败:", message);
+        console.error("[api] /api/runs 后台运行失败", {
+          error,
+          displayError: normalizedError
+        });
         if (startedRunId) {
+          // 持久化与推送给前端的 run_end 都用归一化后的精简错误,完整 error 已在上方日志。
           await context.store
-            .updateRunStatus(startedRunId, "failed", undefined, message)
+            .updateRunStatus(startedRunId, "failed", undefined, normalizedError)
             .catch((storeError) => {
               console.warn("[api] 后台运行失败状态写入失败", {
                 runId: startedRunId,
@@ -271,7 +283,7 @@ function startRunAndPublish(context: AppContext, input: RunRequest): Promise<Run
             type: "run_end",
             runId: startedRunId,
             status: "failed",
-            error: message
+            error: normalizedError
           });
         }
       }

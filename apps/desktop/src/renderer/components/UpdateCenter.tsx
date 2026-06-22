@@ -96,7 +96,7 @@ export function UpdateCenter() {
           <div className="flex min-w-0 items-start gap-2">
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-caption font-medium">{viewModel.title}</h2>
-              <p className="mt-0.5 text-micro leading-snug text-muted-foreground">
+              <p className="mt-0.5 max-h-[160px] overflow-y-auto break-words text-micro leading-snug text-muted-foreground">
                 {viewModel.description}
               </p>
             </div>

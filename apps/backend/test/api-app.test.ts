@@ -919,20 +919,32 @@ describe("createApp", () => {
 
   it("streams setup failures as setup_error before a run exists", async () => {
     await store.deleteProvider("deepseek");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const response = await app(
-      jsonRequest("/api/runs/stream", "POST", {
-        prompt: "你好",
-        accessMode: "approval"
-      })
-    );
+    try {
+      const response = await app(
+        jsonRequest("/api/runs/stream", "POST", {
+          prompt: "你好",
+          accessMode: "approval"
+        })
+      );
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Content-Type")).toContain("text/event-stream");
-    const body = await response.text();
-    expect(body).toContain('"type":"setup_error"');
-    expect(body).toContain("请先配置至少一个模型");
-    expect(body).not.toContain('"runId":"setup"');
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toContain("text/event-stream");
+      const body = await response.text();
+      expect(body).toContain('"type":"setup_error"');
+      expect(body).toContain("请先配置至少一个模型");
+      expect(body).not.toContain('"runId":"setup"');
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[api] /api/runs/stream 运行失败",
+        expect.objectContaining({
+          error: expect.any(Error),
+          displayError: "请先配置至少一个模型"
+        })
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("streams a full run as SSE events in contract order", async () => {
@@ -1066,16 +1078,28 @@ describe("createApp", () => {
 
   it("returns an HTTP error when POST /api/runs fails before run_started", async () => {
     await store.deleteProvider("deepseek");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const response = await app(
-      jsonRequest("/api/runs", "POST", {
-        prompt: "你好",
-        accessMode: "approval"
-      })
-    );
+    try {
+      const response = await app(
+        jsonRequest("/api/runs", "POST", {
+          prompt: "你好",
+          accessMode: "approval"
+        })
+      );
 
-    expect(response.status).toBe(500);
-    await expect(response.json()).resolves.toMatchObject({ error: "请先配置至少一个模型" });
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toMatchObject({ error: "请先配置至少一个模型" });
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[api] /api/runs 启动失败",
+        expect.objectContaining({
+          error: expect.any(Error),
+          displayError: "请先配置至少一个模型"
+        })
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("rejects steering for inactive runs through HTTP API", async () => {

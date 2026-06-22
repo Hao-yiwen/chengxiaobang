@@ -124,14 +124,29 @@ describe("DesktopUpdateService", () => {
 
   it("records updater errors with the triggering source", async () => {
     const updater = new FakeUpdater();
-    updater.nextCheck = () => updater.emitError(new Error("network unavailable"));
+    const error = new Error("network unavailable");
+    updater.nextCheck = () => updater.emitError(error);
     const service = packagedService(updater);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const state = await service.checkForUpdates({ manual: true });
+    try {
+      const state = await service.checkForUpdates({ manual: true });
 
-    expect(state.status).toBe("error");
-    expect(state.error).toBe("network unavailable");
-    expect(state.isManualCheck).toBe(true);
+      expect(state.status).toBe("error");
+      expect(state.error).toBe("network unavailable");
+      expect(state.isManualCheck).toBe(true);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[update] 更新流程失败",
+        expect.objectContaining({
+          manual: true,
+          status: "checking",
+          error,
+          displayError: "network unavailable"
+        })
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("quits and installs only after the update is downloaded", () => {
