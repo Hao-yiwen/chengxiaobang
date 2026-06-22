@@ -274,10 +274,18 @@ export class SkillMarketService {
 
   /** 手动创建自定义技能：frontmatter 由输入生成，正文为用户提供的指令。 */
   async createCustom(input: SkillCreateInput): Promise<SkillSummary> {
+    // 名称先按技能名规则校验(原本只在 installCustom 里校验,发生在 parseSkillFile 之后):
+    // 避免换行/冒号等破坏或注入 frontmatter 结构。
+    if (!SKILL_NAME_PATTERN.test(input.name)) {
+      throw new SkillMarketError("非法的技能名（只允许小写字母、数字与连字符，且以字母或数字开头）");
+    }
+    // description 去掉换行(parseSkillFile 是逐行解析,换行是唯一真正的注入向量;
+    // 单行内的冒号/# 等都会被 (.+) 整体捕获,不破坏结构)。
+    const safeDescription = input.description.replace(/[\r\n]+/g, " ").trim();
     const content = [
       "---",
       `name: ${input.name}`,
-      `description: ${input.description.replace(/\n/g, " ")}`,
+      `description: ${safeDescription}`,
       "metadata:",
       "  category: other",
       "  author: user",

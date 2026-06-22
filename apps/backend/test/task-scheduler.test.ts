@@ -338,6 +338,38 @@ describe("TaskScheduler", () => {
     expect(updated?.lastStatus).toBe("aborted");
   });
 
+  it("times out a run that hangs before run_started and aborts it via the execution signal", async () => {
+    const { task } = await seedSessionAndTask();
+    let sawSignalAbort = false;
+    const runner = {
+      activeSessionIds: new Set<string>(),
+      approvals: { decide: vi.fn() },
+      abort: vi.fn(),
+      // stream 在 run_started 之前一直挂起,模拟前置阶段(取密钥/会话等)卡死。
+      stream: (_input: unknown, internal: { signal?: AbortSignal }) =>
+        (async function* () {
+          internal.signal?.addEventListener(
+            "abort",
+            () => {
+              sawSignalAbort = true;
+            },
+            { once: true }
+          );
+          await new Promise<void>(() => {});
+        })()
+    } as unknown as AgentRunner;
+    const scheduler = new TaskScheduler({ store, runner, runTimeoutMs: 30 });
+
+    await scheduler.runNow(task.id);
+
+    // 超时应中止执行级信号(即使尚未拿到 runId),并把任务标记为失败、释放调度阻塞。
+    expect(sawSignalAbort).toBe(true);
+    const updated = await store.getScheduledTask(task.id);
+    expect(updated?.lastStatus).toBe("failed");
+    // busyTaskIds 已释放:能再次执行而不被并发守卫挡住(沿用同一会被超时的 runner)。
+    await expect(scheduler.runNow(task.id)).resolves.toBeUndefined();
+  });
+
   it("runNow throws for unknown tasks", async () => {
     const { scheduler } = schedulerWith([]);
     await expect(scheduler.runNow("task_missing")).rejects.toThrow("定时任务不存在");

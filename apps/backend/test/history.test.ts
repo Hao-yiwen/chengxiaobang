@@ -154,6 +154,23 @@ describe("buildAgentMessages", () => {
     expect(history[1]).toMatchObject({ role: "user", content: "新消息" });
   });
 
+  it("degrades to the latest summary when the compaction pointer is dangling", () => {
+    const rows: StoredMessage[] = [
+      row({ id: "old_1", role: "user", content: "旧消息一" }),
+      row({ id: "old_2", role: "assistant", content: "旧回复" }),
+      row({ role: "assistant", kind: "compaction_summary", content: "新摘要" }),
+      row({ role: "user", content: "新消息" })
+    ];
+
+    // 指针指向一条已被回退删除/不存在的消息(悬空):应降级到最近摘要行截断,
+    // 而不是因 findIndex=-1 导致 cutoff 失效、把 old_1/old_2 全量回灌。
+    const history = buildAgentMessages(rows, "deleted_msg");
+
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ role: "user", content: "【此前对话的摘要】\n新摘要" });
+    expect(history[1]).toMatchObject({ role: "user", content: "新消息" });
+  });
+
   it("skips system rows and survives corrupt payloads", () => {
     const rows: StoredMessage[] = [
       row({ role: "system", content: "ignore me" }),

@@ -83,6 +83,9 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
   });
   const panelRef = useRef<HTMLElement>(null);
   const layoutLogKeyRef = useRef<string | undefined>(undefined);
+  // 拖拽中挂在 window 上的监听器清理函数:拖拽未结束就卸载组件时,由卸载 effect 兜底移除,
+  // 避免 pointermove 监听泄漏并对已卸载组件调用 setRightPanelWidth。
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
   const projectId = project?.id;
   const gitRepoStatus = projectId ? gitRepoStatusByProject[projectId] : undefined;
@@ -163,6 +166,13 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     projectFilesOpenState.key,
     projectId
   ]);
+
+  // 组件卸载时兜底清理拖拽监听器,防止拖拽中卸载导致 window 监听泄漏。
+  useEffect(() => {
+    return () => {
+      resizeCleanupRef.current?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (!projectId || !clientReady || gitRepoStatus) {
@@ -299,12 +309,18 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     setResizing(true);
     const onMove = (move: PointerEvent) =>
       setRightPanelWidth(startWidth + (startX - move.clientX));
-    const onUp = () => {
+    const cleanup = () => {
       window.removeEventListener("pointermove", onMove);
-      setResizing(false);
+      window.removeEventListener("pointerup", onUp);
+      resizeCleanupRef.current = null;
     };
+    function onUp(): void {
+      cleanup();
+      setResizing(false);
+    }
     window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp, { once: true });
+    window.addEventListener("pointerup", onUp);
+    resizeCleanupRef.current = cleanup;
   }
 
   function toggleProjectFilesOpen(): void {

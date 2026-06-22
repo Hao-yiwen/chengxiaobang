@@ -29,6 +29,8 @@ export interface BackendProcess {
   info: BackendInfo;
   child: ChildProcess;
   stop(): void;
+  /** 停止后端并等待其真正退出(带硬超时兜底),供应用退出时使用,避免后端孤儿进程。 */
+  stopAndWait(): Promise<void>;
 }
 
 export interface BackendCommand {
@@ -252,6 +254,26 @@ export async function startBackendProcess(options: {
     stop: () => {
       stopRequested = true;
       stopBackendChild(child);
+    },
+    stopAndWait: async () => {
+      stopRequested = true;
+      if (hasBackendChildExited(child)) {
+        return;
+      }
+      const exited = once(child, "exit").catch(() => undefined);
+      stopBackendChild(child);
+      // 硬超时兜底:即使进程拒绝退出也不让退出流程永久挂起(强杀定时器 1.5s,这里多留 1s)。
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const hardTimeout = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, BACKEND_STOP_FORCE_KILL_AFTER_MS + 1_000);
+      });
+      try {
+        await Promise.race([exited, hardTimeout]);
+      } finally {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      }
     }
   };
 }

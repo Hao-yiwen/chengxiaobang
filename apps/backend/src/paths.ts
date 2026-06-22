@@ -30,10 +30,17 @@ export function defaultSessionDir(sessionId: string): string {
  */
 export function builtinResourceRoot(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
-  for (const candidate of [moduleDir, dirname(moduleDir)]) {
+  const candidates = [moduleDir, dirname(moduleDir)];
+  for (const candidate of candidates) {
     if (existsSync(join(candidate, "skills"))) {
       return candidate;
     }
   }
+  // 探测失败说明打包布局变动或 skills 目录被裁剪;此时 skills/skills-market/prompts 会
+  // 全部静默加载为空且难以定位,这里显式报错暴露根定位失败,而不是默默回退。
+  console.error("[paths] 无法定位内置资源根:未在候选目录下找到 skills/,内置技能与提示将为空", {
+    moduleDir,
+    candidates
+  });
   return moduleDir;
 }

@@ -150,7 +150,7 @@ export class TaskScheduler {
       return;
     }
     this.busyTaskIds.add(task.id);
-    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
     let runId: string | undefined;
     try {
       const now = this.now();
@@ -176,11 +176,38 @@ export class TaskScheduler {
       });
       let status: ScheduledTaskStatus = "completed";
       let errorText: string | undefined;
+      // 总时限在 run 启动“之前”就开始计时:stream() 在 run_started 前的前置步骤
+      //(取 provider / 密钥 / 会话 / 展开提示)若挂起,也必须能超时释放,否则
+      // busyTaskIds 永久占用、后续 tick 一直跳过。超时用 resolve 哨兵(而非 reject)
+      // 表示,避免产生游离的未处理拒绝。
+      const TIMEOUT = Symbol("task-execution-timeout");
+      // 执行级中止信号传入 runner.stream:即使尚未拿到 runId,超时也能让 run 自行收尾,
+      // 不会在前置步骤稍后恢复后变成无人跟踪的孤儿 run。
+      const runAbort = new AbortController();
+      const deadline = new Promise<typeof TIMEOUT>((resolve) => {
+        deadlineTimer = setTimeout(() => {
+          console.error(
+            `[task-scheduler] 执行超时（${this.runTimeoutMs}ms），强制结束 taskId=${task.id} runId=${runId ?? "未启动"}`
+          );
+          // 已知 runId 时显式中止(冗余但无害);并中止执行级信号,使尚未 run_started 的 run 也能收尾。
+          if (runId) {
+            this.runner.abort(runId);
+          }
+          runAbort.abort(new Error(`执行超时（${this.runTimeoutMs}ms）`));
+          resolve(TIMEOUT);
+        }, this.runTimeoutMs);
+      });
       try {
-        const session = await this.store.getSession(task.sessionId);
-        if (!session) {
+        const sessionPromise = this.store.getSession(task.sessionId);
+        const sessionOrTimeout = await Promise.race([sessionPromise, deadline]);
+        if (sessionOrTimeout === TIMEOUT) {
+          void sessionPromise.catch(() => undefined);
+          throw new Error(`执行超时（${this.runTimeoutMs}ms）`);
+        }
+        if (!sessionOrTimeout) {
           throw new Error("会话不存在");
         }
+        const session = sessionOrTimeout;
         const stream = this.runner.stream(
           {
             sessionId: task.sessionId,
@@ -190,18 +217,28 @@ export class TaskScheduler {
             accessMode: task.fullAccess ? "full_access" : "approval",
             planMode: false
           },
-          { headless: true }
+          { headless: true, signal: runAbort.signal }
         );
-        for await (const event of stream) {
+        // 手动迭代 + Promise.race 取代 for-await,以便总时限到点时能跳出挂起的 next()。
+        const iterator = stream[Symbol.asyncIterator]();
+        while (true) {
+          const nextPromise = iterator.next();
+          const next = await Promise.race([nextPromise, deadline]);
+          if (next === TIMEOUT) {
+            // 给被放弃的 next() 挂兜底 catch 避免未处理拒绝;并 return() 关闭 generator,
+            // 驱动其 finally 清理(abortControllers / activeSessionIds 等)。配合 runAbort 中止信号,
+            // 确保 run 真正收尾、不残留为孤儿。
+            void nextPromise.catch(() => undefined);
+            void iterator.return?.(undefined).catch(() => undefined);
+            throw new Error(`执行超时（${this.runTimeoutMs}ms）`);
+          }
+          if (next.done) {
+            break;
+          }
+          const event = next.value;
           if (event.type === "run_started") {
             runId = event.runId;
             this.inflightRunIds.add(event.runId);
-            watchdog = setTimeout(() => {
-              console.error(
-                `[task-scheduler] 执行超时（${this.runTimeoutMs}ms），强制中止 taskId=${task.id} runId=${event.runId}`
-              );
-              this.runner.abort(event.runId);
-            }, this.runTimeoutMs);
           } else if (
             event.type === "tool_call" &&
             (event.toolCall.status === "pending_approval" ||
@@ -223,7 +260,7 @@ export class TaskScheduler {
           }
         }
       } catch (error) {
-        // stream() 在 run_started 之前就可能抛错（如无可用模型）。
+        // stream() 在 run_started 之前就可能抛错（如无可用模型）,或总时限到点。
         status = "failed";
         errorText = error instanceof Error ? error.message : String(error);
       }
@@ -247,8 +284,8 @@ export class TaskScheduler {
           (errorText ? ` error=${errorText}` : "")
       );
     } finally {
-      if (watchdog) {
-        clearTimeout(watchdog);
+      if (deadlineTimer) {
+        clearTimeout(deadlineTimer);
       }
       if (runId) {
         this.inflightRunIds.delete(runId);

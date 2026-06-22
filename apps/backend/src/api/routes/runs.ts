@@ -22,7 +22,7 @@ export function runRoutes(context: AppContext): Hono {
 
   app.post("/runs/stream", async (c) => {
     const input = runRequestSchema.parse(await c.req.json());
-    return runStreamResponse(context.runner, input);
+    return runStreamResponse(context.runner, input, c.req.raw.signal);
   });
 
   app.post("/runs", async (c) => {
@@ -87,38 +87,84 @@ export function runRoutes(context: AppContext): Hono {
   return app;
 }
 
-function runStreamResponse(runner: AgentRunner, input: RunRequest): Response {
+function runStreamResponse(
+  runner: AgentRunner,
+  input: RunRequest,
+  signal: AbortSignal
+): Response {
+  // 本路径(POST /api/runs/stream,流式回退路径)把 run 生命周期绑定到这条 HTTP 请求:
+  // 客户端断连(刷新/关闭页面)时中止对应后端 run,避免 pi 循环/模型/工具/持久化继续跑完、
+  // 占着 activeSessionIds/abortControllers 并持续消耗 token。捕获首个 run_started 的 runId,
+  // 断连或请求 signal 中止时据此 abort。
+  // 注意:桌面默认走的不是这条,而是 startRun(POST /api/runs)+ 全局 /api/events——那条路径
+  // run 与请求解耦、可断线续传(/events 用 lastEventId 重连 + recoverActiveRunSnapshot 恢复),
+  // 断开 /events 只结束订阅、不中止 run(见 startRunAndPublish)。
+  let capturedRunId: string | undefined;
+  let consumerGone = false;
+  const abortCurrentRun = (reason: string): void => {
+    if (!capturedRunId) {
+      return;
+    }
+    console.warn("[api] /api/runs/stream 消费者断开，中止后端 run", {
+      runId: capturedRunId,
+      reason
+    });
+    runner.abort(capturedRunId);
+  };
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
+      const onAbort = (): void => abortCurrentRun("request-signal-abort");
+      signal.addEventListener("abort", onAbort, { once: true });
+      // 消费者取消后再 enqueue 会抛错,这里统一兜底并标记 consumerGone,避免炸掉 start()。
+      const safeEnqueue = (bytes: Uint8Array): void => {
+        if (consumerGone) {
+          return;
+        }
+        try {
+          controller.enqueue(bytes);
+        } catch {
+          consumerGone = true;
+        }
+      };
       // SSE 注释心跳用于维持审批等待和慢模型启动期间的连接。
       const heartbeat = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(": keep-alive\n\n"));
-        } catch {
+        safeEnqueue(encoder.encode(": keep-alive\n\n"));
+        if (consumerGone) {
           clearInterval(heartbeat);
         }
       }, HEARTBEAT_MS);
 
       try {
         for await (const event of runner.stream(input)) {
-          controller.enqueue(encoder.encode(encodeSseEvent(event)));
+          if (event.type === "run_started") {
+            capturedRunId = event.runId;
+          }
+          safeEnqueue(encoder.encode(encodeSseEvent(event)));
         }
       } catch (error) {
+        // 合并:用 PR#5 的错误归一化 + 结构化日志,同时保留本分支的 safeEnqueue(消费者已取消时不抛)。
         const normalizedError = normalizeErrorMessage(error);
         console.error("[api] /api/runs/stream 运行失败", {
           error,
           displayError: normalizedError
         });
-        controller.enqueue(
-          encoder.encode(
-            encodeSseEvent({ type: "setup_error", error: normalizedError })
-          )
+        safeEnqueue(
+          encoder.encode(encodeSseEvent({ type: "setup_error", error: normalizedError }))
         );
       } finally {
         clearInterval(heartbeat);
+        signal.removeEventListener("abort", onAbort);
       }
-      controller.close();
+      try {
+        controller.close();
+      } catch {
+        // 消费者已取消,close 会抛错,忽略即可。
+      }
+    },
+    cancel(reason) {
+      consumerGone = true;
+      abortCurrentRun(typeof reason === "string" ? reason : "stream-cancel");
     }
   });
   return new Response(stream, {
@@ -171,6 +217,10 @@ function eventStreamResponse(
   });
 }
 
+// 主路径(桌面默认):run 在与单条 HTTP 请求解耦的后台运行(生命周期随会话/进程),
+// 事件经 eventHub 广播给 /api/events。因此 /events 断开只结束该订阅、**不**中止 run——
+// 这是「刷新/重连后可断线续传」(配合 lastEventId + recoverActiveRunSnapshot)的有意设计;
+// 真正的永久放弃由应用退出杀后端兜底(desktop main 的 stopAndWait)。
 function startRunAndPublish(context: AppContext, input: RunRequest): Promise<RunStartResponse> {
   return new Promise((resolve, reject) => {
     let settled = false;

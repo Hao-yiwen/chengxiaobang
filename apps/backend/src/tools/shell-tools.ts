@@ -50,6 +50,8 @@ export interface ShellToolOptions {
 interface ShellRunRequestOptions {
   runInBackground?: boolean;
   timeout?: number;
+  // 检查类命令(如 git diff --check)非零退出属正常结果,不应抛错;开启后把退出码与输出一并返回。
+  allowNonZeroExit?: boolean;
 }
 
 interface NormalizedShellRunOptions {
@@ -81,6 +83,12 @@ async function runShell(
   }
   const { output, exitCode } = result;
   if (exitCode !== 0) {
+    if (requestOptions.allowNonZeroExit) {
+      // 把退出码与输出一并返回给模型分析(例如 git diff --check 发现空白错误时退出码为 1/2)。
+      return output
+        ? `${output}\n(命令退出码 ${exitCode})`
+        : `（命令无输出，退出码 ${exitCode}）`;
+    }
     throw new Error(output || `命令退出码 ${exitCode}`);
   }
   return output || "（命令无输出）";
@@ -132,7 +140,10 @@ export function createShellTools(
     execute: async (_id, params, signal) => {
       const cwd = resolveShellCwd(workspacePath, "GitDiff", params.path || ".");
       return textResult(
-        await runShell("git diff --stat && git diff --check", cwd, workspacePath, signal, options)
+        await runShell("git diff --stat && git diff --check", cwd, workspacePath, signal, options, {
+          // git diff --check 在仓库存在尾随空格/冲突标记时退出码为 1/2,这是检查结果而非失败。
+          allowNonZeroExit: true
+        })
       );
     }
   };

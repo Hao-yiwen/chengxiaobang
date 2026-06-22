@@ -66,4 +66,13 @@ describe("SSE helpers", () => {
 
     expect(parseSseChunk(events.map((event) => encodeSseEvent(event)).join(""))).toEqual(events);
   });
+
+  it("skips SSE comment/heartbeat blocks instead of throwing", () => {
+    const event: StreamEvent = { type: "delta", runId: "run_1", channel: "text", delta: "你好" };
+    // 心跳注释块(无 data 行)夹在事件之间:应被跳过而不是抛错。
+    const chunk = `: keep-alive\n\n${encodeSseEvent(event)}: keep-alive\n\n`;
+    expect(parseSseChunk(chunk)).toEqual([event]);
+    // 纯心跳块解析为空数组。
+    expect(parseSseChunk(": keep-alive\n\n")).toEqual([]);
+  });
 });

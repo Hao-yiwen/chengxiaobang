@@ -317,7 +317,11 @@ export interface AppState {
   loadFileSuggestions(query: string): Promise<void>;
   listProjectDirectory(path?: string): Promise<ProjectFileEntry[]>;
   restoreInitialState(): Promise<void>;
-  loadSessionDetail(id: string, view?: View): Promise<void>;
+  loadSessionDetail(
+    id: string,
+    view?: View,
+    options?: { settleRunId?: string }
+  ): Promise<void>;
   selectSession(id: string): Promise<void>;
   searchSessions(query: string): Promise<SessionSearchResult[]>;
   renameSession(id: string, title: string): Promise<void>;

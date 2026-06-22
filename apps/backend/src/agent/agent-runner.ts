@@ -490,9 +490,20 @@ export class AgentRunner {
   async *stream(
     input: RunRequest,
     // 进程内专用（调度器等），刻意不进 shared 的 runRequestSchema 暴露到 API 面。
-    internal: { headless?: boolean } = {}
+    internal: { headless?: boolean; signal?: AbortSignal } = {}
   ): AsyncGenerator<StreamEvent> {
     const controller = new AbortController();
+    // 外部信号(如定时任务总时限)可在尚未拿到 runId 时就中止本 run:run 会在下一个
+    // signal 检查点自行收尾(run_end aborted),不会成为无人跟踪的孤儿。
+    if (internal.signal) {
+      if (internal.signal.aborted) {
+        controller.abort(internal.signal.reason);
+      } else {
+        internal.signal.addEventListener("abort", () => controller.abort(internal.signal?.reason), {
+          once: true
+        });
+      }
+    }
     const planMode = input.planMode ?? false;
     const headless = internal.headless ?? false;
     const selectedProvider = input.providerId
@@ -576,6 +587,9 @@ export class AgentRunner {
     const titleDisplayPrompt = displayPromptForTitle(displayContent, displayAttachments);
     const shouldTitleSession = activeSession.title === DEFAULT_SESSION_TITLE;
     let immediateTitleSession: Session | undefined;
+    // 占位标题(系统可覆盖的临时标题):AI/兜底标题写回时据此判断标题是否被用户改动过,
+    // 避免临时标题或后到的自动标题覆盖用户手改的标题。
+    let placeholderTitle = activeSession.title;
     if (shouldTitleSession) {
       const immediateTitle = normalizeTitle(titleDisplayPrompt);
       if (immediateTitle && immediateTitle !== activeSession.title) {
@@ -583,6 +597,7 @@ export class AgentRunner {
           immediateTitleSession = await this.store.updateSession(activeSession.id, {
             title: immediateTitle
           });
+          placeholderTitle = immediateTitle;
           console.info("[agent-runner] 已写入临时会话标题", {
             sessionId: activeSession.id,
             title: immediateTitle,
@@ -602,23 +617,10 @@ export class AgentRunner {
     // 在这里创建而不是放进 runPiLoop，便于并发标题任务把 session_updated 推入同一条事件流。
     const queue = new AsyncEventQueue<StreamEvent>();
 
-    // 占位标题会话的 AI 标题任务与 agent loop 并发运行；标题保存后立即推送
-    // session_updated，事件流结束前也会等待它，确保渲染层 run 后刷新能读到标题。
+    // 占位标题会话的 AI 标题任务与 agent loop 并发运行,但要等用户消息落库后再启动(见下文),
+    // 以便已有会话重试时 firstUserMessageContent 读到本轮消息;标题保存后推送 session_updated,
+    // 事件流结束前会等待它,确保渲染层 run 后刷新能读到标题。
     let titleTask: Promise<void> | undefined;
-    if (this.titleStreamFn && shouldTitleSession) {
-      const titlePrompt = input.sessionId
-        ? ((await this.firstUserMessageContent(activeSession.id)) ?? titleDisplayPrompt)
-        : titleDisplayPrompt;
-      titleTask = this.generateAndSaveTitle({
-        runId,
-        sessionId: activeSession.id,
-        prompt: titlePrompt,
-        provider,
-        apiKey,
-        streamFn: this.titleStreamFn,
-        emit: (event) => queue.push(event)
-      });
-    }
 
     this.abortControllers.set(runId, controller);
     this.activeSessionIds.add(activeSession.id);
@@ -689,6 +691,24 @@ export class AgentRunner {
       }
       yield { type: "message", runId, message: toClientMessage(userMessage) };
 
+      // 用户消息已落库,此时再启动标题任务:已有会话重试时 firstUserMessageContent 能读到本轮消息,
+      // 标题取材稳定(配合 listMessages 的 rowid 排序),不再依赖落库前的不确定读。
+      if (this.titleStreamFn && shouldTitleSession) {
+        const titlePrompt = input.sessionId
+          ? ((await this.firstUserMessageContent(activeSession.id)) ?? titleDisplayPrompt)
+          : titleDisplayPrompt;
+        titleTask = this.generateAndSaveTitle({
+          runId,
+          sessionId: activeSession.id,
+          prompt: titlePrompt,
+          provider,
+          apiKey,
+          streamFn: this.titleStreamFn,
+          placeholderTitle,
+          emit: (event) => queue.push(event)
+        });
+      }
+
       if (!project) {
         console.info(
           `[agent-runner] 为独立会话准备工作目录 sessionId=${activeSession.id} path=${workspacePath}`
@@ -743,19 +763,47 @@ export class AgentRunner {
         ...(await this.memoryPromptInput())
       });
 
-      const autoCompact = yield* this.autoCompactIfNeeded({
-        runId,
-        session: activeSession,
-        provider,
-        apiKey,
-        systemPrompt,
-        tools,
-        planPhase: initialPlanPhase,
-        viaFeishu,
-        headless,
-        enableOcrTool,
-        signal: controller.signal
-      });
+      // 在 try 外声明,供后续 runPiLoop 读取 usage / compactedUpToMessageId;
+      // catch 分支总是 return,故执行到下方时一定已赋值。
+      let autoCompact!: {
+        aborted: boolean;
+        compactedUpToMessageId?: string;
+        usage?: TokenUsage;
+      };
+      try {
+        autoCompact = yield* this.autoCompactIfNeeded({
+          runId,
+          session: activeSession,
+          provider,
+          apiKey,
+          systemPrompt,
+          tools,
+          planPhase: initialPlanPhase,
+          viaFeishu,
+          headless,
+          enableOcrTool,
+          signal: controller.signal
+        });
+      } catch (error) {
+        // 自动压缩(上下文超阈值时触发)若模型请求失败会向外抛;此时 run 已是
+        // running,必须显式收尾为 failed/aborted 并发 run_end,否则前端永久卡运行态。
+        const message = error instanceof Error ? error.message : String(error);
+        const aborted = controller.signal.aborted;
+        console.error("[agent-runner] 自动压缩失败，收尾 run", {
+          runId,
+          sessionId: activeSession.id,
+          aborted,
+          error: message
+        });
+        if (aborted) {
+          await this.store.updateRunStatus(runId, "aborted");
+          yield { type: "run_end", runId, status: "aborted" };
+        } else {
+          await this.store.updateRunStatus(runId, "failed");
+          yield { type: "run_end", runId, status: "failed", error: message };
+        }
+        return;
+      }
       if (autoCompact.aborted) {
         await this.store.updateRunStatus(runId, "aborted");
         yield { type: "run_end", runId, status: "aborted" };
@@ -810,6 +858,7 @@ export class AgentRunner {
     provider: ProviderConfig;
     apiKey: string;
     streamFn: StreamFn;
+    placeholderTitle: string;
     emit: (event: StreamEvent) => void;
   }): Promise<void> {
     try {
@@ -829,11 +878,14 @@ export class AgentRunner {
         await this.saveFallbackTitle(options);
         return;
       }
-      const session = await this.store.updateSession(options.sessionId, { title });
-      options.emit({ type: "session_updated", runId: options.runId, session });
-      console.info(
-        `[agent-runner] 已生成会话标题 sessionId=${options.sessionId} title=${title}`
-      );
+      await this.writeTitleIfPlaceholder({
+        sessionId: options.sessionId,
+        title,
+        placeholderTitle: options.placeholderTitle,
+        runId: options.runId,
+        emit: options.emit,
+        source: "ai"
+      });
     } catch (error) {
       console.warn(
         `[agent-runner] 会话标题生成失败，尝试使用兜底标题 sessionId=${options.sessionId}:`,
@@ -847,6 +899,7 @@ export class AgentRunner {
     runId: string;
     sessionId: string;
     prompt: string;
+    placeholderTitle: string;
     emit: (event: StreamEvent) => void;
   }): Promise<void> {
     const fallbackTitle = normalizeTitle(options.prompt);
@@ -857,17 +910,53 @@ export class AgentRunner {
     // 从 generateAndSaveTitle 的 catch 路径调用，不能再向外 reject，
     // 否则 finally 里等待标题任务会把整条事件流标成失败。
     try {
-      const session = await this.store.updateSession(options.sessionId, { title: fallbackTitle });
-      options.emit({ type: "session_updated", runId: options.runId, session });
-      console.info(
-        `[agent-runner] 已使用用户首句作为兜底标题 sessionId=${options.sessionId} title=${fallbackTitle}`
-      );
+      await this.writeTitleIfPlaceholder({
+        sessionId: options.sessionId,
+        title: fallbackTitle,
+        placeholderTitle: options.placeholderTitle,
+        runId: options.runId,
+        emit: options.emit,
+        source: "fallback"
+      });
     } catch (error) {
       console.warn(
         `[agent-runner] 兜底标题写入失败，保留占位标题 sessionId=${options.sessionId}:`,
         error
       );
     }
+  }
+
+  /**
+   * 仅当会话标题仍是占位/临时标题(未被用户改动)时才写入,避免 AI/兜底标题或后到的
+   * 自动标题覆盖用户在 run 期间手动改过的标题。
+   */
+  private async writeTitleIfPlaceholder(options: {
+    sessionId: string;
+    title: string;
+    placeholderTitle: string;
+    runId: string;
+    emit: (event: StreamEvent) => void;
+    source: "ai" | "fallback";
+  }): Promise<void> {
+    const current = await this.store.getSession(options.sessionId);
+    if (
+      current &&
+      current.title !== options.placeholderTitle &&
+      current.title !== DEFAULT_SESSION_TITLE
+    ) {
+      console.info("[agent-runner] 会话标题已被改动，跳过自动标题覆盖", {
+        sessionId: options.sessionId,
+        currentTitle: current.title,
+        candidate: options.title,
+        source: options.source
+      });
+      return;
+    }
+    const session = await this.store.updateSession(options.sessionId, { title: options.title });
+    options.emit({ type: "session_updated", runId: options.runId, session });
+    console.info(
+      `[agent-runner] 已写入会话标题(${options.source}) sessionId=${options.sessionId} title=${options.title}`
+    );
   }
 
   private async resolveProviderForSession(

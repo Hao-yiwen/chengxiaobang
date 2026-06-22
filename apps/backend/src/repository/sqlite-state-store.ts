@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, normalize } from "node:path";
 import initSqlJs, { type Database } from "sql.js";
 import {
@@ -529,9 +529,13 @@ export class SqliteStateStore implements StateStore {
 
   async listMessages(sessionId: string): Promise<StoredMessage[]> {
     await this.assertSessionExists(sessionId);
-    return this.query("select * from messages where session_id = ? order by created_at asc", [
-      sessionId
-    ]).map(mapMessage);
+    // created_at 为毫秒粒度,同一 run 内 user→assistant→tool 极易同毫秒。id 是随机 UUID
+    // 无法体现插入序,故用 SQLite 隐式 rowid(随插入单调递增)作二级排序,既稳定又符合
+    // 插入序;否则历史回放配对、压缩 cutoff 定位、标题取材在并列时会非确定。
+    return this.query(
+      "select * from messages where session_id = ? order by created_at asc, rowid asc",
+      [sessionId]
+    ).map(mapMessage);
   }
 
   async setMessageFeedback(
@@ -624,6 +628,17 @@ export class SqliteStateStore implements StateStore {
       deletedRunIds: runIds,
       cutoff
     });
+    // 若回退删掉了压缩指针指向的消息,必须清空指针,否则后续回放/再压缩会因指针
+    // 悬空(findIndex=-1)导致 cutoff 失效、早期历史全量回灌。
+    const doomedIds = new Set(doomed.map((message) => message.id));
+    const session = await this.getSession(sessionId);
+    if (session?.compactedUpToMessageId && doomedIds.has(session.compactedUpToMessageId)) {
+      await this.updateSession(sessionId, { compactedUpToMessageId: null });
+      console.info("[state-store] 回退删除了压缩指针指向的消息，已清空 compactedUpToMessageId", {
+        sessionId,
+        clearedPointer: session.compactedUpToMessageId
+      });
+    }
     await this.touchSession(sessionId);
     await this.flush();
     return doomed.length;
@@ -1116,7 +1131,11 @@ export class SqliteStateStore implements StateStore {
       if (!this.db) {
         return;
       }
-      await writeFile(this.dbPath, Buffer.from(this.db.export()));
+      // 原子写:先写临时文件再 rename(同一文件系统上 rename 原子),避免进程被 main 杀掉时
+      // writeFile 中途截断导致整库损坏。flush 经 flushQueue 串行,临时文件名不会并发冲突。
+      const tmpPath = `${this.dbPath}.tmp-${process.pid}`;
+      await writeFile(tmpPath, Buffer.from(this.db.export()));
+      await rename(tmpPath, this.dbPath);
     });
     this.flushQueue = task.catch((error) => {
       console.error("[sqlite-store] flush 失败，后续写入仍会继续排队", {

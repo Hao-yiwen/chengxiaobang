@@ -63,6 +63,11 @@ function applyMessageFeedback(
 export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {
   return {
       async initClient(injected) {
+        // 防 React StrictMode 开发期重复挂载创建两个 client 实例(各自带独立事件流循环);
+        // 仅拦截非注入(生产)路径,注入(测试)场景始终允许重新初始化。
+        if (!injected && get().clientReady) {
+          return;
+        }
         const client = injected ?? (await createApiClient());
         setApiClient(client);
         replaceRunEventSubscription(undefined);
@@ -398,7 +403,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         await get().loadSessionDetail(targetSession.id, restoredView);
       },
 
-      async loadSessionDetail(id, view = "chat") {
+      async loadSessionDetail(id, view = "chat", options) {
         if (!apiClientRef.current) {
           return;
         }
@@ -417,7 +422,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             interruptedRunIds: settled.interruptedRunIds
           });
           set((state) =>
-            settledSessionHistoryPatch(state, id, messages, settled.history, view)
+            settledSessionHistoryPatch(state, id, messages, settled.history, view, options?.settleRunId)
           );
           return;
         }

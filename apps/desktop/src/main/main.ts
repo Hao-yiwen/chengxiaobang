@@ -1205,15 +1205,21 @@ async function createWindow(): Promise<void> {
   console.info("[main] OCR 本地服务启动开始");
   ocrHttpService ??= await startOcrHttpService(ocrOptions);
   console.info(`[main] OCR 本地服务启动完成 url=${ocrHttpService.url}`);
-  console.info("[main] 后端启动开始");
-  backend = await startBackendProcess({
-    dataDir: defaultDataDir(),
-    resourcesPath: process.resourcesPath,
-    isPackaged: app.isPackaged,
-    ocrService: { url: ocrHttpService.url, token: ocrHttpService.token },
-    logger: desktopLogging?.backend
-  });
-  console.info(`[main] 后端启动完成 baseURL=${backend.info.baseURL}`);
+  // 后端只启动一次:createWindow 可能在 activate(macOS 关窗后点 Dock)时被再次调用,
+  // 不加守卫会启动第二个后端并孤立第一个。OCR / updateService 已用 ??= 守卫。
+  if (!backend) {
+    console.info("[main] 后端启动开始");
+    backend = await startBackendProcess({
+      dataDir: defaultDataDir(),
+      resourcesPath: process.resourcesPath,
+      isPackaged: app.isPackaged,
+      ocrService: { url: ocrHttpService.url, token: ocrHttpService.token },
+      logger: desktopLogging?.backend
+    });
+    console.info(`[main] 后端启动完成 baseURL=${backend.info.baseURL}`);
+  } else {
+    console.info(`[main] 复用已运行的后端 baseURL=${backend.info.baseURL}`);
+  }
 
   if (!mainWindow || mainWindow.isDestroyed()) {
     console.warn("[main] 后端已就绪，但主窗口已关闭，跳过渲染层加载");
@@ -1247,19 +1253,51 @@ function applyDevDockIcon(): void {
   }
 }
 
-app.whenReady().then(() => {
-  // 覆盖「关于」面板的展示名与版本，避免 dev 下显示成 "@chengxiaobang/desktop"。
-  app.setAboutPanelOptions({
-    applicationName: PRODUCT_NAME,
-    applicationVersion: app.getVersion()
-  });
-  console.info("[main] 设置关于面板", { applicationName: PRODUCT_NAME, version: app.getVersion() });
-  applyDevDockIcon();
-  return createWindow();
-}).catch((error) => {
-  console.error("[main] 应用启动失败:", messageFromError(error));
+// 单实例锁:避免双开实例并发打开同一 ~/.chengxiaobang/data 下的 SQLite 导致损坏。
+// 抢不到锁的实例直接退出,并由已存在实例的 second-instance 把窗口带到前台。
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  console.info("[main] 已有实例在运行，退出当前实例");
   app.quit();
-});
+} else {
+  app.on("second-instance", () => {
+    console.info("[main] 收到第二个实例启动请求，聚焦已有窗口");
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      void createWindow();
+      return;
+    }
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  app.whenReady().then(() => {
+    // 覆盖「关于」面板的展示名与版本，避免 dev 下显示成 "@chengxiaobang/desktop"。
+    app.setAboutPanelOptions({
+      applicationName: PRODUCT_NAME,
+      applicationVersion: app.getVersion()
+    });
+    console.info("[main] 设置关于面板", { applicationName: PRODUCT_NAME, version: app.getVersion() });
+    applyDevDockIcon();
+    return createWindow();
+  }).catch((error) => {
+    console.error("[main] 应用启动失败:", messageFromError(error));
+    app.quit();
+  });
+
+  // macOS:点 Dock 图标且当前无窗口时恢复主窗口(关窗后仍能拿回窗口,而不是只能强退)。
+  app.on("activate", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      console.info("[main] activate:无可用窗口，重新创建");
+      void createWindow();
+      return;
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  });
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
@@ -1267,38 +1305,53 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
-  updateService?.stopAutoChecks();
-  terminalManager?.disposeAll();
-  stopBackend("before-quit");
-  stopOcrHttpService("before-quit");
-  void flushDesktopLogs();
-});
+let shuttingDown = false;
 
-app.on("will-quit", () => {
+/**
+ * 统一收尾:停掉自动检查/终端/OCR,并**等待后端真正退出**后再 flush 日志。
+ * 关键修复:旧实现发完 SIGTERM 就让 main 同步退出,1.5s 强杀定时器随 main 消失,
+ * 后端(Bun)易成孤儿;这里改为等待后端退出(带硬超时)再真正退出。
+ */
+async function performShutdown(reason: string): Promise<void> {
   updateService?.stopAutoChecks();
   terminalManager?.disposeAll();
-  stopBackend("will-quit");
-  stopOcrHttpService("will-quit");
-  void flushDesktopLogs();
+  stopOcrHttpService(reason);
+  try {
+    await backend?.stopAndWait();
+  } catch (error) {
+    console.warn("[main] 等待后端退出时出错", { reason, error: messageFromError(error) });
+  } finally {
+    backend = undefined;
+  }
+  await flushDesktopLogs();
+}
+
+/** 触发一次性收尾:收尾完成后再用 app.exit 真正退出(app.exit 不再触发 before-quit)。 */
+function beginShutdown(reason: string): void {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  console.info(`[main] 开始收尾退出 reason=${reason}`);
+  void performShutdown(reason).finally(() => {
+    app.exit(0);
+  });
+}
+
+app.on("before-quit", (event) => {
+  // 始终阻止默认的“立即退出”,改为先收尾(等后端退出)再由 app.exit 真正退出,避免后端孤儿。
+  event.preventDefault();
+  beginShutdown("before-quit");
 });
 
 function handleProcessSignal(signal: NodeJS.Signals): void {
-  updateService?.stopAutoChecks();
-  terminalManager?.disposeAll();
-  stopBackend(signal);
-  stopOcrHttpService(signal);
-  void flushDesktopLogs().finally(() => {
-    app.quit();
-    setTimeout(() => process.exit(0), 250).unref();
-  });
+  beginShutdown(signal);
 }
 
 process.on("SIGTERM", handleProcessSignal);
 process.on("SIGINT", handleProcessSignal);
 process.on("exit", () => {
-  updateService?.stopAutoChecks();
-  terminalManager?.disposeAll();
+  // exit 阶段事件循环已停,只能同步尽力杀掉后端兜底(若已在 performShutdown 中收尾则为空操作)。
   stopBackend("process-exit");
 });
 

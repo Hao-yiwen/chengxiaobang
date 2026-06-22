@@ -481,8 +481,8 @@ function buildRgArgs(params: {
   if (params.multiline) {
     args.push("--multiline");
   }
-  args.push(params.pattern);
-  args.push(".");
+  // 用 -- 终止选项解析,使以 "-" 开头的检索词(如 "-foo")被当作 pattern 而非未知 flag。
+  args.push("--", params.pattern, ".");
   return args;
 }
 

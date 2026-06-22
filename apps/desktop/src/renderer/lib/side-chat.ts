@@ -96,7 +96,10 @@ export function sideChatReducer(state: SideChatState, action: SideChatAction): S
             ...state,
             items: upsertToolItem(state.items, event.toolCall),
             pendingTool:
-              event.toolCall.status === "pending_approval" ? event.toolCall : undefined
+              event.toolCall.status === "pending_approval" ||
+              event.toolCall.status === "pending_smart_approval"
+                ? event.toolCall
+                : undefined
           };
         case "run_end":
           return {

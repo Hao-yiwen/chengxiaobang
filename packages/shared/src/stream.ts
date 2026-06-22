@@ -169,13 +169,15 @@ export function parseSseChunk(chunk: string): AppEvent[] {
     .split(/\n\n+/)
     .map((block) => block.trim())
     .filter(Boolean)
-    .map((block) => {
+    .flatMap((block) => {
       const dataLine = block
         .split("\n")
         .find((line) => line.startsWith("data: "));
+      // SSE 注释/心跳块(如 ": keep-alive")没有 data 行,属于合法的连接保活帧,
+      // 直接跳过而不是抛错;与 readSseStream 的 `if (data)` 行为保持一致。
       if (!dataLine) {
-        throw new Error(`Invalid SSE block: ${block}`);
+        return [];
       }
-      return JSON.parse(dataLine.slice(6)) as AppEvent;
+      return [JSON.parse(dataLine.slice(6)) as AppEvent];
     });
 }
