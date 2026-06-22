@@ -4,7 +4,7 @@
     "outDir": "dist",
     "types": ["node"],
     "allowImportingTsExtensions": true,
-    "ignoreDeprecations": "6.0"
+    "ignoreDeprecations": "5.0"
   },
   "include": [
     "src/main/**/*.ts",
