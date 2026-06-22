@@ -181,15 +181,19 @@ export class TaskScheduler {
       // busyTaskIds 永久占用、后续 tick 一直跳过。超时用 resolve 哨兵(而非 reject)
       // 表示,避免产生游离的未处理拒绝。
       const TIMEOUT = Symbol("task-execution-timeout");
+      // 执行级中止信号传入 runner.stream:即使尚未拿到 runId,超时也能让 run 自行收尾,
+      // 不会在前置步骤稍后恢复后变成无人跟踪的孤儿 run。
+      const runAbort = new AbortController();
       const deadline = new Promise<typeof TIMEOUT>((resolve) => {
         deadlineTimer = setTimeout(() => {
           console.error(
             `[task-scheduler] 执行超时（${this.runTimeoutMs}ms），强制结束 taskId=${task.id} runId=${runId ?? "未启动"}`
           );
-          // 已知 runId 才能真正中止后端 run;未启动时只能解除调度阻塞。
+          // 已知 runId 时显式中止(冗余但无害);并中止执行级信号,使尚未 run_started 的 run 也能收尾。
           if (runId) {
             this.runner.abort(runId);
           }
+          runAbort.abort(new Error(`执行超时（${this.runTimeoutMs}ms）`));
           resolve(TIMEOUT);
         }, this.runTimeoutMs);
       });
@@ -213,7 +217,7 @@ export class TaskScheduler {
             accessMode: task.fullAccess ? "full_access" : "approval",
             planMode: false
           },
-          { headless: true }
+          { headless: true, signal: runAbort.signal }
         );
         // 手动迭代 + Promise.race 取代 for-await,以便总时限到点时能跳出挂起的 next()。
         const iterator = stream[Symbol.asyncIterator]();
@@ -221,8 +225,11 @@ export class TaskScheduler {
           const nextPromise = iterator.next();
           const next = await Promise.race([nextPromise, deadline]);
           if (next === TIMEOUT) {
-            // 放弃本次迭代:给被放弃的 next() 挂兜底 catch,避免其后续 reject 变成未处理拒绝。
+            // 给被放弃的 next() 挂兜底 catch 避免未处理拒绝;并 return() 关闭 generator,
+            // 驱动其 finally 清理(abortControllers / activeSessionIds 等)。配合 runAbort 中止信号,
+            // 确保 run 真正收尾、不残留为孤儿。
             void nextPromise.catch(() => undefined);
+            void iterator.return?.(undefined).catch(() => undefined);
             throw new Error(`执行超时（${this.runTimeoutMs}ms）`);
           }
           if (next.done) {

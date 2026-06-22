@@ -59,6 +59,32 @@ describe("readSseStream", () => {
     expect(events).toEqual([good]);
   });
 
+  it("does not advance lastEventId when the dispatch callback throws (preserves at-least-once)", async () => {
+    const encoder = new TextEncoder();
+    const event = encodeSseEvent(
+      { type: "run_started", runId: "run_1", sessionId: "s1" } as StreamEvent,
+      "9"
+    );
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(event));
+        controller.close();
+      }
+    });
+    const ids: string[] = [];
+    // 分发回调抛错:应向上传播(中止当前流)且不推进 lastEventId,使重连能重放该事件。
+    await expect(
+      readSseStream(
+        stream,
+        () => {
+          throw new Error("handler boom");
+        },
+        { onEventId: (id) => ids.push(id) }
+      )
+    ).rejects.toThrow("handler boom");
+    expect(ids).toEqual([]);
+  });
+
   it("tracks SSE event ids", async () => {
     const event: StreamEvent = {
       type: "run_started",

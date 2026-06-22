@@ -844,7 +844,13 @@ export async function readSseStream<T extends AppEvent = AppEvent>(
   }
 }
 
-/** 解析并分发单个 SSE 块:坏帧/分发抛错都不中断整条流。 */
+/**
+ * 解析并分发单个 SSE 块。
+ * - 坏 JSON 帧:跳过且**不推进** lastEventId(无法解析就不当作已处理)。
+ * - onEvent(业务分发)抛错:**向上传播**以中止当前流,且**不推进** lastEventId——
+ *   交由全局流的重连(从上一个已确认 id 续传)重放该事件,保证 at-least-once,
+ *   绝不“吞掉异常的同时确认 offset”而永久丢事件。
+ */
 function dispatchSseBlock<T extends AppEvent = AppEvent>(
   block: string,
   onEvent: (event: T) => void,
@@ -860,23 +866,15 @@ function dispatchSseBlock<T extends AppEvent = AppEvent>(
   try {
     event = JSON.parse(data) as T;
   } catch (error) {
-    // 单条坏帧不应炸掉整条流(否则 run 误判失败 / 全局流抖动重连),记录并跳过。
+    // 单条坏帧不应炸掉整条流(否则 run 误判失败 / 全局流抖动重连),记录并跳过、不推进 id。
     console.warn("[api] 跳过无法解析的 SSE data 帧", {
       error: error instanceof Error ? error.message : String(error),
       preview: data.slice(0, 200)
     });
     return;
   }
-  try {
-    onEvent(event);
-  } catch (error) {
-    // 分发回调抛错同样不中断整条流;记录后继续。
-    console.error("[api] SSE 事件分发回调抛错", {
-      error: error instanceof Error ? error.message : String(error)
-    });
-  }
-  // 即使分发抛错也推进 lastEventId:重连按 id 续传,message/tool_call 有按 id 去重,
-  // 避免因 id 不前进导致重连重复投递(尤其 delta 无去重)。
+  // 先分发再推进 id:onEvent 抛错时不会执行到 onEventId,offset 不前进,事件可被重放。
+  onEvent(event);
   if (eventId) {
     options.onEventId?.(eventId);
   }

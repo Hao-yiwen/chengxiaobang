@@ -490,9 +490,20 @@ export class AgentRunner {
   async *stream(
     input: RunRequest,
     // 进程内专用（调度器等），刻意不进 shared 的 runRequestSchema 暴露到 API 面。
-    internal: { headless?: boolean } = {}
+    internal: { headless?: boolean; signal?: AbortSignal } = {}
   ): AsyncGenerator<StreamEvent> {
     const controller = new AbortController();
+    // 外部信号(如定时任务总时限)可在尚未拿到 runId 时就中止本 run:run 会在下一个
+    // signal 检查点自行收尾(run_end aborted),不会成为无人跟踪的孤儿。
+    if (internal.signal) {
+      if (internal.signal.aborted) {
+        controller.abort(internal.signal.reason);
+      } else {
+        internal.signal.addEventListener("abort", () => controller.abort(internal.signal?.reason), {
+          once: true
+        });
+      }
+    }
     const planMode = input.planMode ?? false;
     const headless = internal.headless ?? false;
     const selectedProvider = input.providerId
