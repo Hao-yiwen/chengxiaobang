@@ -258,17 +258,18 @@ export class DesktopUpdateService {
   }
 
   private handleError(error: unknown, manual: boolean): void {
-    const message = messageFromError(error);
+    const displayError = normalizeErrorMessage(error);
     console.error("[update] 更新流程失败", {
       manual,
       status: this.state.status,
-      error: message
+      error,
+      displayError
     });
     this.setState({
       ...this.state,
       status: "error",
       // 完整错误已写日志,UI 只展示归一化后的精简文案,避免 electron-updater 的长错误撑满更新中心面板。
-      error: normalizeErrorMessage(error),
+      error: displayError,
       progress: undefined,
       isManualCheck: manual
     });
@@ -320,8 +321,4 @@ function clampPercent(percent: number): number {
     return 0;
   }
   return Math.max(0, Math.min(100, percent));
-}
-
-function messageFromError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

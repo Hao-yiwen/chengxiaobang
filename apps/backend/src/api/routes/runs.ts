@@ -105,11 +105,14 @@ function runStreamResponse(runner: AgentRunner, input: RunRequest): Response {
           controller.enqueue(encoder.encode(encodeSseEvent(event)));
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error("[api] /api/runs/stream 运行失败:", message);
+        const normalizedError = normalizeErrorMessage(error);
+        console.error("[api] /api/runs/stream 运行失败", {
+          error,
+          displayError: normalizedError
+        });
         controller.enqueue(
           encoder.encode(
-            encodeSseEvent({ type: "setup_error", error: normalizeErrorMessage(message) })
+            encodeSseEvent({ type: "setup_error", error: normalizedError })
           )
         );
       } finally {
@@ -202,17 +205,22 @@ function startRunAndPublish(context: AppContext, input: RunRequest): Promise<Run
           reject(new Error("运行启动失败：后端没有返回 run_started 事件"));
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const normalizedError = normalizeErrorMessage(error);
         if (!settled) {
           settled = true;
-          console.error("[api] /api/runs 启动失败:", message);
+          console.error("[api] /api/runs 启动失败", {
+            error,
+            displayError: normalizedError
+          });
           reject(error);
           return;
         }
-        console.error("[api] /api/runs 后台运行失败:", message);
+        console.error("[api] /api/runs 后台运行失败", {
+          error,
+          displayError: normalizedError
+        });
         if (startedRunId) {
-          // 持久化与推送给前端的 run_end 都用归一化后的精简错误,完整 message 已在上方日志。
-          const normalizedError = normalizeErrorMessage(message);
+          // 持久化与推送给前端的 run_end 都用归一化后的精简错误,完整 error 已在上方日志。
           await context.store
             .updateRunStatus(startedRunId, "failed", undefined, normalizedError)
             .catch((storeError) => {
