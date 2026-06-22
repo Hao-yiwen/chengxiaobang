@@ -8,6 +8,7 @@ export * from "./model";
 export * from "./model-catalog";
 export * from "./plan";
 export * from "./plugin";
+export * from "./product";
 export * from "./project";
 export * from "./provider";
 export * from "./provider-catalog.generated";

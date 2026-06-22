@@ -85,12 +85,13 @@ import {
   createStartupSplashUrl,
   loadStartupSplashImageDataUrl
 } from "./startup-splash";
+// PRODUCT_NAME 来自 shared,作为应用名静态文案的唯一来源。
+// app.getName() 在 dev 下返回 package.json 的 "@chengxiaobang/desktop",
+// 会让 macOS 菜单栏与「关于」面板显示成 "@chengxiaobang",因此统一用此常量覆盖。
+import { PRODUCT_NAME } from "@chengxiaobang/shared/product";
 
 const MAX_CONTEXT_FILE_BYTES = 256 * 1024;
 const DEFAULT_BLANK_PROJECT_NAME = "未命名项目";
-// 应用正式展示名。app.getName() 在 dev 下返回 package.json 的 "@chengxiaobang/desktop"，
-// 会让 macOS 菜单栏与「关于」面板显示成 "@chengxiaobang"，因此统一用此常量覆盖。
-const PRODUCT_NAME = "程小帮";
 const desktopLogging = initializeDesktopLogging({ logDir: defaultLogDir() });
 
 if (desktopLogging) {
@@ -1082,7 +1083,7 @@ async function createWindow(): Promise<void> {
     height: 820,
     minWidth: 960,
     minHeight: 640,
-    title: "程小帮",
+    title: PRODUCT_NAME,
     show: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#fafafa",
     ...(process.platform === "darwin"
