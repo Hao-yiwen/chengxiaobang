@@ -1,4 +1,5 @@
 import { BrowserWindow } from "electron";
+import { normalizeErrorMessage } from "@chengxiaobang/shared";
 import type { ProgressInfo, UpdateInfo } from "electron-updater";
 import type { DesktopUpdateState } from "../common/update";
 import type { TrustedIpcRegistrar } from "./trusted-ipc";
@@ -266,7 +267,8 @@ export class DesktopUpdateService {
     this.setState({
       ...this.state,
       status: "error",
-      error: message,
+      // 完整错误已写日志,UI 只展示归一化后的精简文案,避免 electron-updater 的长错误撑满更新中心面板。
+      error: normalizeErrorMessage(error),
       progress: undefined,
       isManualCheck: manual
     });

@@ -3,6 +3,7 @@ import {
   approvalDecisionSchema,
   encodeSseEvent,
   isStreamEvent,
+  normalizeErrorMessage,
   type AppEvent,
   type RunRequest,
   type RunStartResponse,
@@ -108,7 +109,7 @@ function runStreamResponse(runner: AgentRunner, input: RunRequest): Response {
         console.error("[api] /api/runs/stream 运行失败:", message);
         controller.enqueue(
           encoder.encode(
-            encodeSseEvent({ type: "setup_error", error: message })
+            encodeSseEvent({ type: "setup_error", error: normalizeErrorMessage(message) })
           )
         );
       } finally {
@@ -210,8 +211,10 @@ function startRunAndPublish(context: AppContext, input: RunRequest): Promise<Run
         }
         console.error("[api] /api/runs 后台运行失败:", message);
         if (startedRunId) {
+          // 持久化与推送给前端的 run_end 都用归一化后的精简错误,完整 message 已在上方日志。
+          const normalizedError = normalizeErrorMessage(message);
           await context.store
-            .updateRunStatus(startedRunId, "failed", undefined, message)
+            .updateRunStatus(startedRunId, "failed", undefined, normalizedError)
             .catch((storeError) => {
               console.warn("[api] 后台运行失败状态写入失败", {
                 runId: startedRunId,
@@ -222,7 +225,7 @@ function startRunAndPublish(context: AppContext, input: RunRequest): Promise<Run
             type: "run_end",
             runId: startedRunId,
             status: "failed",
-            error: message
+            error: normalizedError
           });
         }
       }

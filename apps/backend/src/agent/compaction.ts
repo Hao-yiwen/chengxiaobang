@@ -1,7 +1,13 @@
 import { streamSimple } from "@earendil-works/pi-ai";
 import type { Context } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import type { ProviderConfig, Session, StreamEvent, TokenUsage } from "@chengxiaobang/shared";
+import {
+  normalizeErrorMessage,
+  type ProviderConfig,
+  type Session,
+  type StreamEvent,
+  type TokenUsage
+} from "@chengxiaobang/shared";
 import type { StateStore, StoredMessage } from "../repository/state-store";
 import { buildModel, buildModelStreamOptions, toTokenUsage } from "../model/pi-model";
 import type { UsageCostAttempt, UsageCostLedgerService } from "../usage/usage-cost-ledger";
@@ -270,7 +276,9 @@ export async function* runCompaction(options: {
     await store.updateRunStatus(runId, "completed", result.usage);
     yield { type: "run_end", runId, status: "completed", usage: result.usage };
   } catch (error) {
-    const errorText = error instanceof Error ? error.message : String(error);
+    // 完整错误先写日志,持久化与推送给前端的 run_end 只保留归一化后的精简文案。
+    console.error("[compaction] 压缩运行失败", { runId, error });
+    const errorText = normalizeErrorMessage(error);
     await store.updateRunStatus(runId, "failed", undefined, errorText);
     yield {
       type: "run_end",

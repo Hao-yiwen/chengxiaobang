@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import type { AppEvent } from "@chengxiaobang/shared";
+import { normalizeErrorMessage, type AppEvent } from "@chengxiaobang/shared";
 import { EventHub } from "../events/event-hub";
 import { SlashCommandService } from "../tools/slash-command-service";
 import { UsageCostLedgerService } from "../usage/usage-cost-ledger";
@@ -65,7 +65,15 @@ export function createApp(options: AppOptions): (request: Request) => Promise<Re
   registerRoutes(app, context);
 
   app.notFound((c) => c.json({ error: "接口不存在" }, 404));
-  app.onError((error, c) => c.json({ error: error.message }, 500));
+  app.onError((error, c) => {
+    // 完整错误进日志便于排查,响应体只回归一化后的精简文案,避免长错误透传到前端撑满屏幕。
+    console.error("[api] 未捕获的请求错误", {
+      method: c.req.method,
+      path: c.req.path,
+      error
+    });
+    return c.json({ error: normalizeErrorMessage(error) }, 500);
+  });
 
   return async (request) => app.fetch(request);
 }
