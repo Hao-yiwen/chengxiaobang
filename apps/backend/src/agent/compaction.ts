@@ -49,9 +49,22 @@ export function compactableMessages(
   messages: StoredMessage[],
   compactedUpToMessageId?: string
 ): StoredMessage[] {
-  const cutoffIndex = compactedUpToMessageId
+  let cutoffIndex = compactedUpToMessageId
     ? messages.findIndex((message) => message.id === compactedUpToMessageId)
     : -1;
+  if (compactedUpToMessageId && cutoffIndex === -1) {
+    // 压缩指针悬空:降级到最近一条摘要行,避免把早期历史重复纳入再次压缩。
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]!.kind === "compaction_summary") {
+        cutoffIndex = i;
+        break;
+      }
+    }
+    console.warn("[compaction] compactedUpToMessageId 悬空，降级到最近摘要行", {
+      compactedUpToMessageId,
+      cutoffIndex
+    });
+  }
   const visible = messages.filter(
     (message, index) => index > cutoffIndex && message.kind !== "compaction_summary"
   );

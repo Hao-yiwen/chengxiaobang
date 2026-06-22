@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApprovalDecision } from "@chengxiaobang/shared";
 import { ApprovalQueue, normalizeDecision } from "../src/agent/approval-queue";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("ApprovalQueue（泛化决议）", () => {
   it("wait→decide 携带 payload round-trip", async () => {
@@ -57,6 +61,21 @@ describe("ApprovalQueue（泛化决议）", () => {
     await expect(queue.wait("tool_4", controller.signal)).resolves.toEqual({
       approved: false
     });
+  });
+
+  it("过期早到决议被 TTL 回收，不被后续 wait 消费（防误发/重复 decide 无界堆积）", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const queue = new ApprovalQueue();
+    // decide 先于 wait 到达，暂存为早到决议。
+    expect(queue.decide("tool_ttl", { approved: true })).toBe(true);
+    // 超过 TTL（60s）后再 wait：早到决议应已被清理。
+    vi.setSystemTime(61_000);
+    const controller = new AbortController();
+    const pending = queue.wait("tool_ttl", controller.signal);
+    controller.abort();
+    // 若早到决议未被回收，这里会立即 resolve 成 {approved:true};被回收后走 abort 路径返回拒绝。
+    await expect(pending).resolves.toEqual({ approved: false });
   });
 });
 

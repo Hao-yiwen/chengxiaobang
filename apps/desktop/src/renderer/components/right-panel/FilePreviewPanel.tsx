@@ -25,6 +25,7 @@ import { useTranslation } from "react-i18next";
 import pdfjsModuleUrl from "pdfjs-dist/build/pdf.min.mjs?url";
 import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { PptxViewer as PptxViewerInstance } from "@aiden0z/pptx-renderer";
 import { Markdown } from "@/components/Markdown";
 import { ProjectFileTree } from "./ProjectFileTree";
@@ -627,6 +628,10 @@ function MissingPreview() {
 function PdfPreview({ data }: { data: ArrayBuffer }) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // 单一 PDF 文档实例:文档只加载一次(随 data 变化重载),翻页/缩放只 getPage+render,
+  // 不再重复 getDocument。避免同一文件解析两遍,以及两份文档实例交错 cleanup 触发
+  // "Transport destroyed"。
+  const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
   const [state, setState] = useState<{
     status: "loading" | "ready" | "error";
     error?: string;
@@ -637,21 +642,19 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
 
   useEffect(() => {
     let cancelled = false;
-    let cleanup: (() => void) | undefined;
+    pdfDocRef.current = null;
+    setState((current) => ({ ...current, status: "loading", page: 1, pageCount: 0 }));
     void (async () => {
       try {
         const pdfjs = await import("pdfjs-dist");
         pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-        const task = pdfjs.getDocument({ data: pdfData(data) });
-        const pdf = await task.promise;
+        const pdf = await pdfjs.getDocument({ data: pdfData(data) }).promise;
         if (cancelled) {
           await pdf.cleanup();
           return;
         }
+        pdfDocRef.current = pdf;
         setState((current) => ({ ...current, status: "ready", pageCount: pdf.numPages }));
-        cleanup = () => {
-          void pdf.cleanup();
-        };
       } catch (error) {
         if (!cancelled) {
           console.warn("[FilePreviewPanel] PDF 加载失败", error);
@@ -665,7 +668,9 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
     })();
     return () => {
       cancelled = true;
-      cleanup?.();
+      const pdf = pdfDocRef.current;
+      pdfDocRef.current = null;
+      void pdf?.cleanup();
     };
   }, [data]);
 
@@ -673,18 +678,18 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
     if (state.status !== "ready" || !canvasRef.current) {
       return;
     }
+    const pdf = pdfDocRef.current;
+    if (!pdf) {
+      return;
+    }
     let cancelled = false;
     let renderTask: { cancel(): void; promise: Promise<unknown> } | undefined;
     void (async () => {
       try {
-        const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-        const pdf = await pdfjs.getDocument({ data: pdfData(data) }).promise;
         const page = await pdf.getPage(state.page);
         const viewport = page.getViewport({ scale: state.scale });
         const canvas = canvasRef.current;
         if (!canvas || cancelled) {
-          await pdf.cleanup();
           return;
         }
         const outputScale = window.devicePixelRatio || 1;
@@ -698,7 +703,6 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
           transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined
         });
         await renderTask.promise;
-        await pdf.cleanup();
       } catch (error) {
         if (!cancelled && !(error instanceof Error && error.name === "RenderingCancelledException")) {
           console.warn("[FilePreviewPanel] PDF 页面渲染失败", error);
@@ -714,7 +718,7 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
       cancelled = true;
       renderTask?.cancel();
     };
-  }, [data, state.page, state.scale, state.status]);
+  }, [state.page, state.scale, state.status]);
 
   if (state.status === "loading") {
     return <CenteredLoader />;

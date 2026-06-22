@@ -110,8 +110,21 @@ export function settledSessionHistoryPatch(
   sessionId: string,
   messages: Message[],
   history: SessionRunHistory,
-  view?: View
+  view?: View,
+  settleRunId?: string
 ): Partial<AppState> {
+  // 收尾写回(run_end 后的异步刷新)期间若同一会话已起新 run(activeRunId 变了),整体跳过,
+  // 避免用过期的后端读覆盖新 run 的 messages / 运行态。仅在显式传入 settleRunId 时启用该守卫,
+  // 其他调用方(切换会话等)行为不变。
+  if (
+    settleRunId !== undefined &&
+    state.activeSessionId === sessionId &&
+    state.isRunning &&
+    state.activeRunId !== undefined &&
+    state.activeRunId !== settleRunId
+  ) {
+    return {};
+  }
   const shouldClearCurrentRun = state.activeSessionId === sessionId && state.isRunning;
   const targetScope = view ? composerDraftScopeForView(view, sessionId) : undefined;
   return {

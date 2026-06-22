@@ -1,5 +1,6 @@
 import { createId, isStreamEvent } from "@chengxiaobang/shared";
 import type { MessageAttachment } from "@chengxiaobang/shared";
+import i18n from "../../i18n";
 import { saveDisplayAttachmentSnapshots } from "../../lib/attachment-preparation";
 import { showSystemNotification } from "../../lib/notifications";
 import { apiClientRef } from "../client";
@@ -818,7 +819,18 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
         if (!apiClientRef.current || !activeRunId) {
           return;
         }
-        await apiClientRef.current.abort(activeRunId);
+        // abort 请求本身可能失败(HTTP 非 2xx / 网络错误);本地 isRunning 依赖服务端回推
+        // run_end(aborted) 清理,所以这里不能静默吞错,否则界面会永久停在“运行中”。
+        // 捕获后给出可见提示让用户重试,保留运行态由服务端事件收尾。
+        try {
+          await apiClientRef.current.abort(activeRunId);
+        } catch (error) {
+          console.error("[store] 中止运行失败", {
+            activeRunId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          set({ notice: i18n.t("notice.abortFailed") });
+        }
       },
 
       approve(toolCallId, decision) {
@@ -891,7 +903,11 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           return;
         }
 
-        set((current) => ({ events: [...current.events, event] }));
+        // events 仅被 failedRunNotices 消费(只看 run_end 失败事件),因此只收 run_end;
+        // 避免把每个 delta 都全量拷贝进数组,造成长流式回复 O(n²) 的内存与重渲染。
+        if (event.type === "run_end") {
+          set((current) => ({ events: [...current.events, event] }));
+        }
         switch (event.type) {
           case "setup_error":
             flushBufferedDeltas();
@@ -1082,10 +1098,13 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
                   }
                 : {})
             }));
+            const endedRunId = event.runId;
             void (async () => {
               await get().refresh();
               if (sessionId && apiClientRef.current) {
-                await get().loadSessionDetail(sessionId);
+                // 传入刚结束的 runId:收尾写回只在当前活跃 run 仍是它(或无新 run)时才清运行态/覆盖消息,
+                // 避免在收尾期间用户已在同一会话发起新 run 时把新 run 清空或回退。
+                await get().loadSessionDetail(sessionId, "chat", { settleRunId: endedRunId });
               }
               if (event.status === "completed" && sessionId) {
                 await get().startNextQueuedRun(sessionId);

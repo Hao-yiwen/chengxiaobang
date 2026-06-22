@@ -131,6 +131,10 @@ export function TerminalPanel() {
   const project = useAppStore(selectActiveProject);
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  // t 只用于退出/启动失败的文案;用 ref 持有最新 t,避免它进入下方 effect 依赖——否则切换
+  // 界面语言会重建 PTY,丢掉当前终端会话、滚动缓冲与运行中的命令。
+  const tRef = useRef(t);
+  tRef.current = t;
 
   useEffect(() => {
     if (!project || !hasTerminalBridge() || !containerRef.current) {
@@ -208,7 +212,7 @@ export function TerminalPanel() {
     });
     const offExit = bridge?.onTerminalExit?.((event) => {
       if (event.id === terminalId) {
-        terminal.write(`\r\n${t("rightPanel.terminalExited", { code: event.exitCode })}\r\n`);
+        terminal.write(`\r\n${tRef.current("rightPanel.terminalExited", { code: event.exitCode })}\r\n`);
       }
     });
 
@@ -223,7 +227,7 @@ export function TerminalPanel() {
       .then((result) => {
         if (!result.ok && !disposed) {
           terminal.write(
-            `${t("rightPanel.terminalStartFailed", { message: result.error })}\r\n`
+            `${tRef.current("rightPanel.terminalStartFailed", { message: result.error })}\r\n`
           );
         }
       });
@@ -242,7 +246,8 @@ export function TerminalPanel() {
         terminalRef.current = null;
       }
     };
-  }, [project, t]);
+    // 故意不依赖 t:文案通过 tRef 读取最新值,语言切换不应重建终端。
+  }, [project]);
 
   if (!project) {
     return (

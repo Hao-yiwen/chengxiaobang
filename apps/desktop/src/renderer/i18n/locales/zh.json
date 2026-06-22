@@ -1008,7 +1008,8 @@
     "exportFailed": "导出失败，请重试",
     "messageFeedbackFailed": "反馈保存失败，请重试",
     "openArtifactDesktopOnly": "需要在桌面端打开该文件",
-    "createBlankProjectFailed": "新建空白项目失败，请重试"
+    "createBlankProjectFailed": "新建空白项目失败，请重试",
+    "abortFailed": "停止运行失败，请重试"
   },
   "notifications": {
     "dismiss": "关闭提示",

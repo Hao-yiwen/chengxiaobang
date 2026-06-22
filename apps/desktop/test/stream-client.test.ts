@@ -27,6 +27,38 @@ describe("readSseStream", () => {
     ]);
   });
 
+  it("dispatches a final event that is not terminated by a blank line", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        // 最后一个事件不带尾随 \n\n 就关闭:仍应被解析投递(否则前端会丢掉 run_end 卡运行态)。
+        controller.enqueue(
+          encoder.encode('event: run_end\ndata: {"type":"run_end","runId":"run_1","status":"completed"}')
+        );
+        controller.close();
+      }
+    });
+    const events: unknown[] = [];
+    await readSseStream(stream, (event) => events.push(event));
+    expect(events).toEqual([{ type: "run_end", runId: "run_1", status: "completed" }]);
+  });
+
+  it("skips an unparsable data frame without aborting the stream", async () => {
+    const encoder = new TextEncoder();
+    const good: StreamEvent = { type: "delta", runId: "run_1", channel: "text", delta: "ok" };
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("event: delta\ndata: {not json}\n\n"));
+        controller.enqueue(encoder.encode(encodeSseEvent(good)));
+        controller.close();
+      }
+    });
+    const events: StreamEvent[] = [];
+    await readSseStream<StreamEvent>(stream, (event) => events.push(event));
+    // 坏帧被跳过,后续合法事件仍正常投递。
+    expect(events).toEqual([good]);
+  });
+
   it("tracks SSE event ids", async () => {
     const event: StreamEvent = {
       type: "run_started",

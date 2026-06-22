@@ -288,18 +288,32 @@ class RotatingLogDestination {
       return this.active.destination;
     }
 
-    if (this.active) {
-      this.closeDestination(this.active.destination);
+    const previous = this.active;
+    try {
+      mkdirSync(dirname(nextPath), { recursive: true });
+      const destination = pino.destination({
+        dest: nextPath,
+        minLength: 0,
+        sync: false
+      });
+      // 成功创建新分片目标后再关闭旧目标:避免新目标创建失败时旧目标已被关闭、无处可写。
+      if (previous) {
+        this.closeDestination(previous.destination);
+      }
+      this.active = { path: nextPath, destination };
+      return destination;
+    } catch (error) {
+      // 切片目录创建/打开失败(如磁盘满):退回上一个目标继续写并告警,而不是抛错丢日志。
+      writeTerminalLog(
+        "error",
+        "[logging] 切换日志分片失败，继续沿用上一个日志目标",
+        { source: this.source, nextPath, error: error instanceof Error ? error.message : String(error) }
+      );
+      if (previous) {
+        return previous.destination;
+      }
+      throw error instanceof Error ? error : new Error(String(error));
     }
-
-    mkdirSync(dirname(nextPath), { recursive: true });
-    const destination = pino.destination({
-      dest: nextPath,
-      minLength: 0,
-      sync: false
-    });
-    this.active = { path: nextPath, destination };
-    return destination;
   }
 
   private closeDestination(destination: PinoFileDestination): void {

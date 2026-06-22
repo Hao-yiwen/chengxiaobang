@@ -19,9 +19,18 @@ export function buildAgentMessages(
   compactedUpToMessageId?: string
 ): PiMessage[] {
   const summary = [...rows].reverse().find((row) => row.kind === "compaction_summary");
-  const cutoffIndex = compactedUpToMessageId
+  let cutoffIndex = compactedUpToMessageId
     ? rows.findIndex((row) => row.id === compactedUpToMessageId)
     : -1;
+  if (compactedUpToMessageId && cutoffIndex === -1) {
+    // 压缩指针悬空(指向的消息已被回退删除):降级为截断到最近一条摘要行,
+    // 避免 cutoff 失效导致早期历史连同摘要一起被全量回灌模型(可能直接超上限)。
+    cutoffIndex = summary ? rows.indexOf(summary) : -1;
+    console.warn("[history] compactedUpToMessageId 悬空，降级到最近摘要行", {
+      compactedUpToMessageId,
+      cutoffIndex
+    });
+  }
 
   const history: PiMessage[] = [];
   for (const [index, row] of rows.entries()) {

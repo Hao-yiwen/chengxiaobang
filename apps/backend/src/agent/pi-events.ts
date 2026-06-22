@@ -660,9 +660,19 @@ export class RunEventTranslator {
       });
       return;
     }
-    if (entity.status === "rejected") {
-      // A blocked tool already emitted its rejected transition; pi's follow-up
-      // error result must not clobber it.
+    if (
+      entity.status === "rejected" ||
+      entity.status === "pending_approval" ||
+      entity.status === "pending_smart_approval"
+    ) {
+      // 已拒绝:被拦截的工具已发出 rejected 迁移,pi 后续的 error result 不能覆盖它。
+      // 仍处于待审批:执行结束事件不应把审批态直接写成 completed/failed 而丢掉审批记录
+      //(正常顺序下不会发生,这里是对事件乱序的防御)。
+      console.warn("[pi-events] 工具执行结束事件命中非运行态，跳过覆盖", {
+        runId: this.options.runId,
+        toolCallId,
+        status: entity.status
+      });
       return;
     }
     const fileChange = !isError

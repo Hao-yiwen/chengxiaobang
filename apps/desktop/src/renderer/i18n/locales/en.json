@@ -1018,7 +1018,8 @@
     "exportFailed": "Export failed, please try again",
     "messageFeedbackFailed": "Failed to save feedback. Please try again",
     "openArtifactDesktopOnly": "Opening this file requires the desktop app",
-    "createBlankProjectFailed": "Failed to create a blank project. Please try again"
+    "createBlankProjectFailed": "Failed to create a blank project. Please try again",
+    "abortFailed": "Failed to stop the run. Please try again."
   },
   "notifications": {
     "dismiss": "Dismiss notification",

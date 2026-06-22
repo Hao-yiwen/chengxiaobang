@@ -767,14 +767,24 @@ export async function createApiClient(): Promise<ApiClient> {
         throw new Error(body.error ?? response.statusText ?? "运行请求失败");
       }
       let sawEvent = false;
+      let sawTerminal = false;
       await readSseStream<StreamEvent>(response.body, (event) => {
         sawEvent = true;
+        if (event.type === "run_end" || event.type === "setup_error") {
+          sawTerminal = true;
+        }
         onEvent(event);
       });
       // 空事件流意味着 run 在启动阶段就失败了，要显式暴露错误。
       if (!sawEvent) {
         console.error("[api] /api/runs/stream 返回了空事件流");
         throw new Error("运行启动失败：后端没有返回任何事件，请检查模型配置");
+      }
+      // 流自然结束却没有任何终态事件(run_end / setup_error):属于中途断流(网络中断/连接被关),
+      // 不能当成功收尾,否则上层不会清理 isRunning。抛错交由调用方走 run 失败收尾。
+      if (!sawTerminal) {
+        console.error("[api] /api/runs/stream 流在终态事件之前中断");
+        throw new Error("运行流中断：连接在结束前断开，请重试");
       }
     }
   };
@@ -824,15 +834,50 @@ export async function readSseStream<T extends AppEvent = AppEvent>(
     const blocks = buffer.split(/\n\n+/);
     buffer = blocks.pop() ?? "";
     for (const block of blocks) {
-      const lines = block.split("\n");
-      const eventId = lines.find((line) => line.startsWith("id: "))?.slice(4);
-      const data = lines.find((line) => line.startsWith("data: "))?.slice(6);
-      if (data) {
-        onEvent(JSON.parse(data) as T);
-        if (eventId) {
-          options.onEventId?.(eventId);
-        }
-      }
+      dispatchSseBlock<T>(block, onEvent, options);
     }
+  }
+  // 流结束时 buffer 可能仍残留一个未以 \n\n 收尾的事件(代理/压缩层未补尾,或最后事件紧贴关闭),
+  // 补解析一次,避免丢掉最后一个事件(可能是 run_end,丢了会让前端永久卡运行态)。
+  if (buffer.trim().length > 0) {
+    dispatchSseBlock<T>(buffer, onEvent, options);
+  }
+}
+
+/** 解析并分发单个 SSE 块:坏帧/分发抛错都不中断整条流。 */
+function dispatchSseBlock<T extends AppEvent = AppEvent>(
+  block: string,
+  onEvent: (event: T) => void,
+  options: ReadSseStreamOptions
+): void {
+  const lines = block.split("\n");
+  const eventId = lines.find((line) => line.startsWith("id: "))?.slice(4);
+  const data = lines.find((line) => line.startsWith("data: "))?.slice(6);
+  if (!data) {
+    return;
+  }
+  let event: T;
+  try {
+    event = JSON.parse(data) as T;
+  } catch (error) {
+    // 单条坏帧不应炸掉整条流(否则 run 误判失败 / 全局流抖动重连),记录并跳过。
+    console.warn("[api] 跳过无法解析的 SSE data 帧", {
+      error: error instanceof Error ? error.message : String(error),
+      preview: data.slice(0, 200)
+    });
+    return;
+  }
+  try {
+    onEvent(event);
+  } catch (error) {
+    // 分发回调抛错同样不中断整条流;记录后继续。
+    console.error("[api] SSE 事件分发回调抛错", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+  // 即使分发抛错也推进 lastEventId:重连按 id 续传,message/tool_call 有按 id 去重,
+  // 避免因 id 不前进导致重连重复投递(尤其 delta 无去重)。
+  if (eventId) {
+    options.onEventId?.(eventId);
   }
 }
