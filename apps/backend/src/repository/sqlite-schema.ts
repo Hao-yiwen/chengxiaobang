@@ -25,8 +25,11 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       access_mode text not null,
       model text,
       reasoning_mode text,
+      side_chat_anchor_message_id text,
+      side_chat_parent_session_id text,
       created_at text not null,
       updated_at text not null,
+      last_viewed_at text,
       foreign key (project_id) references projects(id) on delete set null
     );
     create table if not exists messages (
@@ -178,8 +181,11 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
   ensureColumn(connection, "sessions", "fork_point_message_id", "text");
   ensureColumn(connection, "sessions", "feishu_chat_id", "text");
   ensureColumn(connection, "sessions", "wechat_chat_id", "text");
+  ensureColumn(connection, "sessions", "side_chat_anchor_message_id", "text");
+  ensureColumn(connection, "sessions", "side_chat_parent_session_id", "text");
   ensureColumn(connection, "sessions", "model", "text");
   ensureColumn(connection, "sessions", "reasoning_mode", "text");
+  ensureSessionLastViewedAtColumn(connection);
   ensureColumn(connection, "providers", "reasoning_mode", "text");
   ensureColumn(connection, "providers", "models", "text");
   ensureColumn(connection, "providers", "model_overrides", "text");
@@ -187,7 +193,94 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
   ensureColumn(connection, "sessions", "pinned_at", "text");
   ensureColumn(connection, "scheduled_tasks", "kind", "text not null default 'recurring'");
   ensureColumn(connection, "scheduled_tasks", "run_at", "text");
+  ensureSideChatIndexesAndTriggers(connection);
   markInterruptedRunsFromPreviousProcess(connection);
+}
+
+function ensureSideChatIndexesAndTriggers(connection: SqliteConnection): void {
+  connection.exec(`
+    create unique index if not exists idx_sessions_side_chat_anchor
+      on sessions(side_chat_anchor_message_id)
+      where side_chat_anchor_message_id is not null;
+    create index if not exists idx_sessions_side_chat_parent
+      on sessions(side_chat_parent_session_id);
+    drop trigger if exists trg_messages_delete_side_chat;
+    drop trigger if exists trg_sessions_delete_side_chats;
+    create trigger trg_messages_delete_side_chat
+      after delete on messages
+      begin
+        delete from tool_calls
+          where run_id in (
+            select id from runs
+            where session_id in (
+              select id from sessions where side_chat_anchor_message_id = old.id
+            )
+          );
+        delete from usage_cost_entries
+          where session_id in (
+            select id from sessions where side_chat_anchor_message_id = old.id
+          );
+        delete from runs
+          where session_id in (
+            select id from sessions where side_chat_anchor_message_id = old.id
+          );
+        delete from scheduled_tasks
+          where session_id in (
+            select id from sessions where side_chat_anchor_message_id = old.id
+          );
+        delete from messages
+          where session_id in (
+            select id from sessions where side_chat_anchor_message_id = old.id
+          );
+        delete from sessions where side_chat_anchor_message_id = old.id;
+      end;
+    create trigger trg_sessions_delete_side_chats
+      after delete on sessions
+      begin
+        delete from tool_calls
+          where run_id in (
+            select id from runs
+            where session_id in (
+              select id from sessions where side_chat_parent_session_id = old.id
+            )
+          );
+        delete from usage_cost_entries
+          where session_id in (
+            select id from sessions where side_chat_parent_session_id = old.id
+          );
+        delete from runs
+          where session_id in (
+            select id from sessions where side_chat_parent_session_id = old.id
+          );
+        delete from scheduled_tasks
+          where session_id in (
+            select id from sessions where side_chat_parent_session_id = old.id
+          );
+        delete from messages
+          where session_id in (
+            select id from sessions where side_chat_parent_session_id = old.id
+          );
+        delete from sessions where side_chat_parent_session_id = old.id;
+      end;
+  `);
+}
+
+function ensureSessionLastViewedAtColumn(connection: SqliteConnection): void {
+  const columns = connection.query("pragma table_info(sessions)");
+  const hasColumn = columns.some((row) => String(row.name) === "last_viewed_at");
+  if (!hasColumn) {
+    connection.exec("alter table sessions add column last_viewed_at text;");
+    const backfillAt = new Date(Date.now() - 1).toISOString();
+    connection.run("update sessions set last_viewed_at = ? where last_viewed_at is null", [
+      backfillAt
+    ]);
+    log.info("[sqlite-schema] 已为既有会话回填已读游标", { backfillAt });
+    return;
+  }
+  const backfillAt = new Date(Date.now() - 1).toISOString();
+  connection.run("update sessions set last_viewed_at = ? where last_viewed_at is null", [
+    backfillAt
+  ]);
 }
 
 function ensureColumn(

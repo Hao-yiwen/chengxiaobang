@@ -73,9 +73,39 @@ export function sessionRoutes(context: AppContext): Hono {
     return c.json({ session }, 201);
   });
 
+  app.get("/:sessionId/side-chats", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const sideChats = await context.store.listSideChatsForSession(sessionId);
+    log.debug("[sessions-route] 返回主会话侧边会话摘要", {
+      sessionId,
+      count: sideChats.length
+    });
+    return c.json({ sideChats });
+  });
+
   app.get("/:sessionId/messages", async (c) => {
     const messages = await context.store.listMessages(c.req.param("sessionId"));
     return c.json({ messages: messages.map(toClientMessage) });
+  });
+
+  app.post("/:sessionId/read", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    try {
+      const session = await context.store.markSessionRead(sessionId);
+      log.info("[sessions-route] 已标记会话已读", {
+        sessionId,
+        lastViewedAt: session.lastViewedAt,
+        clearedNotice: session.notice === undefined
+      });
+      return c.json({ session });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn("[sessions-route] 标记会话已读失败", { sessionId, error: message });
+      if (message === "会话不存在") {
+        return c.json({ error: "会话不存在" }, 404);
+      }
+      throw error;
+    }
   });
 
   app.patch("/:sessionId/messages/:messageId/feedback", async (c) => {

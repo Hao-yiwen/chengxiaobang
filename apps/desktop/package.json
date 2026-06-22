@@ -7,13 +7,13 @@
   "author": "chengxiaobang",
   "main": "dist/main/main.js",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "node scripts/build-system-speech-helper.mjs && node scripts/dev.mjs",
     "dev:vite": "vite --host 127.0.0.1",
     "icons": "tsx scripts/generate-icons.ts",
     "prepare-bun-runtime": "node scripts/prepare-bun-runtime.mjs",
     "smoke:packaged-backend": "node scripts/smoke-packaged-backend.mjs",
     "ocr:download": "node scripts/download-ocr-models.mjs",
-    "build": "node scripts/clean-dist.mjs && pnpm run icons && pnpm run prepare-bun-runtime && tsup --config tsup.config.ts && vite build",
+    "build": "node scripts/clean-dist.mjs && pnpm run icons && node scripts/build-system-speech-helper.mjs && pnpm run prepare-bun-runtime && tsup --config tsup.config.ts && vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "package:mac": "pnpm run build && electron-builder --mac",
     "package:win": "pnpm run build && electron-builder --win --x64"
@@ -155,6 +155,13 @@
         "to": "ocr"
       },
       {
+        "from": "build/system-speech",
+        "to": "system-speech",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "build/runtime/${os}",
         "to": "."
       }
@@ -165,6 +172,10 @@
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "程小帮需要使用麦克风来把你的语音转写为输入框文字。",
+        "NSSpeechRecognitionUsageDescription": "程小帮需要使用系统语音识别来把你的语音转写为输入框文字。"
+      },
       "notarize": true,
       "icon": "build/icon.icns",
       "target": [

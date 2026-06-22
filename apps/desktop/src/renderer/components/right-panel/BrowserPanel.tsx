@@ -4,7 +4,7 @@ import {
   GlobeOutlineIcon,
   RefreshIcon
 } from "@/assets/file-type-icons";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ExternalUrlMenu, openExternalUrlWithDefaultBrowser } from "@/components/ExternalUrlMenu";
 import { localPathFromFileUrl, normalizeBrowserUrl } from "@/lib/url";
@@ -18,11 +18,39 @@ interface WebviewElement extends HTMLElement {
   goBack(): void;
   goForward(): void;
   reload(): void;
+  stop?(): void;
   getURL(): string;
 }
 
 const NAV_BUTTON_CLASS =
   "flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
+
+function safeWebviewUrl(view: WebviewElement): string {
+  try {
+    return typeof view.getURL === "function" ? view.getURL() : view.src;
+  } catch {
+    return view.src;
+  }
+}
+
+function releaseWebview(view: WebviewElement | null, reason: string): void {
+  if (!view) {
+    return;
+  }
+  const currentUrl = safeWebviewUrl(view);
+  try {
+    view.stop?.();
+    view.src = "about:blank";
+    view.removeAttribute("src");
+    console.info("[BrowserPanel] 已释放内置浏览器 webview", { reason, url: currentUrl });
+  } catch (error) {
+    console.warn("[BrowserPanel] 释放内置浏览器 webview 失败", {
+      reason,
+      url: currentUrl,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
 
 export function BrowserPanel() {
   const { t } = useTranslation();
@@ -37,8 +65,22 @@ export function BrowserPanel() {
   // Electron 的 <webview> 需要桌面壳层支持；普通浏览器和 jsdom 回退到沙箱 iframe。
   const hasWebview = Boolean(window.chengxiaobang);
   const currentLocalPath = url ? localPathFromFileUrl(url) : undefined;
+  const attachWebviewRef = useCallback((element: HTMLElement | null) => {
+    const nextView = element as WebviewElement | null;
+    if (webviewRef.current && webviewRef.current !== nextView) {
+      releaseWebview(webviewRef.current, nextView ? "replace" : "unmount");
+    }
+    webviewRef.current = nextView;
+  }, []);
 
   useEffect(() => setAddress(url), [url]);
+
+  useEffect(() => {
+    return () => {
+      releaseWebview(webviewRef.current, "panel-unmount");
+      webviewRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const view = webviewRef.current;
@@ -158,9 +200,7 @@ export function BrowserPanel() {
           hasWebview ? (
             <webview
               key={`view:${reloadNonce}`}
-              ref={(element) => {
-                webviewRef.current = element as WebviewElement | null;
-              }}
+              ref={attachWebviewRef}
               src={url}
               partition="persist:chengxiaobang-browser"
               webpreferences="contextIsolation=yes,nodeIntegration=no,sandbox=yes"

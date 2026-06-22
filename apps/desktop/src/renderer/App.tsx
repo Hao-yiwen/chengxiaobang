@@ -64,6 +64,7 @@ export function App(props: { client?: ApiClient }) {
   const activeSession = useAppStore(selectActiveSession);
   const rightPanelOpen = useAppStore((state) => state.rightPanelOpen);
   const rightPanelMode = useAppStore((state) => state.rightPanelMode);
+  const rightPanelMaximized = useAppStore((state) => state.rightPanelMaximized);
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
   const pendingDecisionTool = useAppStore((state) => state.pendingTool);
   const addDroppedContext = useAppStore((state) => state.addDroppedContext);
@@ -348,7 +349,7 @@ export function App(props: { client?: ApiClient }) {
                     <>
                       <header
                         className={cn(
-                          "flex h-14 flex-none items-center border-b px-12 transition-[padding] duration-200 ease-out",
+                          "flex h-12 flex-none items-center border-b px-12 transition-[padding] duration-200 ease-out",
                           headerInset && "pl-[124px]"
                         )}
                       >
@@ -366,6 +367,9 @@ export function App(props: { client?: ApiClient }) {
                         data-right-panel-open={rightPanelOpen ? "true" : "false"}
                         data-right-panel-phase={rightPanelPhase}
                         data-right-panel-reserved={rightPanelLayoutActive ? "true" : "false"}
+                        data-right-panel-maximized={
+                          rightPanelLayoutActive && rightPanelMaximized ? "true" : "false"
+                        }
                         data-right-panel-mode={
                           rightPanelLayoutActive ? (rightPanelMode ?? "menu") : "closed"
                         }

@@ -25,6 +25,18 @@ contextBridge.exposeInMainWorld("chengxiaobang", {
   createQuickLookThumbnail: (filePath: string) =>
     ipcRenderer.invoke("file-preview:quicklook-thumbnail", filePath),
   ocrRecognize: (filePath: string) => ipcRenderer.invoke("ocr:recognize", filePath),
+  speechAvailability: (input?: { language?: string }) =>
+    ipcRenderer.invoke("speech:availability", input),
+  speechStart: (input?: { language?: string }) => ipcRenderer.invoke("speech:start", input),
+  speechStop: (input?: { sessionId?: string }) => ipcRenderer.invoke("speech:stop", input),
+  speechCancel: (input?: { sessionId?: string }) => ipcRenderer.invoke("speech:cancel", input),
+  onSpeechEvent: (listener: (event: unknown) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      listener(payload);
+    };
+    ipcRenderer.on("speech:event", wrapped);
+    return () => ipcRenderer.off("speech:event", wrapped);
+  },
   prepareNativeImages: (filePath: string) =>
     ipcRenderer.invoke("attachment:prepare-native-images", filePath),
   saveAttachmentSnapshots: (filePaths: string[]) =>

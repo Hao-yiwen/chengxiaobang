@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import type { AppContext } from "../context";
+import { messageRoutes } from "./messages";
 import { pluginRoutes } from "./plugins";
 import { projectRoutes } from "./projects";
 import { runRoutes } from "./runs";
@@ -13,6 +14,7 @@ import { terminalRoutes } from "./terminal";
 export function registerRoutes(app: Hono, context: AppContext): void {
   app.route("/api/projects", projectRoutes(context));
   app.route("/api/sessions", sessionRoutes(context));
+  app.route("/api/messages", messageRoutes(context));
   app.route("/api", slashCommandRoutes(context));
   app.route("/api/plugins", pluginRoutes(context));
   app.route("/api/skills", skillRoutes(context));

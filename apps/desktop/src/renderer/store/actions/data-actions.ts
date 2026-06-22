@@ -6,6 +6,7 @@ import { buildSessionMarkdown, exportFilename } from "../../lib/session-export";
 import i18n from "../../i18n";
 import { apiClientRef, replaceRunEventSubscription, setApiClient } from "../client";
 import type { AppState, AppStoreGet, AppStoreSet, View } from "../types";
+import { upsertSession } from "../helpers/collections";
 import { resolveContextAttachments } from "../helpers/attachments";
 import {
   HOME_COMPOSER_DRAFT_SCOPE,
@@ -31,6 +32,7 @@ import {
   settleInterruptedRunHistory,
   settledSessionHistoryPatch
 } from "../helpers/run-history";
+import { indexSideChatsByMessageId } from "../helpers/side-chats";
 import { latestActiveRunSnapshot } from "../helpers/run-records";
 import { clearSessionRunning } from "../helpers/running";
 import {
@@ -137,6 +139,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
                 liveSessionIds.has(sessionId)
               )
             ) as Record<string, string>,
+            notificationToasts: state.notificationToasts.filter(
+              (toast) => !toast.sessionId || liveSessionIds.has(toast.sessionId)
+            ),
             ...pruneRunQueuesByLiveSessions(state, liveSessionIds),
             ...(state.view === "home" ? resetHomePlanMode("loadData.home", state.planMode) : {}),
             rightPanelBySession: Object.fromEntries(
@@ -280,6 +285,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               "restoreInitialState.noProvider"
             ),
             activeSessionId: undefined,
+            sideChatsByMessageId: {},
+            activeSideChatAnchorMessageId: undefined,
             providerId: undefined,
             model: undefined,
             reasoningMode: undefined,
@@ -324,6 +331,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             ),
             ...restoreHomeModelSelection(state, data.providers, "restoreInitialState.home"),
             activeSessionId: undefined,
+            sideChatsByMessageId: {},
+            activeSideChatAnchorMessageId: undefined,
             messages: [],
             toolHistory: [],
             runHistory: [],
@@ -361,6 +370,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               "restoreInitialState.missingSession"
             ),
             activeSessionId: undefined,
+            sideChatsByMessageId: {},
+            activeSideChatAnchorMessageId: undefined,
             messages: [],
             toolHistory: [],
             runHistory: [],
@@ -416,11 +427,20 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         if (!apiClientRef.current) {
           return;
         }
-        const [messages, history, activeSnapshots] = await Promise.all([
-          apiClientRef.current.listMessages(id),
-          apiClientRef.current.listSessionRuns(id),
-          apiClientRef.current.listActiveRuns ? apiClientRef.current.listActiveRuns(id) : Promise.resolve([])
+        const client = apiClientRef.current;
+        const [messages, history, activeSnapshots, sideChats] = await Promise.all([
+          client.listMessages(id),
+          client.listSessionRuns(id),
+          client.listActiveRuns ? client.listActiveRuns(id) : Promise.resolve([]),
+          client.listSideChats ? client.listSideChats(id) : Promise.resolve([])
         ]);
+        console.info("[store] 加载主会话详情及侧边会话摘要", {
+          sessionId: id,
+          messageCount: messages.length,
+          runCount: history.runs.length,
+          sideChatCount: sideChats.length
+        });
+        const sideChatsByMessageId = indexSideChatsByMessageId(sideChats);
         logRecoveredFailedRuns(id, history.runs, "loadSessionDetail");
         const activeSnapshot = latestActiveRunSnapshot(activeSnapshots);
         if (!activeSnapshot) {
@@ -430,14 +450,23 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             source: "loadSessionDetail",
             interruptedRunIds: settled.interruptedRunIds
           });
-          set((state) =>
-            settledSessionHistoryPatch(state, id, messages, settled.history, view, options?.settleRunId)
-          );
+          set((state) => ({
+            ...settledSessionHistoryPatch(
+              state,
+              id,
+              messages,
+              settled.history,
+              view,
+              options?.settleRunId
+            ),
+            sideChatsByMessageId
+          }));
           return;
         }
         set((state) => ({
           messages,
           view,
+          sideChatsByMessageId,
           ...activeRunRecoveryPatch(state, activeSnapshot, history, "loadSessionDetail")
         }));
       },
@@ -486,6 +515,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             view: "chat",
             activeSessionId: id,
             activeProjectId: session?.projectId ?? undefined,
+            sideChatsByMessageId: {},
+            activeSideChatAnchorMessageId: undefined,
             providerId: sessionProvider?.id,
             ...modelState,
             accessMode: session ? session.accessMode : state.accessMode,
@@ -495,6 +526,32 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         get().clearRunState();
         await get().refreshSlashCommands(session?.projectId ?? undefined);
         await get().loadSessionDetail(id);
+        await get().markSessionRead(id);
+      },
+
+      async markSessionRead(id) {
+        const client = apiClientRef.current;
+        if (!client?.markSessionRead) {
+          console.debug("[store] 跳过标记会话已读：当前 ApiClient 不支持", { sessionId: id });
+          return;
+        }
+        try {
+          const updated = await client.markSessionRead(id);
+          set((state) => ({
+            sessions: upsertSession(state.sessions, updated),
+            notificationToasts: state.notificationToasts.filter((toast) => toast.sessionId !== id)
+          }));
+          console.info("[store] 已标记会话已读并清理通知", {
+            sessionId: id,
+            lastViewedAt: updated.lastViewedAt,
+            clearedNotice: updated.notice === undefined
+          });
+        } catch (error) {
+          console.warn("[store] 标记会话已读失败", {
+            sessionId: id,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
       },
 
       async searchSessions(query) {
@@ -580,9 +637,12 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               ),
               runningSessionsById,
               runningRunSessionById,
+              notificationToasts: state.notificationToasts.filter((toast) => toast.sessionId !== id),
               ...resetHomePlanMode("deleteSession", state.planMode),
               ...restoreHomeModelSelection(state, state.providers, "deleteSession"),
               activeSessionId: undefined,
+              sideChatsByMessageId: {},
+              activeSideChatAnchorMessageId: undefined,
               messages: [],
               toolHistory: [],
               runHistory: [],
@@ -604,7 +664,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
             composerDraftsByScope,
             ...queuePatch,
             runningSessionsById,
-            runningRunSessionById
+            runningRunSessionById,
+            notificationToasts: state.notificationToasts.filter((toast) => toast.sessionId !== id)
           };
         });
       },
@@ -646,6 +707,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           const removedSessionIds = state.sessions
             .filter((session) => session.projectId === id)
             .map((session) => session.id);
+          const removedSessionIdSet = new Set(removedSessionIds);
           const rightPanelBySession = dropRightPanelMemory(state, removedSessionIds);
           const composerDraftsByScope = dropComposerDraftMemory(state, removedSessionIds);
           const queuePatch = dropQueuedRunsForSessions(state, removedSessionIds);
@@ -658,6 +720,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               projects,
               sessions,
               rightPanelBySession,
+              notificationToasts: state.notificationToasts.filter(
+                (toast) => !toast.sessionId || !removedSessionIdSet.has(toast.sessionId)
+              ),
               ...queuePatch,
               ...restoredComposerDraftFrom(
                 composerDraftsByScope,
@@ -668,6 +733,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               ...restoreHomeModelSelection(state, state.providers, "deleteProject"),
               activeProjectId: undefined,
               activeSessionId: undefined,
+              sideChatsByMessageId: {},
+              activeSideChatAnchorMessageId: undefined,
               messages: [],
               toolHistory: [],
               runHistory: [],
@@ -683,7 +750,16 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
               view: "home" as View
             };
           }
-          return { projects, sessions, rightPanelBySession, composerDraftsByScope, ...queuePatch };
+          return {
+            projects,
+            sessions,
+            rightPanelBySession,
+            composerDraftsByScope,
+            notificationToasts: state.notificationToasts.filter(
+              (toast) => !toast.sessionId || !removedSessionIdSet.has(toast.sessionId)
+            ),
+            ...queuePatch
+          };
         });
       },
 
@@ -802,6 +878,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           ...restoreHomeModelSelection(state, state.providers, "newChat"),
           activeProjectId: undefined,
           activeSessionId: undefined,
+          sideChatsByMessageId: {},
+          activeSideChatAnchorMessageId: undefined,
           messages: [],
           toolHistory: [],
           runHistory: [],
@@ -832,6 +910,8 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           ...restoreHomeModelSelection(state, state.providers, "newChatInProject"),
           activeProjectId: projectId,
           activeSessionId: undefined,
+          sideChatsByMessageId: {},
+          activeSideChatAnchorMessageId: undefined,
           messages: [],
           toolHistory: [],
           runHistory: [],

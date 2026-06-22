@@ -12,6 +12,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import {
   askUserAnswerText,
+  isToolActivityPreviewToolName,
   normalizeErrorMessage,
   nowIso,
   proposePlanArgsSchema,
@@ -46,19 +47,9 @@ import {
 
 const REJECTED_RESULT = "用户拒绝执行该操作";
 const REJECTED_MODEL_HINT = "用户拒绝执行该操作。请考虑其他方式或向用户说明。";
-const TOOL_ACTIVITY_PREVIEW_KEYS = [
-  "path",
-  "file_path",
-  "command",
-  "query",
-  "pattern",
-  "url",
-  "title",
-  "name",
-  "skill"
-] as const;
 const TOOL_ACTIVITY_PREVIEW_MAX = 120;
 const log = getLogger({ module: "pi-events" });
+type ToolActivityUpdate = Extract<AssistantMessageEvent, { contentIndex: number }>;
 
 /** 连续以相同参数重复调用同一工具，达到此次数注入一次软提醒。 */
 const REPEATED_TOOL_THRESHOLD = 3;
@@ -628,8 +619,20 @@ export class RunEventTranslator {
         ? update.toolCall
         : update.partial.content[update.contentIndex];
     const toolCall = streamed?.type === "toolCall" ? streamed : undefined;
-    const argsPreview = previewToolArgs(toolCall?.arguments);
     const appToolCallId = toolCall?.id ? this.previewAppToolCallId(toolCall.id) : undefined;
+    if (!toolCall?.name) {
+      this.logSkippedToolActivity(update, toolCall, appToolCallId, "missing_tool_name");
+      return;
+    }
+    if (!isToolActivityPreviewToolName(toolCall.name)) {
+      this.logSkippedToolActivity(update, toolCall, appToolCallId, "unsupported_tool");
+      return;
+    }
+    const argsPreview = previewToolArgs(toolCall.arguments);
+    if (!argsPreview.file_path) {
+      this.logSkippedToolActivity(update, toolCall, appToolCallId, "missing_file_path");
+      return;
+    }
     const signature = JSON.stringify({
       toolCallId: appToolCallId,
       modelToolCallId: toolCall?.id,
@@ -660,6 +663,33 @@ export class RunEventTranslator {
         argsPreview,
         updatedAt: nowIso()
       }
+    });
+  }
+
+  private logSkippedToolActivity(
+    update: ToolActivityUpdate,
+    toolCall: { id?: string; name?: string } | undefined,
+    appToolCallId: string | undefined,
+    reason: "missing_tool_name" | "unsupported_tool" | "missing_file_path"
+  ): void {
+    const signature = JSON.stringify({
+      reason,
+      toolCallId: appToolCallId,
+      modelToolCallId: toolCall?.id,
+      name: toolCall?.name
+    });
+    if (this.toolActivitySignatures.get(update.contentIndex) === signature) {
+      return;
+    }
+    this.toolActivitySignatures.set(update.contentIndex, signature);
+    log.debug("跳过工具参数活动预览", {
+      action: "tool.activity_skip",
+      runId: this.options.runId,
+      contentIndex: update.contentIndex,
+      reason,
+      modelToolCallId: toolCall?.id,
+      toolCallId: appToolCallId,
+      toolName: toolCall?.name
     });
   }
 
@@ -1023,13 +1053,10 @@ function hasUnfinishedTodos(args: Record<string, unknown>): boolean {
 function previewToolArgs(args: unknown): ToolActivityArgsPreview {
   const preview: ToolActivityArgsPreview = {};
   const source = normalizeArgs(args);
-  for (const key of TOOL_ACTIVITY_PREVIEW_KEYS) {
-    const value =
-      typeof args === "string" ? readJsonStringField(args, key) : source[key];
-    if (typeof value !== "string" || value.length === 0) {
-      continue;
-    }
-    preview[key] = truncatePreview(value);
+  const filePath =
+    typeof args === "string" ? readJsonStringField(args, "file_path") : source.file_path;
+  if (typeof filePath === "string" && filePath.length > 0) {
+    preview.file_path = truncatePreview(filePath);
   }
   return preview;
 }

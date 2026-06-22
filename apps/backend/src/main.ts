@@ -100,10 +100,19 @@ export async function startBackend(config: BackendConfig) {
   const runner = new AgentRunner(store, secrets, {
     providerRepository: providerConfigFile,
     memoryDir,
-    createTools: async (workspacePath) =>
+    createTools: async (workspacePath, runtime) =>
       createAgentTools(workspacePath, {
         getFeishuSender: () => feishuServiceRef?.getSender(),
         webSearch: await webSearchConfigService.createSearcher(),
+        ...(runtime?.provider && runtime.apiKey
+          ? {
+              webFetch: {
+                provider: runtime.provider,
+                apiKey: runtime.apiKey,
+                signal: runtime.signal
+              }
+            }
+          : {}),
         memoryDir,
         skillMarketService,
         mcpTools: await mcpManager.getToolsForWorkspace(workspacePath),

@@ -1,6 +1,5 @@
 import {
   CheckMediumIcon,
-  CommentTextIcon,
   CopyIcon,
   EllipsisHorizontalIcon,
   PencilOutlineIcon,
@@ -41,7 +40,6 @@ export function SessionActionsMenu({ session }: { session: Session }) {
   const isRunning = useAppStore((state) => state.isRunning);
   const setSessionPinned = useAppStore((state) => state.setSessionPinned);
   const renameSession = useAppStore((state) => state.renameSession);
-  const openRightPanel = useAppStore((state) => state.openRightPanel);
   const forkSession = useAppStore((state) => state.forkSession);
   const setNotice = useAppStore((state) => state.setNotice);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -160,10 +158,6 @@ export function SessionActionsMenu({ session }: { session: Session }) {
             <span>{t("sessionMenu.rename")}</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => openRightPanel("chat")}>
-            <CommentTextIcon className="size-4" />
-            <span>{t("sessionMenu.openSideChat")}</span>
-          </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <CopyIcon className="size-4" />

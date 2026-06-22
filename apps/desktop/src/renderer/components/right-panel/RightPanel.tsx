@@ -346,10 +346,14 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
     }
   }
 
-  const newTabItems = RIGHT_PANEL_MENU_ITEMS.filter((item) => availableModes.includes(item.mode));
-  // 仅会话页(chat)是「多 tab 工作区」:展示 tab 栏、+ 新建与最大化;
-  // 首页只用来做单次文件/产物预览,顶栏从简(标题 + 关闭),不显示 + 与最大化。
-  const tabMode = view === "chat";
+  const openedTabKinds = new Set(tabs.map((tab) => tab.kind));
+  const newTabItems = RIGHT_PANEL_MENU_ITEMS.filter(
+    (item) => availableModes.includes(item.mode) && !openedTabKinds.has(item.mode)
+  );
+  const hasTabs = tabs.length > 0;
+  // 仅会话页(chat)打开工具后才是「多 tab 工作区」:展示 tab 栏、+ 新建与最大化;
+  // 空白选择器和首页单次预览都使用从简顶栏,避免空状态出现无效的工具栏入口。
+  const tabMode = view === "chat" && hasTabs;
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
   return (
@@ -358,7 +362,7 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
       data-testid="right-panel"
       data-right-panel-phase={phase}
       style={panelStyle}
-      className="relative h-screen min-h-0 shrink-0 overflow-hidden bg-background max-[840px]:hidden"
+      className="relative z-20 h-screen min-h-0 shrink-0 overflow-hidden bg-background max-[840px]:hidden"
     >
       {/* 固定宽度的内容层：分隔线跟随内容层移动，避免外层槽位先露出一条空线。 */}
       <div
@@ -376,29 +380,41 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
           onPointerDown={onResizeStart}
           className="absolute left-0 top-0 z-10 h-full w-1.5 cursor-col-resize"
         />
-        <header className="flex h-14 min-w-0 flex-none items-center justify-between gap-1 border-b px-2">
+        <header className="flex h-12 min-w-0 flex-none items-center justify-between gap-1 border-b px-2">
           {tabMode ? (
             /* 会话页:tab 栏,每个已打开工具一个 chip,末尾 + 新建。 */
-            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div
+              role="tablist"
+              aria-label={t("rightPanel.menuTitle")}
+              className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
               {tabs.map((tab) => {
                 const active = tab.id === activeTabId;
                 const Icon = rightPanelModeIcon(tab.kind);
+                const tabElementId = `right-panel-tab-${tab.id}`;
                 return (
                   <div
                     key={tab.id}
-                    role="tab"
-                    aria-selected={active}
                     title={tabLabel(tab)}
-                    onClick={() => setActiveRightPanelTab(tab.id)}
                     className={cn(
-                      "group flex h-8 max-w-[160px] flex-none cursor-pointer items-center gap-1.5 rounded-sm border px-2.5 font-mono text-mono-label transition-colors",
+                      "group flex h-7 max-w-[160px] flex-none items-center rounded-sm border font-mono text-mono-label transition-colors",
                       active
                         ? "border-border bg-muted text-foreground"
                         : "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                     )}
                   >
-                    <Icon className="size-3.5 flex-none" />
-                    <span className="truncate normal-case">{tabLabel(tab)}</span>
+                    <button
+                      id={tabElementId}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      title={tabLabel(tab)}
+                      onClick={() => setActiveRightPanelTab(tab.id)}
+                      className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2.5 text-left"
+                    >
+                      <Icon className="size-3.5 flex-none" />
+                      <span className="truncate normal-case">{tabLabel(tab)}</span>
+                    </button>
                     <button
                       type="button"
                       title={t("rightPanel.closeTab")}
@@ -407,49 +423,53 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
                         event.stopPropagation();
                         closeRightPanelTab(tab.id);
                       }}
-                      className="flex size-4 flex-none items-center justify-center rounded-xs text-muted-foreground opacity-60 transition-colors hover:bg-background hover:text-foreground hover:opacity-100"
+                      className="mr-1.5 flex size-4 flex-none items-center justify-center rounded-xs text-muted-foreground opacity-60 transition-colors hover:bg-background hover:text-foreground hover:opacity-100"
                     >
                       <XMarkIcon className="size-3" />
                     </button>
                   </div>
                 );
               })}
-              <Popover open={newTabMenuOpen} onOpenChange={setNewTabMenuOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    title={t("rightPanel.newTab")}
-                    aria-label={t("rightPanel.newTab")}
-                    className="flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  >
-                    <PlusIcon className="size-4" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-44 p-1">
-                  {newTabItems.map((item) => (
+              {newTabItems.length > 0 ? (
+                <Popover open={newTabMenuOpen} onOpenChange={setNewTabMenuOpen}>
+                  <PopoverTrigger asChild>
                     <button
-                      key={item.mode}
                       type="button"
-                      onClick={() => {
-                        newRightPanelTab(item.mode);
-                        setNewTabMenuOpen(false);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-xs px-2.5 py-1.5 text-left text-caption text-foreground transition-colors hover:bg-muted"
+                      title={t("rightPanel.newTab")}
+                      aria-label={t("rightPanel.newTab")}
+                      className="flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     >
-                      <item.icon className="size-4 text-muted-foreground" />
-                      <span>{t(TITLE_KEYS[item.mode])}</span>
+                      <PlusIcon className="size-4" />
                     </button>
-                  ))}
-                </PopoverContent>
-              </Popover>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-44 p-1">
+                    {newTabItems.map((item) => (
+                      <button
+                        key={item.mode}
+                        type="button"
+                        onClick={() => {
+                          newRightPanelTab(item.mode);
+                          setNewTabMenuOpen(false);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-xs px-2.5 py-1.5 text-left text-caption text-foreground transition-colors hover:bg-muted"
+                      >
+                        <item.icon className="size-4 text-muted-foreground" />
+                        <span>{t(TITLE_KEYS[item.mode])}</span>
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              ) : null}
             </div>
-          ) : (
+          ) : activeTab ? (
             /* 首页:单次预览,从简标题,不展示 tab 栏 / + / 最大化。 */
             <div className="flex min-w-0 flex-1 items-center px-1.5">
               <h2 className="truncate font-mono text-mono-label uppercase text-foreground">
-                {activeTab ? tabLabel(activeTab) : t("rightPanel.menuTitle")}
+                {tabLabel(activeTab)}
               </h2>
             </div>
+          ) : (
+            <div className="min-w-0 flex-1" aria-hidden="true" />
           )}
           <div className="flex flex-none items-center gap-1">
             {showProjectFilesToggle ? (

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  CHAT_PANEL_MIN_WIDTH,
   RIGHT_PANEL_MAX_WIDTH,
   closeRightPanelTab,
   maximizedRightPanelWidth,
@@ -29,12 +28,13 @@ describe("openOrFocusRightPanelTab", () => {
     expect(result.tabs.find((item) => item.id === "a")?.title).toBe("new.ts");
   });
 
-  it("always creates a new terminal tab", () => {
+  it("focuses the existing terminal tab instead of creating another PTY", () => {
     const tabs = [tab("t1", "terminal", { terminalId: "pty_1" })];
     const result = openOrFocusRightPanelTab(tabs, { kind: "terminal", terminalId: "pty_2" });
-    expect(result.tabs).toHaveLength(2);
-    expect(result.tabs[1].terminalId).toBe("pty_2");
-    expect(result.activeTabId).toBe(result.tabs[1].id);
+    expect(result.tabs).toBe(tabs);
+    expect(result.tabs).toHaveLength(1);
+    expect(result.tabs[0].terminalId).toBe("pty_1");
+    expect(result.activeTabId).toBe("t1");
   });
 });
 
@@ -113,8 +113,8 @@ describe("normalizeRightPanelSession", () => {
 });
 
 describe("maximizedRightPanelWidth", () => {
-  it("fills the container minus the chat minimum, beyond the normal cap", () => {
-    expect(maximizedRightPanelWidth(1600)).toBe(1600 - CHAT_PANEL_MIN_WIDTH);
+  it("fills the available workspace outside the sidebar, beyond the normal cap", () => {
+    expect(maximizedRightPanelWidth(1600)).toBe(1600);
     expect(maximizedRightPanelWidth(1600)).toBeGreaterThan(RIGHT_PANEL_MAX_WIDTH);
   });
 

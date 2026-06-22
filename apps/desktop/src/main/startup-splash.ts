@@ -3,8 +3,8 @@ import { PRODUCT_NAME } from "@chengxiaobang/shared/product";
 
 export const STARTUP_SPLASH_URL_PREFIX = "data:text/html;charset=utf-8,";
 
-const LIGHT_BACKGROUND = "#fafafa";
-const DARK_BACKGROUND = "#0a0a0a";
+export const STARTUP_SPLASH_LIGHT_BACKGROUND = "#fafafa";
+export const STARTUP_SPLASH_DARK_BACKGROUND = "#0a0a0a";
 
 export interface StartupSplashHtmlOptions {
   imageSrc?: string;
@@ -21,7 +21,7 @@ export function createStartupSplashUrl(options: StartupSplashHtmlOptions): strin
 }
 
 export function createStartupSplashHtml(options: StartupSplashHtmlOptions): string {
-  const background = options.dark ? DARK_BACKGROUND : LIGHT_BACKGROUND;
+  const background = startupSplashBackgroundColor(options.dark);
   const image = options.imageSrc
     ? `<img class="startup-image" src="${escapeAttribute(options.imageSrc)}" alt="${PRODUCT_NAME}" />`
     : "";
@@ -85,6 +85,10 @@ export function createStartupSplashHtml(options: StartupSplashHtmlOptions): stri
   </head>
   <body>${image}</body>
 </html>`;
+}
+
+export function startupSplashBackgroundColor(dark: boolean): string {
+  return dark ? STARTUP_SPLASH_DARK_BACKGROUND : STARTUP_SPLASH_LIGHT_BACKGROUND;
 }
 
 function escapeAttribute(value: string): string {

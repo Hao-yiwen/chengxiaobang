@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Message,
@@ -9,6 +9,7 @@ import type {
   ProviderConfig,
   RunRequest,
   Session,
+  SideChatDetail,
   StreamEvent,
   ToolCall
 } from "@chengxiaobang/shared";
@@ -50,8 +51,33 @@ const session: Session = {
   updatedAt: "2026-06-08T00:00:02.000Z"
 };
 
-function message(id: string, role: Message["role"], content: string): Message {
-  return { id, sessionId: "session_side", role, content, createdAt: "2026-06-08T00:00:01.000Z" };
+const anchorMessage: Message = {
+  id: "anchor_1",
+  sessionId: session.id,
+  role: "user",
+  content: "主会话锚点问题",
+  createdAt: "2026-06-08T00:00:01.000Z"
+};
+
+const sideSession: Session = {
+  id: "session_side",
+  projectId: project.id,
+  title: "侧边会话：主会话锚点问题",
+  providerId: provider.id,
+  accessMode: "approval",
+  sideChatAnchorMessageId: anchorMessage.id,
+  sideChatParentSessionId: session.id,
+  createdAt: "2026-06-08T00:00:03.000Z",
+  updatedAt: "2026-06-08T00:00:03.000Z"
+};
+
+function message(
+  id: string,
+  role: Message["role"],
+  content: string,
+  sessionId = sideSession.id
+): Message {
+  return { id, sessionId, role, content, createdAt: "2026-06-08T00:00:01.000Z" };
 }
 
 function toolCall(status: ToolCall["status"]): ToolCall {
@@ -70,6 +96,19 @@ function event(partial: StreamEvent): StreamEvent {
   return partial;
 }
 
+function sideChatDetail(
+  messages: Message[] = [],
+  toolCalls: ToolCall[] = [],
+  runs: SideChatDetail["runs"] = []
+): SideChatDetail {
+  return {
+    session: sideSession,
+    messages: messages.map((item) => ({ ...item, attachments: item.attachments ?? [] })),
+    runs,
+    toolCalls
+  };
+}
+
 function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     listProjects: vi.fn(async () => [project]),
@@ -80,7 +119,12 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     getGitChanges: vi.fn(async () => ({ isRepo: false, files: [] })),
     updateSession: vi.fn() as never,
     deleteSession: vi.fn() as never,
-    listMessages: vi.fn(async () => []),
+    listMessages: vi.fn(async (sessionId: string) =>
+      sessionId === session.id ? [anchorMessage] : []
+    ),
+    listSideChats: vi.fn(async () => []),
+    getSideChat: vi.fn(async () => sideChatDetail()),
+    createSideChat: vi.fn(async () => sideChatDetail()),
     rewindSession: vi.fn(async () => []),
     forkSession: vi.fn() as never,
     listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [] })),
@@ -107,11 +151,17 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
   };
 }
 
-async function openSideChat(): Promise<void> {
+async function openSideChatTool(): Promise<void> {
   const sidebar = within(await screen.findByTestId("app-sidebar"));
   fireEvent.click(await sidebar.findByText("项目对话"));
+  await screen.findByText(anchorMessage.content);
   fireEvent.click(await screen.findByTitle("打开侧边面板"));
   fireEvent.click(await screen.findByRole("button", { name: "侧边会话" }));
+}
+
+async function openSideChat(): Promise<void> {
+  await openSideChatTool();
+  await screen.findByText("首次发送时会绑定主会话最近一条消息，并继承主对话完整上下文。");
 }
 
 beforeEach(() => {
@@ -223,28 +273,38 @@ describe("side chat panel", () => {
 
     await waitFor(() => expect(startRun).toHaveBeenCalled());
     expect(streamRun).not.toHaveBeenCalled();
+    expect(client.createSideChat).toHaveBeenCalledWith(anchorMessage.id);
+    expect(startRun.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: sideSession.id,
+      sideChatParentSessionId: session.id,
+      prompt: "走全局流"
+    });
     const clientRequestId = startRun.mock.calls[0]?.[0].clientRequestId;
     expect(clientRequestId).toEqual(expect.any(String));
 
-    emit?.({
-      type: "message",
-      runId: "other_run",
-      message: message("m_other", "assistant", "不该显示")
-    });
-    emit?.({
-      type: "run_started",
-      runId: "run_side",
-      sessionId: "session_side",
-      clientRequestId
-    });
-    emit?.({
-      type: "message",
-      runId: "run_side",
-      message: message("m_side", "assistant", "侧边全局事件")
+    act(() => {
+      emit?.({
+        type: "message",
+        runId: "other_run",
+        message: message("m_other", "assistant", "不该显示")
+      });
+      emit?.({
+        type: "run_started",
+        runId: "run_side",
+        sessionId: "session_side",
+        clientRequestId
+      });
+      emit?.({
+        type: "message",
+        runId: "run_side",
+        message: message("m_side", "assistant", "侧边全局事件")
+      });
     });
     expect(await screen.findByText("侧边全局事件")).toBeInTheDocument();
     expect(screen.queryByText("不该显示")).not.toBeInTheDocument();
-    emit?.({ type: "run_end", runId: "run_side", status: "completed" });
+    act(() => {
+      emit?.({ type: "run_end", runId: "run_side", status: "completed" });
+    });
   });
 
   it("recovers a completed side run after the global stream reconnects", async () => {
@@ -265,10 +325,14 @@ describe("side chat panel", () => {
       providerId: provider.id,
       model: provider.model
     }));
-    const listMessages = vi.fn(async () => [
-      message("m_recovered_user", "user", "走全局流"),
-      message("m_recovered_assistant", "assistant", "恢复后的回答")
-    ]);
+    const listMessages = vi.fn(async (sessionId: string) =>
+      sessionId === sideSession.id
+        ? [
+            message("m_recovered_user", "user", "走全局流"),
+            message("m_recovered_assistant", "assistant", "恢复后的回答")
+          ]
+        : [anchorMessage]
+    );
     const listSessionRuns = vi.fn(async () => ({
       runs: [
         {
@@ -300,11 +364,8 @@ describe("side chat panel", () => {
     reconnect?.();
 
     expect(await screen.findByText("恢复后的回答")).toBeInTheDocument();
-    expect(listMessages).toHaveBeenCalledWith("session_side");
-    expect(listSessionRuns).toHaveBeenCalledWith("session_side");
-    expect(screen.getAllByRole("button", { name: /新对话/ }).some((button) => !button.disabled)).toBe(
-      true
-    );
+    expect(listMessages).toHaveBeenCalledWith(sideSession.id);
+    expect(listSessionRuns).toHaveBeenCalledWith(sideSession.id);
   });
 
   it("streams a reply into the panel and reuses the session on the next send", async () => {
@@ -338,8 +399,10 @@ describe("side chat panel", () => {
 
     expect(await screen.findByText("回答")).toBeInTheDocument();
     expect(streamRun).toHaveBeenCalledTimes(1);
+    expect(client.createSideChat).toHaveBeenCalledTimes(1);
     expect(streamRun.mock.calls[0][0]).toMatchObject({
-      sessionId: undefined,
+      sessionId: sideSession.id,
+      sideChatParentSessionId: session.id,
       projectId: project.id,
       prompt: "你好",
       providerId: provider.id
@@ -348,7 +411,96 @@ describe("side chat panel", () => {
     fireEvent.change(input, { target: { value: "继续" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(await screen.findByText("继续")).toBeInTheDocument();
-    expect(streamRun.mock.calls[1][0]).toMatchObject({ sessionId: "session_side" });
+    expect(client.createSideChat).toHaveBeenCalledTimes(1);
+    expect(streamRun.mock.calls[1][0]).toMatchObject({ sessionId: sideSession.id });
+  });
+
+  it("binds the first side-chat send to the latest valid main message", async () => {
+    const latestAssistant: Message = {
+      id: "anchor_latest_assistant",
+      sessionId: session.id,
+      role: "assistant",
+      content: "最近一条有效助手消息",
+      createdAt: "2026-06-08T00:00:04.000Z"
+    };
+    const ignoredSummary: Message = {
+      id: "anchor_summary",
+      sessionId: session.id,
+      role: "assistant",
+      content: "压缩摘要不能绑定",
+      kind: "compaction_summary",
+      createdAt: "2026-06-08T00:00:05.000Z"
+    };
+    const ignoredReasoningOnly: Message = {
+      id: "anchor_reasoning_only",
+      sessionId: session.id,
+      role: "assistant",
+      content: "",
+      reasoning: "只有思考",
+      createdAt: "2026-06-08T00:00:06.000Z"
+    };
+    const ignoredTool = message("anchor_tool", "tool", "工具输出", session.id);
+    const streamRun = vi.fn(async (_input: RunRequest, onEvent: (event: StreamEvent) => void) => {
+      onEvent({ type: "run_started", runId: "run_1", sessionId: "session_side" });
+      onEvent({ type: "run_end", runId: "run_1", status: "completed" });
+    });
+    const client = createClient({
+      listMessages: vi.fn(async (sessionId: string) =>
+        sessionId === session.id
+          ? [anchorMessage, latestAssistant, ignoredSummary, ignoredReasoningOnly, ignoredTool]
+          : []
+      ),
+      streamRun: streamRun as never
+    });
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await openSideChat();
+
+    const input = await screen.findByLabelText("问点什么，回车发送");
+    fireEvent.change(input, { target: { value: "绑定最新消息" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(client.createSideChat).toHaveBeenCalled());
+    expect(client.createSideChat).toHaveBeenCalledWith(latestAssistant.id);
+  });
+
+  it("shows copy actions in side-chat history and keeps the latest one visible", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true
+    });
+    const history = [
+      message("side_user_history", "user", "侧边追问"),
+      message("side_assistant_history", "assistant", "侧边回答")
+    ];
+    const client = createClient({
+      listSideChats: vi.fn(async () => [
+        {
+          anchorMessageId: anchorMessage.id,
+          session: sideSession,
+          userMessageCount: 1,
+          updatedAt: sideSession.updatedAt
+        }
+      ]),
+      getSideChat: vi.fn(async () => sideChatDetail(history))
+    });
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await openSideChatTool();
+    await screen.findByText("侧边回答");
+
+    const asides = document.querySelectorAll("aside");
+    const panel = within(asides[asides.length - 1] as HTMLElement);
+    const copyButtons = panel.getAllByRole("button", { name: "复制" });
+    expect(copyButtons).toHaveLength(2);
+    expect(copyButtons[0]?.parentElement).toHaveClass("opacity-0");
+    expect(copyButtons[1]?.parentElement).toHaveClass("opacity-100");
+
+    fireEvent.click(copyButtons[1] as HTMLElement);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("侧边回答"));
   });
 
   it("shows the approval bar for a pending tool and sends the decision", async () => {
@@ -373,39 +525,18 @@ describe("side chat panel", () => {
     expect(approve).toHaveBeenCalledWith("tool_1", { approved: true });
   });
 
-  it("starts a fresh session after 新对话", async () => {
-    const streamRun = vi.fn(
-      async (_input: RunRequest, onEvent: (event: StreamEvent) => void) => {
-        onEvent({ type: "run_started", runId: "run_1", sessionId: "session_side" });
-        onEvent({
-          type: "message",
-          runId: "run_1",
-          message: message("m_assistant", "assistant", "回答")
-        });
-        onEvent({ type: "run_end", runId: "run_1", status: "completed" });
-      }
-    );
-    const client = createClient({ streamRun: streamRun as never });
+  it("does not render an internal title or new-chat toolbar", async () => {
+    const client = createClient();
 
     render(<App client={client} />);
     await screen.findByText("项目对话");
     await openSideChat();
 
-    const input = await screen.findByLabelText("问点什么，回车发送");
-    fireEvent.change(input, { target: { value: "你好" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await screen.findByText("回答");
-
-    // The right panel is the last <aside>; the first one is the left sidebar.
     const asides = document.querySelectorAll("aside");
     const panel = asides[asides.length - 1];
     expect(panel).toBeDefined();
-    fireEvent.click(within(panel as HTMLElement).getByRole("button", { name: "新对话" }));
-    expect(screen.queryByText("回答")).not.toBeInTheDocument();
-
-    fireEvent.change(input, { target: { value: "再来" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await screen.findByText("回答");
-    expect(streamRun.mock.calls[1][0]).toMatchObject({ sessionId: undefined });
+    expect(
+      within(panel as HTMLElement).queryByRole("button", { name: "新对话" })
+    ).not.toBeInTheDocument();
   });
 });

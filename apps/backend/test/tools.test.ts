@@ -468,23 +468,32 @@ describe("builtin agent tools", () => {
     await expect(readFile(join(dir, outputPath), "utf8")).resolves.not.toContain("should-not-print");
   });
 
-  it("fetches a url and strips html to text", async () => {
+  it("fetches a url through WebFetch and processes markdown with the injected model handler", async () => {
     const originalFetch = globalThis.fetch;
+    let observedMarkdown = "";
+    const webFetchTools = createAgentTools(dir, {
+      webFetch: {
+        processContent: async ({ markdown }) => {
+          observedMarkdown = markdown;
+          return { text: "模型处理结果" };
+        }
+      }
+    });
     globalThis.fetch = (async () =>
       new Response("<html><body><h1>标题</h1><script>ignore()</script><p>正文</p></body></html>", {
         headers: { "content-type": "text/html" }
       })) as typeof fetch;
     try {
-      const result = await run(tools, "WebFetch", {
+      const result = await run(webFetchTools, "WebFetch", {
         url: "https://example.com",
         prompt: "提取正文"
       });
-      expect(result).toContain("用户要求：");
-      expect(result).toContain("提取正文");
-      expect(result).toContain("标题");
-      expect(result).toContain("正文");
-      expect(result).not.toContain("ignore");
-      expect(result).not.toContain("<");
+      expect(result).toContain("WebFetch 结果");
+      expect(result).toContain("模型处理结果");
+      expect(observedMarkdown).toContain("标题");
+      expect(observedMarkdown).toContain("正文");
+      expect(observedMarkdown).not.toContain("ignore");
+      expect(observedMarkdown).not.toContain("<script");
     } finally {
       globalThis.fetch = originalFetch;
     }

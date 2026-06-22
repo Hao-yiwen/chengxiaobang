@@ -4,6 +4,7 @@ import type { WebSearchExecutor } from "../web-search/web-search-config-service"
 import { createFsTools } from "./fs-tools";
 import { createShellTools } from "./shell-tools";
 import { createWebTools } from "./web-tools";
+import type { WebFetchRuntime } from "./web-fetch";
 import { createFeishuTools } from "./feishu-tools";
 import { createMemoryTools } from "./memory-tools";
 import { createSkillTools } from "./skill-tools";
@@ -94,6 +95,7 @@ export function createAgentTools(
     | {
         getFeishuSender?: () => FeishuSender | undefined;
         webSearch?: WebSearchExecutor;
+        webFetch?: WebFetchRuntime;
         /** 长期记忆的落盘目录；提供时注册 memory 工具。 */
         memoryDir?: string;
         /** 技能市场服务；提供时注册 CreateSkill 工具（对话内创建/安装技能）。 */
@@ -111,7 +113,7 @@ export function createAgentTools(
   return [
     ...createFsTools(workspacePath),
     ...createShellTools(workspacePath),
-    ...createWebTools(options.webSearch),
+    ...createWebTools(options.webSearch, options.webFetch),
     ...createFeishuTools(options.getFeishuSender),
     ...(options.ocr ? createOcrTools(workspacePath, options.ocr) : []),
     ...(options.memoryDir ? createMemoryTools(options.memoryDir) : []),

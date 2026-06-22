@@ -41,6 +41,8 @@ export function mapProject(row: Row): Project {
 }
 
 export function mapSession(row: Row): Session {
+  const notice = mapSessionNotice(row);
+  const pendingAction = mapSessionPendingAction(row);
   return {
     id: String(row.id),
     projectId: row.project_id === null ? null : String(row.project_id),
@@ -74,11 +76,64 @@ export function mapSession(row: Row): Session {
     ...(row.wechat_chat_id === null || row.wechat_chat_id === undefined
       ? {}
       : { wechatChatId: String(row.wechat_chat_id) }),
+    ...(row.side_chat_anchor_message_id === null || row.side_chat_anchor_message_id === undefined
+      ? {}
+      : { sideChatAnchorMessageId: String(row.side_chat_anchor_message_id) }),
+    ...(row.side_chat_parent_session_id === null || row.side_chat_parent_session_id === undefined
+      ? {}
+      : { sideChatParentSessionId: String(row.side_chat_parent_session_id) }),
     ...(row.pinned_at === null || row.pinned_at === undefined
       ? {}
       : { pinnedAt: String(row.pinned_at) }),
+    ...(row.last_viewed_at === null || row.last_viewed_at === undefined
+      ? {}
+      : { lastViewedAt: String(row.last_viewed_at) }),
+    ...(notice ? { notice } : {}),
+    ...(pendingAction ? { pendingAction } : {}),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
+  };
+}
+
+function mapSessionNotice(row: Row): Session["notice"] {
+  if (row.notice_failed_run_id !== null && row.notice_failed_run_id !== undefined) {
+    return {
+      status: "failed",
+      runId: String(row.notice_failed_run_id),
+      ...(row.notice_failed_error === null || row.notice_failed_error === undefined
+        ? {}
+        : { error: String(row.notice_failed_error) }),
+      updatedAt: String(row.notice_failed_updated_at)
+    };
+  }
+  if (row.notice_completed_run_id !== null && row.notice_completed_run_id !== undefined) {
+    return {
+      status: "unread",
+      runId: String(row.notice_completed_run_id),
+      updatedAt: String(row.notice_completed_updated_at)
+    };
+  }
+  return undefined;
+}
+
+function mapSessionPendingAction(row: Row): Session["pendingAction"] {
+  if (
+    row.pending_action_kind === null ||
+    row.pending_action_kind === undefined ||
+    row.pending_action_run_id === null ||
+    row.pending_action_run_id === undefined ||
+    row.pending_action_tool_call_id === null ||
+    row.pending_action_tool_call_id === undefined ||
+    row.pending_action_updated_at === null ||
+    row.pending_action_updated_at === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    kind: row.pending_action_kind === "ask_user" ? "ask_user" : "approval",
+    runId: String(row.pending_action_run_id),
+    toolCallId: String(row.pending_action_tool_call_id),
+    updatedAt: String(row.pending_action_updated_at)
   };
 }
 

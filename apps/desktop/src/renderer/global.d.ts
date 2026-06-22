@@ -67,6 +67,31 @@ export type OcrRecognizeResult =
     }
   | { ok: false; path: string; name: string; error: string; size: number };
 
+export type SpeechAvailabilityResult = {
+  ok: true;
+  platform: NodeJS.Platform;
+  language: string;
+  available: boolean;
+  reason?: string;
+};
+
+export type SpeechStartResult =
+  | { ok: true; sessionId: string }
+  | { ok: false; error: string; available?: false };
+
+export type SpeechStopResult =
+  | { ok: true; sessionId: string; text: string; elapsedMs: number }
+  | { ok: false; sessionId?: string; error: string; text?: string; elapsedMs?: number };
+
+export type SpeechCancelResult = { ok: true } | { ok: false; error: string };
+
+export type SpeechRendererEvent = {
+  type: "level";
+  sessionId: string;
+  level: number;
+  elapsedMs: number;
+};
+
 export interface NativeAttachmentImage {
   name: string;
   mimeType: string;
@@ -157,6 +182,11 @@ declare global {
       createFileUrl?(filePath: string): Promise<FileUrlResult>;
       createQuickLookThumbnail?(filePath: string): Promise<QuickLookThumbnailResult>;
       ocrRecognize?(filePath: string): Promise<OcrRecognizeResult>;
+      speechAvailability?(input?: { language?: string }): Promise<SpeechAvailabilityResult>;
+      speechStart?(input?: { language?: string }): Promise<SpeechStartResult>;
+      speechStop?(input?: { sessionId?: string }): Promise<SpeechStopResult>;
+      speechCancel?(input?: { sessionId?: string }): Promise<SpeechCancelResult>;
+      onSpeechEvent?(listener: (event: SpeechRendererEvent) => void): () => void;
       prepareNativeImages?(filePath: string): Promise<PrepareNativeImagesResult>;
       saveAttachmentSnapshots?(filePaths: string[]): Promise<SaveAttachmentSnapshotsResult>;
       openPath?(filePath: string): Promise<{ ok: boolean; error?: string }>;

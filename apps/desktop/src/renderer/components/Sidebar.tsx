@@ -458,6 +458,8 @@ export function Sidebar() {
         indent={indent}
         active={view === "chat" && session.id === activeSessionId}
         running={Boolean(runningSessionsById[session.id])}
+        notice={session.notice}
+        pendingAction={session.pendingAction}
         editing={editingId === session.id}
         draftTitle={draftTitle}
         branchHint={branchHint}
@@ -813,6 +815,8 @@ interface SessionRowProps {
   session: Session;
   active: boolean;
   running: boolean;
+  notice?: Session["notice"];
+  pendingAction?: Session["pendingAction"];
   /** 项目组内的行额外缩进，与组名文本对齐。 */
   indent: boolean;
   editing: boolean;
@@ -893,6 +897,42 @@ function SessionRow(props: SessionRowProps) {
               </span>
             ) : null}
             <span className="min-w-0 flex-1 truncate">{props.session.title}</span>
+            {props.pendingAction ? (
+              <span
+                data-testid={`session-pending-action-${props.session.id}`}
+                title={t(
+                  props.pendingAction.kind === "ask_user"
+                    ? "sidebar.pendingAskUser"
+                    : "sidebar.pendingApproval"
+                )}
+                className={cn(
+                  "flex-none rounded-xs border px-1.5 py-0.5 text-micro font-medium leading-3",
+                  props.pendingAction.kind === "ask_user"
+                    ? "border-soft-blue-border bg-soft-blue-surface text-soft-blue-foreground"
+                    : "border-warning/25 bg-warning-soft/70 text-warning-deep"
+                )}
+              >
+                {t(
+                  props.pendingAction.kind === "ask_user"
+                    ? "sidebar.pendingAskUser"
+                    : "sidebar.pendingApproval"
+                )}
+              </span>
+            ) : null}
+            {props.notice ? (
+              <span
+                data-testid={`session-notice-${props.session.id}`}
+                aria-hidden="true"
+                className="flex size-3 flex-none items-center justify-center"
+              >
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    props.notice.status === "failed" ? "bg-error-deep" : "bg-link"
+                  )}
+                />
+              </span>
+            ) : null}
           </button>
           {props.running ? (
             <span

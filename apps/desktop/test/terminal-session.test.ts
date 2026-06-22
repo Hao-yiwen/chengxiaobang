@@ -6,11 +6,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveTerminalShell, TerminalSessionManager } from "../src/main/terminal";
 
 class FakePty {
+  pid?: number;
   dataListeners: Array<(data: string) => void> = [];
   exitListeners: Array<(event: { exitCode: number }) => void> = [];
   writes: string[] = [];
   resizes: Array<{ cols: number; rows: number }> = [];
-  killed = false;
+  kills: Array<string | undefined> = [];
+
+  constructor(pid?: number) {
+    this.pid = pid;
+  }
 
   onData(listener: (data: string) => void): { dispose: () => void } {
     this.dataListeners.push(listener);
@@ -38,8 +43,8 @@ class FakePty {
     this.resizes.push({ cols, rows });
   }
 
-  kill(): void {
-    this.killed = true;
+  kill(signal?: string): void {
+    this.kills.push(signal);
   }
 
   emitData(data: string): void {
@@ -90,15 +95,21 @@ describe("TerminalSessionManager", () => {
     return dir;
   }
 
-  function managerWithFakePty(shell = "/bin/test-shell") {
+  function managerWithFakePty(
+    shell = "/bin/test-shell",
+    options: {
+      ptyPid?: number;
+      managerOptions?: ConstructorParameters<typeof TerminalSessionManager>[2];
+    } = {}
+  ) {
     const ptys: FakePty[] = [];
     const spawn = vi.fn((_shell: string, _args: string[], _options: unknown) => {
-      const pty = new FakePty();
+      const pty = new FakePty(options.ptyPid);
       ptys.push(pty);
       return pty;
     });
     return {
-      manager: new TerminalSessionManager({ spawn } as never, () => shell),
+      manager: new TerminalSessionManager({ spawn } as never, () => shell, options.managerOptions),
       spawn,
       ptys
     };
@@ -130,6 +141,41 @@ describe("TerminalSessionManager", () => {
     });
   });
 
+  it("reuses an existing pty for duplicate starts from the same owner and cwd", async () => {
+    const cwd = await tempDir();
+    const { owner } = createOwner();
+    const { manager, spawn, ptys } = managerWithFakePty();
+
+    const first = await manager.start(owner, { id: "pty_1", cwd, cols: 80, rows: 24 });
+    const second = await manager.start(owner, { id: "pty_1", cwd, cols: 120.8, rows: 36.4 });
+
+    expect(first).toEqual({ ok: true, id: "pty_1" });
+    expect(second).toEqual({ ok: true, id: "pty_1" });
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(ptys[0].resizes).toEqual([{ cols: 120, rows: 36 }]);
+  });
+
+  it("rejects duplicate pty ids when the cwd or owner does not match", async () => {
+    const cwd = await tempDir();
+    const otherCwd = await tempDir();
+    const { owner } = createOwner();
+    const { owner: otherOwner } = createOwner();
+    const { manager, spawn, ptys } = managerWithFakePty();
+
+    await manager.start(owner, { id: "pty_1", cwd, cols: 80, rows: 24 });
+
+    await expect(manager.start(owner, { id: "pty_1", cwd: otherCwd })).resolves.toEqual({
+      ok: false,
+      error: "终端会话已存在"
+    });
+    await expect(manager.start(otherOwner, { id: "pty_1", cwd })).resolves.toEqual({
+      ok: false,
+      error: "终端会话已存在"
+    });
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(ptys[0].resizes).toEqual([]);
+  });
+
   it("writes input, resizes, and closes the pty session", async () => {
     const cwd = await tempDir();
     const { owner } = createOwner();
@@ -143,11 +189,51 @@ describe("TerminalSessionManager", () => {
     expect(ptys[0].resizes).toEqual([{ cols: 140, rows: 50 }]);
 
     expect(manager.close("pty_1")).toEqual({ ok: true });
-    expect(ptys[0].killed).toBe(true);
+    expect(ptys[0].kills).toEqual(["SIGTERM"]);
     expect(manager.write("pty_1", "pwd\r")).toEqual({
       ok: false,
       error: "终端会话不存在"
     });
+  });
+
+  it("signals the pty process group before falling back to node-pty kill on Unix", async () => {
+    const cwd = await tempDir();
+    const { owner } = createOwner();
+    const killProcess = vi.fn();
+    const { manager, ptys } = managerWithFakePty("/bin/test-shell", {
+      ptyPid: 4321,
+      managerOptions: {
+        platform: "darwin",
+        killProcess,
+        forceKillAfterMs: 0
+      }
+    });
+    await manager.start(owner, { id: "pty_1", cwd });
+
+    expect(manager.close("pty_1", "test-close")).toEqual({ ok: true });
+
+    expect(killProcess).toHaveBeenCalledWith(-4321, "SIGTERM");
+    expect(ptys[0].kills).toEqual(["SIGTERM"]);
+  });
+
+  it("uses taskkill-style process tree cleanup on Windows", async () => {
+    const cwd = await tempDir();
+    const { owner } = createOwner();
+    const killProcessTree = vi.fn();
+    const { manager, ptys } = managerWithFakePty("cmd.exe", {
+      ptyPid: 4321,
+      managerOptions: {
+        platform: "win32",
+        killProcessTree,
+        forceKillAfterMs: 0
+      }
+    });
+    await manager.start(owner, { id: "pty_1", cwd });
+
+    expect(manager.close("pty_1", "test-close")).toEqual({ ok: true });
+
+    expect(killProcessTree).toHaveBeenCalledWith(4321, false);
+    expect(ptys[0].kills).toEqual([undefined]);
   });
 
   it("sends exit events and removes finished sessions", async () => {

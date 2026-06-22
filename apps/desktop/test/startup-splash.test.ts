@@ -5,7 +5,8 @@ import {
   STARTUP_SPLASH_URL_PREFIX,
   createStartupSplashHtml,
   createStartupSplashUrl,
-  loadStartupSplashImageDataUrl
+  loadStartupSplashImageDataUrl,
+  startupSplashBackgroundColor
 } from "../src/main/startup-splash";
 
 describe("startup splash", () => {
@@ -16,6 +17,7 @@ describe("startup splash", () => {
     });
 
     expect(html).toContain("background: #fafafa");
+    expect(html).toContain("color-scheme: light");
     expect(html).toContain('display: grid');
     expect(html).toContain("place-items: center");
     expect(html).toContain('class="startup-image"');
@@ -30,6 +32,7 @@ describe("startup splash", () => {
     const html = createStartupSplashHtml({ dark: true });
 
     expect(html).toContain("background: #0a0a0a");
+    expect(html).toContain("color-scheme: dark");
     expect(html).toContain("<body></body>");
     expect(html).toContain("script-src 'none'");
     expect(html).toContain("img-src data:");
@@ -45,6 +48,11 @@ describe("startup splash", () => {
     expect(url.startsWith(STARTUP_SPLASH_URL_PREFIX)).toBe(true);
     expect(html).toContain('class="startup-image"');
     expect(html).toContain("data:image/png;base64,aW1hZ2U=");
+  });
+
+  it("uses the same background color helper as the BrowserWindow shell", () => {
+    expect(startupSplashBackgroundColor(false)).toBe("#fafafa");
+    expect(startupSplashBackgroundColor(true)).toBe("#0a0a0a");
   });
 
   it("loads the onboarding loading image as an inline data url", async () => {

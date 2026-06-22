@@ -28,7 +28,7 @@ const Toast = React.forwardRef<
   <ToastPrimitive.Root
     ref={ref}
     className={cn(
-      "grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 rounded-md border border-border bg-canvas px-3.5 py-3 text-left text-foreground shadow-overlay data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:slide-out-to-right-2 data-[state=open]:slide-in-from-right-2",
+      "grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-start gap-3 rounded-md border border-border bg-canvas px-3.5 py-3 text-left text-foreground shadow-overlay data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:slide-out-to-right-2 data-[state=open]:slide-in-from-right-2",
       className
     )}
     {...props}

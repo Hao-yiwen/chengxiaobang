@@ -650,9 +650,13 @@ describe("right panel", () => {
     await screen.findByText("项目对话");
     await selectSession("项目对话");
 
-    // 空面板展示工具选择器(非 git 项目:终端/浏览器/文件/侧边会话)。
+    // 空面板展示工具选择器；侧边会话从右侧面板发起，不再要求先点主消息。
     fireEvent.click(await screen.findByTitle("打开侧边面板"));
-    expect(await screen.findByRole("button", { name: "侧边会话" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
+    expect(screen.queryByTitle("新建标签页")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("最大化面板")).not.toBeInTheDocument();
+    expect(screen.queryByText("选择一个工具开始")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "侧边会话" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
 
@@ -667,10 +671,39 @@ describe("right panel", () => {
     fireEvent.click(screen.getByTitle("关闭标签页"));
     await waitFor(() => expect(useAppStore.getState().rightPanelTabs).toHaveLength(0));
     expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
+    expect(screen.queryByTitle("新建标签页")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("最大化面板")).not.toBeInTheDocument();
 
     // 关闭整个面板。
     fireEvent.click(screen.getByTitle("关闭面板"));
     await waitFor(() => expect(useAppStore.getState().rightPanelOpen).toBe(false));
+  });
+
+  it("opens browser and terminal work panels at the wide width", async () => {
+    const client = createClient();
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    act(() => {
+      const store = useAppStore.getState();
+      store.setRightPanelWidth(320);
+      store.openRightPanel("browser");
+    });
+
+    expect(useAppStore.getState().rightPanelMode).toBe("browser");
+    expect(useAppStore.getState().rightPanelWidth).toBe(RIGHT_PANEL_FILE_WIDTH);
+
+    installTerminalBridge();
+    act(() => {
+      const store = useAppStore.getState();
+      store.setRightPanelWidth(320);
+      store.openRightPanel("terminal");
+    });
+
+    expect(useAppStore.getState().rightPanelMode).toBe("terminal");
+    expect(useAppStore.getState().rightPanelWidth).toBe(RIGHT_PANEL_FILE_WIDTH);
   });
 
   it("hides the top-right toolbar before opening the right panel", async () => {
@@ -1216,6 +1249,7 @@ describe("right panel", () => {
     expect(layoutScope).toHaveAttribute("data-right-panel-reserved", "true");
     expect(layoutScope).toHaveAttribute("data-right-panel-mode", "files");
     expect(panel).toHaveAttribute("data-right-panel-phase", "opening");
+    expect(panel).toHaveClass("z-20");
     expect(content).toHaveClass("right-panel-content-enter");
     expect(content).toHaveClass("border-l", "border-border");
     expect(panel.getAttribute("class") ?? "").not.toContain("box-shadow");
@@ -1446,6 +1480,65 @@ describe("right panel", () => {
     expect(terminal).toHaveTextContent("终端已退出（退出码 2）");
   });
 
+  it("filters already-open tools from the new-tab menu and switches tabs without restarting terminal", async () => {
+    const bridge = installTerminalBridge();
+    const client = createClient();
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    await openPane("终端");
+    await waitFor(() => expect(bridge.terminalStart).toHaveBeenCalledTimes(1));
+    const terminalTab = await screen.findByRole("tab", { name: "终端" });
+    expect(terminalTab).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(screen.getByTitle("新建标签页"));
+    expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "终端" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    await waitFor(() => expect(useAppStore.getState().rightPanelMode).toBe("browser"));
+    expect(useAppStore.getState().rightPanelTabs.map((tab) => tab.kind)).toEqual([
+      "terminal",
+      "browser"
+    ]);
+    const browserTab = await screen.findByRole("tab", { name: "浏览器" });
+    expect(browserTab).toHaveAttribute("aria-selected", "true");
+    expect(terminalTab).toHaveAttribute("aria-selected", "false");
+    expect(bridge.terminalStart).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(terminalTab);
+    await waitFor(() => expect(useAppStore.getState().rightPanelMode).toBe("terminal"));
+    expect(terminalTab).toHaveAttribute("aria-selected", "true");
+    expect(browserTab).toHaveAttribute("aria-selected", "false");
+    expect(bridge.terminalStart).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(browserTab);
+    await waitFor(() => expect(useAppStore.getState().rightPanelMode).toBe("browser"));
+    expect(bridge.terminalStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks the chat layout as maximized so its scrollbar can be hidden", async () => {
+    const client = createClient();
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+    await openPane("浏览器");
+
+    const layoutScope = screen.getByTestId("chat-layout-scope");
+    expect(layoutScope).toHaveAttribute("data-right-panel-maximized", "false");
+
+    fireEvent.click(screen.getByTitle("最大化面板"));
+    await waitFor(() => expect(useAppStore.getState().rightPanelMaximized).toBe(true));
+    expect(layoutScope).toHaveAttribute("data-right-panel-maximized", "true");
+
+    fireEvent.click(screen.getByTitle("还原面板"));
+    await waitFor(() => expect(useAppStore.getState().rightPanelMaximized).toBe(false));
+    expect(layoutScope).toHaveAttribute("data-right-panel-maximized", "false");
+  });
+
   it("hides project-only tools in conversation sessions", async () => {
     const client = createClient({
       listProjects: vi.fn(async () => [project]),
@@ -1459,7 +1552,7 @@ describe("right panel", () => {
     fireEvent.click(await screen.findByTitle("打开侧边面板"));
 
     expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "侧边会话" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "侧边会话" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "进度" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "终端" })).not.toBeInTheDocument();
@@ -2328,7 +2421,7 @@ describe("right panel", () => {
     await selectSession("项目对话");
 
     await openPane("浏览器");
-    const input = await screen.findByLabelText("输入网址，回车访问");
+    const input = await screen.findByLabelText("输入网址或站点名，回车访问");
 
     fireEvent.change(input, { target: { value: "example.com" } });
     fireEvent.submit(input.closest("form") as HTMLFormElement);
@@ -2336,6 +2429,25 @@ describe("right panel", () => {
     const frame = container.querySelector("iframe");
     expect(frame).not.toBeNull();
     expect(frame?.getAttribute("src")).toBe("https://example.com/");
+  });
+
+  it("clears the browser URL when closing the browser tab", async () => {
+    const client = createClient();
+
+    render(<App client={client} />);
+    await screen.findByText("项目对话");
+    await selectSession("项目对话");
+
+    await openPane("浏览器");
+    const input = await screen.findByLabelText("输入网址或站点名，回车访问");
+    fireEvent.change(input, { target: { value: "example.com" } });
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+
+    await waitFor(() => expect(useAppStore.getState().browserUrl).toBe("https://example.com/"));
+    fireEvent.click(screen.getByTitle("关闭标签页"));
+
+    await waitFor(() => expect(useAppStore.getState().rightPanelTabs).toHaveLength(0));
+    expect(useAppStore.getState().browserUrl).toBe("");
   });
 
   it("renders the browser empty state with an icon and localized examples", async () => {
@@ -2347,7 +2459,9 @@ describe("right panel", () => {
 
     await openPane("浏览器");
 
-    expect(screen.getByText("输入网址开始浏览，例如 baidu.com，或本地服务 localhost:5173。")).toBeInTheDocument();
+    expect(
+      screen.getByText("输入网址或站点名开始浏览，例如 百度、谷歌、baidu.com，或本地服务 localhost:5173。")
+    ).toBeInTheDocument();
     expect(screen.getByTestId("browser-empty-icon")).toBeInTheDocument();
   });
 });

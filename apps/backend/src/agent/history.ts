@@ -64,6 +64,31 @@ export function buildAgentMessages(
   return repaired;
 }
 
+/** 侧边会话使用主会话完整历史，不应用主会话压缩指针，也不注入摘要行避免重复上下文。 */
+export function buildUncompactedAgentMessages(rows: StoredMessage[]): PiMessage[] {
+  const history: PiMessage[] = [];
+  for (const row of rows) {
+    if (row.kind === "compaction_summary" || row.role === "system") {
+      continue;
+    }
+    const restored = row.payload ? parsePayload(row.payload) : undefined;
+    if (restored) {
+      history.push(restored);
+      continue;
+    }
+    if (row.role === "tool") {
+      history.push(plainUserMessage(`【工具结果】\n${row.content}`, row.createdAt));
+      continue;
+    }
+    if (row.role === "assistant") {
+      history.push(plainAssistantMessage(row.content, row.createdAt));
+      continue;
+    }
+    history.push(plainUserMessage(row.content, row.createdAt));
+  }
+  return repairToolCallPairs(history);
+}
+
 function parsePayload(payload: string): PiMessage | undefined {
   try {
     const parsed = JSON.parse(payload) as PiMessage;

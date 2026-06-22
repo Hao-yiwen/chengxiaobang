@@ -11,8 +11,11 @@ export function addNotificationToast(
     id: createId("toast"),
     createdAt: Date.now()
   };
+  const existing = toast.runId
+    ? state.notificationToasts.filter((candidate) => candidate.runId !== toast.runId)
+    : state.notificationToasts;
   return {
-    notificationToasts: [...state.notificationToasts, item].slice(-4)
+    notificationToasts: [...existing, item].slice(-4)
   };
 }
 

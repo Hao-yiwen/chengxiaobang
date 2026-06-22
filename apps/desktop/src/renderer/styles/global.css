@@ -228,6 +228,11 @@
     container-type: inline-size;
   }
 
+  /* 右侧面板最大化时，隐藏底层聊天区残留的滚动条与自绘进度条。 */
+  .chat-layout-scope[data-right-panel-maximized="true"] {
+    overflow: hidden;
+  }
+
   .chat-primary-column {
     box-sizing: border-box;
     width: 100%;
@@ -252,6 +257,10 @@
     display: none;
     width: 0;
     height: 0;
+  }
+
+  .chat-layout-scope[data-right-panel-maximized="true"] .chat-scroll-area {
+    overflow: hidden;
   }
 
   /* 需要滚动能力但不露出原生滚动条的紧凑弹层列表。 */
@@ -283,6 +292,10 @@
     left: 0;
     border-radius: 999px;
     background: rgb(var(--ink) / 0.15);
+  }
+
+  .chat-layout-scope[data-right-panel-maximized="true"] .chat-scroll-progress {
+    display: none;
   }
 
   .dark .chat-scroll-progress-thumb {

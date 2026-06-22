@@ -14,6 +14,10 @@ export function defaultLogDir(dataDir = defaultDataDir()): string {
   return join(dataDir, "logs");
 }
 
+export function defaultThemeSourceCachePath(dataDir = defaultDataDir()): string {
+  return join(dataDir, "theme-source.json");
+}
+
 export function defaultProviderConfigPath(): string {
   return join(chengxiaobangRoot(), "config.yaml");
 }

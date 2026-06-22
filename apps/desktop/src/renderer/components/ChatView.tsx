@@ -1,6 +1,7 @@
 import {
   ArchiveBoxIcon,
   ChevronIcon,
+  CommentTextIcon,
   FileIcon,
   GitBranchIcon,
   RefreshIcon,
@@ -17,6 +18,7 @@ import {
   type ReactNode
 } from "react";
 import { useTranslation } from "react-i18next";
+import { isToolActivityPreviewToolName } from "@chengxiaobang/shared";
 import type {
   Message,
   MessageAttachment,
@@ -67,7 +69,13 @@ function toolActivityToTimelineTool(
   activity: ToolActivity | undefined,
   runId: string | undefined
 ): ToolCall | undefined {
-  if (!activity?.name || !runId) {
+  if (
+    !activity?.name ||
+    !runId ||
+    !isToolActivityPreviewToolName(activity.name) ||
+    typeof activity.argsPreview.file_path !== "string" ||
+    activity.argsPreview.file_path.length === 0
+  ) {
     return undefined;
   }
   return {
@@ -293,17 +301,39 @@ export function ChatView() {
     () => toolActivityToTimelineTool(toolActivity, activeRunId),
     [toolActivity, activeRunId]
   );
+  const activeRunAssistantIds = useMemo(
+    () =>
+      new Set(
+        events
+          .filter(
+            (event) =>
+              event.type === "message" &&
+              event.runId === activeRunId &&
+              event.message.role === "assistant"
+          )
+          .map((event) => (event.type === "message" ? event.message.id : ""))
+      ),
+    [activeRunId, events]
+  );
+  const hasActiveRunToolHistory = useMemo(
+    () => Boolean(activeRunId && toolHistory.some((toolCall) => toolCall.runId === activeRunId)),
+    [activeRunId, toolHistory]
+  );
   const hasActiveTimelineTool = Boolean(runningTool);
-  const hasToolActivity = Boolean(toolActivity);
+  const hasToolActivity = Boolean(liveToolActivityCall);
   const hasLiveThinking = Boolean(thinking);
   const isStreamingThinking = hasLiveThinking && thinkingDurationMs === undefined;
+  const hasActiveRunOutput =
+    Boolean(streamText) ||
+    hasLiveThinking ||
+    Boolean(pendingTool) ||
+    hasToolActivity ||
+    hasActiveTimelineTool ||
+    hasActiveRunToolHistory ||
+    activeRunAssistantIds.size > 0;
   const showWaiting =
     isRunning &&
-    !streamText &&
-    !thinking &&
-    !pendingTool &&
-    !hasToolActivity &&
-    !hasActiveTimelineTool;
+    !hasActiveRunOutput;
 
   // Reasoning-only rows carry no actions, so the "last assistant" affordances
   // (copy/regenerate) stay on the last turn that actually has content.
@@ -322,20 +352,6 @@ export function ChatView() {
   const items = useMemo(
     () => chatViewTimelineItems(messages, timelineToolCalls, failedNotices, activeRunId, runHistory),
     [messages, timelineToolCalls, failedNotices, activeRunId, runHistory]
-  );
-  const activeRunAssistantIds = useMemo(
-    () =>
-      new Set(
-        events
-          .filter(
-            (event) =>
-              event.type === "message" &&
-              event.runId === activeRunId &&
-              event.message.role === "assistant"
-          )
-          .map((event) => (event.type === "message" ? event.message.id : ""))
-      ),
-    [activeRunId, events]
   );
   const lastActionMessageId = useMemo(
     () => lastVisibleActionMessageId(items, activeRunAssistantIds),
@@ -936,8 +952,9 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <div
         data-message-id={message.id}
-        className="group/msg mb-5 flex max-w-[78%] animate-msg-in flex-col items-end self-end"
+        className="group/msg relative mb-5 flex max-w-[78%] animate-msg-in flex-col items-end self-end"
       >
+        <MessageSideChatMarker message={message} />
         <div className="max-w-full rounded-lg rounded-tr-none border border-border bg-canvas-soft-2 px-5 py-2.5 text-foreground">
           {attachments.length > 0 ? <UserMessageAttachments attachments={attachments} /> : null}
           {message.content.trim() ? (
@@ -971,7 +988,8 @@ const MessageBubble = memo(function MessageBubble({
   // Assistant turns render as plain left-aligned content — no avatar, no name —
   // with the persisted reasoning panel (if any) sitting above the answer.
   return (
-    <div className="group/msg mb-4 animate-msg-in self-stretch">
+    <div className="group/msg relative mb-4 animate-msg-in self-stretch">
+      <MessageSideChatMarker message={message} />
       {!hideReasoning && message.reasoning ? (
         <ReasoningPanel text={message.reasoning} durationMs={message.reasoningMs} />
       ) : null}
@@ -989,6 +1007,44 @@ const MessageBubble = memo(function MessageBubble({
     </div>
   );
 });
+
+function MessageSideChatMarker({ message }: { message: Message }) {
+  const { t } = useTranslation();
+  const openSideChatForMessage = useAppStore((state) => state.openSideChatForMessage);
+  const sideChat = useAppStore((state) => state.sideChatsByMessageId[message.id]);
+  const active = useAppStore((state) => state.activeSideChatAnchorMessageId === message.id);
+  const hasSideChat = Boolean(sideChat);
+  const title = t("chat.continueSideChat");
+  const markerLabel = t("chat.sideChatMarkerCount", {
+    count: sideChat?.userMessageCount ?? 0
+  });
+  if (!hasSideChat) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      aria-label={title}
+      title={title}
+      onClick={() => {
+        console.info("[ChatView] 点击消息侧边会话批注标记", {
+          messageId: message.id,
+          sessionId: message.sessionId,
+          hasSideChat
+        });
+        void openSideChatForMessage(message.id);
+      }}
+      className={cn(
+        "absolute top-1 z-[1] flex h-6 items-center gap-1.5 whitespace-nowrap rounded-xs border border-border bg-canvas px-1.5 text-micro text-muted-foreground opacity-75 transition-colors hover:border-hairline-strong hover:bg-canvas-soft-2 hover:text-foreground hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "right-0 translate-x-[calc(100%+0.75rem)]",
+        active && "border-soft-blue-border bg-soft-blue-surface text-soft-blue-foreground opacity-100"
+      )}
+    >
+      <CommentTextIcon className="size-3.5" />
+      <span>{markerLabel}</span>
+    </button>
+  );
+}
 
 function shouldHideMessageActions(
   item: Extract<ChatViewTimelineRenderItem, { kind: "message" }>,

@@ -12,6 +12,7 @@ import {
   type ScheduledTask,
   type Session,
   type SessionSearchResult,
+  type SideChatSummary,
   type TokenUsage,
   type ToolCall
 } from "@chengxiaobang/shared";
@@ -52,6 +53,87 @@ const log = getLogger({ module: "repository/sqlite-state-store" });
 
 const DEFAULT_SESSION_SEARCH_LIMIT = 30;
 const MAX_SESSION_SEARCH_LIMIT = 100;
+
+function sessionNoticeColumns(alias: string): string {
+  const readCursor = `coalesce(${alias}.last_viewed_at, ${alias}.created_at)`;
+  return `
+    (select r.id from runs r
+     where r.session_id = ${alias}.id
+       and r.status = 'failed'
+       and r.updated_at > ${readCursor}
+     order by r.updated_at desc, r.id desc
+     limit 1) as notice_failed_run_id,
+    (select r.error from runs r
+     where r.session_id = ${alias}.id
+       and r.status = 'failed'
+       and r.updated_at > ${readCursor}
+     order by r.updated_at desc, r.id desc
+     limit 1) as notice_failed_error,
+    (select r.updated_at from runs r
+     where r.session_id = ${alias}.id
+       and r.status = 'failed'
+       and r.updated_at > ${readCursor}
+     order by r.updated_at desc, r.id desc
+     limit 1) as notice_failed_updated_at,
+    (select r.id from runs r
+     where r.session_id = ${alias}.id
+       and r.status = 'completed'
+       and r.updated_at > ${readCursor}
+     order by r.updated_at desc, r.id desc
+     limit 1) as notice_completed_run_id,
+    (select r.updated_at from runs r
+     where r.session_id = ${alias}.id
+       and r.status = 'completed'
+       and r.updated_at > ${readCursor}
+     order by r.updated_at desc, r.id desc
+     limit 1) as notice_completed_updated_at
+  `;
+}
+
+function sessionPendingActionColumns(alias: string): string {
+  return `
+    (select case when tc.name = 'AskUserQuestion' then 'ask_user' else 'approval' end
+     from tool_calls tc
+     inner join runs r on r.id = tc.run_id
+     where r.session_id = ${alias}.id
+       and r.status = 'running'
+       and tc.status = 'pending_approval'
+     order by tc.updated_at desc, tc.id desc
+     limit 1) as pending_action_kind,
+    (select tc.run_id
+     from tool_calls tc
+     inner join runs r on r.id = tc.run_id
+     where r.session_id = ${alias}.id
+       and r.status = 'running'
+       and tc.status = 'pending_approval'
+     order by tc.updated_at desc, tc.id desc
+     limit 1) as pending_action_run_id,
+    (select tc.id
+     from tool_calls tc
+     inner join runs r on r.id = tc.run_id
+     where r.session_id = ${alias}.id
+       and r.status = 'running'
+       and tc.status = 'pending_approval'
+     order by tc.updated_at desc, tc.id desc
+     limit 1) as pending_action_tool_call_id,
+    (select tc.updated_at
+     from tool_calls tc
+     inner join runs r on r.id = tc.run_id
+     where r.session_id = ${alias}.id
+       and r.status = 'running'
+       and tc.status = 'pending_approval'
+     order by tc.updated_at desc, tc.id desc
+     limit 1) as pending_action_updated_at
+  `;
+}
+
+function sessionSelectColumns(alias: string): string {
+  return `${alias}.*, ${sessionNoticeColumns(alias)}, ${sessionPendingActionColumns(alias)}`;
+}
+
+function laterIso(left: string, right: string): string {
+  return left.localeCompare(right) >= 0 ? left : right;
+}
 
 export class SqliteStateStore implements StateStore {
   private db?: Database;
@@ -163,13 +245,32 @@ export class SqliteStateStore implements StateStore {
   async listSessions(projectId?: string | null): Promise<Session[]> {
     const rows =
       projectId === undefined
-        ? this.query("select * from sessions order by updated_at desc")
+        ? this.query(
+            `select ${sessionSelectColumns("s")}
+             from sessions s
+             where s.side_chat_anchor_message_id is null
+             order by s.updated_at desc`
+          )
         : projectId === null
-          ? this.query("select * from sessions where project_id is null order by updated_at desc")
+          ? this.query(
+              `select ${sessionSelectColumns("s")}
+               from sessions s
+               where s.project_id is null
+                 and s.side_chat_anchor_message_id is null
+               order by s.updated_at desc`
+            )
           : this.query(
-              "select * from sessions where project_id = ? order by updated_at desc",
+              `select ${sessionSelectColumns("s")}
+               from sessions s
+               where s.project_id = ?
+                 and s.side_chat_anchor_message_id is null
+               order by s.updated_at desc`,
               [projectId]
             );
+    log.debug("[sqlite-state-store] 返回会话列表（已过滤隐藏侧边会话）", {
+      projectId,
+      count: rows.length
+    });
     return rows.map(mapSession);
   }
 
@@ -192,18 +293,19 @@ export class SqliteStateStore implements StateStore {
       `
       with title_matches as (
         select
-          s.*,
+          ${sessionSelectColumns("s")},
           0 as match_rank,
           'title' as match_type,
           null as message_id,
           null as message_role,
           null as message_content
         from sessions s
-        where instr(lower(s.title), lower(?)) > 0
+        where s.side_chat_anchor_message_id is null
+          and instr(lower(s.title), lower(?)) > 0
       ),
       first_content_matches as (
         select
-          s.*,
+          ${sessionSelectColumns("s")},
           1 as match_rank,
           'content' as match_type,
           m.id as message_id,
@@ -211,7 +313,8 @@ export class SqliteStateStore implements StateStore {
           m.content as message_content
         from sessions s
         join messages m on m.session_id = s.id
-        where m.role in ('user', 'assistant')
+        where s.side_chat_anchor_message_id is null
+          and m.role in ('user', 'assistant')
           and instr(lower(m.content), lower(?)) > 0
           and instr(lower(s.title), lower(?)) = 0
           and not exists (
@@ -246,19 +349,29 @@ export class SqliteStateStore implements StateStore {
   }
 
   async getSession(id: string): Promise<Session | undefined> {
-    return this.query("select * from sessions where id = ?", [id]).map(mapSession)[0];
+    return this.query(`select ${sessionSelectColumns("s")} from sessions s where s.id = ?`, [
+      id
+    ]).map(mapSession)[0];
   }
 
   async findSessionByFeishuChatId(chatId: string): Promise<Session | undefined> {
     return this.query(
-      "select * from sessions where feishu_chat_id = ? order by updated_at desc limit 1",
+      `select ${sessionSelectColumns("s")}
+       from sessions s
+       where s.feishu_chat_id = ?
+       order by s.updated_at desc
+       limit 1`,
       [chatId]
     ).map(mapSession)[0];
   }
 
   async findSessionByWechatChatId(chatId: string): Promise<Session | undefined> {
     return this.query(
-      "select * from sessions where wechat_chat_id = ? order by updated_at desc limit 1",
+      `select ${sessionSelectColumns("s")}
+       from sessions s
+       where s.wechat_chat_id = ?
+       order by s.updated_at desc
+       limit 1`,
       [chatId]
     ).map(mapSession)[0];
   }
@@ -280,6 +393,8 @@ export class SqliteStateStore implements StateStore {
   async createSession(input: CreateSessionInput): Promise<Session> {
     await this.assertProjectExists(input.projectId);
     await this.assertProviderExists(input.providerId);
+    await this.assertSideChatParentExists(input.sideChatParentSessionId);
+    await this.assertSideChatAnchorExists(input.sideChatAnchorMessageId);
     const timestamp = nowIso();
     const session: Session = {
       id: createId("session"),
@@ -294,14 +409,22 @@ export class SqliteStateStore implements StateStore {
       ...(input.forkPointMessageId ? { forkPointMessageId: input.forkPointMessageId } : {}),
       ...(input.feishuChatId ? { feishuChatId: input.feishuChatId } : {}),
       ...(input.wechatChatId ? { wechatChatId: input.wechatChatId } : {}),
+      ...(input.sideChatAnchorMessageId
+        ? { sideChatAnchorMessageId: input.sideChatAnchorMessageId }
+        : {}),
+      ...(input.sideChatParentSessionId
+        ? { sideChatParentSessionId: input.sideChatParentSessionId }
+        : {}),
+      lastViewedAt: timestamp,
       createdAt: timestamp,
       updatedAt: timestamp
     };
     this.run(
       `insert into sessions
        (id, project_id, title, provider_id, access_mode, model, reasoning_mode, parent_session_id,
-        fork_message_id, fork_point_message_id, feishu_chat_id, wechat_chat_id, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        fork_message_id, fork_point_message_id, feishu_chat_id, wechat_chat_id,
+        side_chat_anchor_message_id, side_chat_parent_session_id, last_viewed_at, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         session.id,
         session.projectId,
@@ -315,12 +438,143 @@ export class SqliteStateStore implements StateStore {
         session.forkPointMessageId ?? null,
         session.feishuChatId ?? null,
         session.wechatChatId ?? null,
+        session.sideChatAnchorMessageId ?? null,
+        session.sideChatParentSessionId ?? null,
+        session.lastViewedAt ?? null,
         session.createdAt,
         session.updatedAt
       ]
     );
     await this.flush();
+    if (session.sideChatAnchorMessageId) {
+      log.info("[sqlite-state-store] 已创建隐藏侧边会话", {
+        sideSessionId: session.id,
+        anchorMessageId: session.sideChatAnchorMessageId,
+        parentSessionId: session.sideChatParentSessionId
+      });
+    }
     return session;
+  }
+
+  async listSideChatsForSession(sessionId: string): Promise<SideChatSummary[]> {
+    await this.assertSessionExists(sessionId);
+    const rows = this.query(
+      `select
+         s.*,
+         (
+           select count(*)
+           from messages m
+           where m.session_id = s.id
+             and m.role = 'user'
+         ) as side_chat_user_message_count
+       from sessions s
+       where s.side_chat_parent_session_id = ?
+         and s.side_chat_anchor_message_id is not null
+       order by s.updated_at desc`,
+      [sessionId]
+    );
+    const summaries = rows
+      .map((row) => ({
+        session: mapSession(row),
+        userMessageCount: Number(row.side_chat_user_message_count ?? 0)
+      }))
+      .filter(
+        (
+          item
+        ): item is {
+          session: Session & { sideChatAnchorMessageId: string };
+          userMessageCount: number;
+        } => Boolean(item.session.sideChatAnchorMessageId)
+      )
+      .map(({ session, userMessageCount }) => ({
+        anchorMessageId: session.sideChatAnchorMessageId,
+        session,
+        userMessageCount,
+        updatedAt: session.updatedAt
+      }));
+    log.debug("[sqlite-state-store] 返回主会话侧边会话摘要", {
+      sessionId,
+      count: summaries.length,
+      userMessageCounts: summaries.map((summary) => ({
+        anchorMessageId: summary.anchorMessageId,
+        userMessageCount: summary.userMessageCount
+      }))
+    });
+    return summaries;
+  }
+
+  async getSideChatForMessage(messageId: string): Promise<Session | undefined> {
+    const session = this.query(
+      "select * from sessions where side_chat_anchor_message_id = ? limit 1",
+      [messageId]
+    ).map(mapSession)[0];
+    if (session) {
+      log.debug("[sqlite-state-store] 命中消息绑定的隐藏侧边会话", {
+        anchorMessageId: messageId,
+        sideSessionId: session.id,
+        parentSessionId: session.sideChatParentSessionId
+      });
+    }
+    return session;
+  }
+
+  async createSideChatForMessage(messageId: string): Promise<Session> {
+    const existing = await this.getSideChatForMessage(messageId);
+    if (existing) {
+      log.info("[sqlite-state-store] 复用消息绑定的隐藏侧边会话", {
+        anchorMessageId: messageId,
+        sideSessionId: existing.id,
+        parentSessionId: existing.sideChatParentSessionId
+      });
+      return existing;
+    }
+    const anchor = await this.getMessageById(messageId);
+    if (!anchor) {
+      throw new Error("消息不存在");
+    }
+    if (anchor.kind === "compaction_summary" || !["user", "assistant"].includes(anchor.role)) {
+      throw new Error("该消息不支持侧边会话");
+    }
+    const parent = await this.getSession(anchor.sessionId);
+    if (!parent) {
+      throw new Error("会话不存在");
+    }
+    if (parent.sideChatAnchorMessageId) {
+      throw new Error("侧边会话内不能再创建侧边会话");
+    }
+    const titleSeed = anchor.content.trim().split(/\s+/).join(" ").slice(0, 36);
+    let sideSession: Session;
+    try {
+      sideSession = await this.createSession({
+        projectId: parent.projectId,
+        title: titleSeed ? `侧边会话：${titleSeed}` : "侧边会话",
+        providerId: parent.providerId,
+        accessMode: parent.accessMode,
+        model: parent.model,
+        reasoningMode: parent.reasoningMode,
+        sideChatAnchorMessageId: anchor.id,
+        sideChatParentSessionId: parent.id
+      });
+    } catch (error) {
+      const raced = await this.getSideChatForMessage(messageId);
+      if (!raced) {
+        throw error;
+      }
+      log.info("[sqlite-state-store] 并发创建隐藏侧边会话后复用既有记录", {
+        anchorMessageId: messageId,
+        sideSessionId: raced.id,
+        parentSessionId: raced.sideChatParentSessionId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return raced;
+    }
+    log.info("[sqlite-state-store] 已绑定消息到隐藏侧边会话", {
+      anchorMessageId: anchor.id,
+      parentSessionId: parent.id,
+      sideSessionId: sideSession.id,
+      anchorRole: anchor.role
+    });
+    return sideSession;
   }
 
   async forkSession(sessionId: string, messageId: string): Promise<Session> {
@@ -429,6 +683,33 @@ export class SqliteStateStore implements StateStore {
     );
     await this.flush();
     return next;
+  }
+
+  async markSessionRead(id: string): Promise<Session> {
+    const current = await this.getSession(id);
+    if (!current) {
+      log.warn("[sqlite-state-store] 标记会话已读失败：会话不存在", { sessionId: id });
+      throw new Error("会话不存在");
+    }
+    const latestRun = this.query(
+      "select updated_at from runs where session_id = ? order by updated_at desc, id desc limit 1",
+      [id]
+    )[0];
+    const timestamp = latestRun?.updated_at
+      ? laterIso(nowIso(), String(latestRun.updated_at))
+      : nowIso();
+    this.run("update sessions set last_viewed_at = ? where id = ?", [timestamp, id]);
+    await this.flush();
+    const session = await this.getSession(id);
+    if (!session) {
+      throw new Error("会话不存在");
+    }
+    log.info("[sqlite-state-store] 已标记会话已读", {
+      sessionId: id,
+      lastViewedAt: timestamp,
+      latestRunUpdatedAt: latestRun?.updated_at ? String(latestRun.updated_at) : undefined
+    });
+    return session;
   }
 
   async setSessionPinned(id: string, pinned: boolean): Promise<Session> {
@@ -1082,10 +1363,36 @@ export class SqliteStateStore implements StateStore {
     void providerId;
   }
 
+  private async assertSideChatParentExists(sessionId: string | undefined): Promise<void> {
+    if (!sessionId) {
+      return;
+    }
+    const session = await this.getSession(sessionId);
+    if (!session) {
+      throw new Error("侧边会话主会话不存在");
+    }
+    if (session.sideChatAnchorMessageId) {
+      throw new Error("侧边会话不能作为主会话");
+    }
+  }
+
+  private async assertSideChatAnchorExists(messageId: string | undefined): Promise<void> {
+    if (!messageId) {
+      return;
+    }
+    if (!(await this.getMessageById(messageId))) {
+      throw new Error("侧边会话锚点消息不存在");
+    }
+  }
+
   private async assertSessionExists(sessionId: string): Promise<void> {
     if (!(await this.getSession(sessionId))) {
       throw new Error("会话不存在");
     }
+  }
+
+  private async getMessageById(messageId: string): Promise<StoredMessage | undefined> {
+    return this.query("select * from messages where id = ?", [messageId]).map(mapMessage)[0];
   }
 
   private async assertRunExists(runId: string): Promise<void> {

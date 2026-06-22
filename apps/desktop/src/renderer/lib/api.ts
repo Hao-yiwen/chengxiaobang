@@ -42,6 +42,8 @@ import type {
   Session,
   SessionSearchResult,
   SessionUpdate,
+  SideChatDetail,
+  SideChatSummary,
   SkillCreateInput,
   SkillDetail,
   SkillSummary,
@@ -75,6 +77,7 @@ export interface ApiClient {
   setProjectPinned(id: string, pinned: boolean): Promise<Project>;
   deleteProject(id: string): Promise<boolean>;
   listSessions(projectId?: string): Promise<Session[]>;
+  markSessionRead?(id: string): Promise<Session>;
   listProjectFiles(projectId: string, query: string): Promise<string[]>;
   /** 当前项目文件树面板读取某个目录的直属子项。 */
   listProjectDirectory(projectId: string, path?: string): Promise<ProjectFileEntry[]>;
@@ -91,6 +94,9 @@ export interface ApiClient {
   deleteSession(id: string): Promise<boolean>;
   searchSessions?(query: string): Promise<SessionSearchResult[]>;
   listMessages(sessionId: string): Promise<Message[]>;
+  listSideChats?(sessionId: string): Promise<SideChatSummary[]>;
+  getSideChat?(messageId: string): Promise<SideChatDetail | null>;
+  createSideChat?(messageId: string): Promise<SideChatDetail>;
   setMessageFeedback?(
     sessionId: string,
     messageId: string,
@@ -362,6 +368,13 @@ export async function createApiClient(): Promise<ApiClient> {
       const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
       return (await request<{ sessions: Session[] }>(`/api/sessions${query}`)).sessions;
     },
+    async markSessionRead(id) {
+      return (
+        await request<{ session: Session }>(`/api/sessions/${id}/read`, {
+          method: "POST"
+        })
+      ).session;
+    },
     async listProjectFiles(projectId, query) {
       return (
         await request<{ files: string[] }>(
@@ -427,6 +440,28 @@ export async function createApiClient(): Promise<ApiClient> {
       return (
         await request<{ messages: Message[] }>(`/api/sessions/${sessionId}/messages`)
       ).messages;
+    },
+    async listSideChats(sessionId) {
+      return (
+        await request<{ sideChats: SideChatSummary[] }>(
+          `/api/sessions/${encodeURIComponent(sessionId)}/side-chats`
+        )
+      ).sideChats;
+    },
+    async getSideChat(messageId) {
+      return (
+        await request<{ sideChat: SideChatDetail | null }>(
+          `/api/messages/${encodeURIComponent(messageId)}/side-chat`
+        )
+      ).sideChat;
+    },
+    async createSideChat(messageId) {
+      return (
+        await request<{ sideChat: SideChatDetail }>(
+          `/api/messages/${encodeURIComponent(messageId)}/side-chat`,
+          { method: "POST" }
+        )
+      ).sideChat;
     },
     async setMessageFeedback(sessionId, messageId, feedback) {
       return (

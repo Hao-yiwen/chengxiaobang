@@ -632,6 +632,30 @@ describe("streamEventSchema", () => {
         runId: "run_1",
         activity: {
           contentIndex: 0,
+          name: "WebFetch",
+          argsPreview: { url: "https://example.com" },
+          updatedAt: "2026-06-11T00:00:00.000Z"
+        }
+      }).success
+    ).toBe(false);
+    expect(
+      streamEventSchema.safeParse({
+        type: "tool_activity",
+        runId: "run_1",
+        activity: {
+          contentIndex: 0,
+          name: "Bash",
+          argsPreview: { command: "pnpm test" },
+          updatedAt: "2026-06-11T00:00:00.000Z"
+        }
+      }).success
+    ).toBe(false);
+    expect(
+      streamEventSchema.safeParse({
+        type: "tool_activity",
+        runId: "run_1",
+        activity: {
+          contentIndex: 0,
           argsPreview: { content: "大参数不能进入预览" },
           updatedAt: "2026-06-11T00:00:00.000Z"
         }

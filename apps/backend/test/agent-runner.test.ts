@@ -1186,6 +1186,82 @@ describe("AgentRunner", () => {
     expect(joined).toContain("问题4");
   });
 
+  it("injects the full parent session history before hidden side chat history", async () => {
+    const { runner, calls } = runnerWith(store, secrets, [{ text: "侧边回答" }]);
+    const parent = await store.createSession({
+      projectId: null,
+      title: "主会话",
+      providerId: "deepseek",
+      accessMode: "approval"
+    });
+    const firstUser = await store.addMessage({
+      sessionId: parent.id,
+      role: "user",
+      content: "主问题一"
+    });
+    await store.addMessage({ sessionId: parent.id, role: "assistant", content: "主回答一" });
+    const anchor = await store.addMessage({
+      sessionId: parent.id,
+      role: "assistant",
+      content: "锚点回答"
+    });
+    await store.addMessage({
+      sessionId: parent.id,
+      role: "system",
+      content: "系统消息不进入模型历史"
+    });
+    await store.addMessage({
+      sessionId: parent.id,
+      role: "assistant",
+      content: "主历史摘要",
+      kind: "compaction_summary"
+    });
+    await store.updateSession(parent.id, { compactedUpToMessageId: firstUser.id });
+
+    const side = await store.createSideChatForMessage(anchor.id);
+    await store.addMessage({ sessionId: side.id, role: "user", content: "侧边旧问题" });
+    await store.addMessage({ sessionId: side.id, role: "assistant", content: "侧边旧回答" });
+
+    for await (const event of runner.stream({
+      sessionId: side.id,
+      sideChatParentSessionId: parent.id,
+      prompt: "侧边新问题",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      void event;
+    }
+
+    const visibleContents = calls[0].context.messages
+      .map((message) =>
+        typeof message.content === "string"
+          ? message.content
+          : message.content
+              .map((block) => (block.type === "text" ? block.text : ""))
+              .join("")
+      )
+      .filter(
+        (content) =>
+          Boolean(content) && !content.startsWith("<system-reminder>") && content !== "侧边回答"
+      );
+    expect(visibleContents).toEqual([
+      "主问题一",
+      "主回答一",
+      "锚点回答",
+      "侧边旧问题",
+      "侧边旧回答",
+      "侧边新问题"
+    ]);
+    expect(visibleContents).not.toContain("主历史摘要");
+    expect(visibleContents).not.toContain("系统消息不进入模型历史");
+    expect((await store.listMessages(side.id)).map((message) => message.content)).toEqual([
+      "侧边旧问题",
+      "侧边旧回答",
+      "侧边新问题",
+      "侧边回答"
+    ]);
+  });
+
   it("skips compaction for short sessions without calling the model", async () => {
     const { runner, calls } = runnerWith(store, secrets, [{ text: "不应该被调用" }]);
     const session = await store.createSession({

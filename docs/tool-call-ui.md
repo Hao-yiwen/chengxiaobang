@@ -144,6 +144,7 @@ StreamEvent(tool_call)
 ### 文案与截断规则
 
 - 描述模板按工具取参:path 类用 `shortenPath`(尾两段);`search.query`/`glob.pattern` 截 40;`Bash.command` 压缩空白后截 60;`WebFetch.url` 截 60;`ExitPlanMode.title` 截 30。
+- 流式参数预览仅用于 `Write` / `Edit` 的 `file_path`;其他工具等真实 `tool_call(running)` 后再展示，避免 URL、搜索词或命令在参数生成阶段反复闪烁。
 - 摘要类别:read / edit / search / command / web / artifact / message / plan / schedule / other,组件层以 `" · "` 连接。
 - `ToolCall.name` 是普通 string(模型可能请求未知工具),未知名 → `chat.toolLine.fallback`(「调用 {{name}}」)+ 兜底图标。
 

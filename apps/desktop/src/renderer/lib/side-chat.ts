@@ -6,6 +6,8 @@ export type SideChatItem =
   | { kind: "tool"; toolCall: ToolCall };
 
 export interface SideChatState {
+  /** 当前侧边会话绑定的主聊天消息 id。 */
+  anchorMessageId?: string;
   /** 首次 run_started 后写入，后续发送沿用同一个侧边会话。 */
   sessionId?: string;
   clientRequestId?: string;
@@ -18,6 +20,12 @@ export interface SideChatState {
 }
 
 export type SideChatAction =
+  | {
+      type: "load";
+      anchorMessageId?: string;
+      sessionId?: string;
+      items: SideChatItem[];
+    }
   | { type: "send"; clientRequestId?: string }
   | { type: "event"; event: StreamEvent }
   | { type: "finish"; error?: string }
@@ -49,6 +57,13 @@ function appendMessageItem(items: SideChatItem[], message: Message): SideChatIte
 /** 复用主运行循环的事件语义，但状态只收敛到侧边会话本地。 */
 export function sideChatReducer(state: SideChatState, action: SideChatAction): SideChatState {
   switch (action.type) {
+    case "load":
+      return {
+        ...initialSideChatState,
+        anchorMessageId: action.anchorMessageId,
+        sessionId: action.sessionId,
+        items: action.items
+      };
     case "send":
       return {
         ...state,

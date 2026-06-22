@@ -9,6 +9,7 @@ import {
   clampRightPanelWidth,
   rightPanelMaxWidthForContainer,
   rightPanelWidthForOpen,
+  targetRightPanelWidthForKind,
   visibleRightPanelWidth,
   sanitizePersistedAppState
 } from "../src/renderer/store/helpers/right-panel";
@@ -25,6 +26,14 @@ describe("right panel width defaults", () => {
     expect(RIGHT_PANEL_REVIEW_WIDTH).toBe(520);
     expect(RIGHT_PANEL_FILE_WIDTH).toBe(520);
     expect(RIGHT_PANEL_PROJECT_FILES_WIDTH).toBe(200);
+  });
+
+  it("uses file-preview width for browser and terminal work panels", () => {
+    expect(targetRightPanelWidthForKind("files")).toBe(RIGHT_PANEL_FILE_WIDTH);
+    expect(targetRightPanelWidthForKind("browser")).toBe(RIGHT_PANEL_FILE_WIDTH);
+    expect(targetRightPanelWidthForKind("terminal")).toBe(RIGHT_PANEL_FILE_WIDTH);
+    expect(targetRightPanelWidthForKind("changes")).toBe(RIGHT_PANEL_REVIEW_WIDTH);
+    expect(targetRightPanelWidthForKind("chat")).toBeUndefined();
   });
 
   it("migrates old default widths and caps oversized custom widths", () => {
@@ -76,6 +85,15 @@ describe("right panel width defaults", () => {
 
     expect(width).toBe(RIGHT_PANEL_FILE_WIDTH);
     expect(visibleRightPanelWidth(width, CHAT_PANEL_MIN_WIDTH + RIGHT_PANEL_FILE_WIDTH)).toBe(
+      RIGHT_PANEL_FILE_WIDTH
+    );
+  });
+
+  it("expands a narrow open panel when switching to terminal or browser", () => {
+    expect(rightPanelWidthForOpen(320, true, targetRightPanelWidthForKind("terminal"))).toBe(
+      RIGHT_PANEL_FILE_WIDTH
+    );
+    expect(rightPanelWidthForOpen(320, true, targetRightPanelWidthForKind("browser"))).toBe(
       RIGHT_PANEL_FILE_WIDTH
     );
   });

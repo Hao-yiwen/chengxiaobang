@@ -94,6 +94,19 @@ function queuedRun(id: string, content: string): QueuedRunItem {
   };
 }
 
+function toolCall(partial: Partial<ToolCall> = {}): ToolCall {
+  return {
+    id: partial.id ?? "tool_1",
+    runId: partial.runId ?? "run_1",
+    name: partial.name ?? "Write",
+    args: partial.args ?? { file_path: "a.txt", content: "ok" },
+    status: partial.status ?? "pending_approval",
+    createdAt: partial.createdAt ?? "2026-06-13T00:00:01.000Z",
+    updatedAt: partial.updatedAt ?? "2026-06-13T00:00:01.000Z",
+    ...partial
+  };
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   resetAppStore();
@@ -208,6 +221,285 @@ describe("app event handling", () => {
     expect(useAppStore.getState().runningSessionsById[otherSessionId]).toBeUndefined();
     expect(useAppStore.getState().runningRunSessionById.run_other).toBeUndefined();
     expect(useAppStore.getState().view).toBe("home");
+  });
+
+  it("marks non-current sessions with pending action tags and clears them on tool progress", () => {
+    const otherSession: Session = {
+      ...session,
+      id: "session_other",
+      title: "后台任务"
+    };
+    useAppStore.setState({
+      sessions: [session, otherSession],
+      view: "chat",
+      activeSessionId: session.id,
+      activeRunId: undefined,
+      isRunning: false
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "run_started",
+      runId: "run_question",
+      sessionId: otherSession.id
+    });
+    useAppStore.getState().handleRunEvent({
+      type: "tool_call",
+      runId: "run_question",
+      toolCall: toolCall({
+        id: "tool_question",
+        runId: "run_question",
+        name: "AskUserQuestion",
+        args: { questions: [] },
+        status: "pending_approval"
+      })
+    });
+
+    expect(useAppStore.getState().pendingTool).toBeUndefined();
+    expect(useAppStore.getState().sessions.find((item) => item.id === otherSession.id)).toMatchObject({
+      pendingAction: {
+        kind: "ask_user",
+        runId: "run_question",
+        toolCallId: "tool_question"
+      }
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "tool_call",
+      runId: "run_question",
+      toolCall: toolCall({
+        id: "tool_question",
+        runId: "run_question",
+        name: "AskUserQuestion",
+        args: { questions: [] },
+        status: "running"
+      })
+    });
+
+    expect(
+      useAppStore.getState().sessions.find((item) => item.id === otherSession.id)?.pendingAction
+    ).toBeUndefined();
+
+    useAppStore.getState().handleRunEvent({
+      type: "run_started",
+      runId: "run_approval",
+      sessionId: otherSession.id
+    });
+    useAppStore.getState().handleRunEvent({
+      type: "tool_call",
+      runId: "run_approval",
+      toolCall: toolCall({
+        id: "tool_approval",
+        runId: "run_approval",
+        name: "Write",
+        status: "pending_approval"
+      })
+    });
+
+    expect(useAppStore.getState().sessions.find((item) => item.id === otherSession.id)).toMatchObject({
+      pendingAction: {
+        kind: "approval",
+        runId: "run_approval",
+        toolCallId: "tool_approval"
+      }
+    });
+  });
+
+  it("does not create pending action tags for smart approval and clears tags on run end", () => {
+    const otherSession: Session = {
+      ...session,
+      id: "session_other",
+      title: "后台任务"
+    };
+    useAppStore.setState({
+      sessions: [session, otherSession],
+      view: "chat",
+      activeSessionId: session.id,
+      activeRunId: undefined,
+      isRunning: false
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "run_started",
+      runId: "run_smart",
+      sessionId: otherSession.id
+    });
+    useAppStore.getState().handleRunEvent({
+      type: "tool_call",
+      runId: "run_smart",
+      toolCall: toolCall({
+        id: "tool_smart",
+        runId: "run_smart",
+        name: "Write",
+        status: "pending_smart_approval"
+      })
+    });
+    expect(
+      useAppStore.getState().sessions.find((item) => item.id === otherSession.id)?.pendingAction
+    ).toBeUndefined();
+
+    useAppStore.getState().handleRunEvent({
+      type: "run_started",
+      runId: "run_pending",
+      sessionId: otherSession.id
+    });
+    useAppStore.getState().handleRunEvent({
+      type: "tool_call",
+      runId: "run_pending",
+      toolCall: toolCall({
+        id: "tool_pending",
+        runId: "run_pending",
+        name: "Write",
+        status: "pending_approval"
+      })
+    });
+    useAppStore.getState().handleRunEvent({
+      type: "run_end",
+      runId: "run_pending",
+      status: "aborted"
+    });
+
+    expect(
+      useAppStore.getState().sessions.find((item) => item.id === otherSession.id)?.pendingAction
+    ).toBeUndefined();
+  });
+
+  it("marks a completed non-current session as unread and shows a toast", () => {
+    const otherSession: Session = {
+      ...session,
+      id: "session_other",
+      title: "后台任务"
+    };
+    useAppStore.setState({
+      sessions: [session, otherSession],
+      view: "chat",
+      activeSessionId: session.id,
+      activeRunId: undefined,
+      isRunning: false
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "run_started",
+      runId: "run_other",
+      sessionId: otherSession.id
+    });
+    useAppStore.getState().handleRunEvent({
+      type: "run_end",
+      runId: "run_other",
+      status: "completed"
+    });
+
+    const updated = useAppStore.getState().sessions.find((item) => item.id === otherSession.id);
+    expect(updated?.notice).toMatchObject({
+      status: "unread",
+      runId: "run_other"
+    });
+    expect(useAppStore.getState().notificationToasts[0]).toMatchObject({
+      kind: "success",
+      sessionId: otherSession.id,
+      runId: "run_other",
+      title: "会话「后台任务」已完成"
+    });
+    expect(useAppStore.getState().activeSessionId).toBe(session.id);
+  });
+
+  it("marks a failed non-current session as failed and keeps failed priority", () => {
+    const otherSession: Session = {
+      ...session,
+      id: "session_other",
+      title: "后台任务",
+      notice: {
+        status: "unread",
+        runId: "run_previous",
+        updatedAt: "2026-06-13T00:00:00.000Z"
+      }
+    };
+    useAppStore.setState({
+      sessions: [session, otherSession],
+      view: "chat",
+      activeSessionId: session.id,
+      activeRunId: undefined,
+      isRunning: false
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "run_started",
+      runId: "run_failed",
+      sessionId: otherSession.id
+    });
+    useAppStore.getState().handleRunEvent({
+      type: "run_end",
+      runId: "run_failed",
+      status: "failed",
+      error: "模型失败"
+    });
+
+    const updated = useAppStore.getState().sessions.find((item) => item.id === otherSession.id);
+    expect(updated?.notice).toMatchObject({
+      status: "failed",
+      runId: "run_failed",
+      error: "模型失败"
+    });
+    expect(useAppStore.getState().notificationToasts[0]).toMatchObject({
+      kind: "error",
+      sessionId: otherSession.id,
+      runId: "run_failed",
+      title: "会话「后台任务」失败",
+      description: "错误：模型失败"
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "run_started",
+      runId: "run_completed_later",
+      sessionId: otherSession.id
+    });
+    useAppStore.getState().handleRunEvent({
+      type: "run_end",
+      runId: "run_completed_later",
+      status: "completed"
+    });
+    expect(
+      useAppStore.getState().sessions.find((item) => item.id === otherSession.id)?.notice
+    ).toMatchObject({
+      status: "failed",
+      runId: "run_failed"
+    });
+  });
+
+  it("marks the currently viewed session as read when its run ends", async () => {
+    const markSessionRead = vi.fn(async (id: string) => ({
+      ...session,
+      id,
+      lastViewedAt: "2026-06-13T00:00:05.000Z"
+    }));
+    await useAppStore.getState().initClient(createClient({ markSessionRead }));
+    useAppStore.setState({
+      sessions: [
+        {
+          ...session,
+          notice: {
+            status: "unread",
+            runId: "run_active",
+            updatedAt: "2026-06-13T00:00:04.000Z"
+          }
+        }
+      ],
+      view: "chat",
+      activeSessionId: session.id,
+      activeRunId: "run_active",
+      isRunning: true,
+      runningSessionsById: { [session.id]: true },
+      runningRunSessionById: { run_active: session.id }
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "run_end",
+      runId: "run_active",
+      status: "completed"
+    });
+
+    await waitFor(() => expect(markSessionRead).toHaveBeenCalledWith(session.id));
+    expect(useAppStore.getState().notificationToasts).toHaveLength(0);
+    expect(useAppStore.getState().sessions[0]?.notice).toBeUndefined();
   });
 
   it("accepts live run events when a restored running record exists before activeRunId is set", () => {

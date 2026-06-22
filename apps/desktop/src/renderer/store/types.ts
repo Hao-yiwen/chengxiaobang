@@ -33,6 +33,7 @@ import type {
   ScheduledTaskUpdate,
   Session,
   SessionSearchResult,
+  SideChatSummary,
   SkillCreateInput,
   SkillDetail,
   SkillSummary,
@@ -129,6 +130,8 @@ export interface NotificationToast {
   kind: "success" | "warning" | "error";
   title: string;
   description?: string;
+  sessionId?: string;
+  runId?: string;
   createdAt: number;
 }
 
@@ -139,7 +142,7 @@ export interface PreviewFileState {
   allowCwdFallback?: boolean;
 }
 
-/** 右侧面板里的一个 tab。单例工具(changes/browser/files/chat)每种至多一个;terminal 可多开。 */
+/** 右侧面板里的一个 tab。工具按 kind 单例，每种至多一个。 */
 export interface RightPanelTab {
   id: string;
   kind: RightPanelMode;
@@ -259,6 +262,10 @@ export interface AppState {
   filePreviewEntrySource?: FilePreviewEntrySource;
   browserUrl: string;
   rightPanelBySession: Record<string, RightPanelSessionState>;
+  /** 当前主会话里已创建的侧边会话，按锚点消息 id 索引。 */
+  sideChatsByMessageId: Record<string, SideChatSummary>;
+  /** 当前右侧侧边会话绑定的主聊天消息 id。 */
+  activeSideChatAnchorMessageId?: string;
   terminalEntries: TerminalEntry[];
   terminalRunning: boolean;
   // 飞书集成（瞬态；打开对应设置区时加载）
@@ -332,6 +339,12 @@ export interface AppState {
   toggleRightPanelMaximized(): void;
   setRightPanelWidth(width: number): void;
   setBrowserUrl(url: string): void;
+  /** 从主聊天某条消息打开对应隐藏侧边会话。 */
+  openSideChatForMessage(messageId: string): Promise<void>;
+  /** 重新读取当前主会话的侧边会话标记摘要。 */
+  loadSideChats(sessionId?: string): Promise<void>;
+  /** 单条消息的侧边会话创建或运行结束后，刷新其标记状态。 */
+  refreshSideChat(messageId: string): Promise<void>;
   openFilePreview(path: string, options?: { source?: FilePreviewEntrySource }): void;
   /** 打开生成物：统一进入右侧文件预览工作台，由预览器按类型处理。 */
   openArtifact(path: string, kind: ArtifactKind): void;
@@ -354,6 +367,7 @@ export interface AppState {
   ): Promise<void>;
   selectSession(id: string): Promise<void>;
   searchSessions(query: string): Promise<SessionSearchResult[]>;
+  markSessionRead(id: string): Promise<void>;
   renameSession(id: string, title: string): Promise<void>;
   /** 置顶/取消置顶会话（侧边栏置顶区）。 */
   setSessionPinned(id: string, pinned: boolean): Promise<void>;

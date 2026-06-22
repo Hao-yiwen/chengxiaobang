@@ -20,8 +20,6 @@ import {
 } from "../helpers/model-selection";
 import {
   DEFAULT_RIGHT_PANEL_WIDTH,
-  RIGHT_PANEL_FILE_WIDTH,
-  RIGHT_PANEL_REVIEW_WIDTH,
   activeRightPanelTabKind,
   clampRightPanelWidth,
   closeRightPanelTab as closeRightPanelTabPure,
@@ -29,8 +27,10 @@ import {
   rightPanelWidthForOpen,
   rememberRightPanel,
   restoredRightPanel,
+  targetRightPanelWidthForKind,
   type OpenRightPanelTabInput
 } from "../helpers/right-panel";
+import { indexSideChatsByMessageId } from "../helpers/side-chats";
 import type { RightPanelMode } from "../types";
 import { selectActiveProject, selectActiveSession } from "../selectors";
 import { upsertSession } from "../helpers/collections";
@@ -41,19 +41,11 @@ function basename(path: string): string {
   return segments[segments.length - 1] ?? path;
 }
 
-function targetWidthForKind(kind: RightPanelMode): number | undefined {
-  return kind === "changes"
-    ? RIGHT_PANEL_REVIEW_WIDTH
-    : kind === "files"
-      ? RIGHT_PANEL_FILE_WIDTH
-      : undefined;
-}
-
 /** 打开或聚焦一个 tab,产出统一的右侧面板状态补丁(含活动 tab 镜像与宽度)。 */
 function openTabPatch(
   state: AppState,
   input: OpenRightPanelTabInput,
-  targetWidth = targetWidthForKind(input.kind)
+  targetWidth = targetRightPanelWidthForKind(input.kind)
 ): RightPanelPatch {
   const { tabs, activeTabId } = openOrFocusRightPanelTab(state.rightPanelTabs, input);
   return {
@@ -447,15 +439,18 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           return;
         }
         set((state) => {
-          const patch = openTabPatch(state, openTabInputForKind(mode));
+          const targetWidth = targetRightPanelWidthForKind(mode);
+          const patch = openTabPatch(state, openTabInputForKind(mode), targetWidth);
           console.info("[store] 打开/聚焦右侧面板 tab", {
             mode,
             activeTabId: patch.rightPanelActiveTabId,
             tabCount: patch.rightPanelTabs?.length,
+            targetWidth: targetWidth ?? null,
             nextWidth: patch.rightPanelWidth ?? state.rightPanelWidth
           });
           return {
             ...patch,
+            ...(mode === "chat" ? { activeSideChatAnchorMessageId: undefined } : {}),
             filePreviewEntrySource: mode === "files" ? "panel" : undefined,
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
           };
@@ -466,14 +461,18 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
       },
       newRightPanelTab: (kind) => {
         set((state) => {
-          const patch = openTabPatch(state, openTabInputForKind(kind));
+          const targetWidth = targetRightPanelWidthForKind(kind);
+          const patch = openTabPatch(state, openTabInputForKind(kind), targetWidth);
           console.info("[store] 新建右侧面板 tab", {
             kind,
             activeTabId: patch.rightPanelActiveTabId,
-            tabCount: patch.rightPanelTabs?.length
+            tabCount: patch.rightPanelTabs?.length,
+            targetWidth: targetWidth ?? null,
+            nextWidth: patch.rightPanelWidth ?? state.rightPanelWidth
           });
           return {
             ...patch,
+            ...(kind === "chat" ? { activeSideChatAnchorMessageId: undefined } : {}),
             filePreviewEntrySource: kind === "files" ? "panel" : undefined,
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
           };
@@ -489,18 +488,29 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
             state.rightPanelActiveTabId,
             tabId
           );
-          if (result.closed?.kind === "terminal" && result.closed.terminalId) {
+          const closedTerminalId =
+            result.closed?.kind === "terminal"
+              ? (result.closed.terminalId ?? result.closed.id)
+              : undefined;
+          if (closedTerminalId) {
             // 关 tab 才真正销毁 PTY;切 tab 仅隐藏不销毁。
             console.info("[store] 关闭终端 tab,销毁 PTY", {
               tabId,
-              terminalId: result.closed.terminalId
+              terminalId: closedTerminalId
             });
-            void window.chengxiaobang?.terminalClose?.(result.closed.terminalId);
+            void window.chengxiaobang?.terminalClose?.(closedTerminalId);
+          }
+          if (result.closed?.kind === "browser") {
+            console.info("[store] 关闭浏览器 tab,清空内置浏览器地址", {
+              tabId,
+              browserUrl: state.browserUrl
+            });
           }
           const patch: RightPanelPatch = {
             rightPanelTabs: result.tabs,
             rightPanelActiveTabId: result.activeTabId,
-            rightPanelMode: activeRightPanelTabKind(result.tabs, result.activeTabId)
+            rightPanelMode: activeRightPanelTabKind(result.tabs, result.activeTabId),
+            ...(result.closed?.kind === "browser" ? { browserUrl: "" } : {})
           };
           return {
             ...patch,
@@ -509,13 +519,23 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         }),
       setActiveRightPanelTab: (tabId) =>
         set((state) => {
-          if (!state.rightPanelTabs.some((tab) => tab.id === tabId)) {
+          const target = state.rightPanelTabs.find((tab) => tab.id === tabId);
+          if (!target) {
+            console.warn("[store] 切换右侧面板 tab 失败：目标不存在", {
+              tabId,
+              tabCount: state.rightPanelTabs.length
+            });
             return {};
           }
           const patch: RightPanelPatch = {
             rightPanelActiveTabId: tabId,
-            rightPanelMode: activeRightPanelTabKind(state.rightPanelTabs, tabId)
+            rightPanelMode: target.kind
           };
+          console.info("[store] 切换右侧面板 tab", {
+            tabId,
+            kind: target.kind,
+            tabCount: state.rightPanelTabs.length
+          });
           return {
             ...patch,
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
@@ -555,6 +575,123 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
           };
         }),
+
+      async openSideChatForMessage(messageId) {
+        const state = get();
+        const message = state.messages.find((item) => item.id === messageId);
+        if (!message || (message.role !== "user" && message.role !== "assistant")) {
+          console.warn("[store] 打开消息侧边会话失败：锚点消息不可用", {
+            messageId,
+            activeSessionId: state.activeSessionId,
+            found: Boolean(message),
+            role: message?.role,
+            kind: message?.kind
+          });
+          return;
+        }
+        if (message.kind === "compaction_summary") {
+          console.warn("[store] 打开消息侧边会话失败：压缩摘要不能作为锚点", {
+            messageId,
+            activeSessionId: state.activeSessionId
+          });
+          return;
+        }
+        console.info("[store] 打开消息绑定侧边会话", {
+          messageId,
+          sessionId: message.sessionId,
+          hasExistingSideChat: Boolean(state.sideChatsByMessageId[messageId])
+        });
+        set((current) => {
+          const patch = openTabPatch(current, { kind: "chat" });
+          return {
+            ...patch,
+            activeSideChatAnchorMessageId: messageId,
+            rightPanelBySession: rememberRightPanel(current, undefined, patch)
+          };
+        });
+        await get().refreshSideChat(messageId);
+      },
+
+      async loadSideChats(sessionId) {
+        const targetSessionId = sessionId ?? get().activeSessionId;
+        const listSideChats = apiClientRef.current?.listSideChats;
+        if (!listSideChats || !targetSessionId) {
+          set({ sideChatsByMessageId: {} });
+          return;
+        }
+        try {
+          const sideChats = await listSideChats(targetSessionId);
+          if (get().activeSessionId !== targetSessionId) {
+            console.debug("[store] 忽略过期的侧边会话摘要结果", {
+              targetSessionId,
+              activeSessionId: get().activeSessionId,
+              count: sideChats.length
+            });
+            return;
+          }
+          console.info("[store] 刷新主会话侧边会话摘要", {
+            sessionId: targetSessionId,
+            count: sideChats.length
+          });
+          set({ sideChatsByMessageId: indexSideChatsByMessageId(sideChats) });
+        } catch (error) {
+          console.warn("[store] 刷新主会话侧边会话摘要失败", {
+            sessionId: targetSessionId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      },
+
+      async refreshSideChat(messageId) {
+        if (!apiClientRef.current?.getSideChat) {
+          return;
+        }
+        const activeSessionId = get().activeSessionId;
+        try {
+          const detail = await apiClientRef.current.getSideChat(messageId);
+          const session = detail?.session;
+          const userMessageCount =
+            detail?.messages.filter((message) => message.role === "user").length ?? 0;
+          if (
+            session?.sideChatParentSessionId &&
+            activeSessionId &&
+            session.sideChatParentSessionId !== activeSessionId
+          ) {
+            console.debug("[store] 忽略非当前主会话的侧边会话摘要", {
+              messageId,
+              activeSessionId,
+              sideChatParentSessionId: session.sideChatParentSessionId
+            });
+            return;
+          }
+          console.info("[store] 刷新单条消息侧边会话摘要", {
+            messageId,
+            activeSessionId,
+            hasSideChat: Boolean(session),
+            userMessageCount
+          });
+          set((current) => {
+            const next = { ...current.sideChatsByMessageId };
+            if (session) {
+              next[messageId] = {
+                anchorMessageId: messageId,
+                session,
+                userMessageCount,
+                updatedAt: session.updatedAt
+              };
+            } else {
+              delete next[messageId];
+            }
+            return { sideChatsByMessageId: next };
+          });
+        } catch (error) {
+          console.warn("[store] 刷新单条消息侧边会话摘要失败", {
+            messageId,
+            activeSessionId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      },
 
       openFilePreview(path, options) {
         const state = get();

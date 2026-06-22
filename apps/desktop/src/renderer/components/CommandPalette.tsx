@@ -1,5 +1,5 @@
 import {
-  ArrowLeftIcon,
+  ChevronRightIcon,
   ChatBubbleIcon
 } from "@/assets/file-type-icons";
 import type { SessionSearchResult } from "@chengxiaobang/shared";
@@ -132,7 +132,7 @@ export function CommandPalette() {
                 </span>
               ) : null}
               <CommandShortcut>
-                <ArrowLeftIcon className="size-3.5" />
+                <ChevronRightIcon className="size-3.5" />
               </CommandShortcut>
             </CommandItem>
           ))}

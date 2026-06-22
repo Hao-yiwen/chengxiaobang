@@ -78,8 +78,7 @@ export type FileChange = z.infer<typeof fileChangeSchema>;
 export const toolCallSchema = z.object({
   id: z.string().min(1),
   runId: z.string().min(1),
-  // Plain string: the model can request unknown tool names, and those calls
-  // still get persisted/rendered (as failed) instead of masquerading as shell.
+  // 模型可能请求未知工具名，这类调用仍要持久化/渲染为失败，而不是伪装成 shell。
   name: z.string().min(1),
   args: z.record(z.string(), z.unknown()),
   status: z.enum([
@@ -93,24 +92,25 @@ export const toolCallSchema = z.object({
   result: z.string().optional(),
   fileChange: fileChangeSchema.optional(),
   approval: toolCallApprovalSchema.optional(),
-  /** When execution actually began (post-approval), ISO timestamp. */
+  /** 工具真正开始执行的时间（审批通过后），ISO 时间戳。 */
   startedAt: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
 export type ToolCall = z.infer<typeof toolCallSchema>;
 
+export const toolActivityPreviewToolNames = ["Write", "Edit"] as const;
+export type ToolActivityPreviewToolName = (typeof toolActivityPreviewToolNames)[number];
+
+export function isToolActivityPreviewToolName(
+  name: string | undefined
+): name is ToolActivityPreviewToolName {
+  return name === "Write" || name === "Edit";
+}
+
 export const toolActivityArgsPreviewSchema = z
   .object({
-    path: z.string().optional(),
-    file_path: z.string().optional(),
-    command: z.string().optional(),
-    query: z.string().optional(),
-    pattern: z.string().optional(),
-    url: z.string().optional(),
-    title: z.string().optional(),
-    name: z.string().optional(),
-    skill: z.string().optional()
+    file_path: z.string().min(1).optional()
   })
   .strict();
 export type ToolActivityArgsPreview = z.infer<typeof toolActivityArgsPreviewSchema>;

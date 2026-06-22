@@ -16,6 +16,7 @@ export * from "./provider-catalog.generated";
 export * from "./run";
 export * from "./scheduled-task";
 export * from "./session";
+export * from "./side-chat";
 export * from "./skill";
 export * from "./slash-command";
 export * from "./stream";

@@ -6,6 +6,7 @@ import {
   defaultDataDir,
   defaultLogDir,
   defaultProfilePath,
+  defaultThemeSourceCachePath,
   devDockIconPath,
   preloadPath,
   rendererIndexPath,
@@ -21,6 +22,28 @@ describe("main process paths", () => {
   it("defaults log dir to the logs folder inside the data dir", () => {
     expect(defaultLogDir()).toBe(join(defaultDataDir(), "logs"));
     expect(defaultLogDir("/tmp/cxb-data")).toBe(join("/tmp/cxb-data", "logs"));
+  });
+
+  it("resolves the startup theme cache inside the configured data dir", () => {
+    expect(defaultThemeSourceCachePath("/tmp/cxb-data")).toBe(
+      join("/tmp/cxb-data", "theme-source.json")
+    );
+  });
+
+  it("resolves the startup theme cache under CHENGXIAOBANG_HOME", () => {
+    const previousHome = process.env.CHENGXIAOBANG_HOME;
+    process.env.CHENGXIAOBANG_HOME = "/tmp/cxb-home";
+    try {
+      expect(defaultThemeSourceCachePath()).toBe(
+        join("/tmp/cxb-home", "data", "theme-source.json")
+      );
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.CHENGXIAOBANG_HOME;
+      } else {
+        process.env.CHENGXIAOBANG_HOME = previousHome;
+      }
+    }
   });
 
   it("resolves profile path inside the configured chengxiaobang root", () => {

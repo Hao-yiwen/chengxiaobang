@@ -1,5 +1,9 @@
-import { createId, isStreamEvent } from "@chengxiaobang/shared";
-import type { MessageAttachment } from "@chengxiaobang/shared";
+import {
+  createId,
+  isStreamEvent,
+  isToolActivityPreviewToolName
+} from "@chengxiaobang/shared";
+import type { MessageAttachment, Session, StreamEvent, ToolActivity } from "@chengxiaobang/shared";
 import i18n from "../../i18n";
 import { saveDisplayAttachmentSnapshots } from "../../lib/attachment-preparation";
 import { showSystemNotification } from "../../lib/notifications";
@@ -88,6 +92,133 @@ function previewFilePath(args: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function validToolActivityPreview(activity: ToolActivity): boolean {
+  return (
+    isToolActivityPreviewToolName(activity.name) &&
+    typeof activity.argsPreview.file_path === "string" &&
+    activity.argsPreview.file_path.length > 0
+  );
+}
+
+type RunEndEvent = Extract<StreamEvent, { type: "run_end" }>;
+
+function sessionNoticeFromRunEnd(event: RunEndEvent): Session["notice"] {
+  if (event.status === "failed") {
+    return {
+      status: "failed",
+      runId: event.runId,
+      ...(event.error ? { error: event.error } : {}),
+      updatedAt: new Date().toISOString()
+    };
+  }
+  if (event.status === "completed") {
+    return {
+      status: "unread",
+      runId: event.runId,
+      updatedAt: new Date().toISOString()
+    };
+  }
+  return undefined;
+}
+
+function sessionRunFinishedToast(
+  session: Session | undefined,
+  event: RunEndEvent
+): { kind: "success" | "error"; title: string; description?: string; sessionId: string; runId: string } | undefined {
+  if (!session || (event.status !== "completed" && event.status !== "failed")) {
+    return undefined;
+  }
+  if (event.status === "failed") {
+    return {
+      kind: "error",
+      title: i18n.t("notifications.sessionRun.failedTitle", { title: session.title }),
+      description: event.error
+        ? i18n.t("notifications.sessionRun.errorDetail", {
+            error: event.error.length > 160 ? `${event.error.slice(0, 157)}...` : event.error
+          })
+        : i18n.t("notifications.sessionRun.openSession"),
+      sessionId: session.id,
+      runId: event.runId
+    };
+  }
+  return {
+    kind: "success",
+    title: i18n.t("notifications.sessionRun.completedTitle", { title: session.title }),
+    description: i18n.t("notifications.sessionRun.openSession"),
+    sessionId: session.id,
+    runId: event.runId
+  };
+}
+
+function applyOptimisticSessionNotice(
+  sessions: Session[],
+  sessionId: string,
+  notice: Session["notice"]
+): Session[] {
+  if (!notice) {
+    return sessions;
+  }
+  return sessions.map((session) => {
+    if (session.id !== sessionId) {
+      return session;
+    }
+    if (session.notice?.status === "failed" && notice.status === "unread") {
+      return session;
+    }
+    return { ...session, notice };
+  });
+}
+
+function sessionPendingActionFromToolCall(toolCall: Extract<StreamEvent, { type: "tool_call" }>["toolCall"]): Session["pendingAction"] {
+  if (toolCall.status !== "pending_approval") {
+    return undefined;
+  }
+  return {
+    kind: toolCall.name === "AskUserQuestion" ? "ask_user" : "approval",
+    runId: toolCall.runId,
+    toolCallId: toolCall.id,
+    updatedAt: toolCall.updatedAt
+  };
+}
+
+function sessionIdForRunEvent(state: AppState, runId: string): string | undefined {
+  return (
+    state.runningRunSessionById[runId] ??
+    state.runHistory.find((run) => run.id === runId)?.sessionId ??
+    (state.activeRunId === runId ? state.activeSessionId : undefined)
+  );
+}
+
+function applyOptimisticSessionPendingAction(
+  sessions: Session[],
+  sessionId: string,
+  pendingAction: Session["pendingAction"]
+): Session[] {
+  if (!pendingAction) {
+    return sessions;
+  }
+  return sessions.map((session) =>
+    session.id === sessionId ? { ...session, pendingAction } : session
+  );
+}
+
+function clearOptimisticSessionPendingAction(
+  sessions: Session[],
+  match: { runId: string; toolCallId?: string }
+): Session[] {
+  return sessions.map((session) => {
+    const pendingAction = session.pendingAction;
+    if (!pendingAction || pendingAction.runId !== match.runId) {
+      return session;
+    }
+    if (match.toolCallId && pendingAction.toolCallId !== match.toolCallId) {
+      return session;
+    }
+    const { pendingAction: _pendingAction, ...rest } = session;
+    return rest;
+  });
+}
+
 function closeLiveThinkingPatch(state: AppState): Partial<AppState> {
   if (!state.thinking || state.thinkingDurationMs !== undefined) {
     return {};
@@ -169,7 +300,9 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
       flushBufferedDeltas();
     }
     if (event.channel === "text") {
-      flushBufferedDeltas();
+      if (bufferedThinkingDelta) {
+        flushBufferedDeltas();
+      }
       set((current) => closeLiveThinkingPatch(current));
     }
     bufferedDeltaRunId = event.runId;
@@ -886,11 +1019,72 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
       handleRunEvent(event, options) {
         const currentState = get();
         const runEndSessionId =
-          event.type === "run_end" ? currentState.runningRunSessionById[event.runId] : undefined;
+          event.type === "run_end" ? sessionIdForRunEvent(currentState, event.runId) : undefined;
         if (event.type === "run_started") {
           set((state) => markRunRunning(state, event.runId, event.sessionId));
+        } else if (event.type === "tool_call") {
+          const toolSessionId = sessionIdForRunEvent(get(), event.runId);
+          const pendingAction = sessionPendingActionFromToolCall(event.toolCall);
+          if (toolSessionId && pendingAction) {
+            console.info("[store] 会话进入待用户处理状态", {
+              sessionId: toolSessionId,
+              runId: event.runId,
+              toolCallId: event.toolCall.id,
+              kind: pendingAction.kind
+            });
+            set((state) => ({
+              sessions: applyOptimisticSessionPendingAction(
+                state.sessions,
+                toolSessionId,
+                pendingAction
+              )
+            }));
+          } else if (toolSessionId) {
+            set((state) => ({
+              sessions: clearOptimisticSessionPendingAction(state.sessions, {
+                runId: event.runId,
+                toolCallId: event.toolCall.id
+              })
+            }));
+          }
         } else if (event.type === "run_end") {
-          set((state) => clearRunRunning(state, event.runId, runEndSessionId));
+          set((state) => ({
+            ...clearRunRunning(state, event.runId, runEndSessionId),
+            sessions: clearOptimisticSessionPendingAction(state.sessions, { runId: event.runId })
+          }));
+          if (runEndSessionId) {
+            const viewingEndedSession =
+              currentState.view === "chat" && currentState.activeSessionId === runEndSessionId;
+            if (viewingEndedSession) {
+              console.info("[store] 当前会话运行结束，标记会话已读", {
+                sessionId: runEndSessionId,
+                runId: event.runId,
+                status: event.status
+              });
+              void get().markSessionRead(runEndSessionId);
+            } else {
+              const notice = sessionNoticeFromRunEnd(event);
+              const session = currentState.sessions.find((item) => item.id === runEndSessionId);
+              const toast = sessionRunFinishedToast(session, event);
+              if (notice && toast) {
+                console.info("[store] 后台会话运行结束，显示未读提示", {
+                  sessionId: runEndSessionId,
+                  runId: event.runId,
+                  status: event.status,
+                  noticeStatus: notice.status
+                });
+                set((state) => ({
+                  sessions: applyOptimisticSessionNotice(
+                    clearOptimisticSessionPendingAction(state.sessions, { runId: event.runId }),
+                    runEndSessionId,
+                    notice
+                  ),
+                  ...addNotificationToast(state, toast)
+                }));
+                void get().loadData();
+              }
+            }
+          }
         }
         if (!shouldHandleRunEvent(get(), event, options?.force)) {
           return;
@@ -960,6 +1154,21 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             enqueueDelta(event);
             break;
           case "tool_activity":
+            if (!validToolActivityPreview(event.activity)) {
+              console.debug(
+                "[stream-caret-debug] 忽略不支持的工具参数活动预览 " +
+                  jsonForLog({
+                    eventType: "tool_activity_ignored",
+                    runId: event.runId,
+                    activeRunId: get().activeRunId,
+                    toolName: event.activity.name,
+                    toolCallId: event.activity.toolCallId,
+                    previewKeys: Object.keys(event.activity.argsPreview),
+                    hasFilePath: typeof event.activity.argsPreview.file_path === "string"
+                  })
+              );
+              break;
+            }
             flushBufferedDeltas();
             console.info(
               "[stream-caret-debug] store-event " +

@@ -8,12 +8,15 @@ import {
   FolderIcon,
   FolderOpenOutlineIcon,
   HandPointerIcon,
+  MicrophoneOffIcon,
+  MicrophoneOutlineIcon,
   PlusIcon,
   RefreshIcon,
   SearchIcon,
   ShieldAlertIcon,
   ShieldTerminalIcon,
-  SkillIcon
+  SkillIcon,
+  StopSquareFilledIcon
 } from "@/assets/file-type-icons";
 import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -100,6 +103,104 @@ const REASONING_MODE_LABEL_KEYS: Record<ReasoningMode, string> = {
   high: "settings.providers.reasoningModes.high",
   xhigh: "settings.providers.reasoningModes.xhigh"
 };
+const VOICE_INPUT_LANGUAGE = "zh-CN";
+const VOICE_WAVEFORM_BAR_COUNT = 54;
+const VOICE_WAVEFORM_BASE_LEVEL = 0.08;
+const VOICE_WAVEFORM_MIN_HEIGHT = 2;
+const VOICE_WAVEFORM_MAX_HEIGHT = 24;
+type VoiceInputState =
+  | "checking"
+  | "idle"
+  | "recording"
+  | "transcribing"
+  | "unavailable"
+  | "error";
+
+function createInitialVoiceLevels(): number[] {
+  return Array.from({ length: VOICE_WAVEFORM_BAR_COUNT }, () => VOICE_WAVEFORM_BASE_LEVEL);
+}
+
+function formatVoiceElapsed(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1_000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function voiceWaveformLevel(
+  level: number,
+  index: number,
+  elapsedMs: number,
+  state: VoiceInputState
+): number {
+  const clamped = Math.max(0, Math.min(1, level));
+  if (state !== "recording") {
+    return clamped;
+  }
+  const ambient = 0.1 + Math.max(0, Math.sin(index * 0.85 + elapsedMs / 180)) * 0.12;
+  return Math.max(clamped, ambient);
+}
+
+function VoiceWaveform({
+  levels,
+  elapsedMs,
+  state,
+  onStop,
+  stopLabel,
+  transcribingLabel
+}: {
+  levels: number[];
+  elapsedMs: number;
+  state: VoiceInputState;
+  onStop: () => void;
+  stopLabel: string;
+  transcribingLabel: string;
+}) {
+  return (
+    <div
+      data-testid="voice-waveform"
+      className="flex h-8 min-w-[180px] flex-1 items-center gap-2 overflow-hidden"
+    >
+      <div className="relative flex h-7 min-w-0 flex-1 items-center overflow-hidden">
+        <div className="absolute left-0 right-0 top-1/2 border-t border-dashed border-muted-foreground/35" />
+        <div className="relative z-[1] flex h-full w-full items-center justify-center gap-[2px]">
+          {levels.map((level, index) => {
+            const displayLevel = voiceWaveformLevel(level, index, elapsedMs, state);
+            const height =
+              VOICE_WAVEFORM_MIN_HEIGHT +
+              Math.round(displayLevel * (VOICE_WAVEFORM_MAX_HEIGHT - VOICE_WAVEFORM_MIN_HEIGHT));
+            return (
+              <span
+                key={index}
+                data-testid="voice-waveform-bar"
+                className={cn(
+                  "block w-[3px] flex-none rounded-full bg-foreground transition-[height,opacity] duration-100",
+                  state === "transcribing" && "opacity-45"
+                )}
+                style={{ height }}
+              />
+            );
+          })}
+        </div>
+      </div>
+      <span className="w-10 flex-none text-right text-body-sm tabular-nums text-muted-foreground">
+        {formatVoiceElapsed(elapsedMs)}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label={stopLabel}
+        title={state === "transcribing" ? transcribingLabel : stopLabel}
+        disabled={state === "transcribing"}
+        onClick={onStop}
+        className="size-8 flex-none rounded-full bg-canvas-soft-2 text-foreground hover:bg-surface-hover disabled:text-muted-foreground/50"
+      >
+        <StopSquareFilledIcon className="size-[15px]" />
+      </Button>
+    </div>
+  );
+}
 
 function reasoningModeLabel(t: ComposerT, mode: ReasoningMode): string {
   return String(t(REASONING_MODE_LABEL_KEYS[mode]));
@@ -206,6 +307,7 @@ export function Composer() {
     );
   const activeProject = useAppStore(selectActiveProject);
   const setInput = useAppStore((state) => state.setInput);
+  const setNotice = useAppStore((state) => state.setNotice);
   const selectComposerModel = useAppStore((state) => state.selectComposerModel);
   const setAccessMode = useAppStore((state) => state.setAccessMode);
   const setPlanMode = useAppStore((state) => state.setPlanMode);
@@ -257,6 +359,13 @@ export function Composer() {
   const [providerModelOptions, setProviderModelOptions] = useState<
     Record<string, ProviderModelOption[]>
   >({});
+  const [voiceState, setVoiceState] = useState<VoiceInputState>("checking");
+  const [voiceSessionId, setVoiceSessionId] = useState<string>();
+  const voiceSessionIdRef = useRef<string | undefined>(undefined);
+  const [voiceUnavailableReason, setVoiceUnavailableReason] = useState<string>();
+  const [voiceLevels, setVoiceLevels] = useState(createInitialVoiceLevels);
+  const [voiceElapsedMs, setVoiceElapsedMs] = useState(0);
+  const voiceStartedAtRef = useRef<number | undefined>(undefined);
   const configuredProviders = providers.filter((provider) => provider.apiKeyRef);
   const configuredProviderOptionsKey = configuredProviders
     .map((provider) =>
@@ -362,6 +471,7 @@ export function Composer() {
   );
   // 未配置供应商时也允许触发提交，store 会打开首次配置弹窗。
   const canSend = value.trim().length > 0 || attachments.length > 0;
+  const showVoiceMeter = voiceState === "recording" || voiceState === "transcribing";
   // 仅首页、输入框为空且非运行/等待回答时，用轮播文案替代静态占位。
   const rotatingActive =
     view === "home" &&
@@ -369,10 +479,94 @@ export function Composer() {
     !awaitingAskUser &&
     value.length === 0 &&
     placeholderRotation.length > 1;
+  const voiceButtonTitle =
+    voiceState === "recording"
+      ? t("composer.voiceStop")
+      : voiceState === "transcribing"
+        ? t("composer.voiceTranscribing")
+        : voiceState === "unavailable"
+          ? (voiceUnavailableReason ?? t("composer.voiceUnavailable"))
+          : t("composer.voiceStart");
+  const voiceButtonDisabled =
+    voiceState === "checking" || voiceState === "transcribing" || voiceState === "unavailable";
 
   useEffect(() => {
     setHighlightedCommand(0);
   }, [slashQuery, slashCommandSections.ordered.length, atToken?.query, fileSuggestions.length]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const speechAvailability = window.chengxiaobang?.speechAvailability;
+    if (!speechAvailability) {
+      setVoiceState("unavailable");
+      setVoiceUnavailableReason(String(t("composer.voiceUnavailable")));
+      return;
+    }
+    setVoiceState("checking");
+    void speechAvailability({ language: VOICE_INPUT_LANGUAGE })
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        if (result.available) {
+          console.info("[composer] 系统语音输入可用", {
+            platform: result.platform,
+            language: result.language
+          });
+          setVoiceState("idle");
+          setVoiceUnavailableReason(undefined);
+          return;
+        }
+        console.info("[composer] 系统语音输入不可用", {
+          platform: result.platform,
+          language: result.language,
+          reason: result.reason
+        });
+        setVoiceState("unavailable");
+        setVoiceUnavailableReason(result.reason ?? String(t("composer.voiceUnavailable")));
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn("[composer] 系统语音输入可用性检查失败", { error: message });
+        setVoiceState("unavailable");
+        setVoiceUnavailableReason(message);
+      });
+    return () => {
+      cancelled = true;
+      void window.chengxiaobang?.speechCancel?.(
+        voiceSessionIdRef.current ? { sessionId: voiceSessionIdRef.current } : undefined
+      );
+    };
+  }, [t]);
+
+  useEffect(() => {
+    const unsubscribe = window.chengxiaobang?.onSpeechEvent?.((event) => {
+      if (event.type !== "level" || event.sessionId !== voiceSessionIdRef.current) {
+        return;
+      }
+      setVoiceElapsedMs(event.elapsedMs);
+      setVoiceLevels((current) => [...current.slice(1), event.level]);
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (voiceState !== "recording") {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (voiceStartedAtRef.current === undefined) {
+        return;
+      }
+      setVoiceElapsedMs(Date.now() - voiceStartedAtRef.current);
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [voiceState]);
 
   useEffect(() => {
     if (!activeSuggestionMenu) {
@@ -670,6 +864,155 @@ export function Composer() {
     setSelectionStart(textareaRef.current?.selectionStart ?? value.length);
   };
 
+  const setActiveVoiceSession = (sessionId: string | undefined) => {
+    voiceSessionIdRef.current = sessionId;
+    setVoiceSessionId(sessionId);
+  };
+
+  const resetVoiceMeter = () => {
+    voiceStartedAtRef.current = undefined;
+    setVoiceElapsedMs(0);
+    setVoiceLevels(createInitialVoiceLevels());
+  };
+
+  const insertVoiceText = (rawText: string) => {
+    const text = rawText.trim();
+    if (!text) {
+      const message = String(t("composer.voiceNoText"));
+      console.info("[composer] 系统语音输入未识别到文字");
+      setNotice(message);
+      return false;
+    }
+    const cursor = Math.max(
+      0,
+      Math.min(textareaRef.current?.selectionStart ?? selectionStart, value.length)
+    );
+    const prefix = value.slice(0, cursor);
+    const suffix = value.slice(cursor);
+    const before = prefix.length > 0 && !/\s$/.test(prefix) ? " " : "";
+    const after = suffix.length > 0 && !/^\s/.test(suffix) ? " " : "";
+    const next = `${prefix}${before}${text}${after}${suffix}`;
+    const caret = prefix.length + before.length + text.length + after.length;
+    setInput(next);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) {
+        return;
+      }
+      textarea.focus();
+      textarea.setSelectionRange(caret, caret);
+      setSelectionStart(caret);
+    });
+    console.info("[composer] 系统语音输入已插入输入框", {
+      textChars: text.length,
+      previousChars: value.length,
+      nextChars: next.length
+    });
+    return true;
+  };
+
+  const startVoiceInput = async () => {
+    const speechStart = window.chengxiaobang?.speechStart;
+    if (!speechStart) {
+      const message = String(t("composer.voiceUnavailable"));
+      setVoiceState("unavailable");
+      setVoiceUnavailableReason(message);
+      setNotice(message);
+      return;
+    }
+    console.info("[composer] 开始系统语音输入", { language: VOICE_INPUT_LANGUAGE });
+    setVoiceState("checking");
+    setVoiceUnavailableReason(undefined);
+    try {
+      const result = await speechStart({ language: VOICE_INPUT_LANGUAGE });
+      if (!result.ok) {
+        console.warn("[composer] 系统语音输入启动失败", { error: result.error });
+        setVoiceState(result.available === false ? "unavailable" : "error");
+        setVoiceUnavailableReason(result.error);
+        resetVoiceMeter();
+        setNotice(result.error);
+        return;
+      }
+      setActiveVoiceSession(result.sessionId);
+      voiceStartedAtRef.current = Date.now();
+      setVoiceElapsedMs(0);
+      setVoiceLevels(createInitialVoiceLevels());
+      setVoiceState("recording");
+      console.info("[composer] 系统语音输入进入录音态", {
+        sessionId: result.sessionId,
+        language: VOICE_INPUT_LANGUAGE
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[composer] 系统语音输入启动异常", { error: message });
+      setVoiceState("error");
+      setVoiceUnavailableReason(message);
+      resetVoiceMeter();
+      setNotice(message);
+    }
+  };
+
+  const stopVoiceInput = async () => {
+    const speechStop = window.chengxiaobang?.speechStop;
+    if (!speechStop || !voiceSessionId) {
+      setVoiceState("idle");
+      setActiveVoiceSession(undefined);
+      resetVoiceMeter();
+      return;
+    }
+    console.info("[composer] 停止系统语音输入", {
+      sessionId: voiceSessionId,
+      language: VOICE_INPUT_LANGUAGE
+    });
+    setVoiceState("transcribing");
+    try {
+      const result = await speechStop({ sessionId: voiceSessionId });
+      setActiveVoiceSession(undefined);
+      voiceStartedAtRef.current = undefined;
+      if (!result.ok) {
+        console.warn("[composer] 系统语音输入转写失败", {
+          sessionId: voiceSessionId,
+          error: result.error,
+          textChars: result.text?.length ?? 0
+        });
+        setVoiceState("error");
+        setVoiceUnavailableReason(result.error);
+        resetVoiceMeter();
+        setNotice(result.error);
+        return;
+      }
+      const inserted = insertVoiceText(result.text);
+      setVoiceState("idle");
+      setVoiceLevels(createInitialVoiceLevels());
+      setVoiceElapsedMs(0);
+      console.info("[composer] 系统语音输入转写完成", {
+        sessionId: result.sessionId,
+        textChars: result.text.length,
+        elapsedMs: result.elapsedMs,
+        inserted
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[composer] 系统语音输入停止异常", {
+        sessionId: voiceSessionId,
+        error: message
+      });
+      setActiveVoiceSession(undefined);
+      resetVoiceMeter();
+      setVoiceState("error");
+      setVoiceUnavailableReason(message);
+      setNotice(message);
+    }
+  };
+
+  const handleVoiceButtonClick = () => {
+    if (voiceState === "recording") {
+      void stopVoiceInput();
+      return;
+    }
+    void startVoiceInput();
+  };
+
   const pickComposerModel = (
     nextProvider: ProviderConfig,
     nextModel: string,
@@ -941,6 +1284,7 @@ export function Composer() {
                 </div>
               </div>
             ) : null}
+
           </div>
         </PopoverAnchor>
         <PopoverContent
@@ -1088,7 +1432,10 @@ export function Composer() {
         </PopoverContent>
       </Popover>
 
-      <div className="flex min-w-0 items-center gap-1 px-2.5 pb-2.5 pt-0 [&_svg]:stroke-[1.75]">
+      <div
+        data-testid="composer-toolbar"
+        className="flex min-w-0 items-center gap-1 px-2.5 pb-2.5 pt-0 [&_svg]:stroke-[1.75]"
+      >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -1128,7 +1475,7 @@ export function Composer() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {showProjectSelector ? (
+        {!showVoiceMeter && showProjectSelector ? (
           <DropdownMenu
             onOpenChange={(open) => {
               if (!open) {
@@ -1221,7 +1568,7 @@ export function Composer() {
           </DropdownMenu>
         ) : null}
 
-        {planMode ? (
+        {!showVoiceMeter && planMode ? (
           <button
             type="button"
             title={t("composer.planModeOff")}
@@ -1233,113 +1580,126 @@ export function Composer() {
           </button>
         ) : null}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "h-8 flex-none gap-1.5 rounded-sm px-2.5 text-micro font-normal transition-colors",
-                accessTone.trigger,
-                accessTone.hover
-              )}
-            >
-              {accessMode === "full_access" ? (
-                <ShieldAlertIcon className="size-4" />
-              ) : accessMode === "smart_approval" ? (
-                <ShieldTerminalIcon className="size-4" />
-              ) : (
-                <HandPointerIcon className="size-4" />
-              )}
-              {t(
-                accessMode === "full_access"
-                  ? "permission.fullAccess"
-                  : accessMode === "smart_approval"
-                    ? "permission.smartApproval"
-                    : "permission.approval"
-              )}
-              <ChevronIcon className="size-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-[280px]">
-            <DropdownMenuItem
-              className="items-start gap-2.5 py-2.5"
-              onSelect={() => void selectAccessMode("approval")}
-            >
-              <HandPointerIcon
+        {showVoiceMeter ? null : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
                 className={cn(
-                  "mt-0.5 size-4 flex-none",
-                  ACCESS_MODE_TONES.approval.menuIcon
+                  "h-8 flex-none gap-1.5 rounded-sm px-2.5 text-micro font-normal transition-colors",
+                  accessTone.trigger,
+                  accessTone.hover
                 )}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium">{t("permission.approval")}</span>
-                <span className="mt-0.5 block text-caption leading-snug text-muted-foreground">
-                  {t("permission.approvalDesc")}
+              >
+                {accessMode === "full_access" ? (
+                  <ShieldAlertIcon className="size-4" />
+                ) : accessMode === "smart_approval" ? (
+                  <ShieldTerminalIcon className="size-4" />
+                ) : (
+                  <HandPointerIcon className="size-4" />
+                )}
+                {t(
+                  accessMode === "full_access"
+                    ? "permission.fullAccess"
+                    : accessMode === "smart_approval"
+                      ? "permission.smartApproval"
+                      : "permission.approval"
+                )}
+                <ChevronIcon className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-[280px]">
+              <DropdownMenuItem
+                className="items-start gap-2.5 py-2.5"
+                onSelect={() => void selectAccessMode("approval")}
+              >
+                <HandPointerIcon
+                  className={cn(
+                    "mt-0.5 size-4 flex-none",
+                    ACCESS_MODE_TONES.approval.menuIcon
+                  )}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{t("permission.approval")}</span>
+                  <span className="mt-0.5 block text-caption leading-snug text-muted-foreground">
+                    {t("permission.approvalDesc")}
+                  </span>
                 </span>
-              </span>
-              <CheckMediumIcon
-                className={cn(
-                  "mt-0.5 size-4 flex-none",
-                  ACCESS_MODE_TONES.approval.check,
-                  accessMode === "approval" ? "opacity-100" : "opacity-0"
-                )}
-              />
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="items-start gap-2.5 py-2.5"
-              onSelect={() => void selectAccessMode("smart_approval")}
-            >
-              <ShieldTerminalIcon
-                className={cn(
-                  "mt-0.5 size-4 flex-none",
-                  ACCESS_MODE_TONES.smart_approval.menuIcon
-                )}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium">{t("permission.smartApproval")}</span>
-                <span className="mt-0.5 block text-caption leading-snug text-muted-foreground">
-                  {t("permission.smartApprovalDesc")}
+                <CheckMediumIcon
+                  className={cn(
+                    "mt-0.5 size-4 flex-none",
+                    ACCESS_MODE_TONES.approval.check,
+                    accessMode === "approval" ? "opacity-100" : "opacity-0"
+                  )}
+                />
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="items-start gap-2.5 py-2.5"
+                onSelect={() => void selectAccessMode("smart_approval")}
+              >
+                <ShieldTerminalIcon
+                  className={cn(
+                    "mt-0.5 size-4 flex-none",
+                    ACCESS_MODE_TONES.smart_approval.menuIcon
+                  )}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{t("permission.smartApproval")}</span>
+                  <span className="mt-0.5 block text-caption leading-snug text-muted-foreground">
+                    {t("permission.smartApprovalDesc")}
+                  </span>
                 </span>
-              </span>
-              <CheckMediumIcon
-                className={cn(
-                  "mt-0.5 size-4 flex-none",
-                  ACCESS_MODE_TONES.smart_approval.check,
-                  accessMode === "smart_approval" ? "opacity-100" : "opacity-0"
-                )}
-              />
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="items-start gap-2.5 py-2.5"
-              onSelect={() => void selectAccessMode("full_access")}
-            >
-              <ShieldAlertIcon
-                className={cn(
-                  "mt-0.5 size-4 flex-none",
-                  ACCESS_MODE_TONES.full_access.menuIcon
-                )}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium">{t("permission.fullAccess")}</span>
-                <span className="mt-0.5 block text-caption leading-snug text-muted-foreground">
-                  {t("permission.fullAccessDesc")}
+                <CheckMediumIcon
+                  className={cn(
+                    "mt-0.5 size-4 flex-none",
+                    ACCESS_MODE_TONES.smart_approval.check,
+                    accessMode === "smart_approval" ? "opacity-100" : "opacity-0"
+                  )}
+                />
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="items-start gap-2.5 py-2.5"
+                onSelect={() => void selectAccessMode("full_access")}
+              >
+                <ShieldAlertIcon
+                  className={cn(
+                    "mt-0.5 size-4 flex-none",
+                    ACCESS_MODE_TONES.full_access.menuIcon
+                  )}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{t("permission.fullAccess")}</span>
+                  <span className="mt-0.5 block text-caption leading-snug text-muted-foreground">
+                    {t("permission.fullAccessDesc")}
+                  </span>
                 </span>
-              </span>
-              <CheckMediumIcon
-                className={cn(
-                  "mt-0.5 size-4 flex-none",
-                  ACCESS_MODE_TONES.full_access.check,
-                  accessMode === "full_access" ? "opacity-100" : "opacity-0"
-                )}
-              />
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                <CheckMediumIcon
+                  className={cn(
+                    "mt-0.5 size-4 flex-none",
+                    ACCESS_MODE_TONES.full_access.check,
+                    accessMode === "full_access" ? "opacity-100" : "opacity-0"
+                  )}
+                />
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
-        <div className="min-w-0 flex-1" />
+        {showVoiceMeter ? (
+          <VoiceWaveform
+            levels={voiceLevels}
+            elapsedMs={voiceElapsedMs}
+            state={voiceState}
+            onStop={handleVoiceButtonClick}
+            stopLabel={String(t("composer.voiceStop"))}
+            transcribingLabel={String(t("composer.voiceTranscribing"))}
+          />
+        ) : (
+          <div className="min-w-0 flex-1" />
+        )}
 
-        {activeSessionId && selectedProvider ? (
+        {!showVoiceMeter && activeSessionId && selectedProvider ? (
           <ContextUsageIndicator
             usage={contextUsage}
             loading={contextUsageLoading}
@@ -1352,7 +1712,7 @@ export function Composer() {
           />
         ) : null}
 
-        {configuredProviders.length === 0 ? (
+        {showVoiceMeter ? null : configuredProviders.length === 0 ? (
           <Button
             variant="ghost"
             size="sm"
@@ -1453,7 +1813,33 @@ export function Composer() {
           </DropdownMenu>
         )}
 
-        {currentComposerRunning && !canSend ? (
+        {showVoiceMeter ? null : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={
+              voiceState === "unavailable"
+                ? String(t("composer.voiceUnavailable"))
+                : String(t("composer.voiceStart"))
+            }
+            title={String(voiceButtonTitle)}
+            disabled={voiceButtonDisabled}
+            onClick={handleVoiceButtonClick}
+            className={cn(
+              "size-8 flex-none rounded-sm text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground disabled:bg-transparent disabled:text-muted-foreground/45",
+              voiceState === "checking" && "animate-pulse"
+            )}
+          >
+            {voiceState === "unavailable" ? (
+              <MicrophoneOffIcon className="size-[18px]" />
+            ) : (
+              <MicrophoneOutlineIcon className="size-[18px]" />
+            )}
+          </Button>
+        )}
+
+        {showVoiceMeter ? null : currentComposerRunning && !canSend ? (
           <Button
             size="icon"
             className="size-8 flex-none rounded-sm bg-primary text-primary-foreground hover:bg-primary/85"

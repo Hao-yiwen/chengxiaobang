@@ -32,12 +32,20 @@ export const RIGHT_PANEL_MENU_ITEMS: Array<{
   { mode: "chat", icon: ChatBubblesIcon, labelKey: "rightPanel.chat" }
 ];
 
+const RIGHT_PANEL_MODE_ICONS: Record<RightPanelMode, Icon> = {
+  changes: PullRequestOpenIcon,
+  terminal: TerminalIcon,
+  browser: GlobeOutlineIcon,
+  files: CodeIcon,
+  chat: ChatBubblesIcon
+};
+
 /** 工具图标:tab 栏 chip 与 + 选择器复用同一映射。 */
 export function rightPanelModeIcon(mode: RightPanelMode): Icon {
-  return RIGHT_PANEL_MENU_ITEMS.find((item) => item.mode === mode)?.icon ?? CodeIcon;
+  return RIGHT_PANEL_MODE_ICONS[mode] ?? CodeIcon;
 }
 
-/** 空面板时的工具选择页:选一个工具新建对应 tab。 */
+/** 空面板时的工具选择页:点击工具卡片后新建对应 tab。 */
 export function RightPanelMenu({
   availableModes,
   onPick
@@ -48,8 +56,7 @@ export function RightPanelMenu({
   const { t } = useTranslation();
   const visibleItems = RIGHT_PANEL_MENU_ITEMS.filter((item) => availableModes.includes(item.mode));
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
-      <p className="text-caption text-muted-foreground">{t("rightPanel.emptyHint")}</p>
+    <div className="flex h-full -translate-y-6 flex-col items-center justify-center p-6">
       <div className="flex w-full max-w-[280px] flex-col gap-2">
         {visibleItems.map((item) => (
           <button

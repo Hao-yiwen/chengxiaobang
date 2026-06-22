@@ -23,6 +23,8 @@ export default defineConfig({
     "adm-zip",
     "js-yaml",
     "js-tiktoken",
+    "lru-cache",
+    "turndown",
     "pino",
     "@pinojs/redact",
     "atomic-sleep",

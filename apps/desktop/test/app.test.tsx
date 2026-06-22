@@ -43,6 +43,8 @@ function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
     deleteSession: vi.fn() as never,
     getGitChanges: vi.fn(async () => ({ isRepo: false, files: [] })),
     listMessages: vi.fn(async () => []),
+    listSideChats: vi.fn(async () => []),
+    getSideChat: vi.fn(async () => null),
     rewindSession: vi.fn(async () => []),
     forkSession: vi.fn() as never,
     listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [] })),
@@ -204,7 +206,7 @@ describe("App", () => {
     expect(screen.queryByText("程小帮 · AI 工作台")).not.toBeInTheDocument();
     expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
     expect(screen.getByLabelText("输入消息")).toBeInTheDocument();
-    expect(screen.getByTestId("composer-shell")).toHaveClass("rounded-xl");
+    expect(screen.getByTestId("composer-shell")).toHaveClass("rounded-lg");
     expect(screen.getByTestId("composer-shell")).not.toHaveClass("rounded-pill");
     await selectDeepSeekForHome();
     // 首页模型入口展示友好模型名，不重复露出原始模型 id。
@@ -499,6 +501,90 @@ describe("App", () => {
     });
   });
 
+  it("inserts system voice transcription into the composer input", async () => {
+    let speechEventListener:
+      | ((event: { type: "level"; sessionId: string; level: number; elapsedMs: number }) => void)
+      | undefined;
+    const speechAvailability = vi.fn(async () => ({
+      ok: true as const,
+      platform: "darwin" as const,
+      language: "zh-CN",
+      available: true
+    }));
+    const speechStart = vi.fn(async () => ({ ok: true as const, sessionId: "speech_test" }));
+    const speechStop = vi.fn(async () => ({
+      ok: true as const,
+      sessionId: "speech_test",
+      text: "你好程小帮",
+      elapsedMs: 800
+    }));
+    window.chengxiaobang = {
+      speechAvailability,
+      speechStart,
+      speechStop,
+      speechCancel: vi.fn(async () => ({ ok: true as const })),
+      onSpeechEvent: vi.fn((listener) => {
+        speechEventListener = listener;
+        return vi.fn();
+      })
+    } as unknown as NonNullable<Window["chengxiaobang"]>;
+
+    render(<App client={createClient()} />);
+
+    const input = await screen.findByLabelText("输入消息");
+    const startButton = await screen.findByRole("button", { name: "开始语音输入" });
+    await waitFor(() => expect(startButton).not.toBeDisabled());
+
+    fireEvent.click(startButton);
+
+    await waitFor(() => expect(speechStart).toHaveBeenCalledWith({ language: "zh-CN" }));
+    expect(await screen.findByTestId("voice-waveform")).toBeInTheDocument();
+    const composerToolbar = screen.getByTestId("composer-toolbar");
+    expect(within(composerToolbar).getByTestId("voice-waveform")).toBeInTheDocument();
+    expect(within(composerToolbar).getAllByTestId("voice-waveform-bar")).toHaveLength(54);
+    expect(within(composerToolbar).getByTitle("添加上下文")).toBeInTheDocument();
+    expect(within(composerToolbar).queryByRole("button", { name: "对话" })).not.toBeInTheDocument();
+    expect(within(composerToolbar).queryByRole("button", { name: "审批执行" })).not.toBeInTheDocument();
+    await act(async () => {
+      speechEventListener?.({
+        type: "level",
+        sessionId: "speech_test",
+        level: 0.72,
+        elapsedMs: 1_200
+      });
+    });
+    expect(screen.getByText("0:01")).toBeInTheDocument();
+
+    const stopButton = await screen.findByRole("button", { name: "停止语音输入" });
+    fireEvent.click(stopButton);
+
+    await waitFor(() => expect(speechStop).toHaveBeenCalledWith({ sessionId: "speech_test" }));
+    await waitFor(() => expect(input).toHaveValue("你好程小帮"));
+    expect(screen.queryByTestId("voice-waveform")).not.toBeInTheDocument();
+  });
+
+  it("disables the voice button when system speech is unavailable", async () => {
+    window.chengxiaobang = {
+      speechAvailability: vi.fn(async () => ({
+        ok: true as const,
+        platform: "win32" as const,
+        language: "zh-CN",
+        available: false,
+        reason: "Windows 系统语音输入适配尚未随当前构建启用"
+      }))
+    } as unknown as NonNullable<Window["chengxiaobang"]>;
+
+    render(<App client={createClient()} />);
+
+    expect(await screen.findByLabelText("输入消息")).toBeInTheDocument();
+    const voiceButton = await screen.findByRole("button", { name: "语音输入不可用" });
+    await waitFor(() => expect(voiceButton).toBeDisabled());
+    expect(voiceButton).toHaveAttribute(
+      "title",
+      "Windows 系统语音输入适配尚未随当前构建启用"
+    );
+  });
+
   it("starts a fresh home chat when the native app menu requests New Chat", async () => {
     let newChatListener: (() => void) | undefined;
     const unsubscribe = vi.fn();
@@ -557,7 +643,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "打开对话操作菜单" })).toBeInTheDocument();
   });
 
-  it("pins, renames and opens side chat from the session actions menu", async () => {
+  it("pins and renames from the session actions menu", async () => {
     let currentSession = createSessionFixture();
     const updateSession = vi.fn(async (_id: string, input: { title?: string; pinned?: boolean }) => {
       currentSession = {
@@ -600,12 +686,60 @@ describe("App", () => {
     );
 
     await openSessionActionsMenu();
-    fireEvent.click(await screen.findByText("打开侧边聊天"));
+    expect(screen.queryByText("打开侧边聊天")).not.toBeInTheDocument();
+  });
 
-    expect(useAppStore.getState()).toMatchObject({
-      rightPanelOpen: true,
-      rightPanelMode: "chat"
+  it("only shows the side chat marker after a side chat exists", async () => {
+    const session = createSessionFixture();
+    const message = createMessageFixture();
+    const sideSession: Session = {
+      ...createSessionFixture({
+        id: "session_side_existing",
+        title: "侧边会话：菜单对话"
+      }),
+      sideChatAnchorMessageId: message.id,
+      sideChatParentSessionId: session.id
+    };
+    const client = createClient({
+      listSessions: vi.fn(async () => [session]),
+      listMessages: vi.fn(async () => [message]),
+      listSideChats: vi.fn(async () => [
+        {
+          anchorMessageId: message.id,
+          session: sideSession,
+          userMessageCount: 2,
+          updatedAt: sideSession.updatedAt
+        }
+      ]),
+      getSideChat: vi.fn(async () => ({
+        session: sideSession,
+        messages: [],
+        runs: [],
+        toolCalls: []
+      }))
     });
+
+    useAppStore.setState({ view: "chat", activeSessionId: session.id });
+    render(<App client={client} />);
+
+    expect(screen.queryByRole("button", { name: "打开这条消息的侧边会话" })).not.toBeInTheDocument();
+    const marker = await screen.findByRole("button", { name: "继续这条消息的侧边会话" });
+    expect(marker).toHaveClass("h-6", "rounded-xs", "z-[1]", "right-0");
+    expect(marker).toHaveClass("translate-x-[calc(100%+0.75rem)]");
+    expect(marker).toHaveTextContent("2 条侧边消息");
+    expect(marker).not.toHaveClass("size-2");
+    expect(marker).not.toHaveClass("rounded-full");
+    expect(marker.querySelector("svg")).toBeInTheDocument();
+
+    fireEvent.click(marker);
+
+    await waitFor(() =>
+      expect(useAppStore.getState()).toMatchObject({
+        rightPanelOpen: true,
+        rightPanelMode: "chat",
+        activeSideChatAnchorMessageId: message.id
+      })
+    );
   });
 
   it("copies the session id and active conversation Markdown from the session actions menu", async () => {
@@ -1438,17 +1572,16 @@ describe("App", () => {
     const composerColumn = await screen.findByTestId("chat-composer-column");
     const chatScroll = await screen.findByTestId("chat-scroll");
     await waitFor(() => {
-      expect(within(chatScroll).getByText("写入文件中")).toBeInTheDocument();
-      expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
+      expect(within(chatScroll).getByText(/思考中/)).toBeInTheDocument();
     });
+    expect(within(chatScroll).queryByText("写入文件中")).not.toBeInTheDocument();
     expect(within(composerColumn).queryByTestId("tool-activity-status")).not.toBeInTheDocument();
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 50));
     });
-    expect(within(chatScroll).getByText("写入文件中")).toBeInTheDocument();
-    expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
+    expect(within(chatScroll).queryByText("写入文件中")).not.toBeInTheDocument();
+    expect(within(chatScroll).getByText(/思考中/)).toBeInTheDocument();
     expect(within(composerColumn).queryByText(/写入文件中/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/思考中/)).not.toBeInTheDocument();
     expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
 
     act(() => {
@@ -1496,6 +1629,133 @@ describe("App", () => {
       expect(within(chatScroll).getByText("写入 out.txt")).toBeInTheDocument();
       expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
     });
+    resolveStream?.();
+  });
+
+  it("ignores legacy WebFetch tool_activity without interrupting live thinking", async () => {
+    type StreamRunEvent = Parameters<ApiClient["streamRun"]>[1] extends (
+      event: infer E
+    ) => void
+      ? E
+      : never;
+    let resolveStream: (() => void) | undefined;
+    const client = createClient({
+      streamRun: vi.fn(async (_input, onEvent) => {
+        onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+        onEvent({ type: "delta", channel: "thinking", runId: "run_1", delta: "先查网页" });
+        onEvent({
+          type: "tool_activity",
+          runId: "run_1",
+          activity: {
+            contentIndex: 0,
+            toolCallId: "tool_fetch_1",
+            name: "WebFetch",
+            argsPreview: { url: "https://example.com" },
+            updatedAt: "2026-06-13T00:00:00.500Z"
+          } as StreamRunEvent extends { type: "tool_activity"; activity: infer Activity }
+            ? Activity
+            : never
+        });
+        return new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        });
+      })
+    });
+
+    render(<App client={client} />);
+    await selectDeepSeekForHome();
+
+    fireEvent.change(await screen.findByLabelText("输入消息"), {
+      target: { value: "抓取网页" }
+    });
+    fireEvent.click(screen.getByTitle("发送"));
+
+    const chatScroll = await screen.findByTestId("chat-scroll");
+    await waitFor(() => {
+      expect(within(chatScroll).getByText(/思考中/)).toBeInTheDocument();
+    });
+    expect(within(chatScroll).queryByText(/抓取 https:\/\/example\.com 中/)).not.toBeInTheDocument();
+    expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
+    resolveStream?.();
+  });
+
+  it("does not flash the waiting dot between consecutive WebFetch tool calls", async () => {
+    type StreamRunEvent = Parameters<ApiClient["streamRun"]>[1] extends (
+      event: infer E
+    ) => void
+      ? E
+      : never;
+    let emit: ((event: StreamRunEvent) => void) | undefined;
+    let resolveStream: (() => void) | undefined;
+    const webFetchTool = (id: string, url: string, status: ToolCall["status"]): ToolCall => ({
+      id,
+      runId: "run_1",
+      name: "WebFetch",
+      args: { url, prompt: "提取正文" },
+      status,
+      ...(status === "running" ? { startedAt: "2026-06-13T00:00:01.000Z" } : {}),
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: status === "running" ? "2026-06-13T00:00:01.000Z" : "2026-06-13T00:00:02.000Z"
+    });
+    const client = createClient({
+      streamRun: vi.fn(async (_input, onEvent) => {
+        emit = onEvent;
+        onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+        return new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        });
+      })
+    });
+
+    render(<App client={client} />);
+    await selectDeepSeekForHome();
+
+    fireEvent.change(await screen.findByLabelText("输入消息"), {
+      target: { value: "抓取两个网页" }
+    });
+    fireEvent.click(screen.getByTitle("发送"));
+    const chatScroll = await screen.findByTestId("chat-scroll");
+    await waitFor(() => expect(emit).toBeDefined());
+
+    act(() => {
+      emit?.({ type: "tool_call", runId: "run_1", toolCall: webFetchTool("tool_fetch_1", "https://a.example", "running") });
+      emit?.({
+        type: "tool_call",
+        runId: "run_1",
+        toolCall: {
+          ...webFetchTool("tool_fetch_1", "https://a.example", "completed"),
+          result: "a"
+        }
+      });
+    });
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+    expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
+
+    act(() => {
+      emit?.({ type: "tool_call", runId: "run_1", toolCall: webFetchTool("tool_fetch_2", "https://b.example", "running") });
+      emit?.({
+        type: "tool_call",
+        runId: "run_1",
+        toolCall: {
+          ...webFetchTool("tool_fetch_2", "https://b.example", "completed"),
+          result: "b"
+        }
+      });
+    });
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+    expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
+
+    act(() => {
+      emit?.({ type: "delta", channel: "thinking", runId: "run_1", delta: "整理结果" });
+    });
+    await waitFor(() => {
+      expect(within(chatScroll).getByText(/思考中/)).toBeInTheDocument();
+    });
+    expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
     resolveStream?.();
   });
 
@@ -1839,6 +2099,43 @@ describe("App", () => {
 
     expect(await screen.findByText("定时任务「AI 日报」失败")).toBeInTheDocument();
     expect(screen.getByText("错误：模型超时")).toBeInTheDocument();
+  });
+
+  it("copies a top-right error toast", async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true
+    });
+    let emit: ((event: AppEvent) => void) | undefined;
+    const client = createClient({
+      subscribeAppEvents: vi.fn((listener: (event: AppEvent) => void) => {
+        emit = listener;
+        return vi.fn();
+      })
+    });
+
+    render(<App client={client} />);
+    await waitFor(() => expect(client.listProjects).toHaveBeenCalled());
+
+    act(() => {
+      emit?.({
+        type: "scheduled_task_finished",
+        taskId: "task_1",
+        sessionId: "session_1",
+        name: "AI 日报",
+        trigger: "schedule",
+        status: "failed",
+        error: "模型超时",
+        occurredAt: "2026-06-13T01:01:00.000Z"
+      });
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "复制提示" }));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("定时任务「AI 日报」失败\n错误：模型超时")
+    );
   });
 
   it("sends with Enter and keeps Shift+Enter for newlines", async () => {
@@ -2306,7 +2603,7 @@ describe("App", () => {
     fireEvent.click(screen.getByTitle("发送"));
 
     const streamedReasoning = await screen.findByText("先拆解问题");
-    expect(closestFoldGrid(streamedReasoning)).toHaveClass("grid-rows-[1fr]");
+    expect(closestFoldGrid(streamedReasoning)).toHaveClass("grid-rows-[0fr]");
 
     act(() => {
       emit?.({ type: "message", runId: "run_1", message: assistantMessage });

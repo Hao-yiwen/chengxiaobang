@@ -110,7 +110,6 @@ describe("AgentRunner agentic loop (pi)", () => {
       "message:user",
       "delta:thinking",
       "delta:text",
-      "tool_activity",
       "message:assistant",
       "tool_call:running",
       "tool_call:completed",
@@ -684,6 +683,76 @@ describe("AgentRunner agentic loop (pi)", () => {
       activity?.type === "tool_activity" &&
         "content" in activity.activity.argsPreview
     ).toBe(false);
+  });
+
+  it("emits tool_activity for Edit file_path while tool arguments stream", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    await writeFile(join(dir, "out.txt"), "旧内容", "utf8");
+    const { runner } = runnerWith([
+      {
+        toolCalls: [
+          {
+            id: "call_1",
+            name: "Edit",
+            arguments: { file_path: "out.txt", old_string: "旧内容", new_string: "新内容" },
+            argumentDeltas: [
+              "{\"file_path\":\"out.txt\"",
+              "{\"file_path\":\"out.txt\",\"old_string\":\"旧内容"
+            ]
+          }
+        ]
+      },
+      { text: "已经编辑文件。" }
+    ]);
+
+    const events = await drain(
+      runner.stream({ prompt: "编辑文件", projectId: project.id, accessMode: "full_access" })
+    );
+    const activity = events.find(
+      (event) =>
+        event.type === "tool_activity" && event.activity.argsPreview.file_path === "out.txt"
+    );
+
+    expect(activity?.type === "tool_activity" && activity.activity.name).toBe("Edit");
+    expect(activity?.type === "tool_activity" && activity.activity.argsPreview).toEqual({
+      file_path: "out.txt"
+    });
+    expect(activity?.type === "tool_activity" && "old_string" in activity.activity.argsPreview).toBe(
+      false
+    );
+  });
+
+  it("does not emit tool_activity for non edit/write tools while arguments stream", async () => {
+    const project = await store.createProject({ name: "proj", path: dir });
+    await writeFile(join(dir, "input.txt"), "hello", "utf8");
+    const { runner } = runnerWith([
+      {
+        toolCalls: [
+          {
+            id: "call_1",
+            name: "Read",
+            arguments: { file_path: "input.txt" },
+            argumentDeltas: ["{\"file_path\":\"input.txt\""]
+          },
+          {
+            id: "call_2",
+            name: "Bash",
+            arguments: { command: shortDelayedEchoShellCommand("activity-filter-ok") },
+            argumentDeltas: ["{\"command\":\"echo activity-filter-ok\""]
+          }
+        ]
+      },
+      { text: "已经完成。" }
+    ]);
+
+    const events = await drain(
+      runner.stream({ prompt: "读文件并运行命令", projectId: project.id, accessMode: "full_access" })
+    );
+
+    expect(events.some((event) => event.type === "tool_activity")).toBe(false);
+    expect(
+      events.filter((event) => event.type === "tool_call" && event.toolCall.status === "completed")
+    ).toHaveLength(2);
   });
 
   it("replays toolCall history losslessly in a later run of the same session", async () => {

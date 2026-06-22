@@ -1,4 +1,5 @@
 import type { WebContents } from "electron";
+import { execFileSync } from "node:child_process";
 import { chmod, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { hostname, platform, userInfo } from "node:os";
@@ -12,6 +13,7 @@ const MIN_COLS = 20;
 const MIN_ROWS = 5;
 const MAX_COLS = 500;
 const MAX_ROWS = 200;
+const FORCE_KILL_AFTER_MS = 1500;
 
 export interface TerminalStartRequest {
   id: string;
@@ -27,7 +29,16 @@ export type TerminalIpcResult =
 type PtyProcess = ReturnType<typeof nodePty.spawn>;
 type PtyModule = Pick<typeof nodePty, "spawn">;
 type Disposable = { dispose(): void };
+type KillProcess = (pid: number, signal: NodeJS.Signals | 0) => void;
+type KillProcessTree = (pid: number, force: boolean) => void;
 const require = createRequire(import.meta.url);
+
+export interface TerminalSessionManagerOptions {
+  platform?: NodeJS.Platform;
+  killProcess?: KillProcess;
+  killProcessTree?: KillProcessTree;
+  forceKillAfterMs?: number;
+}
 
 interface TerminalSession {
   id: string;
@@ -73,6 +84,17 @@ function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function errorCode(error: unknown): string | undefined {
+  return error instanceof Error && "code" in error
+    ? String((error as NodeJS.ErrnoException).code)
+    : undefined;
+}
+
+function ptyPid(pty: PtyProcess): number | undefined {
+  const pid = (pty as { pid?: unknown }).pid;
+  return typeof pid === "number" && Number.isFinite(pid) && pid > 0 ? pid : undefined;
+}
+
 async function assertDirectory(path: string): Promise<void> {
   const info = await stat(path);
   if (!info.isDirectory()) {
@@ -111,15 +133,37 @@ async function ensureNodePtySpawnHelperExecutable(): Promise<void> {
   console.warn(`[terminal] 未找到 node-pty spawn-helper candidates=${candidates.join(",")}`);
 }
 
+function killWindowsProcessTree(pid: number, force: boolean): void {
+  const args = ["/PID", String(pid), "/T"];
+  if (force) {
+    args.push("/F");
+  }
+  execFileSync("taskkill", args, {
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+}
+
 export class TerminalSessionManager {
   private readonly sessions = new Map<string, TerminalSession>();
   private readonly ptyModule: PtyModule;
   private readonly shellResolver: () => string;
+  private readonly currentPlatform: NodeJS.Platform;
+  private readonly killProcess: KillProcess;
+  private readonly killProcessTree: KillProcessTree;
+  private readonly forceKillAfterMs: number;
   private runtimeReady?: Promise<void>;
 
-  constructor(ptyModule: PtyModule = nodePty, shellResolver: () => string = resolveTerminalShell) {
+  constructor(
+    ptyModule: PtyModule = nodePty,
+    shellResolver: () => string = resolveTerminalShell,
+    options: TerminalSessionManagerOptions = {}
+  ) {
     this.ptyModule = ptyModule;
     this.shellResolver = shellResolver;
+    this.currentPlatform = options.platform ?? platform();
+    this.killProcess = options.killProcess ?? process.kill;
+    this.killProcessTree = options.killProcessTree ?? killWindowsProcessTree;
+    this.forceKillAfterMs = options.forceKillAfterMs ?? FORCE_KILL_AFTER_MS;
   }
 
   async start(owner: WebContents, request: TerminalStartRequest): Promise<TerminalIpcResult> {
@@ -131,8 +175,16 @@ export class TerminalSessionManager {
       console.error(`[terminal] 启动失败：参数无效 id=${id} cwd=${cwd}`);
       return { ok: false, error: "终端启动参数无效" };
     }
-    if (this.sessions.has(id)) {
-      console.error(`[terminal] 启动失败：会话已存在 id=${id} cwd=${cwd}`);
+    const existingSession = this.sessions.get(id);
+    if (existingSession) {
+      if (existingSession.owner === owner && existingSession.cwd === cwd) {
+        console.info(`[terminal] 复用已存在 PTY 会话 id=${id} cwd=${cwd} size=${cols}x${rows}`);
+        this.resize(id, cols, rows);
+        return { ok: true, id };
+      }
+      console.error(
+        `[terminal] 启动失败：会话已存在且归属不匹配 id=${id} requestedCwd=${cwd} existingCwd=${existingSession.cwd} sameOwner=${existingSession.owner === owner}`
+      );
       return { ok: false, error: "终端会话已存在" };
     }
     try {
@@ -220,8 +272,11 @@ export class TerminalSessionManager {
     this.sessions.delete(id);
     session.dataDisposable.dispose();
     session.exitDisposable.dispose();
-    session.pty.kill();
-    console.info(`[terminal] PTY 已关闭 id=${id} reason=${reason} cwd=${session.cwd}`);
+    this.signalTerminalSession(session, "SIGTERM", reason);
+    this.scheduleForceKill(session, reason);
+    console.info(
+      `[terminal] PTY 已关闭 id=${id} reason=${reason} cwd=${session.cwd} pid=${ptyPid(session.pty) ?? "unknown"}`
+    );
     return { ok: true };
   }
 
@@ -245,6 +300,85 @@ export class TerminalSessionManager {
     }
     this.runtimeReady ??= ensureNodePtySpawnHelperExecutable();
     return this.runtimeReady;
+  }
+
+  private signalTerminalSession(
+    session: TerminalSession,
+    signal: NodeJS.Signals,
+    reason: string
+  ): void {
+    const pid = ptyPid(session.pty);
+    let signaledProcessTree = false;
+    if (pid && this.currentPlatform === "win32") {
+      try {
+        this.killProcessTree(pid, signal === "SIGKILL");
+        signaledProcessTree = true;
+        console.info(
+          `[terminal] 已向 PTY 进程树发送终止信号 id=${session.id} pid=${pid} signal=${signal} force=${signal === "SIGKILL"} reason=${reason}`
+        );
+      } catch (error) {
+        const code = errorCode(error);
+        console.warn(
+          `[terminal] PTY 进程树终止失败，回退 node-pty kill id=${session.id} pid=${pid} signal=${signal} reason=${reason} code=${code ?? "unknown"} error=${messageFromError(error)}`
+        );
+      }
+    }
+    if (pid && this.currentPlatform !== "win32") {
+      try {
+        this.killProcess(-pid, signal);
+        signaledProcessTree = true;
+        console.info(
+          `[terminal] 已向 PTY 进程组发送终止信号 id=${session.id} pid=${pid} signal=${signal} reason=${reason}`
+        );
+      } catch (error) {
+        const code = errorCode(error);
+        if (code !== "ESRCH") {
+          console.warn(
+            `[terminal] PTY 进程组终止失败，回退 node-pty kill id=${session.id} pid=${pid} signal=${signal} reason=${reason} code=${code ?? "unknown"} error=${messageFromError(error)}`
+          );
+        }
+      }
+    }
+    try {
+      if (this.currentPlatform === "win32") {
+        session.pty.kill();
+      } else {
+        session.pty.kill(signal);
+      }
+      console.info(
+        `[terminal] node-pty kill 已调用 id=${session.id} pid=${pid ?? "unknown"} signal=${this.currentPlatform === "win32" ? "default" : signal} reason=${reason} processTreeSignaled=${signaledProcessTree}`
+      );
+    } catch (error) {
+      console.warn(
+        `[terminal] node-pty kill 调用失败 id=${session.id} pid=${pid ?? "unknown"} signal=${signal} reason=${reason} error=${messageFromError(error)}`
+      );
+    }
+  }
+
+  private scheduleForceKill(session: TerminalSession, reason: string): void {
+    const pid = ptyPid(session.pty);
+    if (!pid || this.forceKillAfterMs <= 0) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (!this.isPtyProcessAlive(pid)) {
+        return;
+      }
+      console.warn(
+        `[terminal] PTY 温和终止后仍存活，升级为强制终止 id=${session.id} pid=${pid} reason=${reason}`
+      );
+      this.signalTerminalSession(session, "SIGKILL", `${reason}:force`);
+    }, this.forceKillAfterMs);
+    timer.unref?.();
+  }
+
+  private isPtyProcessAlive(pid: number): boolean {
+    try {
+      this.killProcess(this.currentPlatform === "win32" ? pid : -pid, 0);
+      return true;
+    } catch (error) {
+      return errorCode(error) === "EPERM";
+    }
   }
 }
 

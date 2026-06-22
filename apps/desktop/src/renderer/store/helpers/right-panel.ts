@@ -41,22 +41,20 @@ export interface OpenRightPanelTabInput {
 }
 
 /**
- * 打开或聚焦一个 tab:终端每次新建,其余工具单例(已存在则聚焦并按需更新标题)。
+ * 打开或聚焦一个 tab:所有工具按 kind 单例,已存在则聚焦并按需更新标题。
  * 返回新的 tabs 列表与应激活的 tabId。
  */
 export function openOrFocusRightPanelTab(
   tabs: RightPanelTab[],
   input: OpenRightPanelTabInput
 ): { tabs: RightPanelTab[]; activeTabId: string } {
-  if (input.kind !== "terminal") {
-    const existing = tabs.find((tab) => tab.kind === input.kind);
-    if (existing) {
-      const nextTabs =
-        input.title && input.title !== existing.title
-          ? tabs.map((tab) => (tab.id === existing.id ? { ...tab, title: input.title } : tab))
-          : tabs;
-      return { tabs: nextTabs, activeTabId: existing.id };
-    }
+  const existing = tabs.find((tab) => tab.kind === input.kind);
+  if (existing) {
+    const nextTabs =
+      input.title && input.title !== existing.title
+        ? tabs.map((tab) => (tab.id === existing.id ? { ...tab, title: input.title } : tab))
+        : tabs;
+    return { tabs: nextTabs, activeTabId: existing.id };
   }
   const tab: RightPanelTab = {
     id: createId("rptab"),
@@ -87,9 +85,9 @@ export function closeRightPanelTab(
   return { tabs: nextTabs, activeTabId: nextActive, closed };
 }
 
-/** 终端 tab 不能跨重启恢复(PTY 已被销毁),持久化前一律剔除。 */
+/** 终端 tab 不能跨重启恢复；侧边会话 tab 依赖当前消息锚点，持久化前一律剔除。 */
 export function persistableRightPanelTabs(tabs: RightPanelTab[]): RightPanelTab[] {
-  return tabs.filter((tab) => tab.kind !== "terminal");
+  return tabs.filter((tab) => tab.kind !== "terminal" && tab.kind !== "chat");
 }
 
 /** 旧版单值 mode → tab 列表(mode 为 null 则空列表)。 */
@@ -122,15 +120,12 @@ export function visibleRightPanelWidth(
   return clampRightPanelWidth(width, rightPanelMaxWidthForContainer(containerWidth));
 }
 
-/**
- * 最大化时占满至「容器宽 - 聊天最小宽」,放开常规 720 上限以实现真正占满;
- * 容器未知时回退到常规最大宽。
- */
+/** 最大化时占满除左侧 sidebar 外的主工作区；容器未知时回退到常规最大宽。 */
 export function maximizedRightPanelWidth(containerWidth: number | undefined): number {
   if (typeof containerWidth !== "number" || !Number.isFinite(containerWidth)) {
     return RIGHT_PANEL_MAX_WIDTH;
   }
-  return Math.max(RIGHT_PANEL_MIN_WIDTH, Math.floor(containerWidth - CHAT_PANEL_MIN_WIDTH));
+  return Math.max(0, Math.floor(containerWidth));
 }
 
 export function rightPanelWidthForOpen(
@@ -140,6 +135,19 @@ export function rightPanelWidthForOpen(
 ): number {
   const baseWidth = wasOpen ? clampRightPanelWidth(currentWidth) : DEFAULT_RIGHT_PANEL_WIDTH;
   return targetWidth ? Math.max(baseWidth, clampRightPanelWidth(targetWidth)) : baseWidth;
+}
+
+export function targetRightPanelWidthForKind(kind: RightPanelMode): number | undefined {
+  switch (kind) {
+    case "changes":
+      return RIGHT_PANEL_REVIEW_WIDTH;
+    case "files":
+    case "browser":
+    case "terminal":
+      return RIGHT_PANEL_FILE_WIDTH;
+    default:
+      return undefined;
+  }
 }
 
 function normalizeStoredRightPanelWidth(width: number | undefined): number | undefined {

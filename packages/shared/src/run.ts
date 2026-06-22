@@ -52,6 +52,8 @@ export const runRequestSchema = z.object({
   model: z.string().min(1).optional(),
   /** run 级推理覆盖；解析优先级 run > session > provider 默认。 */
   reasoningMode: reasoningModeSchema.optional(),
+  /** 侧边会话运行时的主会话上下文来源；普通运行不传。 */
+  sideChatParentSessionId: z.string().min(1).optional(),
   /** 由桌面端按模型能力准备好的原生图片附件；文本模型不应携带。 */
   attachments: z.array(runImageAttachmentSchema).default([])
 });

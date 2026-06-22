@@ -216,6 +216,38 @@ describe("createApp", () => {
     expect(unpinnedBody.session.pinnedAt).toBeUndefined();
   });
 
+  it("marks a session as read over HTTP", async () => {
+    const session = await store.createSession({
+      projectId: null,
+      title: "后台会话",
+      accessMode: "approval"
+    });
+    await tick();
+    await store.createRun({ id: "run_failed_notice", sessionId: session.id, status: "running" });
+    await tick();
+    await store.updateRunStatus("run_failed_notice", "failed", undefined, "模型失败");
+
+    const before = await app(new Request("http://local/api/sessions", { method: "GET" }));
+    const beforeBody = (await before.json()) as { sessions: Array<{ id: string; notice?: unknown }> };
+    expect(beforeBody.sessions.find((item) => item.id === session.id)?.notice).toMatchObject({
+      status: "failed",
+      runId: "run_failed_notice"
+    });
+
+    const read = await app(
+      new Request(`http://local/api/sessions/${session.id}/read`, { method: "POST" })
+    );
+    expect(read.status).toBe(200);
+    const readBody = (await read.json()) as {
+      session: { id: string; lastViewedAt?: string; notice?: unknown };
+    };
+    expect(readBody.session).toMatchObject({
+      id: session.id,
+      lastViewedAt: expect.any(String)
+    });
+    expect(readBody.session.notice).toBeUndefined();
+  });
+
   it("renames or pins a project via PATCH", async () => {
     const created = await app(
       jsonRequest("/api/projects", "POST", { path: join(dir, "pin-proj"), name: "demo" })
@@ -268,6 +300,100 @@ describe("createApp", () => {
       jsonRequest(`/api/sessions/${session.id}/rewind`, "POST", { messageId: "msg_nope" })
     );
     expect(missing.status).toBe(404);
+  });
+
+  it("creates, lists and reads hidden side chats over HTTP", async () => {
+    const session = await store.createSession({
+      projectId: null,
+      title: "主会话",
+      providerId: "deepseek",
+      accessMode: "approval"
+    });
+    const anchor = await store.addMessage({
+      sessionId: session.id,
+      role: "user",
+      content: "给这条消息开一个侧边会话"
+    });
+
+    const missing = await app(
+      new Request(`http://local/api/messages/${anchor.id}/side-chat`, { method: "GET" })
+    );
+    expect(missing.status).toBe(200);
+    await expect(missing.json()).resolves.toEqual({ sideChat: null });
+
+    const created = await app(jsonRequest(`/api/messages/${anchor.id}/side-chat`, "POST", {}));
+    expect(created.status).toBe(201);
+    const createdBody = (await created.json()) as {
+      sideChat: {
+        session: { id: string; sideChatAnchorMessageId: string; sideChatParentSessionId: string };
+        messages: unknown[];
+        runs: unknown[];
+        toolCalls: unknown[];
+      };
+    };
+    expect(createdBody.sideChat).toMatchObject({
+      session: {
+        sideChatAnchorMessageId: anchor.id,
+        sideChatParentSessionId: session.id
+      },
+      messages: [],
+      runs: [],
+      toolCalls: []
+    });
+
+    const reused = await app(jsonRequest(`/api/messages/${anchor.id}/side-chat`, "POST", {}));
+    expect(reused.status).toBe(200);
+    const reusedBody = (await reused.json()) as {
+      sideChat: { session: { id: string } };
+    };
+    expect(reusedBody.sideChat.session.id).toBe(createdBody.sideChat.session.id);
+
+    await store.addMessage({
+      sessionId: createdBody.sideChat.session.id,
+      role: "assistant",
+      content: "侧边回答"
+    });
+    await store.createRun({
+      id: "run_side_http",
+      sessionId: createdBody.sideChat.session.id,
+      status: "completed"
+    });
+
+    const detail = await app(
+      new Request(`http://local/api/messages/${anchor.id}/side-chat`, { method: "GET" })
+    );
+    expect(detail.status).toBe(200);
+    await expect(detail.json()).resolves.toMatchObject({
+      sideChat: {
+        session: { id: createdBody.sideChat.session.id },
+        messages: [{ content: "侧边回答" }],
+        runs: [{ id: "run_side_http" }]
+      }
+    });
+
+    await store.addMessage({
+      sessionId: createdBody.sideChat.session.id,
+      role: "user",
+      content: "侧边追问"
+    });
+
+    const summaries = await app(
+      new Request(`http://local/api/sessions/${session.id}/side-chats`, { method: "GET" })
+    );
+    expect(summaries.status).toBe(200);
+    await expect(summaries.json()).resolves.toMatchObject({
+      sideChats: [
+        {
+          anchorMessageId: anchor.id,
+          session: { id: createdBody.sideChat.session.id },
+          userMessageCount: 1
+        }
+      ]
+    });
+
+    const sessions = await app(new Request("http://local/api/sessions", { method: "GET" }));
+    const sessionsBody = (await sessions.json()) as { sessions: Array<{ id: string }> };
+    expect(sessionsBody.sessions.map((item) => item.id)).toEqual([session.id]);
   });
 
   it("updates assistant message feedback over HTTP", async () => {

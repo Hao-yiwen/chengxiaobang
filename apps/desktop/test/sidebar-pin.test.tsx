@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
-import { resetAppStore } from "../src/renderer/store";
+import { resetAppStore, useAppStore } from "../src/renderer/store";
 import type { Project, ProviderConfig, Session } from "@chengxiaobang/shared";
 
 const provider: ProviderConfig = {
@@ -110,6 +110,76 @@ describe("sidebar pinning", () => {
     await sidebar.findByText("旧标题A");
 
     expect(sidebar.queryByText("置顶")).not.toBeInTheDocument();
+  });
+
+  it("会话行展示未读/失败点位和待处理 Tag", async () => {
+    const unread = {
+      ...session("s1", "这是一个非常长的旧标题A，用来确认待处理标签不会被标题挤没"),
+      notice: {
+        status: "unread" as const,
+        runId: "run_unread",
+        updatedAt: "2026-06-13T00:00:01.000Z"
+      },
+      pendingAction: {
+        kind: "ask_user" as const,
+        runId: "run_question",
+        toolCallId: "tool_question",
+        updatedAt: "2026-06-13T00:00:03.000Z"
+      }
+    };
+    const failed = {
+      ...session("s2", "另一个B"),
+      notice: {
+        status: "failed" as const,
+        runId: "run_failed",
+        error: "模型失败",
+        updatedAt: "2026-06-13T00:00:02.000Z"
+      },
+      pendingAction: {
+        kind: "approval" as const,
+        runId: "run_approval",
+        toolCallId: "tool_approval",
+        updatedAt: "2026-06-13T00:00:04.000Z"
+      }
+    };
+    const quiet = session("s3", "安静会话");
+    const client = createClient({ listSessions: vi.fn(async () => [unread, failed, quiet]) });
+
+    render(<App client={client} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+    const unreadTitle = await sidebar.findByText(
+      "这是一个非常长的旧标题A，用来确认待处理标签不会被标题挤没"
+    );
+    const unreadTag = sidebar.getByTestId("session-pending-action-s1");
+    const unreadNotice = sidebar.getByTestId("session-notice-s1");
+
+    expect(unreadNotice.firstElementChild).toHaveClass("bg-link");
+    expect(sidebar.getByTestId("session-notice-s2").firstElementChild).toHaveClass(
+      "bg-error-deep"
+    );
+    expect(unreadTag).toHaveTextContent("询问用户");
+    expect(unreadTag).toHaveClass("bg-soft-blue-surface");
+    expect(sidebar.getByTestId("session-pending-action-s2")).toHaveTextContent("待审批");
+    expect(sidebar.getByTestId("session-pending-action-s2")).toHaveClass("bg-warning-soft/70");
+    expect(
+      unreadTitle.compareDocumentPosition(unreadTag) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      unreadTag.compareDocumentPosition(unreadNotice) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    const quietTitle = await sidebar.findByText("安静会话");
+    const quietButton = quietTitle.closest("button") as HTMLButtonElement;
+    expect(sidebar.queryByTestId("session-notice-s3")).not.toBeInTheDocument();
+    expect(quietButton.firstElementChild).toBe(quietTitle);
+
+    const failedRow = (await sidebar.findByText("另一个B")).closest("div") as HTMLElement;
+    expect(within(failedRow).getByTitle("置顶")).toBeInTheDocument();
+    act(() => {
+      useAppStore.setState({ runningSessionsById: { s2: true } });
+    });
+    await waitFor(() => expect(sidebar.getByTitle("正在处理")).toBeInTheDocument());
+    expect(sidebar.getByTestId("session-pending-action-s2")).toBeInTheDocument();
   });
 
   it("渲染置顶区：置顶项目组不截断、置顶项不在原区域重复", async () => {

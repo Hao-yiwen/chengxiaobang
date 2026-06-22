@@ -199,7 +199,7 @@
 
 - `delta(text)`：进入 renderer 本地合帧缓冲，约 32ms 批量追加到 `streamText`。
 - `delta(thinking)`：进入 renderer 本地合帧缓冲，约 32ms 批量追加到 `thinking`，并记录 `thinkingStartedAt`。
-- `tool_activity`：更新当前工具参数活动预览。
+- `tool_activity`：更新当前写入/编辑工具的路径预览；仅 `Write` / `Edit` 可携带 `argsPreview.file_path`，URL、搜索词、命令和正文不进入预览。
 - `message`：追加持久化消息；assistant 消息会清空实时 text/thinking 缓冲，并记录 `activeRunLastAssistant`。
 - `tool_call(pending_approval)`：进入 `pendingTool`，等待底部审批/ask-user/plan 卡片。
 - `tool_call(running)`：进入 `runningTool` 并写入工具历史。

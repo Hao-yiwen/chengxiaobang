@@ -67,6 +67,7 @@ import {
   defaultLogDir,
   defaultProfilePath,
   defaultProviderConfigPath,
+  defaultThemeSourceCachePath,
   devDockIconPath,
   preloadPath,
   rendererIndexPath,
@@ -77,14 +78,23 @@ import {
   type FilePreviewResolveContext
 } from "./file-preview-path";
 import { registerOcrIpc, startOcrHttpService, type OcrHttpService } from "./ocr";
+import { registerSystemSpeechIpc } from "./system-speech";
 import { registerTerminalIpc, type TerminalSessionManager } from "./terminal";
 import { DesktopUpdateService, registerUpdateIpc, type DesktopUpdater } from "./update-service";
 import { createTrustedIpcRegistrar } from "./trusted-ipc";
 import { saveUserProfile } from "./profile";
 import {
   createStartupSplashUrl,
-  loadStartupSplashImageDataUrl
+  loadStartupSplashImageDataUrl,
+  startupSplashBackgroundColor
 } from "./startup-splash";
+import {
+  isDesktopThemeSource,
+  readThemeSourceCache,
+  resolveThemeSourceDark,
+  writeThemeSourceCache,
+  type DesktopThemeSource
+} from "./theme-source";
 // PRODUCT_NAME 来自 shared,作为应用名静态文案的唯一来源。
 // app.getName() 在 dev 下返回 package.json 的 "@chengxiaobang/desktop",
 // 会让 macOS 菜单栏与「关于」面板显示成 "@chengxiaobang",因此统一用此常量覆盖。
@@ -302,7 +312,35 @@ function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function loadStartupSplash(window: BrowserWindow): Promise<void> {
+type StartupThemeState = {
+  source: DesktopThemeSource;
+  dark: boolean;
+};
+
+async function loadStartupThemeState(): Promise<StartupThemeState> {
+  const cachePath = defaultThemeSourceCachePath();
+  const cache = await readThemeSourceCache(cachePath);
+  const source = cache.ok ? cache.source : "system";
+  if (cache.ok) {
+    console.info(`[main] 启动主题缓存已读取 path=${cachePath} source=${source}`);
+  } else if (cache.reason === "missing") {
+    console.info(`[main] 启动主题缓存不存在，使用系统外观兜底 path=${cachePath}`);
+  } else {
+    console.warn(
+      `[main] 启动主题缓存不可用 path=${cachePath} reason=${cache.reason} error=${cache.error ?? ""}`
+    );
+  }
+
+  nativeTheme.themeSource = source;
+  const dark = resolveThemeSourceDark(source, nativeTheme.shouldUseDarkColors);
+  console.info(`[main] 启动主题已解析 source=${source} dark=${dark}`);
+  return { source, dark };
+}
+
+async function loadStartupSplash(
+  window: BrowserWindow,
+  themeState: StartupThemeState
+): Promise<void> {
   const imageCandidates = startupSplashImageCandidates(app.getAppPath());
   const imagePath = imageCandidates.find((candidate) => existsSync(candidate));
   let imageSrc: string | undefined;
@@ -317,10 +355,11 @@ async function loadStartupSplash(window: BrowserWindow): Promise<void> {
     console.warn(`[main] 启动页未找到图片 candidates=${JSON.stringify(imageCandidates)}`);
   }
 
-  const dark = nativeTheme.shouldUseDarkColors;
   try {
-    await window.loadURL(createStartupSplashUrl({ dark, imageSrc }));
-    console.info(`[main] 启动页已展示 dark=${dark} hasImage=${Boolean(imageSrc)}`);
+    await window.loadURL(createStartupSplashUrl({ dark: themeState.dark, imageSrc }));
+    console.info(
+      `[main] 启动页已展示 source=${themeState.source} dark=${themeState.dark} hasImage=${Boolean(imageSrc)}`
+    );
   } catch (error) {
     console.warn(`[main] 启动页加载失败: ${messageFromError(error)}`);
   }
@@ -779,6 +818,11 @@ async function createWindow(): Promise<void> {
     resourcesPath: process.resourcesPath,
     isPackaged: app.isPackaged
   };
+  const systemSpeechOptions = {
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    isPackaged: app.isPackaged
+  };
 
   const trustedIpc = createTrustedIpcRegistrar(ipcMain, {
     devServerUrl: process.env.VITE_DEV_SERVER_URL,
@@ -788,6 +832,7 @@ async function createWindow(): Promise<void> {
   trustedIpc.handle("backend-info", () => backend?.info);
   terminalManager ??= registerTerminalIpc(trustedIpc);
   registerOcrIpc(trustedIpc, ocrOptions);
+  registerSystemSpeechIpc(trustedIpc, systemSpeechOptions);
   registerUpdateIpc(trustedIpc, updateService);
 
   trustedIpc.handle("open-devtools", () => openMainWindowDevTools("renderer-floating-button"));
@@ -1022,9 +1067,24 @@ async function createWindow(): Promise<void> {
     });
   });
 
-  trustedIpc.handle("set-theme-source", (_event, source: unknown) => {
-    if (source === "light" || source === "dark" || source === "system") {
-      nativeTheme.themeSource = source;
+  trustedIpc.handle("set-theme-source", async (_event, source: unknown) => {
+    if (!isDesktopThemeSource(source)) {
+      console.warn(`[main] 忽略非法主题来源 source=${String(source)}`);
+      return;
+    }
+    nativeTheme.themeSource = source;
+    const dark = resolveThemeSourceDark(source, nativeTheme.shouldUseDarkColors);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setBackgroundColor(startupSplashBackgroundColor(dark));
+    }
+    const cachePath = defaultThemeSourceCachePath();
+    try {
+      await writeThemeSourceCache(cachePath, source);
+      console.info(`[main] 主题来源已缓存 path=${cachePath} source=${source} dark=${dark}`);
+    } catch (error) {
+      console.warn(
+        `[main] 主题来源缓存失败 path=${cachePath} source=${source}: ${messageFromError(error)}`
+      );
     }
   });
 
@@ -1078,6 +1138,7 @@ async function createWindow(): Promise<void> {
     }
   });
 
+  const startupThemeState = await loadStartupThemeState();
   const windowOptions: BrowserWindowConstructorOptions = {
     width: 1280,
     height: 820,
@@ -1085,7 +1146,7 @@ async function createWindow(): Promise<void> {
     minHeight: 640,
     title: PRODUCT_NAME,
     show: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#fafafa",
+    backgroundColor: startupSplashBackgroundColor(startupThemeState.dark),
     ...(process.platform === "darwin"
       ? {
           titleBarStyle: "hiddenInset" as const,
@@ -1103,7 +1164,7 @@ async function createWindow(): Promise<void> {
     }
   };
   mainWindow = new BrowserWindow(windowOptions);
-  await loadStartupSplash(mainWindow);
+  await loadStartupSplash(mainWindow, startupThemeState);
 
   mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
     // webview 会打开任意网页，不能给它 preload 或 Node 权限。

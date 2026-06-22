@@ -64,7 +64,7 @@ import {
   toClientMessage
 } from "./agent-runner-messages";
 import { AsyncEventQueue } from "./async-queue";
-import { buildAgentMessages } from "./history";
+import { buildAgentMessages, buildUncompactedAgentMessages } from "./history";
 import { RunEventTranslator } from "./pi-events";
 import { ProjectApprovalTrustService } from "./project-approval-trust";
 import { buildSystemPrompt } from "./system-prompt";
@@ -102,7 +102,10 @@ const log = getLogger({ module: "agent-runner" });
 
 export interface AgentRunnerOptions {
   /** 为工作区构造工具集合，默认使用内置工具注册表。 */
-  createTools?: (workspacePath: string) => AgentTool<any>[] | Promise<AgentTool<any>[]>;
+  createTools?: (
+    workspacePath: string,
+    runtime?: AgentToolRuntimeContext
+  ) => AgentTool<any>[] | Promise<AgentTool<any>[]>;
   /** 独立会话（无项目绑定）的默认工作目录。 */
   sessionWorkspacePath?: (sessionId: string) => string;
   /**
@@ -134,6 +137,14 @@ export interface ResolvedSessionWorkspace {
   projectBound: boolean;
 }
 
+export interface AgentToolRuntimeContext {
+  provider?: ProviderConfig;
+  apiKey?: string;
+  signal?: AbortSignal;
+  runId?: string;
+  sessionId?: string;
+}
+
 export class AgentRunner {
   readonly approvals = new ApprovalQueue();
   /** 正在执行 run 的会话；调度器据此避让，免得与手动 run 在同一会话交错写入。 */
@@ -141,7 +152,10 @@ export class AgentRunner {
   /** 当前进程仍在推进的 run；用于刷新/重连后恢复审批等待态。 */
   private readonly activeRunRegistry = new ActiveRunRegistry();
   private readonly abortControllers = new Map<string, AbortController>();
-  private readonly createTools: (workspacePath: string) => AgentTool<any>[] | Promise<AgentTool<any>[]>;
+  private readonly createTools: (
+    workspacePath: string,
+    runtime?: AgentToolRuntimeContext
+  ) => AgentTool<any>[] | Promise<AgentTool<any>[]>;
   private readonly sessionWorkspacePath: (sessionId: string) => string;
   private readonly slashCommandService: SlashCommandService;
   private readonly streamFn?: StreamFn;
@@ -160,10 +174,21 @@ export class AgentRunner {
     this.memoryDir = options.memoryDir;
     this.createTools =
       options.createTools ??
-      ((workspacePath) =>
+      ((workspacePath, runtime) =>
         createAgentTools(
           workspacePath,
-          options.memoryDir ? { memoryDir: options.memoryDir } : {}
+          {
+            ...(options.memoryDir ? { memoryDir: options.memoryDir } : {}),
+            ...(runtime?.provider && runtime.apiKey
+              ? {
+                  webFetch: {
+                    provider: runtime.provider,
+                    apiKey: runtime.apiKey,
+                    signal: runtime.signal
+                  }
+                }
+              : {})
+          }
         ));
     this.sessionWorkspacePath = options.sessionWorkspacePath ?? defaultSessionDir;
     this.slashCommandService = options.slashCommandService ?? new SlashCommandService();
@@ -772,7 +797,13 @@ export class AgentRunner {
       const askUserAnswers = new Map<string, AskUserAnswer>();
       const skills = await this.slashCommandService.listSkills(project);
       const tools = [
-        ...(await this.createTools(workspacePath)),
+        ...(await this.createTools(workspacePath, {
+          provider,
+          apiKey,
+          signal: controller.signal,
+          runId,
+          sessionId: activeSession.id
+        })),
         ...createTodoTools({
           listToolCalls: () => this.store.listToolCallsForSession(activeSession.id),
           runId
@@ -886,6 +917,8 @@ export class AgentRunner {
         modelInputModalities,
         systemPrompt,
         leadingMessages,
+        sideChatParentSessionId:
+          input.sideChatParentSessionId ?? activeSession.sideChatParentSessionId,
         initialUsage: autoCompact.usage,
         compactedUpToMessageId:
           autoCompact.compactedUpToMessageId ?? activeSession.compactedUpToMessageId,
@@ -1251,6 +1284,7 @@ export class AgentRunner {
     initialUsage?: TokenUsage;
     compactedUpToMessageId?: string;
     leadingMessages?: PiMessage[];
+    sideChatParentSessionId?: string;
     controller: AbortController;
   }): AsyncGenerator<StreamEvent> {
     const queue = options.queue;
@@ -1364,6 +1398,20 @@ export class AgentRunner {
     });
 
     const rows = await this.store.listMessages(options.sessionId);
+    const parentRows =
+      options.sideChatParentSessionId && options.sideChatParentSessionId !== options.sessionId
+        ? await this.store.listMessages(options.sideChatParentSessionId)
+        : [];
+    if (options.sideChatParentSessionId && options.sideChatParentSessionId !== options.sessionId) {
+      log.info("侧边会话运行注入主会话完整历史", {
+        action: "side_chat.inject_parent_history",
+        runId: options.runId,
+        sideSessionId: options.sessionId,
+        parentSessionId: options.sideChatParentSessionId,
+        parentMessageCount: parentRows.length,
+        sideMessageCount: rows.length
+      });
+    }
     let enableOcrTool = options.enableOcrTool;
     const planPhase = (): PlanPhase => {
       if (!options.planMode) return "none";
@@ -1373,6 +1421,7 @@ export class AgentRunner {
       systemPrompt: options.systemPrompt,
       messages: [
         ...(options.leadingMessages ?? []),
+        ...buildUncompactedAgentMessages(parentRows),
         ...buildAgentMessages(rows, options.compactedUpToMessageId)
       ],
       tools: selectAgentTools(options.tools, {

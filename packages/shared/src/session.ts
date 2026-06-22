@@ -3,6 +3,22 @@ import { z } from "zod";
 import { accessModeSchema } from "./access-mode";
 import { reasoningModeSchema } from "./model";
 
+export const sessionNoticeSchema = z.object({
+  status: z.enum(["unread", "failed"]),
+  runId: z.string().min(1),
+  error: z.string().optional(),
+  updatedAt: z.string()
+});
+export type SessionNotice = z.infer<typeof sessionNoticeSchema>;
+
+export const sessionPendingActionSchema = z.object({
+  kind: z.enum(["ask_user", "approval"]),
+  runId: z.string().min(1),
+  toolCallId: z.string().min(1),
+  updatedAt: z.string()
+});
+export type SessionPendingAction = z.infer<typeof sessionPendingActionSchema>;
+
 export const sessionSchema = z.object({
   id: z.string().min(1),
   projectId: z.string().min(1).nullable(),
@@ -24,12 +40,19 @@ export const sessionSchema = z.object({
   feishuChatId: z.string().min(1).optional(),
   /** 微信联系人驱动的会话（一位联系人对应一个会话）。 */
   wechatChatId: z.string().min(1).optional(),
+  /** 侧边会话绑定的主聊天消息；存在时不进入左侧会话列表。 */
+  sideChatAnchorMessageId: z.string().min(1).optional(),
+  /** 侧边会话所属主会话，用于运行时注入完整主会话历史。 */
+  sideChatParentSessionId: z.string().min(1).optional(),
   /** 会话级模型记忆；为空时使用 provider.model。 */
   model: z.string().min(1).optional(),
   /** 会话级推理模式记忆；为空时不覆盖 provider/平台默认。 */
   reasoningMode: reasoningModeSchema.optional(),
   /** 置顶时间；存在即置顶，侧边栏置顶区按其降序排列。 */
   pinnedAt: z.string().optional(),
+  lastViewedAt: z.string().optional(),
+  notice: sessionNoticeSchema.optional(),
+  pendingAction: sessionPendingActionSchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });

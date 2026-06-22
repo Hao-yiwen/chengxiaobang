@@ -231,6 +231,117 @@ describe("SqliteStateStore", () => {
     await store.close();
   });
 
+  it("creates message side chats idempotently and hides them from session lists and search", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const project = await store.createProject({ name: "demo", path: join(dir, "p") });
+    const parent = await store.createSession({
+      projectId: project.id,
+      title: "主会话",
+      providerId: "deepseek",
+      accessMode: "approval",
+      model: "deepseek-chat",
+      reasoningMode: "high"
+    });
+    const anchor = await store.addMessage({
+      sessionId: parent.id,
+      role: "assistant",
+      content: "这条消息需要展开侧边追问"
+    });
+
+    const first = await store.createSideChatForMessage(anchor.id);
+    const second = await store.createSideChatForMessage(anchor.id);
+    await store.addMessage({
+      sessionId: first.id,
+      role: "user",
+      content: "隐藏火星计划内容不能被全局搜到"
+    });
+    await store.addMessage({
+      sessionId: first.id,
+      role: "assistant",
+      content: "侧边回答不计入提问数"
+    });
+    await store.addMessage({
+      sessionId: first.id,
+      role: "user",
+      content: "第二个侧边追问"
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(first).toMatchObject({
+      projectId: project.id,
+      providerId: "deepseek",
+      accessMode: "approval",
+      model: "deepseek-chat",
+      reasoningMode: "high",
+      sideChatAnchorMessageId: anchor.id,
+      sideChatParentSessionId: parent.id
+    });
+    expect(await store.getSideChatForMessage(anchor.id)).toMatchObject({ id: first.id });
+    expect(await store.listSideChatsForSession(parent.id)).toMatchObject([
+      { anchorMessageId: anchor.id, session: { id: first.id }, userMessageCount: 2 }
+    ]);
+    expect((await store.listSessions()).map((session) => session.id)).toEqual([parent.id]);
+    expect((await store.listSessions(project.id)).map((session) => session.id)).toEqual([
+      parent.id
+    ]);
+    expect(await store.searchSessions("隐藏火星计划")).toEqual([]);
+    await store.close();
+  });
+
+  it("cleans hidden side chats when the anchor message or parent session is deleted", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const parent = await store.createSession({
+      projectId: null,
+      title: "侧边清理主会话",
+      accessMode: "approval"
+    });
+    const anchor = await store.addMessage({
+      sessionId: parent.id,
+      role: "user",
+      content: "从这里开侧边"
+    });
+    const side = await store.createSideChatForMessage(anchor.id);
+    await store.createRun({ id: "run_side", sessionId: side.id, status: "completed" });
+    await store.upsertUsageCostEntry({
+      runId: "run_side",
+      sessionId: side.id,
+      attemptIndex: 0,
+      promptTokens: 1,
+      completionTokens: 1,
+      cachedPromptTokens: 0,
+      totalTokens: 2,
+      inputEstimatedTokens: 2,
+      costUsd: 0,
+      costCny: 0,
+      costSource: "pending",
+      tokenCountSource: "provider_usage",
+      billable: false,
+      entryCreatedAt: nowIso()
+    });
+
+    expect(await store.deleteMessagesFrom(parent.id, anchor.id)).toBe(1);
+    expect(await store.getSession(side.id)).toBeUndefined();
+    expect(await store.listUsageCostEntries({ sessionId: side.id })).toEqual([]);
+
+    const secondParent = await store.createSession({
+      projectId: null,
+      title: "删除主会话",
+      accessMode: "approval"
+    });
+    const secondAnchor = await store.addMessage({
+      sessionId: secondParent.id,
+      role: "assistant",
+      content: "侧边也要随主会话消失"
+    });
+    const secondSide = await store.createSideChatForMessage(secondAnchor.id);
+
+    expect(await store.deleteSession(secondParent.id)).toBe(true);
+    expect(await store.getSession(secondSide.id)).toBeUndefined();
+    await store.close();
+  });
+
   it("persists assistant reasoning and its duration across restarts", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);
@@ -591,6 +702,189 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
+  it("derives session unread and failed notices from runs after the read cursor", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const session = await store.createSession({
+      projectId: null,
+      title: "通知会话",
+      accessMode: "approval"
+    });
+    expect(session.lastViewedAt).toEqual(expect.any(String));
+
+    await tick();
+    await store.createRun({ id: "run_completed", sessionId: session.id, status: "running" });
+    await tick();
+    await store.updateRunStatus("run_completed", "completed");
+    expect((await store.listSessions())[0]).toMatchObject({
+      id: session.id,
+      notice: {
+        status: "unread",
+        runId: "run_completed",
+        updatedAt: expect.any(String)
+      }
+    });
+
+    const read = await store.markSessionRead(session.id);
+    expect(read.notice).toBeUndefined();
+    expect((await store.getSession(session.id))?.notice).toBeUndefined();
+
+    await tick();
+    await store.createRun({ id: "run_aborted", sessionId: session.id, status: "running" });
+    await tick();
+    await store.updateRunStatus("run_aborted", "aborted");
+    expect((await store.listSessions())[0]?.notice).toBeUndefined();
+
+    await tick();
+    await store.createRun({ id: "run_completed_after_read", sessionId: session.id, status: "running" });
+    await tick();
+    await store.updateRunStatus("run_completed_after_read", "completed");
+    await tick();
+    await store.createRun({ id: "run_failed", sessionId: session.id, status: "running" });
+    await tick();
+    await store.updateRunStatus("run_failed", "failed", undefined, "模型 token 超限");
+
+    const [listed] = await store.listSessions();
+    expect(listed).toMatchObject({
+      id: session.id,
+      notice: {
+        status: "failed",
+        runId: "run_failed",
+        error: "模型 token 超限",
+        updatedAt: expect.any(String)
+      }
+    });
+    const [searchResult] = await store.searchSessions("通知会话");
+    expect(searchResult?.session.notice).toMatchObject({
+      status: "failed",
+      runId: "run_failed"
+    });
+    await store.close();
+  });
+
+  it("derives pending action tags from running pending approvals", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const askSession = await store.createSession({
+      projectId: null,
+      title: "需要回答",
+      accessMode: "approval"
+    });
+    const approvalSession = await store.createSession({
+      projectId: null,
+      title: "需要审批",
+      accessMode: "approval"
+    });
+    const smartSession = await store.createSession({
+      projectId: null,
+      title: "智能审批中",
+      accessMode: "smart_approval"
+    });
+    const settledSession = await store.createSession({
+      projectId: null,
+      title: "已经决议",
+      accessMode: "approval"
+    });
+    const finishedSession = await store.createSession({
+      projectId: null,
+      title: "历史等待",
+      accessMode: "approval"
+    });
+
+    await store.createRun({ id: "run_ask", sessionId: askSession.id, status: "running" });
+    await store.createRun({
+      id: "run_approval",
+      sessionId: approvalSession.id,
+      status: "running"
+    });
+    await store.createRun({ id: "run_smart", sessionId: smartSession.id, status: "running" });
+    await store.createRun({
+      id: "run_settled",
+      sessionId: settledSession.id,
+      status: "running"
+    });
+    await store.createRun({
+      id: "run_finished",
+      sessionId: finishedSession.id,
+      status: "completed"
+    });
+    const timestamp = nowIso();
+    await store.insertToolCall({
+      id: "tool_ask",
+      runId: "run_ask",
+      name: "AskUserQuestion",
+      args: { questions: [] },
+      status: "pending_approval",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await store.insertToolCall({
+      id: "tool_approval",
+      runId: "run_approval",
+      name: "Write",
+      args: { file_path: "a.txt", content: "ok" },
+      status: "pending_approval",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await store.insertToolCall({
+      id: "tool_smart",
+      runId: "run_smart",
+      name: "Write",
+      args: { file_path: "b.txt", content: "ok" },
+      status: "pending_smart_approval",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    const settledTool: ToolCall = {
+      id: "tool_settled",
+      runId: "run_settled",
+      name: "Bash",
+      args: { command: "echo ok" },
+      status: "running",
+      startedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    await store.insertToolCall(settledTool);
+    await store.insertToolCall({
+      id: "tool_finished",
+      runId: "run_finished",
+      name: "Edit",
+      args: { file_path: "c.txt", old_string: "a", new_string: "b" },
+      status: "pending_approval",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+
+    const sessions = await store.listSessions();
+    expect(sessions.find((item) => item.id === askSession.id)?.pendingAction).toMatchObject({
+      kind: "ask_user",
+      runId: "run_ask",
+      toolCallId: "tool_ask",
+      updatedAt: expect.any(String)
+    });
+    expect(sessions.find((item) => item.id === approvalSession.id)?.pendingAction).toMatchObject({
+      kind: "approval",
+      runId: "run_approval",
+      toolCallId: "tool_approval",
+      updatedAt: expect.any(String)
+    });
+    expect(sessions.find((item) => item.id === smartSession.id)?.pendingAction).toBeUndefined();
+    expect(sessions.find((item) => item.id === settledSession.id)?.pendingAction).toBeUndefined();
+    expect(sessions.find((item) => item.id === finishedSession.id)?.pendingAction).toBeUndefined();
+    expect((await store.getSession(askSession.id))?.pendingAction).toMatchObject({
+      kind: "ask_user",
+      toolCallId: "tool_ask"
+    });
+    const [searchResult] = await store.searchSessions("需要回答");
+    expect(searchResult?.session.pendingAction).toMatchObject({
+      kind: "ask_user",
+      toolCallId: "tool_ask"
+    });
+    await store.close();
+  });
+
   it("marks running runs from a previous backend process as failed on startup", async () => {
     const dbPath = join(dir, "state.sqlite");
     const first = new SqliteStateStore(dbPath);
@@ -655,6 +949,12 @@ describe("SqliteStateStore", () => {
       status: "failed"
     });
     expect(run?.error).toContain("运行进程已重启");
+    expect((await second.listSessions())[0]?.notice).toMatchObject({
+      status: "failed",
+      runId: "run_interrupted",
+      error: expect.stringContaining("运行进程已重启")
+    });
+    expect((await second.listSessions())[0]?.pendingAction).toBeUndefined();
     const toolCalls = await second.listToolCallsForSession(session.id);
     expect(toolCalls.find((toolCall) => toolCall.id === "tool_pending")).toMatchObject({
       status: "failed",

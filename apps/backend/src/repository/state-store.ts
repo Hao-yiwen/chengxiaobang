@@ -13,6 +13,7 @@ import type {
   ScheduledTaskStatus,
   Session,
   SessionSearchResult,
+  SideChatSummary,
   TokenUsage,
   ToolCall
 } from "@chengxiaobang/shared";
@@ -51,6 +52,8 @@ export interface CreateSessionInput {
   forkPointMessageId?: string;
   feishuChatId?: string;
   wechatChatId?: string;
+  sideChatAnchorMessageId?: string;
+  sideChatParentSessionId?: string;
 }
 
 export interface CreateMessageInput {
@@ -188,7 +191,15 @@ export interface StateStore {
   /** 微信联系人绑定的会话（一位联系人对应一个会话）。 */
   findSessionByWechatChatId(chatId: string): Promise<Session | undefined>;
   createSession(input: CreateSessionInput): Promise<Session>;
+  /** 当前主会话内已有的隐藏侧边会话，用于前端蓝点状态。 */
+  listSideChatsForSession(sessionId: string): Promise<SideChatSummary[]>;
+  /** 读取某条主聊天消息绑定的隐藏侧边会话。 */
+  getSideChatForMessage(messageId: string): Promise<Session | undefined>;
+  /** 按主聊天消息幂等创建隐藏侧边会话。 */
+  createSideChatForMessage(messageId: string): Promise<Session>;
   updateSession(id: string, input: UpdateSessionInput): Promise<Session>;
+  /** 标记会话已被用户查看；只更新已读游标，不扰动会话排序时间。 */
+  markSessionRead(id: string): Promise<Session>;
   /** 置顶/取消置顶会话。只写 pinned_at，不更新 updated_at（避免扰动列表排序）。 */
   setSessionPinned(id: string, pinned: boolean): Promise<Session>;
   deleteSession(id: string): Promise<boolean>;

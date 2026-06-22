@@ -122,7 +122,20 @@ async function verifyPackagedResources(resourcesPath, bunPath, rgPath, backendEn
     join(resourcesPath, "app.asar.unpacked", "node_modules", "node-pty"),
     join(resourcesPath, "app.asar.unpacked", "node_modules", "sharp"),
     join(resourcesPath, "app.asar.unpacked", "node_modules", "onnxruntime-node"),
-    canvasPackage
+    canvasPackage,
+    ...(process.platform === "darwin"
+      ? [
+          join(
+            resourcesPath,
+            "system-speech",
+            "darwin",
+            "SystemSpeechHelper.app",
+            "Contents",
+            "MacOS",
+            "system-speech-helper"
+          )
+        ]
+      : [])
   ];
   for (const path of requiredPaths) {
     if (!existsSync(path)) {

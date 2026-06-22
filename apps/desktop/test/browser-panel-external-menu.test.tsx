@@ -79,4 +79,27 @@ describe("BrowserPanel external browser menu", () => {
     expect(detectExternalBrowsers).not.toHaveBeenCalled();
     expect(windowOpen).not.toHaveBeenCalled();
   });
+
+  it("stops and blanks the webview when the browser panel unmounts", () => {
+    window.chengxiaobang = {
+      openPath: vi.fn(async () => ({ ok: true as const })),
+      detectExternalBrowsers: vi.fn(async () => []),
+      openExternalUrlInBrowser: vi.fn(async () => ({ ok: true as const }))
+    } as NonNullable<Window["chengxiaobang"]>;
+    useAppStore.getState().setBrowserUrl("https://example.com/docs");
+
+    const { container, unmount } = render(<BrowserPanel />);
+    const view = container.querySelector("webview") as HTMLElement & {
+      stop?: () => void;
+      getURL?: () => string;
+    };
+    const stop = vi.fn();
+    view.stop = stop;
+    view.getURL = () => "https://example.com/docs";
+
+    unmount();
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(view.getAttribute("src")).toBeNull();
+  });
 });
