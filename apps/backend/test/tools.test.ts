@@ -117,7 +117,7 @@ describe("builtin agent tools", () => {
       "优先生成 file_path"
     ]);
     expectToolGuidance(tools, "Glob", ["不要用 shell 拼等价命令"]);
-    expectToolGuidance(tools, "Grep", ["不要用 shell 拼等价命令"]);
+    expectToolGuidance(tools, "Grep", ["path 只能传目录", "不要用 shell 拼等价命令"]);
     expectToolGuidance(tools, "Bash", [
       "默认前台等待 15000ms",
       "run_in_background=true",
@@ -616,6 +616,20 @@ describe("builtin agent tools", () => {
     await writeFile(join(dir, "a.txt"), "alpha\nNEEDLE here\nbeta", "utf8");
     await expect(run(tools, "Grep", { pattern: "needle", "-i": true })).resolves.toContain(
       "a.txt:2"
+    );
+  });
+
+  it("rejects file paths as Grep search roots", async () => {
+    await writeFile(join(dir, "a.txt"), "alpha\nneedle here\nbeta", "utf8");
+
+    await expect(run(tools, "Grep", { path: "a.txt", pattern: "needle" })).rejects.toThrow(
+      "Grep 只能在目录中搜索，收到文件路径：a.txt"
+    );
+  });
+
+  it("fails clearly when the Grep search root is missing", async () => {
+    await expect(run(tools, "Grep", { path: "missing-dir", pattern: "needle" })).rejects.toThrow(
+      "Grep 找不到搜索目录：missing-dir"
     );
   });
 

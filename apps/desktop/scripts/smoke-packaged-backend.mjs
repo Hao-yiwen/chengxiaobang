@@ -38,7 +38,7 @@ async function main() {
     [backendEntry, "--port", String(port), "--data-dir", dataDir, "--token", token],
     {
       cwd: desktopDir,
-      env: { ...process.env, CHENGXIAOBANG_LOG_LEVEL: "debug" },
+      env: { ...process.env, CHENGXIAOBANG_LOG_LEVEL: "debug", CHENGXIAOBANG_RG_PATH: rgPath },
       stdio: ["ignore", "pipe", "pipe"]
     }
   );
@@ -142,6 +142,7 @@ async function verifyPackagedResources(resourcesPath, bunPath, rgPath, backendEn
       throw new Error(`打包资源缺失: ${path}`);
     }
   }
+  await verifyPackagedRuntimeCommand("ripgrep", rgPath, ["--version"], resourcesPath);
   const canvasNative = await findCanvasNativeBinding(resourcesPath, canvasPackage);
   if (!canvasNative) {
     const candidates = getCanvasNativeCandidates(resourcesPath, canvasPackage)
@@ -156,6 +157,22 @@ async function verifyPackagedResources(resourcesPath, bunPath, rgPath, backendEn
     type: canvasNative.type
   });
   await verifyAppAsarRuntimeDependencies(resourcesPath);
+}
+
+async function verifyPackagedRuntimeCommand(name, command, args, cwd) {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, args, {
+      cwd,
+      timeout: 5_000,
+      windowsHide: true
+    });
+    const version = (stdout || stderr).split(/\r?\n/).find(Boolean) ?? "unknown";
+    console.info("[smoke] 打包运行时自检通过", { name, command, version });
+  } catch (error) {
+    throw new Error(
+      `${name} 打包运行时自检失败 command=${command} args=${args.join(" ")} cwd=${cwd}: ${messageFromError(error)}`
+    );
+  }
 }
 
 async function verifyAppAsarRuntimeDependencies(resourcesPath) {

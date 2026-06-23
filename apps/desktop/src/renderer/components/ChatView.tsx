@@ -16,6 +16,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -59,6 +60,7 @@ import type { RunningToolVisualHold, StreamingPlan } from "@/store/types";
 const USER_SCROLL_DIRECTION_EPSILON_PX = 0.5;
 const READING_ANCHOR_EPSILON_PX = 0.5;
 const READING_ANCHOR_TOP_SLOP_PX = 24;
+const SCROLL_PROGRESS_DRAG_THRESHOLD_PX = 3;
 
 interface ReadingAnchor {
   messageId: string;
@@ -347,6 +349,7 @@ export function ChatView() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
   const scrollFrame = useRef<number | null>(null);
+  const scrollProgressDragCleanupRef = useRef<(() => void) | undefined>(undefined);
   const lastScrollTopRef = useRef<number | undefined>(undefined);
   const nearBottomRef = useRef(true);
   const readingAnchorRef = useRef<ReadingAnchor | undefined>(undefined);
@@ -619,6 +622,113 @@ export function ChatView() {
     rememberReadingAnchor(el);
   }, [rememberReadingAnchor, syncScrollProgress, updateNearBottom]);
 
+  const applyScrollProgressPointer = useCallback(
+    (track: HTMLDivElement, clientY: number, grabOffsetPx: number) => {
+      const el = scrollRef.current;
+      if (!el) {
+        return;
+      }
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      if (maxScroll <= 1) {
+        return;
+      }
+      const trackRect = track.getBoundingClientRect();
+      if (trackRect.height <= 1) {
+        return;
+      }
+      const thumbHeightPx = Math.max(
+        8,
+        Math.min(trackRect.height, (el.clientHeight / el.scrollHeight) * trackRect.height)
+      );
+      const maxThumbTop = Math.max(0, trackRect.height - thumbHeightPx);
+      if (maxThumbTop <= 0) {
+        return;
+      }
+      const nextThumbTop = Math.max(
+        0,
+        Math.min(maxThumbTop, clientY - trackRect.top - grabOffsetPx)
+      );
+      const targetScrollTop = (nextThumbTop / maxThumbTop) * maxScroll;
+      el.scrollTop = targetScrollTop;
+      lastScrollTopRef.current = targetScrollTop;
+
+      const atBottom = isNearBottom(el);
+      updateNearBottom(atBottom);
+      syncScrollProgress(el);
+      rememberReadingAnchor(el);
+
+      if (!isRunning || !anchorIdRef.current) {
+        return;
+      }
+      updateStreamAutoFollowPaused(!atBottom, atBottom ? "near-bottom" : "manual-scroll");
+    },
+    [
+      isRunning,
+      rememberReadingAnchor,
+      syncScrollProgress,
+      updateNearBottom,
+      updateStreamAutoFollowPaused
+    ]
+  );
+
+  const handleScrollProgressPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const track = event.currentTarget;
+      const el = scrollRef.current;
+      if (!el || el.scrollHeight - el.clientHeight <= 1) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      scrollProgressDragCleanupRef.current?.();
+
+      const trackRect = track.getBoundingClientRect();
+      const target = event.target;
+      const thumbEl =
+        target instanceof Element
+          ? target.closest<HTMLElement>("[data-chat-scroll-progress-thumb='true']")
+          : null;
+      const thumbRect = thumbEl?.getBoundingClientRect();
+      const thumbHeightPx = Math.max(
+        8,
+        Math.min(trackRect.height, (el.clientHeight / el.scrollHeight) * trackRect.height)
+      );
+      const rawGrabOffset = thumbRect
+        ? event.clientY - thumbRect.top
+        : thumbHeightPx / 2;
+      const grabOffsetPx = Math.max(
+        0,
+        Math.min(thumbRect?.height ?? thumbHeightPx, rawGrabOffset)
+      );
+
+      const startClientY = event.clientY;
+      let dragging = false;
+
+      const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
+        moveEvent.preventDefault();
+        if (
+          !dragging &&
+          Math.abs(moveEvent.clientY - startClientY) < SCROLL_PROGRESS_DRAG_THRESHOLD_PX
+        ) {
+          return;
+        }
+        dragging = true;
+        applyScrollProgressPointer(track, moveEvent.clientY, grabOffsetPx);
+      };
+      const stopDragging = () => {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", stopDragging);
+        window.removeEventListener("pointercancel", stopDragging);
+        scrollProgressDragCleanupRef.current = undefined;
+      };
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", stopDragging);
+      window.addEventListener("pointercancel", stopDragging);
+      scrollProgressDragCleanupRef.current = stopDragging;
+    },
+    [applyScrollProgressPointer]
+  );
+
   // 调整尾部 spacer，让锚点消息的滚动位置始终可达，并在内容无滚动事件增长时同步底部状态。
   const syncTailGeometry = useCallback(() => {
     const el = scrollRef.current;
@@ -735,6 +845,16 @@ export function ChatView() {
       const autoFollow = streamAutoFollowRef.current;
       const sameRun = !autoFollow.runId || !activeRunId || autoFollow.runId === activeRunId;
       if (isRunning && hasActiveRunOutput && sameRun && !autoFollow.paused) {
+        const el = scrollRef.current;
+        const previousScrollTop = lastScrollTopRef.current;
+        if (
+          el &&
+          previousScrollTop !== undefined &&
+          el.scrollTop < previousScrollTop - USER_SCROLL_DIRECTION_EPSILON_PX
+        ) {
+          updateStreamAutoFollowPaused(true, "manual-scroll");
+          return;
+        }
         followStreamToBottom();
       }
     };
@@ -765,7 +885,8 @@ export function ChatView() {
     toolActivity,
     runningTool,
     followStreamToBottom,
-    syncTailGeometry
+    syncTailGeometry,
+    updateStreamAutoFollowPaused
   ]);
 
   const handleScrollGeometryChange = useCallback(() => {
@@ -797,22 +918,51 @@ export function ChatView() {
 
   // 容器尺寸变化（窗口、右侧面板等）会改变 spacer 计算，也要保持当前阅读锚点。
   useEffect(() => {
+    let progressFrame: number | undefined;
+    const syncProgressOnNextFrame = () => {
+      if (typeof window.requestAnimationFrame !== "function") {
+        syncScrollProgress(scrollRef.current);
+        return;
+      }
+      progressFrame = window.requestAnimationFrame(() => {
+        progressFrame = undefined;
+        syncScrollProgress(scrollRef.current);
+      });
+    };
     if (typeof ResizeObserver === "undefined") {
       window.addEventListener("resize", handleScrollGeometryChange);
-      return () => window.removeEventListener("resize", handleScrollGeometryChange);
+      syncProgressOnNextFrame();
+      return () => {
+        window.removeEventListener("resize", handleScrollGeometryChange);
+        if (progressFrame !== undefined) {
+          window.cancelAnimationFrame?.(progressFrame);
+        }
+      };
     }
     const observer = new ResizeObserver(handleScrollGeometryChange);
-    if (scrollRef.current) {
-      observer.observe(scrollRef.current);
+    const scrollEl = scrollRef.current;
+    const contentEl = contentColumnRef.current;
+    if (scrollEl) {
+      observer.observe(scrollEl);
     }
-    return () => observer.disconnect();
-  }, [handleScrollGeometryChange]);
+    if (contentEl) {
+      observer.observe(contentEl);
+    }
+    syncProgressOnNextFrame();
+    return () => {
+      observer.disconnect();
+      if (progressFrame !== undefined) {
+        window.cancelAnimationFrame?.(progressFrame);
+      }
+    };
+  }, [handleScrollGeometryChange, syncScrollProgress]);
 
   useEffect(
     () => () => {
       if (scrollFrame.current !== null) {
         window.cancelAnimationFrame?.(scrollFrame.current);
       }
+      scrollProgressDragCleanupRef.current?.();
     },
     []
   );
@@ -1138,8 +1288,15 @@ export function ChatView() {
       </div>
 
       {scrollProgress.visible ? (
-        <div aria-hidden="true" className={cn("chat-scroll-progress", chatLayoutStyles.scrollProgress)}>
+        <div
+          aria-hidden="true"
+          data-testid="chat-scroll-progress"
+          onPointerDown={handleScrollProgressPointerDown}
+          className={cn("chat-scroll-progress", chatLayoutStyles.scrollProgress)}
+        >
           <div
+            data-chat-scroll-progress-thumb="true"
+            data-testid="chat-scroll-progress-thumb"
             className={cn("chat-scroll-progress-thumb", chatLayoutStyles.progressThumb)}
             style={{
               height: `${scrollProgress.height}%`,

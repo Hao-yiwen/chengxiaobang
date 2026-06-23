@@ -308,6 +308,24 @@ function triggerScrollGeometryChange(): void {
   });
 }
 
+function mockElementRect(el: Element, rect: { top: number; height: number; width?: number }): void {
+  const width = rect.width ?? 10;
+  Object.defineProperty(el, "getBoundingClientRect", {
+    configurable: true,
+    value: () =>
+      ({
+        top: rect.top,
+        bottom: rect.top + rect.height,
+        left: 0,
+        right: width,
+        width,
+        height: rect.height,
+        x: 0,
+        y: rect.top
+      }) as DOMRect
+  });
+}
+
 describe("anchor-on-send scrolling", () => {
   let restoreMetrics: () => void;
   let restoreResizeObserver: () => void;
@@ -333,6 +351,63 @@ describe("anchor-on-send scrolling", () => {
     await waitFor(() => expect(scroller.scrollTop).toBe(800));
     expect(screen.getByTestId("chat-tail-spacer").style.height).toBe("0px");
     expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+  });
+
+  it("shows the custom floating scroll progress when the chat overflows", async () => {
+    render(<App client={createClient()} />);
+    await screen.findByText("很长的回答");
+
+    const progress = await screen.findByTestId("chat-scroll-progress");
+    const thumb = screen.getByTestId("chat-scroll-progress-thumb");
+
+    expect(progress).toHaveClass("chat-scroll-progress");
+    expect(thumb).toHaveStyle({ height: "37.5%" });
+  });
+
+  it("drags the custom floating scroll progress to update chat scroll", async () => {
+    render(<App client={createClient()} />);
+    await screen.findByText("很长的回答");
+
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+    const progress = await screen.findByTestId("chat-scroll-progress");
+    const thumb = screen.getByTestId("chat-scroll-progress-thumb");
+    mockElementRect(progress, { top: 0, height: 300 });
+    mockElementRect(thumb, { top: 0, height: 112.5 });
+
+    scroller.scrollTop = 0;
+    fireEvent.scroll(scroller);
+
+    act(() => {
+      fireEvent.pointerDown(thumb, { pointerId: 1, clientY: 10 });
+      fireEvent.pointerMove(window, { pointerId: 1, clientY: 160 });
+      fireEvent.pointerUp(window, { pointerId: 1, clientY: 160 });
+    });
+
+    expect(scroller.scrollTop).toBeCloseTo(400, 0);
+    await waitFor(() => expect(thumb).toHaveStyle({ top: "50%" }));
+  });
+
+  it("does not move the chat scroll when the custom progress is only clicked", async () => {
+    render(<App client={createClient()} />);
+    await screen.findByText("很长的回答");
+
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+    const progress = await screen.findByTestId("chat-scroll-progress");
+    const thumb = screen.getByTestId("chat-scroll-progress-thumb");
+    mockElementRect(progress, { top: 0, height: 300 });
+    mockElementRect(thumb, { top: 0, height: 112.5 });
+
+    scroller.scrollTop = 120;
+    fireEvent.scroll(scroller);
+
+    act(() => {
+      fireEvent.pointerDown(thumb, { pointerId: 1, clientY: 10 });
+      fireEvent.pointerUp(window, { pointerId: 1, clientY: 10 });
+    });
+
+    expect(scroller.scrollTop).toBe(120);
   });
 
   it("keeps the current reading anchor when the chat column is resized", async () => {
@@ -487,6 +562,41 @@ describe("anchor-on-send scrolling", () => {
     await screen.findByRole("button", { name: "回到底部" });
 
     // 后续流式增量不应把视口重新拽回底部。
+    metrics.scrollHeight = 1200;
+    await act(async () => {
+      run.afterEcho.resolve();
+      await Promise.resolve();
+    });
+    await screen.findByText("流式片段");
+    expect(scroller.scrollTop).toBe(100);
+    expect(screen.getByRole("button", { name: "回到底部" })).toBeInTheDocument();
+
+    await act(async () => {
+      run.afterDelta.resolve();
+      await runPromise;
+    });
+  });
+
+  it("pauses auto-follow when scroll position changes before the scroll handler runs", async () => {
+    const client = createClient();
+    const run = scriptedRun();
+    client.streamRun = run.streamRun as ApiClient["streamRun"];
+    render(<App client={client} />);
+    await screen.findByText("很长的回答");
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+
+    metrics.scrollHeight = 860;
+    metrics.rectTops.u2 = 10;
+    let runPromise!: Promise<void>;
+    act(() => {
+      runPromise = useAppStore.getState().runPrompt("新问题");
+    });
+    await screen.findByText("新问题");
+    expect(scroller.scrollTop).toBe(794);
+
+    // 某些平台/时序下 scrollTop 已经变了，但 React scroll handler 还没来得及把 paused 写入。
+    scroller.scrollTop = 100;
     metrics.scrollHeight = 1200;
     await act(async () => {
       run.afterEcho.resolve();

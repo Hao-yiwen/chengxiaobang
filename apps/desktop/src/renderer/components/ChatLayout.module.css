@@ -13,8 +13,15 @@
   margin-inline: auto;
 }
 
+.scrollArea {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
 .scrollArea::-webkit-scrollbar {
-  width: 12px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .scope[data-right-panel-maximized="true"] .scrollArea {
@@ -24,11 +31,19 @@
 .scrollProgress {
   position: absolute;
   top: 0.5rem;
-  right: -3rem;
+  right: 0;
   bottom: 0.5rem;
   z-index: 15;
   width: 10px;
-  pointer-events: none;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+  transition: width 0.15s ease;
+  user-select: none;
+}
+
+.scrollProgress:hover {
+  width: 12px;
 }
 
 .progressThumb {
@@ -36,7 +51,13 @@
   right: 0;
   left: 0;
   border-radius: 999px;
-  background: rgb(var(--ink) / 0.15);
+  background: rgb(var(--ink) / 0.11);
+  cursor: grab;
+  transition: background-color 0.15s ease;
+}
+
+.scrollProgress:hover .progressThumb {
+  background: rgb(var(--ink) / 0.2);
 }
 
 .scope[data-right-panel-maximized="true"] .scrollProgress {
@@ -44,7 +65,11 @@
 }
 
 :global(.dark) .progressThumb {
-  background: rgb(var(--ink) / 0.16);
+  background: rgb(var(--ink) / 0.12);
+}
+
+:global(.dark) .scrollProgress:hover .progressThumb {
+  background: rgb(var(--ink) / 0.22);
 }
 
 .composerDock {

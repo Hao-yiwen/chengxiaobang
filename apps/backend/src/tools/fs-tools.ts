@@ -59,7 +59,10 @@ const globParams = Type.Object({
 const grepParams = Type.Object({
   pattern: Type.String({ description: "ripgrep 搜索表达式" }),
   path: Type.Optional(
-    Type.String({ description: "可选，限定搜索根目录；可为相对工作目录路径或显式绝对路径" })
+    Type.String({
+      description:
+        "可选，限定搜索根目录，只能传目录；如需搜索单个文件，path 传其所在目录并用 glob 限定文件名"
+    })
   ),
   glob: Type.Optional(Type.String({ description: "可选，rg --glob 过滤，例如 **/*.ts" })),
   output_mode: Type.Optional(
@@ -371,12 +374,12 @@ export function createFsTools(workspacePath: string, options: FsToolOptions = {}
     name: "Grep",
     label: "搜索内容",
     description:
-      "使用 ripgrep 在工作目录或显式绝对路径目录中搜索内容，支持输出模式、上下文和过滤参数。搜索文件内容时优先用它，不要用 shell 拼等价命令。",
+      "使用 ripgrep 在工作目录或显式绝对路径目录中搜索内容，path 只能传目录；搜索文件内容时优先用它，不要用 shell 拼等价命令。",
     parameters: grepParams,
     execute: async (_id, params, signal) => {
       const path = params.path || ".";
-      const resolved = resolveFsToolPathWithMeta(workspacePath, "Grep", path, false);
-      return textResult(await runGrep(resolved.target, params, signal));
+      const target = await resolveFsDirectoryPath(workspacePath, "Grep", path, false);
+      return textResult(await runGrep(target, params, signal));
     }
   };
 
@@ -630,6 +633,51 @@ function resolveFsToolPath(
 }
 
 type FsToolName = "LS" | "Read" | "Write" | "Edit" | "MakeDirectory" | "Glob" | "Grep";
+
+async function resolveFsDirectoryPath(
+  workspacePath: string,
+  toolName: "Grep",
+  path: string,
+  mutating: boolean
+): Promise<string> {
+  const resolved = resolveFsToolPathWithMeta(workspacePath, toolName, path, mutating);
+  let info: Stats;
+  try {
+    info = await stat(resolved.target);
+  } catch (error) {
+    if (!isMissingPathError(error)) {
+      throw error;
+    }
+    log.warn("Grep 搜索根目录不存在", {
+      action: "fs.grep_root_missing",
+      toolName,
+      workspacePath,
+      path,
+      target: resolved.target
+    });
+    throw new Error(`${toolName} 找不到搜索目录：${path}`);
+  }
+  if (info.isDirectory()) {
+    return resolved.target;
+  }
+  log.warn("Grep 搜索根路径不是目录", {
+    action: "fs.grep_root_not_directory",
+    toolName,
+    workspacePath,
+    path,
+    target: resolved.target,
+    isFile: info.isFile(),
+    isBlockDevice: info.isBlockDevice(),
+    isCharacterDevice: info.isCharacterDevice(),
+    isFIFO: info.isFIFO(),
+    isSocket: info.isSocket()
+  });
+  throw new Error(
+    info.isFile()
+      ? `${toolName} 只能在目录中搜索，收到文件路径：${path}`
+      : `${toolName} 只能在目录中搜索，收到非目录路径：${path}`
+  );
+}
 
 function resolveFsToolPathWithMeta(
   workspacePath: string,
@@ -1061,7 +1109,7 @@ function spawnAndCollect(
     child.on("error", (error) => {
       reject(
         new Error(
-          `Grep 无法启动 ripgrep 运行时（${command}）：${error.message}。请确认打包资源中包含 rg，或设置 CHENGXIAOBANG_RG_PATH。`
+          `Grep 无法启动 ripgrep 运行时 command=${command} cwd=${cwd}：${error.message}。请确认搜索根路径是目录、打包资源中包含 rg，或设置 CHENGXIAOBANG_RG_PATH。`
         )
       );
     });
