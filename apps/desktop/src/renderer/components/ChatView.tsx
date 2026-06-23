@@ -6,7 +6,7 @@ import {
   GitBranchIcon,
   RefreshIcon,
   StopSquareFilledIcon,
-  XMarkIcon
+  XCircleIcon
 } from "@/assets/file-type-icons";
 import {
   Fragment,
@@ -30,6 +30,7 @@ import type {
 } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { AssistantMarkdownWithArtifacts } from "@/components/AssistantMarkdownWithArtifacts";
+import { Button } from "@/components/ui/button";
 import chatLayoutStyles from "@/components/ChatLayout.module.css";
 import { Markdown } from "@/components/Markdown";
 import { MessageActions, MessageEditor } from "@/components/MessageActions";
@@ -362,6 +363,8 @@ export function ChatView() {
   const streamAutoFollowRef = useRef<{ runId?: string; paused: boolean }>({ paused: false });
   const streamCaretDecisionLogKeyRef = useRef<string | undefined>(undefined);
   const [nearBottom, setNearBottom] = useState(true);
+  // ref 负责同步滚动判断；state 让 run_end 那一帧的 WorkTimer 知道用户正在手动阅读。
+  const [streamAutoFollowPaused, setStreamAutoFollowPaused] = useState(false);
   const [scrollProgress, setScrollProgress] = useState({
     visible: false,
     top: 0,
@@ -390,7 +393,7 @@ export function ChatView() {
   }, []);
 
   const rememberReadingAnchor = useCallback((el: HTMLDivElement | null = scrollRef.current) => {
-    if (!el || isNearBottom(el)) {
+    if (!el || (isNearBottom(el) && !streamAutoFollowRef.current.paused)) {
       readingAnchorRef.current = undefined;
       return;
     }
@@ -605,6 +608,7 @@ export function ChatView() {
       } else {
         console.info("[ChatView] 用户回到底部，恢复本轮流式自动跟随", context);
       }
+      setStreamAutoFollowPaused(paused);
     },
     []
   );
@@ -653,14 +657,13 @@ export function ChatView() {
       lastScrollTopRef.current = targetScrollTop;
 
       const atBottom = isNearBottom(el);
+      if (isRunning && anchorIdRef.current) {
+        updateStreamAutoFollowPaused(!atBottom, atBottom ? "near-bottom" : "manual-scroll");
+      }
+
       updateNearBottom(atBottom);
       syncScrollProgress(el);
       rememberReadingAnchor(el);
-
-      if (!isRunning || !anchorIdRef.current) {
-        return;
-      }
-      updateStreamAutoFollowPaused(!atBottom, atBottom ? "near-bottom" : "manual-scroll");
     },
     [
       isRunning,
@@ -787,6 +790,7 @@ export function ChatView() {
     if (isUserEcho) {
       anchorIdRef.current = last.id;
       streamAutoFollowRef.current = { runId: activeRunId, paused: false };
+      setStreamAutoFollowPaused(false);
       const node = el.querySelector<HTMLElement>(`[data-message-id="${last.id}"]`);
       const spacer = spacerRef.current;
       if (!node || !spacer) {
@@ -819,6 +823,7 @@ export function ChatView() {
     if (historyLoaded) {
       anchorIdRef.current = undefined;
       streamAutoFollowRef.current = { paused: false };
+      setStreamAutoFollowPaused(false);
       if (spacerRef.current) {
         spacerRef.current.style.height = "0px";
       }
@@ -896,7 +901,7 @@ export function ChatView() {
     }
     const wasNearBottom = nearBottomRef.current;
     syncTailGeometry();
-    if (wasNearBottom) {
+    if (wasNearBottom && !streamAutoFollowRef.current.paused) {
       const target = Math.max(0, el.scrollHeight - el.clientHeight);
       if (Math.abs(el.scrollTop - target) > READING_ANCHOR_EPSILON_PX) {
         el.scrollTop = target;
@@ -967,12 +972,6 @@ export function ChatView() {
     []
   );
 
-  useEffect(() => {
-    if (!isRunning) {
-      streamAutoFollowRef.current = { paused: false };
-    }
-  }, [isRunning]);
-
   const handleChatScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) {
@@ -985,20 +984,17 @@ export function ChatView() {
     const movedDown = currentScrollTop > previousScrollTop + USER_SCROLL_DIRECTION_EPSILON_PX;
     lastScrollTopRef.current = currentScrollTop;
 
+    if (isRunning && anchorIdRef.current) {
+      if (movedUp) {
+        updateStreamAutoFollowPaused(true, "manual-scroll");
+      } else if (atBottom && movedDown) {
+        updateStreamAutoFollowPaused(false, "near-bottom");
+      }
+    }
+
     updateNearBottom(atBottom);
     syncScrollProgress(el);
     rememberReadingAnchor(el);
-
-    if (!isRunning || !anchorIdRef.current) {
-      return;
-    }
-    if (movedUp) {
-      updateStreamAutoFollowPaused(true, "manual-scroll");
-      return;
-    }
-    if (atBottom && movedDown) {
-      updateStreamAutoFollowPaused(false, "near-bottom");
-    }
   }, [
     isRunning,
     rememberReadingAnchor,
@@ -1264,6 +1260,7 @@ export function ChatView() {
                   block={block}
                   renderItem={renderTimelineItem}
                   runtimeTail={block.active ? runtimeTail : null}
+                  autoCollapseOnSettle={!streamAutoFollowPaused}
                 />
               )}
               {forkMarkerBlockKey === block.key ? <BranchForkMarker /> : null}
@@ -1345,7 +1342,8 @@ function BranchForkMarker() {
 function TurnView({
   block,
   renderItem,
-  runtimeTail
+  runtimeTail,
+  autoCollapseOnSettle
 }: {
   block: TurnBlock;
   renderItem: (
@@ -1354,6 +1352,7 @@ function TurnView({
     options?: { hideReasoning?: boolean; afterContent?: ReactNode }
   ) => ReactNode;
   runtimeTail: ReactNode;
+  autoCollapseOnSettle: boolean;
 }) {
   // 最终答复自带的「思考过程」也收进折叠头：折叠体里补一个它的 reasoning 面板（时间上在中间过程之后），
   // 答复正文用 hideReasoning 渲染、留在折叠头外。
@@ -1382,6 +1381,7 @@ function TurnView({
         key={block.key}
         timing={block.timing}
         collapsible={collapsible}
+        autoCollapseOnSettle={autoCollapseOnSettle}
       >
         {block.intermediate.map((member) => renderItem(member.item, member.index))}
         {answerReasoning}
@@ -1422,21 +1422,30 @@ function RunErrorNotice({
   const { t } = useTranslation();
   return (
     <div
+      role="alert"
+      aria-label={t("chat.runFailedTitle")}
       data-testid="run-error-notice"
-      className="mb-3 flex items-start gap-2 self-stretch rounded-sm border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive"
+      className="mb-3 flex items-start gap-3 self-stretch rounded-md border border-hairline bg-canvas px-3 py-3 text-foreground"
     >
-      <XMarkIcon className="mt-0.5 size-3.5 flex-none" />
+      <span className="flex size-6 flex-none items-center justify-center rounded-full bg-error-soft/55 text-error-deep">
+        <XCircleIcon className="size-3.5" />
+      </span>
       <div className="min-w-0 flex-1">
-        <p className="max-h-[200px] overflow-y-auto break-words font-mono text-micro">{notice.message}</p>
+        <p className="text-caption font-medium text-foreground">{t("chat.runFailedTitle")}</p>
+        <p className="mt-1.5 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-words rounded-sm bg-canvas-soft-2 px-2.5 py-2 font-mono text-micro leading-relaxed text-body">
+          {notice.message}
+        </p>
         {canRetry ? (
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
             onClick={onRetry}
-            className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-sm border border-destructive/30 bg-background px-2.5 text-caption font-medium text-destructive transition-colors hover:border-destructive/50 hover:bg-destructive/10"
+            className="mt-2 h-7 rounded-sm px-2.5 text-caption"
           >
             <RefreshIcon className="size-3.5 flex-none" />
             <span>{t("chat.retryFailedRun")}</span>
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>

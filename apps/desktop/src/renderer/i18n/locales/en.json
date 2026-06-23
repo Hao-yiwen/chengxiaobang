@@ -349,6 +349,7 @@
     "continueSideChat": "Continue side chat for this message",
     "sideChatMarkerCount": "{{count}} side messages",
     "branchForkMarker": "Branched from conversation",
+    "runFailedTitle": "Run failed",
     "retryFailedRun": "Retry this request",
     "toolStatus": {
       "completed": "Done",

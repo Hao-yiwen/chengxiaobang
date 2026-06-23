@@ -78,7 +78,11 @@ describe("Markdown", () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
 
     render(<Markdown text="see [docs](https://example.com) here" />);
-    fireEvent.click(screen.getByRole("link", { name: "docs" }));
+    const link = screen.getByRole("link", { name: "docs" });
+    expect(link).toHaveClass("text-link", "no-underline");
+    expect(link).not.toHaveClass("text-primary", "underline");
+
+    fireEvent.click(link);
 
     expect(screen.queryByText("打开外部链接？")).not.toBeInTheDocument();
     await waitFor(() =>
@@ -152,6 +156,8 @@ describe("Markdown", () => {
 
     expect(screen.queryByRole("link", { name: "链接" })).not.toBeInTheDocument();
     const link = screen.getByRole("link", { name: "青海旅游全攻略.pptx" });
+    expect(link).toHaveClass("text-link", "no-underline");
+    expect(link).not.toHaveClass("text-primary", "underline");
 
     fireEvent.click(link);
 

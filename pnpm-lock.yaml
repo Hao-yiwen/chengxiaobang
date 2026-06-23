@@ -150,6 +150,9 @@ importers:
       '@chengxiaobang/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@img/colour':
+        specifier: 1.1.0
+        version: 1.1.0
       '@napi-rs/canvas':
         specifier: ^1.0.0
         version: 1.0.0
@@ -264,6 +267,9 @@ importers:
       '@streamdown/mermaid':
         specifier: ^1.0.2
         version: 1.0.2(react@19.2.1)
+      '@techstark/opencv-js':
+        specifier: 4.10.0-release.1
+        version: 4.10.0-release.1
       '@xterm/addon-fit':
         specifier: 0.11.0
         version: 0.11.0
@@ -294,6 +300,9 @@ importers:
       debug:
         specifier: 4.4.3
         version: 4.4.3
+      detect-libc:
+        specifier: 2.1.2
+        version: 2.1.2
       electron-updater:
         specifier: 6.8.9
         version: 6.8.9
@@ -339,6 +348,9 @@ importers:
       on-exit-leak-free:
         specifier: 2.1.2
         version: 2.1.2
+      onnxruntime-common:
+        specifier: 1.26.0
+        version: 1.26.0
       onnxruntime-node:
         specifier: ^1.26.0
         version: 1.26.0
@@ -354,6 +366,9 @@ importers:
       pino-std-serializers:
         specifier: 7.1.0
         version: 7.1.0
+      ppu-ocv:
+        specifier: 3.2.2
+        version: 3.2.2
       ppu-paddle-ocr:
         specifier: ^5.8.3
         version: 5.8.3
@@ -437,6 +452,21 @@ importers:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.17)
     optionalDependencies:
+      '@img/sharp-darwin-arm64':
+        specifier: 0.34.5
+        version: 0.34.5
+      '@img/sharp-darwin-x64':
+        specifier: 0.34.5
+        version: 0.34.5
+      '@img/sharp-libvips-darwin-arm64':
+        specifier: 1.2.4
+        version: 1.2.4
+      '@img/sharp-libvips-darwin-x64':
+        specifier: 1.2.4
+        version: 1.2.4
+      '@img/sharp-win32-x64':
+        specifier: 0.34.5
+        version: 0.34.5
       '@napi-rs/canvas-darwin-arm64':
         specifier: 1.0.0
         version: 1.0.0

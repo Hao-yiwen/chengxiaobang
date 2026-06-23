@@ -496,7 +496,8 @@ describe("ToolCallRow", () => {
     expect(screen.queryByText(/src\/index\.ts/)).not.toBeInTheDocument();
     fireEvent.pointerMove(previewButton, { pointerType: "mouse" });
     fireEvent.mouseEnter(previewButton);
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("src/index.ts");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    expect(await screen.findByRole("tooltip", undefined, { timeout: 2000 })).toHaveTextContent("src/index.ts");
     fireEvent.click(previewButton);
     expect(onOpenFile).toHaveBeenCalledWith("src/index.ts", "code");
   });

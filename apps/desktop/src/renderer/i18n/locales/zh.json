@@ -349,6 +349,7 @@
     "continueSideChat": "继续这条消息的侧边会话",
     "sideChatMarkerCount": "{{count}} 条侧边消息",
     "branchForkMarker": "从对话中派生",
+    "runFailedTitle": "运行失败",
     "retryFailedRun": "重试本次请求",
     "toolStatus": {
       "completed": "已完成",

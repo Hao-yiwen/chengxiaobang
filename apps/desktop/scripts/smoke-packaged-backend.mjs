@@ -116,9 +116,7 @@ async function verifyPackagedResources(resourcesPath, bunPath, rgPath, backendEn
     bunPath,
     rgPath,
     backendEntry,
-    join(resourcesPath, "ocr", "pp-ocrv6-small", "det.onnx"),
-    join(resourcesPath, "ocr", "pp-ocrv6-small", "rec.onnx"),
-    join(resourcesPath, "ocr", "pp-ocrv6-small", "dict.txt"),
+    ...Object.values(getOcrModelPaths(resourcesPath)),
     join(resourcesPath, "app.asar.unpacked", "node_modules", "node-pty"),
     join(resourcesPath, "app.asar.unpacked", "node_modules", "sharp"),
     join(resourcesPath, "app.asar.unpacked", "node_modules", "onnxruntime-node"),
@@ -156,6 +154,10 @@ async function verifyPackagedResources(resourcesPath, bunPath, rgPath, backendEn
     path: canvasNative.path,
     type: canvasNative.type
   });
+  const sharpNative = await verifySharpNativeResources(resourcesPath);
+  console.info("[smoke] 已找到 sharp native 资源", sharpNative);
+  const onnxRuntimeNative = await verifyOnnxRuntimeNativeResources(resourcesPath);
+  console.info("[smoke] 已找到 onnxruntime-node native 资源", onnxRuntimeNative);
   await verifyAppAsarRuntimeDependencies(resourcesPath);
 }
 
@@ -192,10 +194,13 @@ async function verifyAppAsarRuntimeDependencies(resourcesPath) {
   await verifyPackagedRendererEntry(resourcesPath, entries);
   const requiredEntries = [
     "/node_modules/@pinojs/redact/index.js",
+    "/node_modules/@img/colour/index.cjs",
+    "/node_modules/@techstark/opencv-js/dist/opencv.js",
     "/node_modules/electron-updater/out/main.js",
     "/node_modules/atomic-sleep/index.js",
     "/node_modules/builder-util-runtime/out/index.js",
     "/node_modules/debug/src/index.js",
+    "/node_modules/detect-libc/lib/detect-libc.js",
     "/node_modules/fs-extra/lib/index.js",
     "/node_modules/graceful-fs/graceful-fs.js",
     "/node_modules/js-yaml/index.js",
@@ -205,9 +210,14 @@ async function verifyAppAsarRuntimeDependencies(resourcesPath) {
     "/node_modules/lodash.isequal/index.js",
     "/node_modules/ms/index.js",
     "/node_modules/on-exit-leak-free/index.js",
+    "/node_modules/onnxruntime-common/dist/cjs/index.js",
     "/node_modules/pino/pino.js",
     "/node_modules/pino-abstract-transport/index.js",
     "/node_modules/pino-std-serializers/index.js",
+    "/node_modules/ppu-ocv/index.js",
+    "/node_modules/ppu-ocv/index.canvas.js",
+    "/node_modules/ppu-paddle-ocr/index.js",
+    "/node_modules/ppu-paddle-ocr/processor/paddle-ocr.service.js",
     "/node_modules/process-warning/index.js",
     "/node_modules/quick-format-unescaped/index.js",
     "/node_modules/real-require/src/index.js",
@@ -284,6 +294,7 @@ async function verifyPackagedMainRuntimeLoads(resourcesPath) {
   const appAsar = join(resourcesPath, "app.asar");
   const electronExecutable = await resolvePackagedElectronExecutable(resourcesPath);
   const updaterSmokeScript = `
+(async () => {
 const appAsar = process.env.CHENGXIAOBANG_SMOKE_APP_ASAR;
 const path = require("path");
 const Module = require("module");
@@ -336,9 +347,11 @@ const requiredModules = [
   "lodash.isequal",
   "ms",
   "on-exit-leak-free",
+  "onnxruntime-common",
   "pino",
   "pino-abstract-transport",
   "pino-std-serializers",
+  "ppu-ocv",
   "process-warning",
   "quick-format-unescaped",
   "real-require",
@@ -362,7 +375,36 @@ const updater = require(appAsar + "/node_modules/electron-updater/out/main.js");
 if (!updater || !updater.autoUpdater) {
   throw new Error("electron-updater 没有导出 autoUpdater");
 }
-  console.log("[smoke] main process runtime load ok");
+const sharp = require(appAsar + "/node_modules/sharp");
+if (typeof sharp !== "function" || !sharp.versions?.vips) {
+  throw new Error("sharp 没有加载出预期的 native 运行时");
+}
+const onnx = require(appAsar + "/node_modules/onnxruntime-node");
+if (!onnx?.InferenceSession || !onnx?.Tensor) {
+  throw new Error("onnxruntime-node 没有加载出预期的运行时导出");
+}
+const { PaddleOcrService } = await import(appAsar + "/node_modules/ppu-paddle-ocr/index.js");
+if (typeof PaddleOcrService !== "function") {
+  throw new Error("ppu-paddle-ocr 没有导出 PaddleOcrService");
+}
+const ocrModelDir = path.join(resourcesPath, "ocr", "pp-ocrv6-small");
+const service = new PaddleOcrService({
+  model: {
+    detection: path.join(ocrModelDir, "det.onnx"),
+    recognition: path.join(ocrModelDir, "rec.onnx"),
+    charactersDictionary: path.join(ocrModelDir, "dict.txt")
+  },
+  processing: { engine: "opencv" },
+  session: { executionProviders: ["cpu"], graphOptimizationLevel: "all" },
+  debugging: { debug: false, verbose: false }
+});
+await service.initialize();
+await service.destroy?.();
+console.log("[smoke] main process runtime load ok");
+})().catch((error) => {
+  console.error(error?.stack || error?.message || error);
+  process.exit(1);
+});
 `;
   const { stdout } = await execFileAsync(electronExecutable, ["-e", updaterSmokeScript], {
     cwd: desktopDir,
@@ -371,7 +413,7 @@ if (!updater || !updater.autoUpdater) {
       ELECTRON_RUN_AS_NODE: "1",
       CHENGXIAOBANG_SMOKE_APP_ASAR: appAsar
     },
-    timeout: 15_000,
+    timeout: Math.max(smokeTimeoutMs, 60_000),
     maxBuffer: 1024 * 1024
   });
   console.info("[smoke] 打包主进程运行时加载检查通过", {
@@ -459,6 +501,107 @@ function getCanvasNativeCandidates(resourcesPath, canvasPackage) {
   return [
     { type: "file", path: join(canvasPackage, `skia.${process.platform}-${process.arch}.node`) }
   ];
+}
+
+async function verifySharpNativeResources(resourcesPath) {
+  const platformArch = getSharpRuntimePlatformArch();
+  const imgScope = join(resourcesPath, "app.asar.unpacked", "node_modules", "@img");
+  const sharpPackage = join(imgScope, `sharp-${platformArch}`);
+  const sharpNative = join(sharpPackage, "lib", `sharp-${platformArch}.node`);
+  const requiredPaths = [sharpPackage, sharpNative];
+  const result = {
+    platform: process.platform,
+    arch: process.arch,
+    platformArch,
+    sharpPackage,
+    sharpNative
+  };
+
+  if (process.platform === "darwin") {
+    const libvipsPackage = join(imgScope, `sharp-libvips-${platformArch}`);
+    requiredPaths.push(libvipsPackage);
+    Object.assign(result, { libvipsPackage });
+  }
+
+  for (const path of requiredPaths) {
+    if (!existsSync(path)) {
+      throw new Error(`打包 sharp native 资源缺失: ${path}`);
+    }
+  }
+
+  if ("libvipsPackage" in result) {
+    const libvipsLibDir = join(result.libvipsPackage, "lib");
+    const entries = await readdir(libvipsLibDir).catch(() => []);
+    if (!entries.some((entry) => entry.endsWith(".dylib"))) {
+      throw new Error(`打包 sharp libvips 资源缺少 dylib: ${libvipsLibDir}`);
+    }
+  }
+
+  return result;
+}
+
+async function verifyOnnxRuntimeNativeResources(resourcesPath) {
+  const onnxPackage = join(
+    resourcesPath,
+    "app.asar.unpacked",
+    "node_modules",
+    "onnxruntime-node"
+  );
+  const candidates = getOnnxRuntimeNativeCandidates(onnxPackage);
+  const nativeBinding = candidates.find((candidate) => existsSync(candidate));
+  if (!nativeBinding) {
+    throw new Error(`打包 onnxruntime-node native 资源缺失，已检查: ${candidates.join(", ")}`);
+  }
+  const result = {
+    platform: process.platform,
+    arch: process.arch,
+    nativeBinding
+  };
+  if (process.platform === "darwin") {
+    const nativeDir = dirname(nativeBinding);
+    const entries = await readdir(nativeDir).catch(() => []);
+    const dylibs = entries.filter((entry) => entry.endsWith(".dylib"));
+    if (dylibs.length === 0) {
+      throw new Error(`打包 onnxruntime-node native 资源缺少 dylib: ${nativeDir}`);
+    }
+    Object.assign(result, { dylibs });
+  }
+  return result;
+}
+
+function getOnnxRuntimeNativeCandidates(onnxPackage) {
+  if (process.platform === "win32") {
+    return [
+      join(onnxPackage, "bin", "napi-v6", "win32", process.arch, "onnxruntime_binding.node")
+    ];
+  }
+  if (process.platform === "darwin") {
+    return [
+      join(onnxPackage, "bin", "napi-v6", "darwin", process.arch, "onnxruntime_binding.node")
+    ];
+  }
+  return [
+    join(onnxPackage, "bin", "napi-v6", process.platform, process.arch, "onnxruntime_binding.node")
+  ];
+}
+
+function getSharpRuntimePlatformArch() {
+  if (process.platform === "darwin") {
+    return `darwin-${process.arch === "arm64" ? "arm64" : "x64"}`;
+  }
+  if (process.platform === "win32") {
+    return `win32-${process.arch}`;
+  }
+  return `${process.platform}-${process.arch}`;
+}
+
+function getOcrModelPaths(resourcesPath) {
+  const modelDir = join(resourcesPath, "ocr", "pp-ocrv6-small");
+  return {
+    detection: join(modelDir, "det.onnx"),
+    recognition: join(modelDir, "rec.onnx"),
+    charactersDictionary: join(modelDir, "dict.txt")
+  };
 }
 
 async function waitForHealth(port, child) {

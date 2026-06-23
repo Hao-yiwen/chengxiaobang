@@ -71,8 +71,8 @@ export function FileLinkAnchor({
       title={path}
       onClick={handleClick}
       className={cn(
-        "wrap-anywhere font-medium text-primary underline underline-offset-2",
-        className
+        className,
+        "wrap-anywhere font-medium text-link no-underline transition-colors hover:text-link-deep hover:no-underline"
       )}
     >
       <Icon className="mr-0.5 inline-block size-[1em] align-[-0.15em] text-muted-foreground" aria-hidden />

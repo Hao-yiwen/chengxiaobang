@@ -15,10 +15,12 @@ import { cn } from "@/lib/utils";
 export function WorkTimer({
   timing,
   collapsible,
+  autoCollapseOnSettle = true,
   children
 }: {
   timing: TurnTiming;
   collapsible: boolean;
+  autoCollapseOnSettle?: boolean;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -32,11 +34,11 @@ export function WorkTimer({
   );
 
   useEffect(() => {
-    if (wasRunningRef.current && !running) {
+    if (wasRunningRef.current && !running && autoCollapseOnSettle) {
       setOpen(false);
     }
     wasRunningRef.current = running;
-  }, [running]);
+  }, [autoCollapseOnSettle, running]);
 
   useEffect(() => {
     if (startedAt === undefined) {

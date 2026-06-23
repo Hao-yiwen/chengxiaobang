@@ -690,6 +690,45 @@ describe("anchor-on-send scrolling", () => {
     });
   });
 
+  it("keeps the manual reading anchor when layout shrinks even near the bottom", async () => {
+    const client = createClient();
+    const run = scriptedRun();
+    client.streamRun = run.streamRun as ApiClient["streamRun"];
+    render(<App client={client} />);
+    await screen.findByText("很长的回答");
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+
+    metrics.scrollHeight = 860;
+    metrics.rectTops.u2 = 10;
+    let runPromise!: Promise<void>;
+    act(() => {
+      runPromise = useAppStore.getState().runPrompt("新问题");
+    });
+    await screen.findByText("新问题");
+    expect(scroller.scrollTop).toBe(794);
+
+    // 仍在 near-bottom 阈值内，但这是用户主动往上滚出来的位置，后续折叠不能按贴底处理。
+    metrics.scrollHeight = 1200;
+    metrics.rectTops = { "chat-scroll": 0, u1: -360, a1: -120, u2: 48 };
+    scroller.scrollTop = 781;
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+
+    // 模拟过程折叠这类布局收缩：内容高度变短，锚点相对视口上移 40px。
+    metrics.scrollHeight = 1100;
+    metrics.rectTops.u2 = 8;
+    triggerScrollGeometryChange();
+
+    expect(scroller.scrollTop).toBe(741);
+
+    await act(async () => {
+      run.afterEcho.resolve();
+      run.afterDelta.resolve();
+      await runPromise;
+    });
+  });
+
   it("resumes auto-follow after clicking the scroll-to-bottom button", async () => {
     const client = createClient();
     const run = scriptedRun();

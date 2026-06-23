@@ -1289,9 +1289,10 @@ describe("App", () => {
     render(<App client={client} />);
 
     expect(await screen.findByText("已加载技能 ppt")).toBeInTheDocument();
-    expect(await screen.findByTestId("run-error-notice")).toHaveTextContent(
-      "运行进程已重启"
-    );
+    const notice = await screen.findByRole("alert", { name: "运行失败" });
+    expect(notice).toHaveAttribute("data-testid", "run-error-notice");
+    expect(notice).toHaveTextContent("运行失败");
+    expect(notice).toHaveTextContent("运行进程已重启");
     fireEvent.click(await screen.findByRole("button", { name: "重试本次请求" }));
 
     await waitFor(() => expect(rewindSession).toHaveBeenCalledWith(session.id, userMessage.id));
@@ -1431,7 +1432,9 @@ describe("App", () => {
     useAppStore.setState({ view: "chat", activeSessionId: session.id });
     render(<App client={client} />);
 
-    const notice = await screen.findByTestId("run-error-notice");
+    const notice = await screen.findByRole("alert", { name: "运行失败" });
+    expect(notice).toHaveAttribute("data-testid", "run-error-notice");
+    expect(notice).toHaveTextContent("运行失败");
     expect(notice).toHaveTextContent("400 Invalid request: token limit");
     expect(
       screen.getByText("读取所有文件").compareDocumentPosition(notice) &

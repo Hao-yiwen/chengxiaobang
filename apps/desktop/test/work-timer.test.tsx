@@ -43,4 +43,29 @@ describe("WorkTimer", () => {
     expect(settledGrid).toBe(runningGrid);
     expect(settledGrid).toHaveClass("grid-rows-[0fr]");
   });
+
+  it("用户正在阅读时允许跳过运行结束自动收起", () => {
+    const { container, rerender } = render(
+      <WorkTimer timing={{ mode: "running", startedAt: Date.now() - 1000 }} collapsible>
+        <div>中间过程</div>
+      </WorkTimer>
+    );
+
+    const runningGrid = foldGrid(container);
+    expect(runningGrid).toHaveClass("grid-rows-[1fr]");
+
+    rerender(
+      <WorkTimer
+        timing={{ mode: "settled", durationMs: 2000 }}
+        collapsible
+        autoCollapseOnSettle={false}
+      >
+        <div>中间过程</div>
+      </WorkTimer>
+    );
+
+    const settledGrid = foldGrid(container);
+    expect(settledGrid).toBe(runningGrid);
+    expect(settledGrid).toHaveClass("grid-rows-[1fr]");
+  });
 });

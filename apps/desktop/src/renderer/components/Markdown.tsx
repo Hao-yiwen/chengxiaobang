@@ -201,7 +201,10 @@ const STREAMDOWN_COMPONENTS: StreamdownProps["components"] = {
     return (
       <ExternalUrlAnchor
         href={url}
-        className={cn("wrap-anywhere font-medium text-primary underline", className)}
+        className={cn(
+          className,
+          "wrap-anywhere font-medium text-link no-underline transition-colors hover:text-link-deep hover:no-underline"
+        )}
         {...props}
       >
         {children}

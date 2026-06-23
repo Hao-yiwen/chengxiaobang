@@ -50,6 +50,7 @@
 
 .root :global([data-streamdown="link"]) {
   color: rgb(var(--link));
+  text-decoration-line: none;
   text-decoration-color: rgb(var(--link) / 0.35);
   text-underline-offset: 2px;
   transition:
@@ -59,6 +60,7 @@
 
 .root :global([data-streamdown="link"]:hover) {
   color: rgb(var(--link-deep));
+  text-decoration-line: none;
   text-decoration-color: rgb(var(--link));
 }
 

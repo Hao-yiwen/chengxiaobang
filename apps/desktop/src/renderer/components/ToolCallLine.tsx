@@ -208,7 +208,7 @@ export function ToolFileButton({
   const fileName = basenameOf(path);
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delayDuration={900} skipDelayDuration={0}>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
