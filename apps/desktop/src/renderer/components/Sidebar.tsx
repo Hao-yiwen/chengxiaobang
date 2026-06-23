@@ -351,7 +351,6 @@ export function Sidebar() {
   const openFolder = useAppStore((state) => state.openFolder);
   const setPaletteOpen = useAppStore((state) => state.setPaletteOpen);
   const setView = useAppStore((state) => state.setView);
-  const setActiveProjectId = useAppStore((state) => state.setActiveProjectId);
   const selectSession = useAppStore((state) => state.selectSession);
   const renameSession = useAppStore((state) => state.renameSession);
   const deleteSession = useAppStore((state) => state.deleteSession);
@@ -712,14 +711,6 @@ export function Sidebar() {
     void loadData();
   }
 
-  function openProjectHome(project: Project): void {
-    console.info("[sidebar] 进入项目首页", {
-      projectId: project.id,
-      name: project.name
-    });
-    setActiveProjectId(project.id);
-  }
-
   function renderSession(
     session: Session,
     indent: boolean,
@@ -792,7 +783,6 @@ export function Sidebar() {
         editing={editingProjectId === project.id}
         draftName={projectDraft}
         onOpenChange={(open) => setProjectOpen(project, open)}
-        onSelectProject={() => openProjectHome(project)}
         onNewChat={() => newChatInProject(project.id)}
         onStartRename={() => {
           setEditingProjectId(project.id);
@@ -805,13 +795,9 @@ export function Sidebar() {
         onDelete={() => void onDeleteProject(project.id)}
       >
         {projectSessionList.length === 0 ? (
-          <button
-            type="button"
-            onClick={() => openProjectHome(project)}
-            className="mx-1 mb-0.5 flex h-7 min-w-0 cursor-pointer items-center rounded-sm pl-7 pr-2 text-left text-micro text-foreground"
-          >
+          <p className="mx-1 mb-0.5 flex h-7 min-w-0 items-center rounded-sm pl-7 pr-2 text-micro text-foreground">
             <span className="truncate">{t("sidebar.noChats")}</span>
-          </button>
+          </p>
         ) : (
           <>
             {visible.map((session) => renderSession(session, true, projectTooltipInfo))}
@@ -1026,7 +1012,7 @@ export function Sidebar() {
 }
 
 /**
- * 可折叠的项目分组：组头是项目名，悬停时右侧浮出「新建会话」加号；
+ * 可折叠的项目分组：组头点击只折叠/展开，悬停时右侧浮出「新建会话」加号；
  * 右键组头弹出菜单提供重命名 / 置顶 / 删除；重命名时组头切换为行内输入框。
  */
 function ProjectGroup(props: {
@@ -1038,7 +1024,6 @@ function ProjectGroup(props: {
   editing: boolean;
   draftName: string;
   onOpenChange(open: boolean): void;
-  onSelectProject(): void;
   onNewChat(): void;
   onStartRename(): void;
   onDraftChange(value: string): void;
@@ -1083,7 +1068,9 @@ function ProjectGroup(props: {
             <XMarkIcon className="size-4" />
           </button>
         </div>
-        <CollapsibleContent>{props.children}</CollapsibleContent>
+        <CollapsibleContent className={styles.projectGroupContent}>
+          {props.children}
+        </CollapsibleContent>
       </Collapsible>
     );
   }
@@ -1096,7 +1083,8 @@ function ProjectGroup(props: {
             <button
               type="button"
               aria-current={props.active ? "page" : undefined}
-              onClick={props.onSelectProject}
+              aria-expanded={props.open}
+              onClick={() => props.onOpenChange(!props.open)}
               className={cn(
                 "flex h-7 w-full min-w-0 max-w-full flex-1 items-center gap-1.5 overflow-hidden rounded-sm px-1.5 pr-14 text-left text-caption font-normal text-foreground transition-colors hover:bg-surface-hover",
                 props.active && "bg-surface-hover font-[500]"
@@ -1162,7 +1150,9 @@ function ProjectGroup(props: {
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
-      <CollapsibleContent>{props.children}</CollapsibleContent>
+      <CollapsibleContent className={styles.projectGroupContent}>
+        {props.children}
+      </CollapsibleContent>
     </Collapsible>
   );
 }

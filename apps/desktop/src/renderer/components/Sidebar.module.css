@@ -14,3 +14,51 @@
   width: 0;
   height: 0;
 }
+
+.projectGroupContent {
+  overflow: hidden;
+  transform-origin: top;
+}
+
+.projectGroupContent[data-state="open"] {
+  animation: projectGroupOpen 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.projectGroupContent[data-state="closed"] {
+  animation: projectGroupClose 130ms ease-in;
+}
+
+@keyframes projectGroupOpen {
+  from {
+    height: 0;
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+
+  to {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes projectGroupClose {
+  from {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    height: 0;
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .projectGroupContent[data-state="open"],
+  .projectGroupContent[data-state="closed"] {
+    animation: none;
+  }
+}

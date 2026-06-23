@@ -146,7 +146,7 @@ describe("sidebar section actions", () => {
     expect(sidebar.getByLabelText("打开文件夹")).toBeInTheDocument();
   });
 
-  it("点击空项目的空态进入该项目首页", async () => {
+  it("点击空项目的空态不进入该项目首页", async () => {
     const emptyProject = projectFixture({
       id: "project_empty",
       name: "空项目",
@@ -163,22 +163,35 @@ describe("sidebar section actions", () => {
     fireEvent.click(sidebar.getByText("独立对话A"));
     await waitFor(() => expect(useAppStore.getState().activeSessionId).toBe("s1"));
 
-    fireEvent.click(sidebar.getByRole("button", { name: "还没有对话" }));
+    fireEvent.click(sidebar.getByText("还没有对话"));
 
-    await waitFor(() => expect(useAppStore.getState().view).toBe("home"));
-    expect(useAppStore.getState().activeSessionId).toBeUndefined();
-    expect(useAppStore.getState().activeProjectId).toBe(emptyProject.id);
+    expect(useAppStore.getState().view).toBe("chat");
+    expect(useAppStore.getState().activeSessionId).toBe("s1");
+    expect(useAppStore.getState().activeProjectId).toBeUndefined();
   });
 
-  it("点击项目名称行进入该项目首页并高亮项目", async () => {
+  it("点击项目名称行只折叠展开项目组，右侧加号进入该项目首页", async () => {
     render(<App client={createClient()} />);
     const sidebar = within(await screen.findByTestId("app-sidebar"));
-    await sidebar.findByText("demo");
+    await sidebar.findByText("项目会话0");
 
     fireEvent.click(sidebar.getByText("独立对话A"));
     await waitFor(() => expect(useAppStore.getState().activeSessionId).toBe("s1"));
 
     fireEvent.click(sidebar.getByText("demo"));
+
+    await waitFor(() => expect(sidebar.queryByText("项目会话0")).not.toBeInTheDocument());
+    expect(useAppStore.getState().view).toBe("chat");
+    expect(useAppStore.getState().activeSessionId).toBe("s1");
+    expect(useAppStore.getState().activeProjectId).toBeUndefined();
+
+    fireEvent.click(sidebar.getByText("demo"));
+
+    expect(await sidebar.findByText("项目会话0")).toBeInTheDocument();
+    expect(useAppStore.getState().activeSessionId).toBe("s1");
+    expect(useAppStore.getState().activeProjectId).toBeUndefined();
+
+    fireEvent.click(sidebar.getByTitle("在此项目下新建对话"));
 
     await waitFor(() => expect(useAppStore.getState().view).toBe("home"));
     expect(useAppStore.getState().activeSessionId).toBeUndefined();
