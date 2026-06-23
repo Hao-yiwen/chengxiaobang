@@ -2142,7 +2142,7 @@ describe("right panel", () => {
 
     render(<App client={client} />);
     await selectSession("项目对话");
-    const previewButton = await screen.findByTitle("预览文件");
+    const previewButton = await screen.findByRole("button", { name: "预览文件 a.ts" });
 
     fireEvent.click(previewButton);
 

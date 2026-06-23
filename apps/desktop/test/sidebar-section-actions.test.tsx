@@ -146,6 +146,63 @@ describe("sidebar section actions", () => {
     expect(sidebar.getByLabelText("打开文件夹")).toBeInTheDocument();
   });
 
+  it("点击空项目的空态进入该项目首页", async () => {
+    const emptyProject = projectFixture({
+      id: "project_empty",
+      name: "空项目",
+      createdAt: "2026-06-09T00:00:00.000Z"
+    });
+    const client = createClient({
+      listProjects: vi.fn(async () => [emptyProject, project])
+    });
+
+    render(<App client={client} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+    await sidebar.findByText("空项目");
+
+    fireEvent.click(sidebar.getByText("独立对话A"));
+    await waitFor(() => expect(useAppStore.getState().activeSessionId).toBe("s1"));
+
+    fireEvent.click(sidebar.getByRole("button", { name: "还没有对话" }));
+
+    await waitFor(() => expect(useAppStore.getState().view).toBe("home"));
+    expect(useAppStore.getState().activeSessionId).toBeUndefined();
+    expect(useAppStore.getState().activeProjectId).toBe(emptyProject.id);
+  });
+
+  it("点击项目名称行进入该项目首页并高亮项目", async () => {
+    render(<App client={createClient()} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+    await sidebar.findByText("demo");
+
+    fireEvent.click(sidebar.getByText("独立对话A"));
+    await waitFor(() => expect(useAppStore.getState().activeSessionId).toBe("s1"));
+
+    fireEvent.click(sidebar.getByText("demo"));
+
+    await waitFor(() => expect(useAppStore.getState().view).toBe("home"));
+    expect(useAppStore.getState().activeSessionId).toBeUndefined();
+    expect(useAppStore.getState().activeProjectId).toBe(project.id);
+    expect(sidebar.getByText("demo").closest("button")).toHaveAttribute("aria-current", "page");
+  });
+
+  it("点击项目箭头只折叠展开项目组，不进入项目首页", async () => {
+    render(<App client={createClient()} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+    await sidebar.findByText("项目会话0");
+
+    fireEvent.click(sidebar.getByLabelText("收起项目"));
+
+    await waitFor(() => expect(sidebar.queryByText("项目会话0")).not.toBeInTheDocument());
+    expect(useAppStore.getState().view).toBe("home");
+    expect(useAppStore.getState().activeProjectId).toBeUndefined();
+
+    fireEvent.click(sidebar.getByLabelText("展开项目"));
+
+    expect(await sidebar.findByText("项目会话0")).toBeInTheDocument();
+    expect(useAppStore.getState().activeProjectId).toBeUndefined();
+  });
+
   it("项目区默认按创建时间从新到旧排序", async () => {
     const oldProject = projectFixture({
       id: "project_old",

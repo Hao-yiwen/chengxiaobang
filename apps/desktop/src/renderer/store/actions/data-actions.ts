@@ -49,6 +49,13 @@ const SIDEBAR_PROJECT_LIMIT = 4;
 const SIDEBAR_SESSION_LIMIT = 6;
 const SIDEBAR_PINNED_PAGE_LIMIT = 100;
 
+type SidebarExpansionSnapshot = Pick<
+  AppState,
+  | "sidebarProjectsExpanded"
+  | "sidebarExpandedProjectSessionIds"
+  | "sidebarUngroupedExpanded"
+>;
+
 function applyMessageFeedback(
   messages: AppState["messages"],
   messageId: string,
@@ -109,9 +116,28 @@ async function collectAllPages<T>(
   return { items, total, hasMore: false };
 }
 
+async function collectExpandedPage<T>(
+  firstPage: PageResult<T>,
+  expanded: boolean,
+  loadTailPage: (offset: number) => Promise<PageResult<T>>
+): Promise<PageResult<T>> {
+  if (!expanded || !firstPage.hasMore) {
+    return firstPage;
+  }
+  const tailPage = await collectAllPages((tailOffset) =>
+    loadTailPage(firstPage.items.length + tailOffset)
+  );
+  return {
+    items: [...firstPage.items, ...tailPage.items],
+    total: tailPage.total || firstPage.total,
+    hasMore: false
+  };
+}
+
 async function loadInitialSidebarData(
   client: ApiClient,
-  sort: "created" | "recent"
+  sort: "created" | "recent",
+  expansion: SidebarExpansionSnapshot
 ): Promise<{
   projects: Project[];
   sessions: Session[];
@@ -119,7 +145,12 @@ async function loadInitialSidebarData(
   sidebarUngroupedSessionsPage: AppState["sidebarUngroupedSessionsPage"];
   sidebarProjectSessionsPageByProjectId: AppState["sidebarProjectSessionsPageByProjectId"];
 }> {
-  const [pinnedProjectsPage, pinnedSessionsPage, unpinnedProjectsPage, ungroupedSessionsPage] =
+  const [
+    pinnedProjectsPage,
+    pinnedSessionsPage,
+    defaultUnpinnedProjectsPage,
+    defaultUngroupedSessionsPage
+  ] =
     await Promise.all([
       collectAllPages((offset) =>
         client.listProjects({
@@ -150,6 +181,28 @@ async function loadInitialSidebarData(
       }).then(asPageResult)
     ]);
 
+  const [unpinnedProjectsPage, ungroupedSessionsPage] = await Promise.all([
+    collectExpandedPage(defaultUnpinnedProjectsPage, expansion.sidebarProjectsExpanded, (offset) =>
+      client.listProjects({
+        limit: SIDEBAR_PINNED_PAGE_LIMIT,
+        offset,
+        sort,
+        pinned: false
+      }).then(asPageResult)
+    ),
+    collectExpandedPage(defaultUngroupedSessionsPage, expansion.sidebarUngroupedExpanded, (offset) =>
+      client.listSessions({
+        limit: SIDEBAR_PINNED_PAGE_LIMIT,
+        offset,
+        projectId: null,
+        pinned: false
+      }).then(asPageResult)
+    )
+  ]);
+  const expandedProjectSessionIds = new Set(
+    Object.keys(expansion.sidebarExpandedProjectSessionIds)
+  );
+
   const pinnedProjectSessionPages = await Promise.all(
     pinnedProjectsPage.items.map(async (project) => ({
       projectId: project.id,
@@ -164,15 +217,26 @@ async function loadInitialSidebarData(
     }))
   );
   const unpinnedProjectSessionPages = await Promise.all(
-    unpinnedProjectsPage.items.map(async (project) => ({
-      projectId: project.id,
-      page: asPageResult(await client.listSessions({
+    unpinnedProjectsPage.items.map(async (project) => {
+      const firstPage = asPageResult(await client.listSessions({
         limit: SIDEBAR_SESSION_LIMIT,
         offset: 0,
         projectId: project.id,
         pinned: false
-      }))
-    }))
+      }));
+      const page = await collectExpandedPage(
+        firstPage,
+        expandedProjectSessionIds.has(project.id),
+        (offset) =>
+          client.listSessions({
+            limit: SIDEBAR_PINNED_PAGE_LIMIT,
+            offset,
+            projectId: project.id,
+            pinned: false
+          }).then(asPageResult)
+      );
+      return { projectId: project.id, page };
+    })
   );
 
   const sidebarProjectSessionsPageByProjectId: AppState["sidebarProjectSessionsPageByProjectId"] =
@@ -255,8 +319,26 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         }
         const client = apiClientRef.current;
         const currentState = get();
+        const sidebarExpansion = {
+          sidebarProjectsExpanded: currentState.sidebarProjectsExpanded,
+          sidebarExpandedProjectSessionIds: currentState.sidebarExpandedProjectSessionIds,
+          sidebarUngroupedExpanded: currentState.sidebarUngroupedExpanded
+        };
+        if (
+          sidebarExpansion.sidebarProjectsExpanded ||
+          sidebarExpansion.sidebarUngroupedExpanded ||
+          Object.keys(sidebarExpansion.sidebarExpandedProjectSessionIds).length > 0
+        ) {
+          console.debug("[store] 按侧边栏展开状态预取分页数据", {
+            projectsExpanded: sidebarExpansion.sidebarProjectsExpanded,
+            expandedProjectSessionCount: Object.keys(
+              sidebarExpansion.sidebarExpandedProjectSessionIds
+            ).length,
+            ungroupedExpanded: sidebarExpansion.sidebarUngroupedExpanded
+          });
+        }
         const [sidebarData, nextProviders] = await Promise.all([
-          loadInitialSidebarData(client, currentState.projectSortMode),
+          loadInitialSidebarData(client, currentState.projectSortMode, sidebarExpansion),
           apiClientRef.current.listProviders()
         ]);
         let nextProjects = sidebarData.projects;
@@ -375,6 +457,9 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         }
         const projects: Project[] = [];
         const sessionPages: Array<{ projectId: string; page: PageResult<Session> }> = [];
+        const expandedProjectSessionIds = new Set(
+          Object.keys(state.sidebarExpandedProjectSessionIds)
+        );
         let offset = state.sidebarProjectsPage.loaded;
         let total = state.sidebarProjectsPage.total;
         let hasMore: boolean = state.sidebarProjectsPage.hasMore;
@@ -391,14 +476,25 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           hasMore = page.hasMore && page.items.length > 0;
         }
         for (const project of projects) {
+          const firstPage = asPageResult(await client.listSessions({
+            limit: SIDEBAR_SESSION_LIMIT,
+            offset: 0,
+            projectId: project.id,
+            pinned: false
+          }));
           sessionPages.push({
             projectId: project.id,
-            page: asPageResult(await client.listSessions({
-              limit: SIDEBAR_SESSION_LIMIT,
-              offset: 0,
-              projectId: project.id,
-              pinned: false
-            }))
+            page: await collectExpandedPage(
+              firstPage,
+              expandedProjectSessionIds.has(project.id),
+              (sessionOffset) =>
+                client.listSessions({
+                  limit: SIDEBAR_PINNED_PAGE_LIMIT,
+                  offset: sessionOffset,
+                  projectId: project.id,
+                  pinned: false
+                }).then(asPageResult)
+            )
           });
         }
         set((current) => {

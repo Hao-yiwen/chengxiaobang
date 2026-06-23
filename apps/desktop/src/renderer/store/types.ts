@@ -265,9 +265,15 @@ export interface AppState {
       reasoningMode?: ReasoningMode;
     }
   >;
-  // 左侧边栏（持久化）
+  // 左侧边栏
   sidebarOpen: boolean;
   projectSortMode: ProjectSortMode;
+  /** 非持久化：项目区是否已由用户展开，用于刷新时一次性补齐分页数据。 */
+  sidebarProjectsExpanded: boolean;
+  /** 非持久化：已展开全部会话的项目 id 集合。 */
+  sidebarExpandedProjectSessionIds: Record<string, true>;
+  /** 非持久化：普通对话区是否已由用户展开。 */
+  sidebarUngroupedExpanded: boolean;
   sidebarProjectsPage: SidebarPageState;
   sidebarUngroupedSessionsPage: SidebarPageState;
   sidebarProjectSessionsPageByProjectId: Record<string, SidebarPageState>;
@@ -348,6 +354,14 @@ export interface AppState {
   toggleSidebar(): void;
   /** 设置项目区排序方式。 */
   setProjectSortMode(mode: ProjectSortMode): void;
+  /** 设置项目区分页展开状态。 */
+  setSidebarProjectsExpanded(expanded: boolean): void;
+  /** 设置单个项目的会话分页展开状态。 */
+  setSidebarProjectSessionsExpanded(projectId: string, expanded: boolean): void;
+  /** 设置普通对话区分页展开状态。 */
+  setSidebarUngroupedExpanded(expanded: boolean): void;
+  /** 重置侧边栏分页展开状态。 */
+  resetSidebarExpansion(): void;
   /** 关闭时打开面板;打开时关闭面板。 */
   toggleRightPanel(): void;
   /** 打开或聚焦对应工具的 tab;传 null 为 no-op(新建入口由顶栏 + 承接)。 */

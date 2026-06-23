@@ -411,6 +411,38 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
         console.info("[store] 切换项目排序方式", { projectSortMode });
         set({ projectSortMode });
       },
+      setSidebarProjectsExpanded: (sidebarProjectsExpanded) => {
+        console.debug("[store] 更新项目区分页展开状态", {
+          expanded: sidebarProjectsExpanded
+        });
+        set({ sidebarProjectsExpanded });
+      },
+      setSidebarProjectSessionsExpanded: (projectId, expanded) => {
+        console.debug("[store] 更新项目会话分页展开状态", { projectId, expanded });
+        set((state) => {
+          const next = { ...state.sidebarExpandedProjectSessionIds };
+          if (expanded) {
+            next[projectId] = true;
+          } else {
+            delete next[projectId];
+          }
+          return { sidebarExpandedProjectSessionIds: next };
+        });
+      },
+      setSidebarUngroupedExpanded: (sidebarUngroupedExpanded) => {
+        console.debug("[store] 更新普通对话分页展开状态", {
+          expanded: sidebarUngroupedExpanded
+        });
+        set({ sidebarUngroupedExpanded });
+      },
+      resetSidebarExpansion: () => {
+        console.info("[store] 重置侧边栏分页展开状态");
+        set({
+          sidebarProjectsExpanded: false,
+          sidebarExpandedProjectSessionIds: {},
+          sidebarUngroupedExpanded: false
+        });
+      },
       toggleRightPanel: () =>
         set((state) => {
           if (state.rightPanelOpen) {

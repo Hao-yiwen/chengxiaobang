@@ -82,12 +82,16 @@ describe("ToolCallRow", () => {
   });
 
   it("renders a human-readable description instead of the raw tool name", () => {
+    const onOpenFile = vi.fn();
     render(
       <ToolCallRow
         toolCall={toolCall({ name: "Read", args: { file_path: "apps/desktop/src/index.ts" } })}
+        onOpenFile={onOpenFile}
       />
     );
-    expect(screen.getByText("读取 …/src/index.ts")).toBeInTheDocument();
+    expect(screen.getByText("读取")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "预览文件 index.ts" })).toHaveTextContent("index.ts");
+    expect(screen.queryByText("读取 …/src/index.ts")).not.toBeInTheDocument();
     expect(screen.queryByText("Read")).not.toBeInTheDocument();
   });
 
@@ -160,7 +164,7 @@ describe("ToolCallRow", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("编辑 a.ts"));
+    fireEvent.click(screen.getByText("编辑"));
 
     const diff = screen.getByLabelText("变更对比");
     expect(diff).toHaveTextContent("x = 1");
@@ -180,7 +184,7 @@ describe("ToolCallRow", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("写入 a.txt"));
+    fireEvent.click(screen.getByText("写入"));
 
     const diff = screen.getByLabelText("变更对比");
     expect(diff).toHaveTextContent("hello");
@@ -198,7 +202,7 @@ describe("ToolCallRow", () => {
       />
     );
 
-    expect(screen.getByText("写入 page.html")).toBeInTheDocument();
+    expect(screen.getByText("写入")).toBeInTheDocument();
     expect(screen.queryByText("点击在右侧预览")).not.toBeInTheDocument();
   });
 
@@ -288,7 +292,7 @@ describe("ToolCallRow", () => {
     );
     expect(screen.getByText("读取文件中")).toBeInTheDocument();
     expect(screen.queryByText(/secret\.ts/)).not.toBeInTheDocument();
-    expect(screen.queryByTitle("预览文件")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /预览文件/ })).not.toBeInTheDocument();
   });
 
   it("applies global code preview settings to expanded Bash details", async () => {
@@ -478,7 +482,7 @@ describe("ToolCallRow", () => {
     expect(screen.getByText("读取技能文件失败")).toBeInTheDocument();
   });
 
-  it("opens file rows through the injected preview callback", () => {
+  it("opens file rows through the injected preview callback", async () => {
     const onOpenFile = vi.fn();
     render(
       <ToolCallRow
@@ -487,7 +491,13 @@ describe("ToolCallRow", () => {
       />
     );
 
-    fireEvent.click(screen.getByTitle("预览文件"));
+    const previewButton = screen.getByRole("button", { name: "预览文件 index.ts" });
+    expect(previewButton).toHaveTextContent("index.ts");
+    expect(screen.queryByText(/src\/index\.ts/)).not.toBeInTheDocument();
+    fireEvent.pointerMove(previewButton, { pointerType: "mouse" });
+    fireEvent.mouseEnter(previewButton);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("src/index.ts");
+    fireEvent.click(previewButton);
     expect(onOpenFile).toHaveBeenCalledWith("src/index.ts", "code");
   });
 
@@ -496,6 +506,6 @@ describe("ToolCallRow", () => {
       <ToolCallRow toolCall={toolCall({ name: "Read", args: { file_path: "src/index.ts" }, result: "x" })} />
     );
 
-    expect(screen.queryByTitle("预览文件")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /预览文件/ })).not.toBeInTheDocument();
   });
 });

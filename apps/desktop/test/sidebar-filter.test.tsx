@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/App";
 import type { ApiClient } from "../src/renderer/lib/api";
-import { resetAppStore } from "../src/renderer/store";
+import { resetAppStore, useAppStore, type AppState } from "../src/renderer/store";
 import type { Project, ProviderConfig, Session } from "@chengxiaobang/shared";
 
 const provider: ProviderConfig = {
@@ -90,8 +90,8 @@ function projectFixture(index: number): Project {
     id: `project_${index}`,
     name: `项目${index}`,
     path: `/tmp/project-${index}`,
-    createdAt: `2026-06-08T00:00:0${index}.000Z`,
-    updatedAt: `2026-06-08T00:00:0${index}.000Z`
+    createdAt: `2026-06-08T00:00:0${9 - index}.000Z`,
+    updatedAt: `2026-06-08T00:00:0${9 - index}.000Z`
   };
 }
 
@@ -135,6 +135,25 @@ function createPagedClient(): ApiClient {
     terminalExec: vi.fn() as never,
     streamRun: vi.fn(async () => {})
   };
+}
+
+async function reloadSidebarData(): Promise<void> {
+  await act(async () => {
+    await useAppStore.getState().loadData();
+  });
+}
+
+async function collectSnapshotsDuringReload<T>(select: (state: AppState) => T): Promise<T[]> {
+  const snapshots: T[] = [];
+  const unsubscribe = useAppStore.subscribe((state) => {
+    snapshots.push(select(state));
+  });
+  try {
+    await reloadSidebarData();
+  } finally {
+    unsubscribe();
+  }
+  return snapshots;
 }
 
 beforeEach(() => {
@@ -228,17 +247,77 @@ describe("sidebar sessions", () => {
 
     fireEvent.click(sidebar.getAllByText("... 展开")[0]!);
     expect(await sidebar.findByText("项目0 会话6")).toBeInTheDocument();
+    const projectSessionSnapshots = await collectSnapshotsDuringReload((state) =>
+      state.sessions.map((item) => item.title)
+    );
+    expect(projectSessionSnapshots.length).toBeGreaterThan(0);
+    expect(projectSessionSnapshots.every((titles) => titles.includes("项目0 会话6"))).toBe(true);
+    await reloadSidebarData();
+    expect(await sidebar.findByText("项目0 会话6")).toBeInTheDocument();
     fireEvent.click(sidebar.getAllByText("折叠")[0]!);
+    await waitFor(() => expect(sidebar.queryByText("项目0 会话6")).not.toBeInTheDocument());
+    await reloadSidebarData();
     await waitFor(() => expect(sidebar.queryByText("项目0 会话6")).not.toBeInTheDocument());
 
     fireEvent.click(sidebar.getAllByText("... 展开")[1]!);
     expect(await sidebar.findByText("项目4")).toBeInTheDocument();
+    const projectSnapshots = await collectSnapshotsDuringReload((state) =>
+      state.projects.map((item) => item.name)
+    );
+    expect(projectSnapshots.length).toBeGreaterThan(0);
+    expect(projectSnapshots.every((names) => names.includes("项目4"))).toBe(true);
+    await reloadSidebarData();
+    expect(await sidebar.findByText("项目4")).toBeInTheDocument();
+    fireEvent.click(sidebar.getAllByText("折叠")[0]!);
+    await reloadSidebarData();
+    await waitFor(() => expect(sidebar.queryByText("项目4")).not.toBeInTheDocument());
 
-    fireEvent.click(sidebar.getAllByText("... 展开")[1]!);
+    const ordinaryExpandButtons = sidebar.getAllByText("... 展开");
+    fireEvent.click(ordinaryExpandButtons[ordinaryExpandButtons.length - 1]!);
+    expect(await sidebar.findByText("普通会话6")).toBeInTheDocument();
+    const ordinarySessionSnapshots = await collectSnapshotsDuringReload((state) =>
+      state.sessions.map((item) => item.title)
+    );
+    expect(ordinarySessionSnapshots.length).toBeGreaterThan(0);
+    expect(ordinarySessionSnapshots.every((titles) => titles.includes("普通会话6"))).toBe(true);
+    await reloadSidebarData();
     expect(await sidebar.findByText("普通会话6")).toBeInTheDocument();
     const collapseButtons = sidebar.getAllByText("折叠");
     fireEvent.click(collapseButtons[collapseButtons.length - 1]!);
     await waitFor(() => expect(sidebar.queryByText("普通会话6")).not.toBeInTheDocument());
+    await reloadSidebarData();
+    await waitFor(() => expect(sidebar.queryByText("普通会话6")).not.toBeInTheDocument());
+  });
+
+  it("resets sidebar expansion state when project sort changes", async () => {
+    render(<App client={createPagedClient()} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+
+    fireEvent.click(sidebar.getAllByText("... 展开")[0]!);
+    expect(await sidebar.findByText("项目0 会话6")).toBeInTheDocument();
+    fireEvent.click(sidebar.getAllByText("... 展开")[0]!);
+    expect(await sidebar.findByText("项目4")).toBeInTheDocument();
+    const ordinaryExpandButtons = sidebar.getAllByText("... 展开");
+    fireEvent.click(ordinaryExpandButtons[ordinaryExpandButtons.length - 1]!);
+    expect(await sidebar.findByText("普通会话6")).toBeInTheDocument();
+
+    expect(useAppStore.getState().sidebarProjectsExpanded).toBe(true);
+    expect(useAppStore.getState().sidebarExpandedProjectSessionIds.project_0).toBe(true);
+    expect(useAppStore.getState().sidebarUngroupedExpanded).toBe(true);
+
+    fireEvent.pointerDown(sidebar.getByLabelText(/项目排序|Project sort/), {
+      button: 0,
+      ctrlKey: false
+    });
+    fireEvent.click(await screen.findByText(/按最近使用|By recent use/));
+
+    await waitFor(() => expect(useAppStore.getState().projectSortMode).toBe("recent"));
+    expect(useAppStore.getState().sidebarProjectsExpanded).toBe(false);
+    expect(useAppStore.getState().sidebarExpandedProjectSessionIds).toEqual({});
+    expect(useAppStore.getState().sidebarUngroupedExpanded).toBe(false);
+    await waitFor(() => expect(sidebar.queryByText("项目4")).not.toBeInTheDocument());
+    expect(sidebar.queryByText("项目0 会话6")).not.toBeInTheDocument();
+    expect(sidebar.queryByText("普通会话6")).not.toBeInTheDocument();
   });
 
   it("exports a non-active session as markdown from its context menu", async () => {

@@ -5,7 +5,13 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ToolCall } from "@chengxiaobang/shared";
-import { ToolCallLine } from "@/components/ToolCallLine";
+import {
+  fileActionLabelKey,
+  fileToolName,
+  previewFilePathForToolCall,
+  ToolCallLine,
+  ToolFileButton
+} from "@/components/ToolCallLine";
 import type { ArtifactKind } from "@/lib/artifact";
 import {
   categoryIcon,
@@ -43,35 +49,47 @@ export function ToolCallGroup({ toolCalls, onOpenFile }: ToolCallGroupProps) {
     .join(" · ");
   const HeadIcon = categoryIcon(toolCategory(toolCalls[0].name));
   const activeLabel = active ? toolLineRunningLabel(active) : undefined;
+  const activeFilePath = active ? previewFilePathForToolCall(active) : undefined;
+  const activeFileToolName = active ? fileToolName(active.name) : undefined;
+  const activeLabelText = activeLabel
+    ? activeFilePath && activeFileToolName
+      ? t(fileActionLabelKey(activeFileToolName, true))
+      : t(activeLabel.key, activeLabel.params)
+    : "";
 
   return (
     <div className="mb-4 max-w-full self-stretch">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="flex max-w-full items-center gap-1.5 text-caption text-muted-foreground transition-colors hover:text-foreground"
-      >
-        {active ? (
-          <RefreshIcon className="size-3.5 flex-none animate-spin" />
-        ) : (
-          <HeadIcon className="size-3.5 flex-none" />
-        )}
-        <span className="min-w-0 truncate">
-          {summary}
-          {activeLabel ? ` · ${t(activeLabel.key, activeLabel.params)}` : ""}
-        </span>
-        {failedCount > 0 ? (
-          <span className="flex-none font-mono text-micro text-muted-slate">
-            {t("chat.toolGroup.failed", { count: failedCount })}
-          </span>
-        ) : null}
-        <ChevronIcon
-          className={cn(
-            "size-3.5 flex-none transition-transform duration-200",
-            !open && "-rotate-90"
+      <div className="flex max-w-full items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {active ? (
+            <RefreshIcon className="size-3.5 flex-none animate-spin" />
+          ) : (
+            <HeadIcon className="size-3.5 flex-none" />
           )}
-        />
-      </button>
+          <span className={cn("min-w-0 truncate", active && "shimmer-text")}>
+            {summary}
+            {activeLabelText ? ` · ${activeLabelText}` : ""}
+          </span>
+          {failedCount > 0 ? (
+            <span className="flex-none font-mono text-micro text-muted-slate">
+              {t("chat.toolGroup.failed", { count: failedCount })}
+            </span>
+          ) : null}
+          <ChevronIcon
+            className={cn(
+              "size-3.5 flex-none transition-transform duration-200",
+              !open && "-rotate-90"
+            )}
+          />
+        </button>
+        {activeFilePath && onOpenFile ? (
+          <ToolFileButton path={activeFilePath} onOpenFile={onOpenFile} className="max-w-[180px]" />
+        ) : null}
+      </div>
       {open ? (
         <div className="ml-1.5 mt-1.5 space-y-0.5 border-l border-hairline pl-3">
           {toolCalls.map((toolCall) => (

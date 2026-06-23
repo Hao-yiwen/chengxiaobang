@@ -49,7 +49,7 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { useConfirmDialog } from "@/components/ConfirmDialog";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { runAfterMenuClose } from "@/lib/menu-actions";
@@ -316,10 +316,14 @@ export function Sidebar() {
     projects,
     sessions,
     activeSessionId,
+    activeProjectId,
     view,
     runningSessionsById,
     clientReady,
     projectSortMode,
+    sidebarProjectsExpanded,
+    sidebarExpandedProjectSessionIds,
+    sidebarUngroupedExpanded,
     sidebarProjectsPage,
     sidebarUngroupedSessionsPage,
     sidebarProjectSessionsPageByProjectId
@@ -328,10 +332,14 @@ export function Sidebar() {
       projects: state.projects,
       sessions: state.sessions,
       activeSessionId: state.activeSessionId,
+      activeProjectId: state.activeProjectId,
       view: state.view,
       runningSessionsById: state.runningSessionsById,
       clientReady: state.clientReady,
       projectSortMode: state.projectSortMode,
+      sidebarProjectsExpanded: state.sidebarProjectsExpanded,
+      sidebarExpandedProjectSessionIds: state.sidebarExpandedProjectSessionIds,
+      sidebarUngroupedExpanded: state.sidebarUngroupedExpanded,
       sidebarProjectsPage: state.sidebarProjectsPage,
       sidebarUngroupedSessionsPage: state.sidebarUngroupedSessionsPage,
       sidebarProjectSessionsPageByProjectId: state.sidebarProjectSessionsPageByProjectId
@@ -342,6 +350,7 @@ export function Sidebar() {
   const openFolder = useAppStore((state) => state.openFolder);
   const setPaletteOpen = useAppStore((state) => state.setPaletteOpen);
   const setView = useAppStore((state) => state.setView);
+  const setActiveProjectId = useAppStore((state) => state.setActiveProjectId);
   const selectSession = useAppStore((state) => state.selectSession);
   const renameSession = useAppStore((state) => state.renameSession);
   const deleteSession = useAppStore((state) => state.deleteSession);
@@ -351,6 +360,14 @@ export function Sidebar() {
   const setSessionPinned = useAppStore((state) => state.setSessionPinned);
   const setProjectPinned = useAppStore((state) => state.setProjectPinned);
   const setProjectSortMode = useAppStore((state) => state.setProjectSortMode);
+  const setSidebarProjectsExpanded = useAppStore((state) => state.setSidebarProjectsExpanded);
+  const setSidebarProjectSessionsExpanded = useAppStore(
+    (state) => state.setSidebarProjectSessionsExpanded
+  );
+  const setSidebarUngroupedExpanded = useAppStore(
+    (state) => state.setSidebarUngroupedExpanded
+  );
+  const resetSidebarExpansion = useAppStore((state) => state.resetSidebarExpansion);
   const loadData = useAppStore((state) => state.loadData);
   const loadMoreSidebarProjects = useAppStore((state) => state.loadMoreSidebarProjects);
   const loadMoreSidebarProjectSessions = useAppStore(
@@ -367,11 +384,6 @@ export function Sidebar() {
   const [editingProjectId, setEditingProjectId] = useState<string>();
   const [projectDraft, setProjectDraft] = useState("");
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
-  const [projectsExpanded, setProjectsExpanded] = useState(false);
-  const [expandedProjectSessionIds, setExpandedProjectSessionIds] = useState<Set<string>>(
-    () => new Set()
-  );
-  const [ungroupedExpanded, setUngroupedExpanded] = useState(false);
   const [loadingMoreProjects, setLoadingMoreProjects] = useState(false);
   const [loadingProjectSessionIds, setLoadingProjectSessionIds] = useState<Set<string>>(
     () => new Set()
@@ -416,14 +428,14 @@ export function Sidebar() {
       project,
       sessions: list.filter((session) => !session.pinnedAt)
     }));
-  const visibleUnpinnedProjects = projectsExpanded
+  const visibleUnpinnedProjects = sidebarProjectsExpanded
     ? unpinnedProjects
     : unpinnedProjects.slice(0, DEFAULT_VISIBLE_PROJECT_COUNT);
   const canToggleMoreProjects =
     unpinnedProjects.length > DEFAULT_VISIBLE_PROJECT_COUNT ||
     sidebarProjectsPage.hasMore ||
     sidebarProjectsPage.total > DEFAULT_VISIBLE_PROJECT_COUNT;
-  const visibleUngrouped = ungroupedExpanded
+  const visibleUngrouped = sidebarUngroupedExpanded
     ? ungrouped
     : ungrouped.slice(0, DEFAULT_VISIBLE_SESSION_COUNT);
   const canToggleMoreUngrouped =
@@ -601,11 +613,11 @@ export function Sidebar() {
   }
 
   async function toggleProjectsExpanded(): Promise<void> {
-    if (projectsExpanded) {
+    if (sidebarProjectsExpanded) {
       console.debug("[sidebar] 折叠项目区显示数量", {
         visibleLimit: DEFAULT_VISIBLE_PROJECT_COUNT
       });
-      setProjectsExpanded(false);
+      setSidebarProjectsExpanded(false);
       return;
     }
     try {
@@ -617,7 +629,7 @@ export function Sidebar() {
         });
         await loadMoreSidebarProjects();
       }
-      setProjectsExpanded(true);
+      setSidebarProjectsExpanded(true);
     } catch (error) {
       console.warn("[sidebar] 展开项目区失败", {
         error: error instanceof Error ? error.message : String(error)
@@ -628,16 +640,12 @@ export function Sidebar() {
   }
 
   async function toggleProjectSessionsExpanded(projectId: string): Promise<void> {
-    if (expandedProjectSessionIds.has(projectId)) {
+    if (sidebarExpandedProjectSessionIds[projectId]) {
       console.debug("[sidebar] 折叠项目会话显示数量", {
         projectId,
         visibleLimit: DEFAULT_VISIBLE_SESSION_COUNT
       });
-      setExpandedProjectSessionIds((current) => {
-        const next = new Set(current);
-        next.delete(projectId);
-        return next;
-      });
+      setSidebarProjectSessionsExpanded(projectId, false);
       return;
     }
     try {
@@ -651,7 +659,7 @@ export function Sidebar() {
         });
         await loadMoreSidebarProjectSessions(projectId);
       }
-      setExpandedProjectSessionIds((current) => new Set(current).add(projectId));
+      setSidebarProjectSessionsExpanded(projectId, true);
     } catch (error) {
       console.warn("[sidebar] 展开项目会话失败", {
         projectId,
@@ -667,11 +675,11 @@ export function Sidebar() {
   }
 
   async function toggleUngroupedSessionsExpanded(): Promise<void> {
-    if (ungroupedExpanded) {
+    if (sidebarUngroupedExpanded) {
       console.debug("[sidebar] 折叠普通对话显示数量", {
         visibleLimit: DEFAULT_VISIBLE_SESSION_COUNT
       });
-      setUngroupedExpanded(false);
+      setSidebarUngroupedExpanded(false);
       return;
     }
     try {
@@ -683,7 +691,7 @@ export function Sidebar() {
         });
         await loadMoreSidebarUngroupedSessions();
       }
-      setUngroupedExpanded(true);
+      setSidebarUngroupedExpanded(true);
     } catch (error) {
       console.warn("[sidebar] 展开普通对话失败", {
         error: error instanceof Error ? error.message : String(error)
@@ -698,11 +706,17 @@ export function Sidebar() {
       return;
     }
     console.info("[sidebar] 切换项目排序并重置侧边栏分页", { mode });
-    setProjectsExpanded(false);
-    setExpandedProjectSessionIds(new Set());
-    setUngroupedExpanded(false);
+    resetSidebarExpansion();
     setProjectSortMode(mode);
     void loadData();
+  }
+
+  function openProjectHome(project: Project): void {
+    console.info("[sidebar] 进入项目首页", {
+      projectId: project.id,
+      name: project.name
+    });
+    setActiveProjectId(project.id);
   }
 
   function renderSession(
@@ -748,7 +762,7 @@ export function Sidebar() {
     projectSessionList: Session[],
     opts: { sessionLimit?: number }
   ): ReactNode {
-    const expanded = expandedProjectSessionIds.has(project.id);
+    const expanded = Boolean(sidebarExpandedProjectSessionIds[project.id]);
     const page = sidebarProjectSessionsPageByProjectId[project.id];
     const sessionLimit = opts.sessionLimit;
     const visible =
@@ -772,10 +786,12 @@ export function Sidebar() {
         key={project.id}
         name={project.name}
         pinned={Boolean(project.pinnedAt)}
+        active={view === "home" && activeProjectId === project.id}
         open={!collapsedProjectIds.has(project.id)}
         editing={editingProjectId === project.id}
         draftName={projectDraft}
         onOpenChange={(open) => setProjectOpen(project, open)}
+        onSelectProject={() => openProjectHome(project)}
         onNewChat={() => newChatInProject(project.id)}
         onStartRename={() => {
           setEditingProjectId(project.id);
@@ -788,7 +804,13 @@ export function Sidebar() {
         onDelete={() => void onDeleteProject(project.id)}
       >
         {projectSessionList.length === 0 ? (
-          <p className="py-1 pl-7 pr-2 text-micro text-foreground">{t("sidebar.noChats")}</p>
+          <button
+            type="button"
+            onClick={() => openProjectHome(project)}
+            className="mx-1 mb-0.5 flex h-7 min-w-0 cursor-pointer items-center rounded-sm pl-7 pr-2 text-left text-micro text-foreground"
+          >
+            <span className="truncate">{t("sidebar.noChats")}</span>
+          </button>
         ) : (
           <>
             {visible.map((session) => renderSession(session, true, projectTooltipInfo))}
@@ -930,7 +952,9 @@ export function Sidebar() {
             <SidebarMoreButton
               loading={loadingMoreProjects}
               label={
-                projectsExpanded ? t("sidebar.collapseVisibleProjects") : t("sidebar.expandMore")
+                sidebarProjectsExpanded
+                  ? t("sidebar.collapseVisibleProjects")
+                  : t("sidebar.expandMore")
               }
               onClick={() => void toggleProjectsExpanded()}
             />
@@ -958,7 +982,7 @@ export function Sidebar() {
                 <SidebarMoreButton
                   loading={loadingUngrouped}
                   label={
-                    ungroupedExpanded
+                    sidebarUngroupedExpanded
                       ? t("sidebar.collapseVisibleSessions")
                       : t("sidebar.expandMoreSessions")
                   }
@@ -1005,10 +1029,12 @@ function ProjectGroup(props: {
   name: string;
   /** 当前置顶状态，决定菜单项显示「置顶」还是「取消置顶」。 */
   pinned: boolean;
+  active: boolean;
   open: boolean;
   editing: boolean;
   draftName: string;
   onOpenChange(open: boolean): void;
+  onSelectProject(): void;
   onNewChat(): void;
   onStartRename(): void;
   onDraftChange(value: string): void;
@@ -1063,30 +1089,37 @@ function ProjectGroup(props: {
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div className="group/header relative mb-0.5 flex w-full min-w-0 max-w-full items-center">
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                title={props.open ? t("sidebar.collapseFolder") : t("sidebar.expandFolder")}
-                className="flex h-7 w-full min-w-0 max-w-full flex-1 items-center gap-1.5 overflow-hidden rounded-sm px-1.5 pr-8 text-left text-caption font-normal text-foreground transition-colors hover:bg-surface-hover"
-              >
-                {props.open ? (
-                  <FolderOpenOutlineIcon className="size-4 flex-none text-foreground" />
-                ) : (
-                  <FolderIcon className="size-4 flex-none text-foreground" />
-                )}
-                <span className="block min-w-0 max-w-[174px] truncate" title={props.name}>
-                  {props.name}
-                </span>
-                {/* 展开/收起指示：紧跟名字，悬停浮现。 */}
-                <span className="ml-0.5 flex size-4 flex-none items-center justify-center text-muted-slate opacity-0 transition-opacity group-hover/header:opacity-100">
-                  {props.open ? (
-                    <ChevronIcon className="size-3.5" />
-                  ) : (
-                    <ChevronRightIcon className="size-3.5" />
-                  )}
-                </span>
-              </button>
-            </CollapsibleTrigger>
+            <button
+              type="button"
+              aria-current={props.active ? "page" : undefined}
+              onClick={props.onSelectProject}
+              className={cn(
+                "flex h-7 w-full min-w-0 max-w-full flex-1 items-center gap-1.5 overflow-hidden rounded-sm px-1.5 pr-14 text-left text-caption font-normal text-foreground transition-colors hover:bg-surface-hover",
+                props.active && "bg-surface-hover font-[500]"
+              )}
+            >
+              {props.open ? (
+                <FolderOpenOutlineIcon className="size-4 flex-none text-foreground" />
+              ) : (
+                <FolderIcon className="size-4 flex-none text-foreground" />
+              )}
+              <span className="block min-w-0 max-w-[174px] truncate" title={props.name}>
+                {props.name}
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-label={props.open ? t("sidebar.collapseFolder") : t("sidebar.expandFolder")}
+              title={props.open ? t("sidebar.collapseFolder") : t("sidebar.expandFolder")}
+              onClick={() => props.onOpenChange(!props.open)}
+              className="absolute right-7 flex size-6 flex-none items-center justify-center rounded-xs text-muted-slate opacity-0 transition-opacity hover:bg-canvas-soft-2 hover:text-foreground group-hover/header:opacity-100"
+            >
+              {props.open ? (
+                <ChevronIcon className="size-3.5" />
+              ) : (
+                <ChevronRightIcon className="size-3.5" />
+              )}
+            </button>
             {/* 最右侧固定：新建对话加号。 */}
             <button
               type="button"
@@ -1333,14 +1366,14 @@ function ProjectSessionTooltip(props: { info: ProjectSessionTooltipInfo }) {
       side="right"
       align="start"
       sideOffset={8}
-      className="max-w-72 px-3 py-2 text-left"
+      className="max-w-60 px-2.5 py-1.5 text-left"
     >
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         <div>
           <div className="text-micro text-primary-foreground/70">
             {t("sidebar.projectSessionPath")}
           </div>
-          <div className="break-all font-mono text-caption leading-4 text-primary-foreground">
+          <div className="break-all font-mono text-micro leading-3.5 text-primary-foreground">
             {props.info.projectPath}
           </div>
         </div>
@@ -1349,7 +1382,7 @@ function ProjectSessionTooltip(props: { info: ProjectSessionTooltipInfo }) {
             <div className="text-micro text-primary-foreground/70">
               {t("sidebar.projectSessionBranch")}
             </div>
-            <div className="break-all font-mono text-caption leading-4 text-primary-foreground">
+            <div className="break-all font-mono text-micro leading-3.5 text-primary-foreground">
               {props.info.branchName}
             </div>
           </div>

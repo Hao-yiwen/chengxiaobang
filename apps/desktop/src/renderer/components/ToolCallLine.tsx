@@ -1,6 +1,5 @@
 import {
   ChevronIcon,
-  DocumentIcon,
   RefreshIcon
 } from "@/assets/file-type-icons";
 import { useState } from "react";
@@ -8,11 +7,13 @@ import { useTranslation } from "react-i18next";
 import type { ToolCall } from "@chengxiaobang/shared";
 import { CodeBlockPanel } from "@/components/CodeBlockPanel";
 import { DiffView } from "@/components/DiffView";
-import { artifactKind } from "@/lib/artifact";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { basenameOf } from "../../common/file-preview";
+import { artifactKind, type ArtifactKind } from "@/lib/artifact";
+import { iconForPath } from "@/lib/file-icon";
 import {
   buildToolCallDiff,
   formatDurationMs,
-  shortenPath,
   toolCallDurationMs
 } from "@/lib/tool-call";
 import {
@@ -23,12 +24,21 @@ import {
 } from "@/lib/tool-display";
 import { cn } from "@/lib/utils";
 
+type FilePreviewToolName = "Read" | "Write" | "Edit";
+type FileActionLabelKey =
+  | "chat.toolFileAction.Read"
+  | "chat.toolFileAction.Write"
+  | "chat.toolFileAction.Edit"
+  | "chat.toolFileAction.ReadRunning"
+  | "chat.toolFileAction.WriteRunning"
+  | "chat.toolFileAction.EditRunning";
+
 /** 可在右侧预览面板打开 path 参数的文件类工具。 */
-const FILE_PREVIEW_TOOLS = new Set<ToolCall["name"]>(["Read", "Write", "Edit"]);
+const FILE_PREVIEW_TOOLS = new Set<string>(["Read", "Write", "Edit"]);
 
 export interface ToolCallLineProps {
   toolCall: ToolCall;
-  onOpenFile?: (path: string, kind: ReturnType<typeof artifactKind>) => void;
+  onOpenFile?: (path: string, kind: ArtifactKind) => void;
 }
 
 /**
@@ -47,13 +57,11 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
   const label = isRunning ? toolLineRunningLabel(toolCall) : toolLineLabel(toolCall);
   const hideRunningArgs = shouldHideRunningToolArgs(toolCall);
   const isError = toolCall.status === "failed" || toolCall.status === "rejected";
-  const filePath =
-    !hideRunningArgs &&
-    onOpenFile &&
-    FILE_PREVIEW_TOOLS.has(toolCall.name) &&
-    typeof toolCall.args.file_path === "string"
-      ? toolCall.args.file_path
-      : undefined;
+  const filePreviewToolName = fileToolName(toolCall.name);
+  const filePath = previewFilePathForToolCall(toolCall, hideRunningArgs);
+  const labelText = filePath && filePreviewToolName
+    ? t(fileActionLabelKey(filePreviewToolName, isRunning))
+    : t(label.key, label.params);
   const durationMs = toolCallDurationMs(toolCall);
   const diff = toolCall.status === "completed" ? buildToolCallDiff(toolCall) : undefined;
   const command = hideRunningArgs ? undefined : shellCommandDetail(toolCall);
@@ -92,7 +100,7 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
           ) : (
             <ToolIcon className="size-3.5 flex-none" />
           )}
-          <span className="min-w-0 truncate">{t(label.key, label.params)}</span>
+          <span className="min-w-0 truncate">{labelText}</span>
           {toolCall.status === "pending_approval" ? (
             <span className="flex-none text-micro text-muted-slate">
               {t("chat.toolStatus.pendingApproval")}
@@ -122,17 +130,7 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
             />
           ) : null}
         </button>
-        {filePath ? (
-          <button
-            type="button"
-            title={t("chat.previewFile")}
-            onClick={() => onOpenFile?.(filePath, artifactKind(filePath))}
-            className="flex max-w-[220px] flex-none items-center gap-1 font-mono text-micro text-muted-foreground transition-colors hover:text-link hover:underline"
-          >
-            <DocumentIcon className="size-3 flex-none text-muted-foreground" />
-            <span className="truncate">{shortenPath(filePath)}</span>
-          </button>
-        ) : null}
+        {filePath && onOpenFile ? <ToolFileButton path={filePath} onOpenFile={onOpenFile} /> : null}
       </div>
       {open && command ? (
         <div className="mt-1 space-y-2">
@@ -154,6 +152,83 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
         </pre>
       ) : null}
     </div>
+  );
+}
+
+export function previewFilePathForToolCall(
+  toolCall: ToolCall,
+  hideRunningArgs = shouldHideRunningToolArgs(toolCall)
+): string | undefined {
+  if (hideRunningArgs || !FILE_PREVIEW_TOOLS.has(toolCall.name)) {
+    return undefined;
+  }
+  const path = toolCall.args.file_path;
+  return typeof path === "string" && path.length > 0 ? path : undefined;
+}
+
+export function fileToolName(name: string): FilePreviewToolName | undefined {
+  return FILE_PREVIEW_TOOLS.has(name) ? (name as FilePreviewToolName) : undefined;
+}
+
+export function fileActionLabelKey(
+  name: FilePreviewToolName,
+  running: boolean
+): FileActionLabelKey {
+  if (running) {
+    switch (name) {
+      case "Read":
+        return "chat.toolFileAction.ReadRunning";
+      case "Write":
+        return "chat.toolFileAction.WriteRunning";
+      case "Edit":
+        return "chat.toolFileAction.EditRunning";
+    }
+  }
+  switch (name) {
+    case "Read":
+      return "chat.toolFileAction.Read";
+    case "Write":
+      return "chat.toolFileAction.Write";
+    case "Edit":
+      return "chat.toolFileAction.Edit";
+  }
+}
+
+export function ToolFileButton({
+  path,
+  onOpenFile,
+  className
+}: {
+  path: string;
+  onOpenFile: (path: string, kind: ArtifactKind) => void;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  const Icon = iconForPath(path);
+  const fileName = basenameOf(path);
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={`${t("chat.previewFile")} ${fileName}`}
+            onClick={() => onOpenFile(path, artifactKind(path))}
+            className={cn(
+              "flex max-w-[220px] flex-none items-center gap-1 text-caption text-muted-foreground transition-colors hover:text-link hover:underline",
+              className
+            )}
+          >
+            <Icon className="size-3.5 flex-none text-muted-foreground" aria-hidden />
+            <span className="truncate">{fileName}</span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="pointer-events-none max-w-[360px] break-all font-mono text-micro">
+          {path}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

@@ -324,6 +324,14 @@
     "roleTool": "Tool",
     "roleSystem": "System",
     "previewFile": "Preview file",
+    "toolFileAction": {
+      "Read": "Read",
+      "Write": "Write",
+      "Edit": "Edit",
+      "ReadRunning": "Reading file",
+      "WriteRunning": "Writing file",
+      "EditRunning": "Editing file"
+    },
     "openAttachment": "Open attachment {{name}}",
     "attachmentImageAlt": "Attachment image {{name}}",
     "regenerate": "Regenerate",

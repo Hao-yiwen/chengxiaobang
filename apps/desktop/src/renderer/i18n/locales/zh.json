@@ -324,6 +324,14 @@
     "roleTool": "工具",
     "roleSystem": "系统",
     "previewFile": "预览文件",
+    "toolFileAction": {
+      "Read": "读取",
+      "Write": "写入",
+      "Edit": "编辑",
+      "ReadRunning": "读取文件中",
+      "WriteRunning": "写入文件中",
+      "EditRunning": "编辑文件中"
+    },
     "openAttachment": "打开附件 {{name}}",
     "attachmentImageAlt": "附件图片 {{name}}",
     "regenerate": "重新生成",

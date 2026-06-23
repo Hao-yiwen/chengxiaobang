@@ -54,7 +54,7 @@ describe("ToolCallGroup", () => {
     );
 
     fireEvent.click(screen.getByText("读取 1 个文件 · 检索 1 次"));
-    expect(screen.getByText("读取 a.ts")).toBeInTheDocument();
+    expect(screen.getByText("读取")).toBeInTheDocument();
     expect(screen.getByText("搜索 foo")).toBeInTheDocument();
     expect(screen.queryByText("3 matches")).not.toBeInTheDocument();
 
@@ -79,6 +79,7 @@ describe("ToolCallGroup", () => {
   });
 
   it("keeps Write/Edit running descriptions in the group header", () => {
+    const onOpenFile = vi.fn();
     render(
       <ToolCallGroup
         toolCalls={[
@@ -89,13 +90,17 @@ describe("ToolCallGroup", () => {
             status: "running"
           })
         ]}
+        onOpenFile={onOpenFile}
       />
     );
 
-    expect(
-      screen.getByText("读取 1 个文件 · 修改 1 个文件 · 写入 out.txt 中")
-    ).toBeInTheDocument();
+    expect(screen.getByText("读取 1 个文件 · 修改 1 个文件 · 写入文件中")).toBeInTheDocument();
+    const previewButton = screen.getByRole("button", { name: "预览文件 out.txt" });
+    expect(previewButton).toHaveTextContent("out.txt");
+    fireEvent.click(previewButton);
+    expect(onOpenFile).toHaveBeenCalledWith("out.txt", "text");
     expect(screen.queryByText(/正文不进状态条/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/out\.txt 中/)).not.toBeInTheDocument();
   });
 
   it("keeps WebFetch running in the group header without showing the URL", () => {
@@ -159,14 +164,14 @@ describe("ToolCallGroup", () => {
     const { rerender } = render(<ToolCallGroup toolCalls={[first, second]} />);
 
     fireEvent.click(screen.getByText("读取 2 个文件"));
-    expect(screen.getByText("读取 a.ts")).toBeInTheDocument();
+    expect(screen.getAllByText("读取")).toHaveLength(2);
 
     rerender(
       <ToolCallGroup
         toolCalls={[first, second, toolCall({ name: "Bash", args: { command: "pnpm test" } })]}
       />
     );
-    expect(screen.getByText("读取 a.ts")).toBeInTheDocument();
+    expect(screen.getAllByText("读取")).toHaveLength(2);
     expect(screen.getByText("运行 pnpm test")).toBeInTheDocument();
   });
 
@@ -183,7 +188,7 @@ describe("ToolCallGroup", () => {
     );
 
     fireEvent.click(screen.getByText("读取 1 个文件 · 运行 1 条命令"));
-    fireEvent.click(screen.getByTitle("预览文件"));
+    fireEvent.click(screen.getByRole("button", { name: "预览文件 index.ts" }));
     expect(onOpenFile).toHaveBeenCalledWith("src/index.ts", "code");
   });
 });
