@@ -5,12 +5,14 @@ import {
   appEventSchema,
   askUserAnswerSchema,
   askUserArgsSchema,
+  DEFAULT_ACCESS_MODE,
   gitChangesResultSchema,
   messageFeedbackUpdateSchema,
   messageSchema,
   proposePlanArgsSchema,
   runRecordSchema,
   runRequestSchema,
+  sessionInputSchema,
   sessionSchema,
   sessionUpdateSchema,
   scheduledTaskEventSchema,
@@ -527,8 +529,9 @@ describe("新工具参数 schema", () => {
 });
 
 describe("runRequestSchema", () => {
-  it("planMode 默认 false、model/reasoningMode/clientRequestId 可选", () => {
+  it("accessMode 默认智能审批，planMode 默认 false、model/reasoningMode/clientRequestId 可选", () => {
     const parsed = runRequestSchema.parse({ prompt: "你好" });
+    expect(parsed.accessMode).toBe(DEFAULT_ACCESS_MODE);
     expect(parsed.planMode).toBe(false);
     expect(parsed.model).toBeUndefined();
     expect(parsed.reasoningMode).toBeUndefined();
@@ -561,6 +564,12 @@ describe("runRequestSchema", () => {
     expect(parsed.reasoningMode).toBe("high");
     expect(parsed.displayContent).toBe("用户看到的原文");
     expect(parsed.displayAttachments[0]).toMatchObject({ name: "截图.png", kind: "image" });
+  });
+});
+
+describe("sessionInputSchema", () => {
+  it("省略 accessMode 时默认使用智能审批", () => {
+    expect(sessionInputSchema.parse({ title: "新对话" }).accessMode).toBe(DEFAULT_ACCESS_MODE);
   });
 });
 

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import {
+  DEFAULT_ACCESS_MODE,
   messageFeedbackUpdateSchema,
   rewindRequestSchema,
   reasoningModeSchema,
@@ -111,7 +112,7 @@ export function sessionRoutes(context: AppContext): Hono {
       projectId: input.projectId ?? null,
       title: input.title ?? "新对话",
       providerId: input.providerId,
-      accessMode: input.accessMode ?? "approval"
+      accessMode: input.accessMode ?? DEFAULT_ACCESS_MODE
     });
     return c.json({ session }, 201);
   });

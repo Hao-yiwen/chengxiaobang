@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { accessModeSchema, type AccessMode } from "./access-mode";
+import { DEFAULT_ACCESS_MODE, accessModeSchema, type AccessMode } from "./access-mode";
 import { messageAttachmentSchema } from "./message";
 import { reasoningModeSchema, tokenUsageSchema } from "./model";
 import { askUserAnswerSchema, planStepSchema } from "./plan";
@@ -45,7 +45,7 @@ export const runRequestSchema = z.object({
   /** 客户端生成的请求归属 ID，用于全局事件流中过滤本次 run。 */
   clientRequestId: z.string().min(1).optional(),
   providerId: z.string().min(1).optional(),
-  accessMode: accessModeSchema.default("approval"),
+  accessMode: accessModeSchema.default(DEFAULT_ACCESS_MODE),
   /** run 级开关：先计划、经用户确认、再动手。 */
   planMode: z.boolean().default(false),
   /** run 级模型覆盖；解析优先级 run > session > provider 默认。 */

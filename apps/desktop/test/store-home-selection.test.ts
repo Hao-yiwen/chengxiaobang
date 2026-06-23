@@ -2,7 +2,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient } from "../src/renderer/lib/api";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
-import type { Message, Project, ProviderConfig, Session } from "@chengxiaobang/shared";
+import {
+  DEFAULT_ACCESS_MODE,
+  type Message,
+  type Project,
+  type ProviderConfig,
+  type Session
+} from "@chengxiaobang/shared";
 
 const provider: ProviderConfig = {
   id: "deepseek",
@@ -69,6 +75,27 @@ beforeEach(() => {
 });
 
 describe("store home selection restore", () => {
+  it("defaults new composer runs to smart approval", () => {
+    expect(useAppStore.getState().accessMode).toBe(DEFAULT_ACCESS_MODE);
+  });
+
+  it("migrates the old persisted approval default to smart approval", async () => {
+    window.localStorage.setItem(
+      "chengxiaobang.app",
+      JSON.stringify({
+        state: {
+          view: "home",
+          accessMode: "approval"
+        },
+        version: 9
+      })
+    );
+
+    await useAppStore.persist.rehydrate();
+
+    expect(useAppStore.getState().accessMode).toBe(DEFAULT_ACCESS_MODE);
+  });
+
   it("does not default to the first configured provider while restored on home", async () => {
     const streamRun = vi.fn(async () => {});
     const client = { ...createClient(), streamRun } as unknown as ApiClient;

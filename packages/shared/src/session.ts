@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { accessModeSchema } from "./access-mode";
+import { DEFAULT_ACCESS_MODE, accessModeSchema } from "./access-mode";
 import { reasoningModeSchema } from "./model";
 
 export const sessionNoticeSchema = z.object({
@@ -77,7 +77,7 @@ export const sessionInputSchema = z.object({
   projectId: z.string().min(1).nullable().optional(),
   title: z.string().min(1).optional(),
   providerId: z.string().min(1).optional(),
-  accessMode: accessModeSchema.default("approval")
+  accessMode: accessModeSchema.default(DEFAULT_ACCESS_MODE)
 });
 export type SessionInput = z.infer<typeof sessionInputSchema>;
 

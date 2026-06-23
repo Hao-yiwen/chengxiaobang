@@ -257,14 +257,14 @@ describe("Composer 首页占位文案轮播", () => {
 
     renderComposer();
 
-    expect(screen.getByRole("button", { name: /审批执行/ })).toHaveClass(
+    expect(screen.getByRole("button", { name: /请求批准/ })).toHaveClass(
       "text-muted-foreground"
     );
 
     act(() => {
       useAppStore.setState({ accessMode: "smart_approval" });
     });
-    expect(screen.getByRole("button", { name: /智能审批/ })).toHaveClass("text-link");
+    expect(screen.getByRole("button", { name: /替我审批/ })).toHaveClass("text-link");
 
     act(() => {
       useAppStore.setState({ accessMode: "full_access" });

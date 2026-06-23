@@ -1,5 +1,5 @@
+import { DEFAULT_ACCESS_MODE } from "@chengxiaobang/shared";
 import type {
-  AccessMode,
   FeishuConfig,
   FeishuStatus,
   Message,
@@ -59,7 +59,7 @@ export const initialState =  {
   reasoningMode: undefined as ReasoningMode | undefined,
   homeModelSelection: {} as ModelSelection,
   planMode: false,
-  accessMode: "approval" as AccessMode,
+  accessMode: DEFAULT_ACCESS_MODE,
   view: "home" as View,
   paletteOpen: false,
   onboardingOpen: false,

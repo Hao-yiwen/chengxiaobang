@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_ACCESS_MODE,
   nowIso,
   parseSseChunk,
   sessionSearchResultSchema,
@@ -184,6 +185,20 @@ describe("createApp", () => {
     }));
     expect(deleted.status).toBe(200);
     await expect(deleted.json()).resolves.toEqual({ deleted: true });
+  });
+
+  it("defaults newly created sessions to smart approval when accessMode is omitted", async () => {
+    const created = await app(
+      jsonRequest("/api/sessions", "POST", {
+        title: "默认审批模式",
+        projectId: null
+      })
+    );
+
+    expect(created.status).toBe(201);
+    await expect(created.json()).resolves.toMatchObject({
+      session: { title: "默认审批模式", accessMode: DEFAULT_ACCESS_MODE }
+    });
   });
 
   it("pins a session via PATCH without bumping updated_at", async () => {
