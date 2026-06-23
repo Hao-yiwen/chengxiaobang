@@ -132,6 +132,19 @@ beforeEach(() => {
 });
 
 describe("scroll-to-bottom button", () => {
+  it("keeps the horizontal blank gutter inside the chat scroller", async () => {
+    render(<App client={createClient()} />);
+    await screen.findByText("很长的回答");
+
+    const scroller = screen.getByTestId("chat-scroll");
+    const chatStack = screen.getByTestId("chat-layout-scope").firstElementChild;
+    const composerDock = screen.getByTestId("chat-composer-column").parentElement;
+
+    expect(scroller).toHaveClass("px-12");
+    expect(composerDock).toHaveClass("px-12");
+    expect(chatStack).not.toHaveClass("px-12");
+  });
+
   it("appears when scrolled away and smooth-scrolls back on click", async () => {
     render(<App client={createClient()} />);
     await screen.findByText("很长的回答");
@@ -170,6 +183,7 @@ const metrics = {
   clientHeight: 0,
   rectTops: {} as Record<string, number>
 };
+const resizeObserverCallbacks = new Set<ResizeObserverCallback>();
 
 function metricsKey(el: Element): string {
   return el.getAttribute("data-message-id") ?? el.getAttribute("data-testid") ?? "";
@@ -219,6 +233,40 @@ function deferred() {
   return { promise, resolve };
 }
 
+function installResizeObserverMock() {
+  const original = window.ResizeObserver;
+  class MockResizeObserver {
+    constructor(private readonly callback: ResizeObserverCallback) {
+      resizeObserverCallbacks.add(callback);
+    }
+
+    observe() {}
+
+    unobserve() {}
+
+    disconnect() {
+      resizeObserverCallbacks.delete(this.callback);
+    }
+  }
+  Object.defineProperty(window, "ResizeObserver", {
+    configurable: true,
+    writable: true,
+    value: MockResizeObserver
+  });
+  return () => {
+    resizeObserverCallbacks.clear();
+    if (original) {
+      Object.defineProperty(window, "ResizeObserver", {
+        configurable: true,
+        writable: true,
+        value: original
+      });
+      return;
+    }
+    delete (window as Partial<typeof window>).ResizeObserver;
+  };
+}
+
 /** streamRun mock：按步骤回放一次运行，并在关键门点暂停，便于测试中途断言。 */
 function scriptedRun() {
   const afterEcho = deferred();
@@ -251,17 +299,29 @@ function scriptedRun() {
   return { streamRun, afterEcho, afterDelta };
 }
 
+function triggerScrollGeometryChange(): void {
+  act(() => {
+    for (const callback of resizeObserverCallbacks) {
+      callback([], {} as ResizeObserver);
+    }
+    window.dispatchEvent(new Event("resize"));
+  });
+}
+
 describe("anchor-on-send scrolling", () => {
   let restoreMetrics: () => void;
+  let restoreResizeObserver: () => void;
 
   beforeEach(() => {
     metrics.scrollHeight = 800;
     metrics.clientHeight = 300;
     metrics.rectTops = { "chat-scroll": 0 };
     restoreMetrics = installMetrics();
+    restoreResizeObserver = installResizeObserverMock();
   });
 
   afterEach(() => {
+    restoreResizeObserver();
     restoreMetrics();
   });
 
@@ -272,6 +332,49 @@ describe("anchor-on-send scrolling", () => {
     const scroller = screen.getByTestId("chat-scroll");
     await waitFor(() => expect(scroller.scrollTop).toBe(800));
     expect(screen.getByTestId("chat-tail-spacer").style.height).toBe("0px");
+    expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the current reading anchor when the chat column is resized", async () => {
+    render(<App client={createClient()} />);
+    await screen.findByText("很长的回答");
+
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+
+    metrics.scrollHeight = 1000;
+    metrics.clientHeight = 300;
+    metrics.rectTops = { "chat-scroll": 0, u1: -200, a1: 48 };
+    scroller.scrollTop = 240;
+    fireEvent.scroll(scroller);
+    expect(screen.getByRole("button", { name: "回到底部" })).toBeInTheDocument();
+
+    // 右侧面板打开/改宽会让聊天列重排；同一条消息相对视口下移 80px 时，
+    // ChatView 应把 scrollTop 同步加回去，视觉上仍停在原位置。
+    metrics.rectTops.a1 = 128;
+    triggerScrollGeometryChange();
+
+    expect(scroller.scrollTop).toBe(320);
+    expect(screen.getByRole("button", { name: "回到底部" })).toBeInTheDocument();
+  });
+
+  it("sticks to the bottom when the chat column is resized at the bottom", async () => {
+    render(<App client={createClient()} />);
+    await screen.findByText("很长的回答");
+
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+
+    metrics.scrollHeight = 1000;
+    metrics.clientHeight = 300;
+    scroller.scrollTop = 700;
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+
+    metrics.clientHeight = 280;
+    triggerScrollGeometryChange();
+
+    expect(scroller.scrollTop).toBe(720);
     expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
   });
 
@@ -392,6 +495,46 @@ describe("anchor-on-send scrolling", () => {
     await screen.findByText("流式片段");
     expect(scroller.scrollTop).toBe(100);
     expect(screen.getByRole("button", { name: "回到底部" })).toBeInTheDocument();
+
+    await act(async () => {
+      run.afterDelta.resolve();
+      await runPromise;
+    });
+  });
+
+  it("keeps a manual reading anchor during streaming resize without resuming auto-follow", async () => {
+    const client = createClient();
+    const run = scriptedRun();
+    client.streamRun = run.streamRun as ApiClient["streamRun"];
+    render(<App client={client} />);
+    await screen.findByText("很长的回答");
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+
+    metrics.scrollHeight = 860;
+    metrics.rectTops.u2 = 10;
+    let runPromise!: Promise<void>;
+    act(() => {
+      runPromise = useAppStore.getState().runPrompt("新问题");
+    });
+    await screen.findByText("新问题");
+
+    metrics.rectTops = { "chat-scroll": 0, u1: -220, a1: 60, u2: 260 };
+    scroller.scrollTop = 100;
+    fireEvent.scroll(scroller);
+    await screen.findByRole("button", { name: "回到底部" });
+
+    metrics.rectTops.a1 = 120;
+    triggerScrollGeometryChange();
+    expect(scroller.scrollTop).toBe(160);
+
+    metrics.scrollHeight = 1200;
+    await act(async () => {
+      run.afterEcho.resolve();
+      await Promise.resolve();
+    });
+    await screen.findByText("流式片段");
+    expect(scroller.scrollTop).toBe(160);
 
     await act(async () => {
       run.afterDelta.resolve();

@@ -27,6 +27,7 @@ import { localFilePathFromHref, markdownLocalFileHrefFromPath } from "../../comm
 import { useAppStore } from "@/store";
 import { rehypeNumericTables } from "@/lib/markdown-utils";
 import { cn } from "@/lib/utils";
+import styles from "@/components/Markdown.module.css";
 
 type MarkdownAstNode = {
   type?: string;
@@ -416,7 +417,11 @@ function StreamingMarkdownBlock({ content, dir, ...props }: BlockProps) {
   }
 
   return (
-    <div className="markdown-streamdown-block" data-cxb-streaming-markdown-block="" dir={dir}>
+    <div
+      className={cn("markdown-streamdown-block", styles.block)}
+      data-cxb-streaming-markdown-block=""
+      dir={dir}
+    >
       <Block content={content} {...props} />
     </div>
   );
@@ -482,7 +487,7 @@ function MarkdownStream({
       <Streamdown
         mode={mode}
         dir="auto"
-        className={cn("markdown-streamdown text-foreground", className)}
+        className={cn("markdown-streamdown text-foreground", styles.root, className)}
         controls={STREAMDOWN_CONTROLS}
         icons={STREAMDOWN_ICONS}
         translations={STREAMDOWN_TRANSLATIONS}

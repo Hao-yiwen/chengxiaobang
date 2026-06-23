@@ -1,0 +1,17 @@
+.lineNumber {
+  display: inline-block;
+  width: 1.5rem;
+  flex: none;
+  margin-right: 1rem;
+  user-select: none;
+  text-align: right;
+  color: rgb(var(--muted-foreground) / 0.5);
+}
+
+.token {
+  color: var(--cxb-shiki-light, inherit);
+}
+
+:global(.dark) .token {
+  color: var(--cxb-shiki-dark, var(--cxb-shiki-light, inherit));
+}

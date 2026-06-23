@@ -15,6 +15,7 @@ import {
   type TodoState,
   type TodoStatus
 } from "@chengxiaobang/shared";
+import chatLayoutStyles from "@/components/ChatLayout.module.css";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
@@ -101,7 +102,10 @@ export function ProgressFloatingPanel() {
     <aside
       data-testid="progress-floating-panel"
       aria-label={t("rightPanel.progress")}
-      className="chat-progress-floating pointer-events-auto rounded-xl border bg-card"
+      className={cn(
+        "chat-progress-floating pointer-events-auto rounded-xl border bg-card",
+        chatLayoutStyles.progressFloating
+      )}
     >
       <header className="flex flex-none items-center justify-between gap-2 border-b px-4 py-3">
         <span className="font-mono text-mono-label uppercase text-muted-foreground">

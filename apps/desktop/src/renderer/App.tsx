@@ -5,6 +5,7 @@ import { DocumentIcon } from "@/assets/file-type-icons";
 import { ApprovalDock } from "./components/ApprovalDock";
 import { ArtifactFloatingPanel } from "./components/ArtifactFloatingPanel";
 import { ChatView } from "./components/ChatView";
+import chatLayoutStyles from "./components/ChatLayout.module.css";
 import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { ProgressFloatingPanel } from "./components/ProgressFloatingPanel";
@@ -13,6 +14,7 @@ import { ConfirmDialogProvider } from "./components/ConfirmDialog";
 import { DevToolsFloatingButton } from "./components/DevToolsFloatingButton";
 import { HomeMascot } from "./components/HomeMascot";
 import { HomeStarters } from "./components/HomeStarters";
+import homeHeroStyles from "./components/HomeHero.module.css";
 import { NotificationToasts } from "./components/NotificationToasts";
 import { OpenInIdeButton } from "./components/OpenInIdeButton";
 import {
@@ -322,17 +324,38 @@ export function App(props: { client?: ApiClient }) {
                         {/* Hero:左侧人物紧贴右侧话术（主句 + 副标题），移动端自动堆叠居中。 */}
                         <section
                           aria-label={t("home.heroAlt")}
-                          className="home-hero grid w-full grid-cols-1 items-center justify-center justify-items-center gap-3 text-center md:grid-cols-[auto_minmax(0,auto)] md:gap-6 md:-translate-x-5 md:text-left"
+                          className={cn(
+                            "home-hero grid w-full grid-cols-1 items-center justify-center justify-items-center gap-3 text-center md:grid-cols-[auto_minmax(0,auto)] md:gap-6 md:-translate-x-5 md:text-left",
+                            homeHeroStyles.hero
+                          )}
                         >
-                          <HomeMascot className="home-mascot size-32 sm:size-40 md:size-48 md:justify-self-end" />
-                          <div className="home-copy flex flex-col items-center md:items-start">
+                          <HomeMascot
+                            className={cn(
+                              "home-mascot size-32 sm:size-40 md:size-48 md:justify-self-end",
+                              homeHeroStyles.mascot
+                            )}
+                          />
+                          <div
+                            className={cn(
+                              "home-copy flex flex-col items-center md:items-start",
+                              homeHeroStyles.copy
+                            )}
+                          >
                             <h1
                               data-testid="home-hero-phrase"
-                              className="home-phrase whitespace-nowrap text-display-lg text-foreground"
+                              className={cn(
+                                "home-phrase whitespace-nowrap text-display-lg text-foreground",
+                                homeHeroStyles.phrase
+                              )}
                             >
                               {homeHeroPhrase}
                             </h1>
-                            <p className="home-subtitle mt-2 pl-1 text-body-md text-mute">
+                            <p
+                              className={cn(
+                                "home-subtitle mt-2 pl-1 text-body-md text-mute",
+                                homeHeroStyles.subtitle
+                              )}
+                            >
                               {t("home.subtitle")}
                             </p>
                           </div>
@@ -373,19 +396,33 @@ export function App(props: { client?: ApiClient }) {
                         data-right-panel-mode={
                           rightPanelLayoutActive ? (rightPanelMode ?? "menu") : "closed"
                         }
-                        className="chat-layout-scope relative flex min-h-0 flex-1 flex-col"
+                        className={cn(
+                          "chat-layout-scope relative flex min-h-0 flex-1 flex-col",
+                          chatLayoutStyles.scope
+                        )}
                       >
-                        <div className="flex min-h-0 flex-1 flex-col px-12">
+                        <div className="flex min-h-0 flex-1 flex-col">
                           <ChatView />
-                          <div className="chat-composer-dock flex-none pb-3 pt-0">
-                            <div data-testid="chat-composer-column" className="chat-primary-column">
+                          <div
+                            className={cn(
+                              "chat-composer-dock flex-none px-12 pb-3 pt-0",
+                              chatLayoutStyles.composerDock
+                            )}
+                          >
+                            <div
+                              data-testid="chat-composer-column"
+                              className={cn("chat-primary-column", chatLayoutStyles.primaryColumn)}
+                            >
                               <ApprovalDock />
                               {hideComposerForDecisionDock ? null : <Composer />}
                             </div>
                           </div>
                         </div>
                         {/* 浮动面板：绝对定位于 chat-layout-scope 右侧，@container 控制显隐 */}
-                        <div data-testid="chat-floating-stack" className="chat-floating-stack">
+                        <div
+                          data-testid="chat-floating-stack"
+                          className={cn("chat-floating-stack", chatLayoutStyles.floatingStack)}
+                        >
                           <ArtifactFloatingPanel />
                           <ProgressFloatingPanel />
                         </div>

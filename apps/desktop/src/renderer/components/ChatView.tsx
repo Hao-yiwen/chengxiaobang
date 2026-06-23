@@ -29,12 +29,14 @@ import type {
 } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import { AssistantMarkdownWithArtifacts } from "@/components/AssistantMarkdownWithArtifacts";
+import chatLayoutStyles from "@/components/ChatLayout.module.css";
 import { Markdown } from "@/components/Markdown";
 import { MessageActions, MessageEditor } from "@/components/MessageActions";
 import { PlanCard } from "@/components/PlanCard";
 import { ReasoningPanel } from "@/components/ReasoningPanel";
 import { RunFileChangesCard } from "@/components/RunFileChangesCard";
 import { ScrollToBottomButton } from "@/components/ScrollToBottomButton";
+import shimmerStyles from "@/components/ShimmerText.module.css";
 import { ToolCallGroup } from "@/components/ToolCallGroup";
 import { ToolCallRow } from "@/components/ToolCallRow";
 import { WorkTimer } from "@/components/WorkTimer";
@@ -55,6 +57,13 @@ import { useAppStore } from "@/store";
 import type { RunningToolVisualHold, StreamingPlan } from "@/store/types";
 
 const USER_SCROLL_DIRECTION_EPSILON_PX = 0.5;
+const READING_ANCHOR_EPSILON_PX = 0.5;
+const READING_ANCHOR_TOP_SLOP_PX = 24;
+
+interface ReadingAnchor {
+  messageId: string;
+  offsetTop: number;
+}
 
 function toolCallsWithPendingPlan(toolCalls: ToolCall[], pendingTool?: ToolCall): ToolCall[] {
   if (!pendingTool || pendingTool.name !== "ExitPlanMode") {
@@ -339,6 +348,8 @@ export function ChatView() {
   const spacerRef = useRef<HTMLDivElement>(null);
   const scrollFrame = useRef<number | null>(null);
   const lastScrollTopRef = useRef<number | undefined>(undefined);
+  const nearBottomRef = useRef(true);
+  const readingAnchorRef = useRef<ReadingAnchor | undefined>(undefined);
   // 当前锚定到视口顶部的消息 id（刚发送的用户消息），以及上一轮消息尾部快照；
   // 后者用来区分会话切换/运行结束刷新这类整组替换和真正的新 user echo。
   const anchorIdRef = useRef<string | undefined>(undefined);
@@ -353,6 +364,11 @@ export function ChatView() {
     top: 0,
     height: 100
   });
+
+  const updateNearBottom = useCallback((next: boolean) => {
+    nearBottomRef.current = next;
+    setNearBottom(next);
+  }, []);
 
   const syncScrollProgress = useCallback((el: HTMLDivElement | null = scrollRef.current) => {
     if (!el) {
@@ -369,6 +385,91 @@ export function ChatView() {
     const top = Math.min(100 - height, Math.max(0, (el.scrollTop / maxScroll) * (100 - height)));
     setScrollProgress({ visible: true, top, height });
   }, []);
+
+  const rememberReadingAnchor = useCallback((el: HTMLDivElement | null = scrollRef.current) => {
+    if (!el || isNearBottom(el)) {
+      readingAnchorRef.current = undefined;
+      return;
+    }
+    const containerRect = el.getBoundingClientRect();
+    const viewportTop = containerRect.top;
+    const viewportBottom = viewportTop + el.clientHeight;
+    let nextAnchor: (ReadingAnchor & { distance: number; priority: number }) | undefined;
+    for (const node of Array.from(el.querySelectorAll<HTMLElement>("[data-message-id]"))) {
+      const messageId = node.dataset.messageId;
+      if (!messageId) {
+        continue;
+      }
+      const rect = node.getBoundingClientRect();
+      const isVisible =
+        (rect.bottom >= viewportTop && rect.top <= viewportBottom) ||
+        (rect.top >= viewportTop && rect.top <= viewportBottom);
+      if (!isVisible) {
+        continue;
+      }
+      const offsetTop = rect.top - containerRect.top;
+      const priority = rect.top <= viewportTop + READING_ANCHOR_TOP_SLOP_PX ? 0 : 1;
+      const distance = priority === 0 ? Math.abs(offsetTop) : offsetTop;
+      if (
+        !nextAnchor ||
+        priority < nextAnchor.priority ||
+        (priority === nextAnchor.priority && distance < nextAnchor.distance)
+      ) {
+        nextAnchor = { messageId, offsetTop, priority, distance };
+      }
+    }
+    readingAnchorRef.current = nextAnchor
+      ? { messageId: nextAnchor.messageId, offsetTop: nextAnchor.offsetTop }
+      : undefined;
+  }, []);
+
+  const restoreReadingAnchorAfterResize = useCallback(() => {
+    const el = scrollRef.current;
+    const anchor = readingAnchorRef.current;
+    if (!el) {
+      return;
+    }
+    if (!anchor) {
+      rememberReadingAnchor(el);
+      updateNearBottom(isNearBottom(el));
+      syncScrollProgress(el);
+      return;
+    }
+    const node = el.querySelector<HTMLElement>(`[data-message-id="${anchor.messageId}"]`);
+    if (!node) {
+      console.debug("[ChatView] 阅读锚点消息已不在 DOM，重新捕捉", {
+        messageId: anchor.messageId
+      });
+      readingAnchorRef.current = undefined;
+      rememberReadingAnchor(el);
+      updateNearBottom(isNearBottom(el));
+      syncScrollProgress(el);
+      return;
+    }
+    const containerRect = el.getBoundingClientRect();
+    const currentOffsetTop = node.getBoundingClientRect().top - containerRect.top;
+    const delta = currentOffsetTop - anchor.offsetTop;
+    const previousScrollTop = el.scrollTop;
+    if (Math.abs(delta) > READING_ANCHOR_EPSILON_PX) {
+      const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+      const nextScrollTop = Math.max(0, Math.min(maxScrollTop, previousScrollTop + delta));
+      if (Math.abs(nextScrollTop - previousScrollTop) > READING_ANCHOR_EPSILON_PX) {
+        el.scrollTop = nextScrollTop;
+        lastScrollTopRef.current = nextScrollTop;
+        console.debug("[ChatView] 布局尺寸变化后恢复阅读锚点", {
+          messageId: anchor.messageId,
+          previousOffsetTop: anchor.offsetTop,
+          currentOffsetTop,
+          delta,
+          previousScrollTop,
+          nextScrollTop
+        });
+      }
+    }
+    updateNearBottom(isNearBottom(el));
+    syncScrollProgress(el);
+    rememberReadingAnchor(el);
+  }, [rememberReadingAnchor, syncScrollProgress, updateNearBottom]);
 
   const liveToolActivityCall = useMemo(
     () => toolActivityToTimelineTool(toolActivity, activeRunId),
@@ -513,9 +614,10 @@ export function ChatView() {
     const target = Math.max(0, el.scrollHeight - el.clientHeight);
     el.scrollTop = target;
     lastScrollTopRef.current = target;
-    setNearBottom(isNearBottom(el));
+    updateNearBottom(isNearBottom(el));
     syncScrollProgress(el);
-  }, [syncScrollProgress]);
+    rememberReadingAnchor(el);
+  }, [rememberReadingAnchor, syncScrollProgress, updateNearBottom]);
 
   // 调整尾部 spacer，让锚点消息的滚动位置始终可达，并在内容无滚动事件增长时同步底部状态。
   const syncTailGeometry = useCallback(() => {
@@ -548,9 +650,9 @@ export function ChatView() {
         spacer.style.height = `${next}px`;
       }
     }
-    setNearBottom(isNearBottom(el));
+    updateNearBottom(isNearBottom(el));
     syncScrollProgress(el);
-  }, [syncScrollProgress]);
+  }, [syncScrollProgress, updateNearBottom]);
 
   // 刚发送的用户消息回显后锚定到视口顶部（claude.ai 风格）。回显只会发生在运行中；
   // 历史加载和运行结束刷新会替换整组数组，所以用尾部消息 id/sessionId 区分。
@@ -595,8 +697,9 @@ export function ChatView() {
       const target = anchorScrollTop(top);
       el.scrollTop = target;
       lastScrollTopRef.current = target;
-      setNearBottom(isNearBottom(el));
+      updateNearBottom(isNearBottom(el));
       syncScrollProgress(el);
+      rememberReadingAnchor(el);
       console.debug("[ChatView] 锚定用户消息到视口顶部", { id: last.id, target });
       console.debug("[ChatView] 启动本轮流式自动跟随", { messageId: last.id, runId: activeRunId });
       return;
@@ -611,11 +714,19 @@ export function ChatView() {
       }
       el.scrollTop = el.scrollHeight;
       lastScrollTopRef.current = el.scrollTop;
-      setNearBottom(true);
+      readingAnchorRef.current = undefined;
+      updateNearBottom(true);
       syncScrollProgress(el);
       console.debug("[ChatView] 历史加载完成，滚动到底部", { count: messages.length });
     }
-  }, [activeRunId, messages, isRunning, syncScrollProgress]);
+  }, [
+    activeRunId,
+    messages,
+    isRunning,
+    rememberReadingAnchor,
+    syncScrollProgress,
+    updateNearBottom
+  ]);
 
   // 流式内容增长时先更新 spacer；如果用户没有手动离开底部，就把视口跟随到最新输出。
   useEffect(() => {
@@ -657,18 +768,45 @@ export function ChatView() {
     syncTailGeometry
   ]);
 
-  // 容器尺寸变化（窗口、右侧面板等）会改变 spacer 计算。
+  const handleScrollGeometryChange = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    const wasNearBottom = nearBottomRef.current;
+    syncTailGeometry();
+    if (wasNearBottom) {
+      const target = Math.max(0, el.scrollHeight - el.clientHeight);
+      if (Math.abs(el.scrollTop - target) > READING_ANCHOR_EPSILON_PX) {
+        el.scrollTop = target;
+        lastScrollTopRef.current = target;
+      }
+      updateNearBottom(isNearBottom(el));
+      syncScrollProgress(el);
+      rememberReadingAnchor(el);
+      return;
+    }
+    restoreReadingAnchorAfterResize();
+  }, [
+    rememberReadingAnchor,
+    restoreReadingAnchorAfterResize,
+    syncScrollProgress,
+    syncTailGeometry,
+    updateNearBottom
+  ]);
+
+  // 容器尺寸变化（窗口、右侧面板等）会改变 spacer 计算，也要保持当前阅读锚点。
   useEffect(() => {
     if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", syncTailGeometry);
-      return () => window.removeEventListener("resize", syncTailGeometry);
+      window.addEventListener("resize", handleScrollGeometryChange);
+      return () => window.removeEventListener("resize", handleScrollGeometryChange);
     }
-    const observer = new ResizeObserver(syncTailGeometry);
+    const observer = new ResizeObserver(handleScrollGeometryChange);
     if (scrollRef.current) {
       observer.observe(scrollRef.current);
     }
     return () => observer.disconnect();
-  }, [syncTailGeometry]);
+  }, [handleScrollGeometryChange]);
 
   useEffect(
     () => () => {
@@ -697,8 +835,9 @@ export function ChatView() {
     const movedDown = currentScrollTop > previousScrollTop + USER_SCROLL_DIRECTION_EPSILON_PX;
     lastScrollTopRef.current = currentScrollTop;
 
-    setNearBottom(atBottom);
+    updateNearBottom(atBottom);
     syncScrollProgress(el);
+    rememberReadingAnchor(el);
 
     if (!isRunning || !anchorIdRef.current) {
       return;
@@ -710,7 +849,13 @@ export function ChatView() {
     if (atBottom && movedDown) {
       updateStreamAutoFollowPaused(false, "near-bottom");
     }
-  }, [isRunning, syncScrollProgress, updateStreamAutoFollowPaused]);
+  }, [
+    isRunning,
+    rememberReadingAnchor,
+    syncScrollProgress,
+    updateNearBottom,
+    updateStreamAutoFollowPaused
+  ]);
 
   const handleScrollToBottomClick = useCallback(() => {
     updateStreamAutoFollowPaused(false, "button");
@@ -939,7 +1084,7 @@ export function ChatView() {
         {showWaiting ? (
           <div className="mb-6 flex items-center gap-2 self-stretch text-caption text-muted-foreground">
             <span className="size-3 flex-none animate-pulse rounded-full bg-foreground" />
-            <span className="shimmer-text">{t("chat.waiting")}</span>
+            <span className={cn("shimmer-text", shimmerStyles.text)}>{t("chat.waiting")}</span>
           </div>
         ) : null}
       </>
@@ -953,12 +1098,12 @@ export function ChatView() {
         ref={scrollRef}
         data-testid="chat-scroll"
         onScroll={handleChatScroll}
-        className="chat-scroll-area min-h-0 flex-1 overflow-y-auto"
+        className={cn("chat-scroll-area min-h-0 flex-1 overflow-y-auto px-12", chatLayoutStyles.scrollArea)}
       >
         <div
           ref={contentColumnRef}
           data-testid="chat-content-column"
-          className="chat-primary-column relative flex flex-col pt-5 pb-0"
+          className={cn("chat-primary-column relative flex flex-col pt-5 pb-0", chatLayoutStyles.primaryColumn)}
         >
           {blocks.map((block) => (
             <Fragment key={block.key}>
@@ -993,9 +1138,9 @@ export function ChatView() {
       </div>
 
       {scrollProgress.visible ? (
-        <div aria-hidden="true" className="chat-scroll-progress">
+        <div aria-hidden="true" className={cn("chat-scroll-progress", chatLayoutStyles.scrollProgress)}>
           <div
-            className="chat-scroll-progress-thumb"
+            className={cn("chat-scroll-progress-thumb", chatLayoutStyles.progressThumb)}
             style={{
               height: `${scrollProgress.height}%`,
               top: `${scrollProgress.top}%`
@@ -1005,8 +1150,8 @@ export function ChatView() {
       ) : null}
 
       {!nearBottom ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-10 z-10">
-          <div className="chat-primary-column flex justify-center">
+        <div className="pointer-events-none absolute inset-x-0 bottom-10 z-10 px-12">
+          <div className={cn("chat-primary-column flex justify-center", chatLayoutStyles.primaryColumn)}>
             <ScrollToBottomButton
               onClick={handleScrollToBottomClick}
             />
@@ -1226,7 +1371,10 @@ const MessageBubble = memo(function MessageBubble({
   // Assistant turns render as plain left-aligned content — no avatar, no name —
   // with the persisted reasoning panel (if any) sitting above the answer.
   return (
-    <div className="group/msg relative mb-4 animate-msg-in self-stretch">
+    <div
+      data-message-id={message.id}
+      className="group/msg relative mb-4 animate-msg-in self-stretch"
+    >
       <MessageSideChatMarker message={message} />
       {!hideReasoning && message.reasoning ? (
         <ReasoningPanel text={message.reasoning} durationMs={message.reasoningMs} />

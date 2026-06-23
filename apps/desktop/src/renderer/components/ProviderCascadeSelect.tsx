@@ -16,6 +16,7 @@ import {
 } from "@chengxiaobang/shared";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import styles from "@/components/ProviderCascadeSelect.module.css";
 
 interface ProviderCascadeSelectProps {
   value?: ProviderKind;
@@ -163,34 +164,36 @@ export function ProviderCascadeSelect({
         <button
           type="button"
           aria-label={ariaLabel}
-          className={cn("provider-cascade-trigger", className)}
+          className={cn("provider-cascade-trigger", styles.trigger, className)}
         >
           <span className="min-w-0 flex-1 truncate text-left">
             {selected ? selected.label : placeholder}
           </span>
           {visibleSelectedModelIds.length > 0 ? (
-            <span className="provider-cascade-count">
+            <span className={cn("provider-cascade-count", styles.count)}>
               {t("settings.providers.modelCount", { count: visibleSelectedModelIds.length })}
             </span>
           ) : null}
-          <ChevronIcon className="provider-cascade-suffix-icon" />
+          <ChevronIcon className={cn("provider-cascade-suffix-icon", styles.suffixIcon)} />
         </button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="provider-cascade-popup p-0"
+        className={cn("provider-cascade-popup p-0", styles.popup)}
         portalled={withinModalDialog}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
-        <div className="provider-cascade-menus">
-          <div className="provider-cascade-menu">
+        <div className={cn("provider-cascade-menus", styles.menus)}>
+          <div className={cn("provider-cascade-menu", styles.menu)}>
             {grouped.map((group) => (
               <button
                 key={group.region}
                 type="button"
                 className={cn(
                   "provider-cascade-menu-item ant-cascader-menu-item",
-                  activeRegion === group.region && "provider-cascade-menu-item-active"
+                  styles.menuItem,
+                  activeRegion === group.region && "provider-cascade-menu-item-active",
+                  activeRegion === group.region && styles.menuItemActive
                 )}
                 onMouseEnter={() => {
                   console.debug("[provider-cascade] hover 供应商区域", {
@@ -201,18 +204,20 @@ export function ProviderCascadeSelect({
                 onClick={() => activateRegion(group.region)}
               >
                 <span>{t(providerRegionLabelKey(group.region))}</span>
-                <ChevronRightIcon className="provider-cascade-expand-icon" />
+                <ChevronRightIcon className={cn("provider-cascade-expand-icon", styles.expandIcon)} />
               </button>
             ))}
           </div>
-          <div className="provider-cascade-menu provider-cascade-provider-menu">
+          <div className={cn("provider-cascade-menu provider-cascade-provider-menu", styles.menu)}>
             {activeProviders.map((option) => (
               <button
                 key={option.value}
                 type="button"
                 className={cn(
                   "provider-cascade-menu-item ant-cascader-menu-item",
-                  activeProvider === option.value && "provider-cascade-menu-item-active"
+                  styles.menuItem,
+                  activeProvider === option.value && "provider-cascade-menu-item-active",
+                  activeProvider === option.value && styles.menuItemActive
                 )}
                 onMouseEnter={() => {
                   console.debug("[provider-cascade] hover 供应商", {
@@ -223,33 +228,43 @@ export function ProviderCascadeSelect({
                 onClick={() => previewProvider(option.value)}
               >
                 <span className="truncate">{option.label}</span>
-                <ChevronRightIcon className="provider-cascade-expand-icon" />
+                <ChevronRightIcon className={cn("provider-cascade-expand-icon", styles.expandIcon)} />
               </button>
             ))}
           </div>
-          <div className="provider-cascade-menu provider-cascade-model-menu">
+          <div
+            className={cn(
+              "provider-cascade-menu provider-cascade-model-menu",
+              styles.menu,
+              styles.modelMenu
+            )}
+          >
             {activeProvider ? (
               <>
-                <div className="provider-cascade-model-header">
+                <div className={cn("provider-cascade-model-header", styles.modelHeader)}>
                   <span>{t("settings.providers.models")}</span>
                   <span className="flex items-center gap-1">
                     <button
                       type="button"
-                      className="provider-cascade-text-action"
+                      className={cn("provider-cascade-text-action", styles.textAction)}
                       onClick={() => setDraftModelsForActiveProvider([])}
                     >
                       {t("settings.providers.clearModels")}
                     </button>
                     <button
                       type="button"
-                      className="provider-cascade-text-action provider-cascade-confirm-action"
+                      className={cn(
+                        "provider-cascade-text-action provider-cascade-confirm-action",
+                        styles.textAction,
+                        styles.confirmAction
+                      )}
                       onClick={confirmSelection}
                     >
                       {t("confirmDialog.confirm")}
                     </button>
                   </span>
                 </div>
-                <div className="provider-cascade-model-list">
+                <div className={cn("provider-cascade-model-list", styles.modelList)}>
                   {activeModelOptions.map((model) => {
                     const checked = activeModelIds.includes(model.id);
                     return (
@@ -257,7 +272,9 @@ export function ProviderCascadeSelect({
                         key={model.id}
                         className={cn(
                           "provider-cascade-model-option",
-                          checked && "provider-cascade-model-option-selected"
+                          styles.modelOption,
+                          checked && "provider-cascade-model-option-selected",
+                          checked && styles.modelOptionSelected
                         )}
                       >
                         <input
@@ -270,7 +287,7 @@ export function ProviderCascadeSelect({
                             toggleModel(model.id);
                           }}
                         />
-                        <span className="provider-cascade-checkbox" aria-hidden="true">
+                        <span className={cn("provider-cascade-checkbox", styles.checkbox)} aria-hidden="true">
                           {checked ? <CheckMediumIcon className="size-3" /> : null}
                         </span>
                         <span className="min-w-0 flex-1 truncate">
@@ -282,7 +299,7 @@ export function ProviderCascadeSelect({
                 </div>
               </>
             ) : (
-              <div className="provider-cascade-empty">
+              <div className={cn("provider-cascade-empty", styles.empty)}>
                 {t("settings.providers.hoverProviderForModels")}
               </div>
             )}
@@ -307,14 +324,14 @@ export function ProviderModelTags({
   return (
     <div className="flex flex-wrap gap-1.5">
       {ids.map((modelId) => (
-        <span key={modelId} className="provider-model-tag">
+        <span key={modelId} className={cn("provider-model-tag", styles.modelTag)}>
           <span className="max-w-[220px] truncate">{modelLabel(providerKind, modelId)}</span>
           {onRemove ? (
             <button
               type="button"
               aria-label={`移除 ${modelLabel(providerKind, modelId)}`}
               disabled={!canRemove}
-              className="provider-model-tag-remove"
+              className={cn("provider-model-tag-remove", styles.modelTagRemove)}
               onClick={() => {
                 if (canRemove) {
                   onRemove(modelId);

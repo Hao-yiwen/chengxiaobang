@@ -1,0 +1,474 @@
+.root {
+  color: rgb(var(--foreground));
+  font-size: 13px;
+  line-height: 24px;
+  letter-spacing: -0.26px;
+  overflow-wrap: anywhere;
+}
+
+.root p {
+  margin-block: 0;
+}
+
+.block {
+  min-width: 0;
+}
+
+.block:first-child > :first-child {
+  margin-top: 0;
+}
+
+.block:last-child > :last-child {
+  margin-bottom: 0;
+}
+
+.root strong,
+.root b {
+  font-weight: 500;
+}
+
+.root :global([data-streamdown^="heading"]) {
+  margin-block: 0.625rem 0.25rem;
+  color: rgb(var(--foreground));
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.root :global([data-streamdown="heading-1"]) {
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.root :global([data-streamdown="heading-2"]),
+.root :global([data-streamdown="heading-3"]),
+.root :global([data-streamdown="heading-4"]),
+.root :global([data-streamdown="heading-5"]),
+.root :global([data-streamdown="heading-6"]) {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.root :global([data-streamdown="link"]) {
+  color: rgb(var(--link));
+  text-decoration-color: rgb(var(--link) / 0.35);
+  text-underline-offset: 2px;
+  transition:
+    color 0.15s ease,
+    text-decoration-color 0.15s ease;
+}
+
+.root :global([data-streamdown="link"]:hover) {
+  color: rgb(var(--link-deep));
+  text-decoration-color: rgb(var(--link));
+}
+
+.root :global([data-streamdown="inline-code"]) {
+  border: 1px solid rgb(var(--border) / 0.75);
+  background: rgb(var(--hairline-strong) / 0.22);
+  color: rgb(var(--foreground));
+  font-size: 0.88em;
+}
+
+.root :global(.cxb-code-block-shell) {
+  margin-block: 0.625rem;
+}
+
+.root :global([data-streamdown="mermaid-block"]) {
+  gap: 0;
+  overflow: hidden;
+  margin-block: 0.75rem;
+  border: 1px solid rgb(var(--border));
+  border-radius: 16px;
+  background: rgb(var(--canvas));
+  padding: 16px 20px 20px;
+  box-shadow: none;
+}
+
+:global(.dark) .root :global([data-streamdown="mermaid-block"]) {
+  background: rgb(var(--canvas));
+  box-shadow: none;
+}
+
+.root :global([data-streamdown="mermaid-block"] > div:first-child) {
+  height: 28px;
+  align-items: center;
+  color: rgb(var(--foreground));
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: 0;
+}
+
+.root :global([data-streamdown="mermaid-block"] > div:first-child > span) {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 0;
+  color: rgb(var(--foreground));
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  letter-spacing: 0;
+}
+
+.root :global([data-streamdown="mermaid-block"] > div:first-child > span)::before {
+  content: '';
+  display: block;
+  width: 14px;
+  height: 16px;
+  border: 1.5px solid rgb(var(--link));
+  border-radius: 2px;
+  background: transparent;
+}
+
+.root :global([data-streamdown="mermaid-block"] > div:first-child > span)::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 4px;
+  width: 5px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgb(var(--link));
+  box-shadow: 0 4px 0 rgb(var(--link));
+}
+
+.root :global([data-streamdown="mermaid-block"] > div:has(> [data-streamdown="mermaid-block-actions"])) {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  height: 24px;
+  margin-top: 0;
+  align-items: center;
+}
+
+.root :global([data-streamdown="mermaid-block-actions"]) {
+  gap: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.root :global([data-streamdown="mermaid-block-actions"] [data-streamdown="code-block-copy-button"]) {
+  position: relative;
+  display: flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 0;
+  color: rgb(var(--foreground) / 0.72);
+}
+
+.root :global([data-streamdown="mermaid-block-actions"] [data-streamdown="code-block-copy-button"]:hover) {
+  background: rgb(var(--canvas-soft-2));
+  color: rgb(var(--foreground));
+}
+
+.root :global([data-streamdown="mermaid-block-actions"] [data-streamdown="code-block-copy-button"] svg) {
+  width: 15px;
+  height: 15px;
+}
+
+.root :global([data-streamdown="mermaid-block-actions"] [data-streamdown="code-block-copy-button"])::after {
+  position: absolute;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+  content: attr(title);
+  top: calc(100% + 8px);
+  right: 0;
+  width: max-content;
+  max-width: 160px;
+  border-radius: 4px;
+  background: rgb(var(--primary));
+  padding: 4px 8px;
+  color: rgb(var(--primary-foreground));
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  transform: translateY(-2px);
+}
+
+.root :global([data-streamdown="mermaid-block-actions"] [data-streamdown="code-block-copy-button"]:hover)::after,
+.root :global([data-streamdown="mermaid-block-actions"] [data-streamdown="code-block-copy-button"]:focus-visible)::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.root :global([data-streamdown="table-wrapper"]) {
+  position: relative;
+  gap: 0;
+  overflow: hidden;
+  margin-block: 0.625rem;
+  border-color: rgb(var(--border));
+  border-radius: 8px;
+  background: transparent;
+  padding: 0;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.025);
+}
+
+.root :global([data-streamdown="table-wrapper"])::after,
+.root :global([data-streamdown="table-wrapper"])::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  width: 48px;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.root :global([data-streamdown="table-wrapper"])::after {
+  right: 0;
+  border-radius: 0 8px 8px 0;
+  background: linear-gradient(to right, transparent, rgb(var(--canvas)));
+}
+
+.root :global([data-streamdown="table-wrapper"])::before {
+  left: 0;
+  border-radius: 8px 0 0 8px;
+  background: linear-gradient(to left, transparent, rgb(var(--canvas)));
+}
+
+.root :global([data-streamdown="table-wrapper"].has-scroll-right)::after {
+  opacity: 0.65;
+}
+
+.root :global([data-streamdown="table-wrapper"].has-scroll-left)::before {
+  opacity: 0.65;
+}
+
+:global(.dark) .root :global([data-streamdown="table-wrapper"]) {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04);
+}
+
+.root :global([data-streamdown="table-wrapper"] > div:last-child) {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.root :global([data-streamdown="table-wrapper"] > div:last-child)::-webkit-scrollbar {
+  height: 5px;
+}
+
+.root :global([data-streamdown="table-wrapper"] > div:last-child)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.root :global([data-streamdown="table-wrapper"] > div:last-child)::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: transparent;
+  transition: background 0.2s ease;
+}
+
+.root :global([data-streamdown="table-wrapper"]:hover > div:last-child)::-webkit-scrollbar-thumb {
+  background: rgb(var(--mute) / 0.35);
+}
+
+.root :global([data-streamdown="table"]) {
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.root :global([data-streamdown="table-header"]),
+.root :global([data-streamdown="table-body"]),
+.root :global([data-streamdown="table-row"]),
+.root :global([data-streamdown="table-header-cell"]),
+.root :global([data-streamdown="table-cell"]) {
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.root :global([data-streamdown="table-header"]) {
+  background: transparent;
+}
+
+.root :global([data-streamdown="table-header-cell"]),
+.root :global([data-streamdown="table-cell"]) {
+  border-color: rgb(var(--border));
+  padding: 7px 12px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.root :global([data-streamdown="table-header-cell"]) {
+  color: rgb(var(--mute));
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.root :global([data-streamdown="table-cell"]) {
+  color: rgb(var(--foreground));
+  font-weight: 400;
+}
+
+.root :global([data-streamdown="table-row"]) {
+  border-bottom: 1px solid rgb(var(--border));
+}
+
+.root :global([data-streamdown="table-body"] [data-streamdown="table-row"]:last-child) {
+  border-bottom: 0;
+}
+
+.root :global([data-streamdown="table-row"]:hover) {
+  background: rgb(var(--canvas-soft) / 0.5);
+}
+
+.root :global([data-streamdown="list"]) {
+  margin-block: 0.35rem 0.5rem;
+  padding-inline-start: 1.25rem;
+}
+
+.root :global([data-streamdown="list-item"]) {
+  margin-block: 0.2rem;
+}
+
+.root :global([data-streamdown="blockquote"]) {
+  margin-block: 0.5rem;
+  border-left-width: 2px;
+  border-left-color: rgb(var(--hairline-strong));
+  background: rgb(var(--canvas-soft));
+  padding: 6px 10px;
+  color: rgb(var(--body));
+  font-style: normal;
+}
+
+.root :global([data-streamdown="horizontal-rule"]) {
+  margin-block: 0.75rem;
+}
+
+.root:global(.proposed-plan-markdown) {
+  color: rgb(var(--foreground));
+}
+
+.root:global(.proposed-plan-markdown) p {
+  margin-block: 0.4rem 0.75rem;
+  color: rgb(var(--body));
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.root:global(.proposed-plan-markdown) :global([data-streamdown="heading-1"]) {
+  margin-block: 0 0.85rem;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 26px;
+  letter-spacing: -0.2px;
+}
+
+.root:global(.proposed-plan-markdown) :global([data-streamdown="heading-2"]) {
+  margin-block: 1rem 0.45rem;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+  letter-spacing: 0;
+}
+
+.root:global(.proposed-plan-markdown) :global([data-streamdown="list"]) {
+  margin-block: 0.35rem 0.9rem;
+  padding-inline-start: 1.25rem;
+}
+
+.root:global(.proposed-plan-markdown) :global([data-streamdown="list-item"]) {
+  margin-block: 0.3rem;
+  color: rgb(var(--body));
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.root :global(.katex-display) {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.35rem 0;
+}
+
+.root :global([data-streamdown="mermaid-block"] > div:last-child) {
+  overflow: auto;
+  margin-top: 24px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 16px 0 8px;
+}
+
+.root :global([data-streamdown="mermaid"]) {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 680px;
+  overflow: auto;
+  pointer-events: auto;
+}
+
+.root :global([data-streamdown="mermaid"] > div) {
+  width: 100% !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  cursor: default !important;
+  pointer-events: none;
+}
+
+.root :global([data-streamdown="mermaid"] [role="application"]) {
+  width: 100% !important;
+  flex: 0 0 auto !important;
+  justify-content: center;
+  transform: none !important;
+  transition: none !important;
+  cursor: default !important;
+}
+
+.root :global([data-streamdown="mermaid"] [role="img"]) {
+  width: min(100%, var(--cxb-mermaid-fit-width, 100%));
+  height: var(--cxb-mermaid-fit-height, auto);
+  min-width: 0;
+  max-width: min(100%, 1040px);
+  max-height: 680px;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.root :global([data-streamdown="mermaid"] svg) {
+  display: block;
+  flex: 0 0 auto;
+  width: min(100%, var(--cxb-mermaid-fit-width, 100%)) !important;
+  max-width: none !important;
+  height: var(--cxb-mermaid-fit-height, auto) !important;
+  max-height: 680px !important;
+}
+
+.root :global([data-streamdown="table-fullscreen"]),
+:global([role="dialog"][aria-modal="true"][aria-label="全屏查看"]),
+:global([data-streamdown="link-safety-modal"]) {
+  z-index: 120 !important;
+  isolation: isolate;
+}
+
+.root :global([data-streamdown="table-fullscreen"]),
+:global([role="dialog"][aria-modal="true"][aria-label="全屏查看"]) {
+  background: rgb(var(--background));
+}
+
+:global([data-streamdown="link-safety-modal"] > div) {
+  border-color: rgb(var(--border));
+  border-radius: 8px;
+  background: rgb(var(--canvas));
+  box-shadow:
+    0 8px 16px -4px rgb(0 0 0 / 0.04),
+    0 24px 32px -8px rgb(0 0 0 / 0.06),
+    inset 0 0 0 1px rgb(0 0 0 / 0.08);
+}

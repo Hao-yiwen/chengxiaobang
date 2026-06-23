@@ -1,0 +1,35 @@
+.contentEnter {
+  animation: rightPanelContentEnter 200ms ease-out both;
+}
+
+.contentExit {
+  animation: rightPanelContentExit 200ms ease-in both;
+}
+
+@keyframes rightPanelContentEnter {
+  from {
+    opacity: 0.96;
+    transform: translateX(100%);
+    clip-path: inset(0 0 0 24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0);
+  }
+}
+
+@keyframes rightPanelContentExit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0);
+  }
+
+  to {
+    opacity: 0.96;
+    transform: translateX(100%);
+    clip-path: inset(0 0 0 24px);
+  }
+}

@@ -94,6 +94,7 @@
 
 - 尊重三层边界(见"架构"):契约/类型只存在于 `packages/shared`;后端逻辑藏在接口之后(`StateStore`、`SecretStore`、pi `StreamFn`);渲染层拆为 `store/`(状态)、`components/`(视图)、`lib/`(IO)。不跨层伸手,不重复声明 shared 契约。
 - 一个模块一个关注点;函数小而单一职责。文件超出主题宁可新建,不要继续膨胀。副作用(IO、IPC、网络、模型调用)收在边缘,中间保持纯逻辑以便单测。
+- 渲染层样式默认放在真正生效的组件、页面或局部 CSS Module 中;非必要不修改全局样式文件(如 `global.css` / `global.scss`)。只有设计 token、全局 reset、第三方库全局覆盖、Electron 拖拽区等确实跨组件生效的样式,才允许放进全局样式。
 - 先复用已有的 helper,再考虑新写。
 
 ### 日志与排查

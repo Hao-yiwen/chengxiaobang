@@ -26,6 +26,7 @@ import {
 import { SideChatPanel } from "./SideChatPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { cn } from "@/lib/utils";
+import styles from "./RightPanel.module.css";
 import {
   getApiClient,
   selectActiveProject,
@@ -370,7 +371,9 @@ export function RightPanel({ phase }: { phase: RightPanelVisualPhase }) {
         className={cn(
           "relative flex h-full min-h-0 min-w-0 w-[var(--right-panel-width)] flex-col overflow-hidden border-l border-border bg-background [contain:layout_paint] [will-change:transform,opacity,clip-path]",
           phase === "opening" && !resizing && "right-panel-content-enter",
-          phase === "closing" && !resizing && "right-panel-content-exit"
+          phase === "opening" && !resizing && styles.contentEnter,
+          phase === "closing" && !resizing && "right-panel-content-exit",
+          phase === "closing" && !resizing && styles.contentExit
         )}
       >
         <div

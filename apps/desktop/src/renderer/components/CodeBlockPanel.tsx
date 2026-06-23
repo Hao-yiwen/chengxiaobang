@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useAppStore } from "@/store";
 import { cn } from "@/lib/utils";
+import styles from "@/components/CodeBlockPanel.module.css";
 
 export interface CodeBlockPanelProps {
   code: string;
@@ -56,7 +57,7 @@ export function CodeBlockPanel({
         <TooltipTrigger asChild>
           <button
             type="button"
-            className="cxb-code-block-wrap-button"
+            className={cn("cxb-code-block-wrap-button", styles.actionButton)}
             data-streamdown="code-block-wrap-button"
             aria-label={wrapLabel}
             aria-pressed={wrap}
@@ -73,7 +74,13 @@ export function CodeBlockPanel({
 
   return (
     <div
-      className={cn("cxb-code-block-shell", wrap && "is-wrapped", className)}
+      className={cn(
+        "cxb-code-block-shell",
+        styles.shell,
+        wrap && "is-wrapped",
+        wrap && styles.wrapped,
+        className
+      )}
       data-code-wrap={wrap ? "true" : "false"}
       data-code-line-numbers="false"
       data-code-font-size={settings.fontSize}
@@ -85,7 +92,10 @@ export function CodeBlockPanel({
         headerIcon={
           <Icon
             aria-hidden
-            className="cxb-svg-icon cxb-code-block-header-icon size-3 flex-none opacity-70"
+            className={cn(
+              "cxb-svg-icon cxb-code-block-header-icon size-3 flex-none opacity-70",
+              styles.headerIcon
+            )}
           />
         }
         highlightedLines={highlight.lines}
@@ -187,7 +197,7 @@ function CopyButton({ code }: { code: string }) {
       <TooltipTrigger asChild>
         <button
           type="button"
-          className="cxb-code-block-copy-button"
+          className={cn("cxb-code-block-copy-button", styles.actionButton)}
           aria-label="复制代码"
           onClick={handleCopy}
         >

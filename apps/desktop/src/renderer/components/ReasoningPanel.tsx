@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ReasoningBrainThinkingIcon } from "@/assets/file-type-icons";
 import { cn } from "@/lib/utils";
 import { thinkingSeconds } from "@/lib/reasoning";
+import shimmerStyles from "@/components/ShimmerText.module.css";
 
 /**
  * 助手回答前的「深度思考」折叠块：流式阶段计时但默认收起，点击后可查看详情。
@@ -51,7 +52,9 @@ export function ReasoningPanel({
         className="flex items-center gap-1.5 text-caption text-muted-foreground transition-colors hover:text-foreground"
       >
         <ReasoningBrainThinkingIcon className="size-3.5 flex-none" />
-        <span className={cn(streaming && "shimmer-text")}>{header}</span>
+        <span className={cn(streaming && "shimmer-text", streaming && shimmerStyles.text)}>
+          {header}
+        </span>
       </button>
       <div
         className={cn(

@@ -1773,8 +1773,8 @@ describe("right panel", () => {
     expect(preview.querySelector('[data-streamdown="code-block"]')).toBeNull();
     expect(within(preview).getByText("const value = 1;")).toHaveClass("cxb-shiki-token");
     expect(preview).toHaveTextContent("const value = 1;");
-    expect(within(preview).getByRole("button", { name: "关闭自动换行" })).toBeInTheDocument();
-    expect(within(preview).getByLabelText("复制文件内容")).toBeInTheDocument();
+    expect(within(preview).queryByRole("button", { name: "关闭自动换行" })).not.toBeInTheDocument();
+    expect(within(preview).queryByLabelText("复制文件内容")).not.toBeInTheDocument();
   });
 
   it("keeps markdown-like JavaScript content as code in the file preview panel", async () => {

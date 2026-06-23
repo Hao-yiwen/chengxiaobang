@@ -1,0 +1,81 @@
+.hero {
+  animation: homeHeroIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mascot {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 76%,
+    rgb(0 0 0 / 0.88) 88%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 76%,
+    rgb(0 0 0 / 0.88) 88%,
+    transparent 100%
+  );
+  animation: homeMascotIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.phrase,
+.subtitle {
+  font-family:
+    "Songti SC",
+    "STSong",
+    "Noto Serif CJK SC",
+    "PingFang SC",
+    "Space Grotesk",
+    ui-serif,
+    serif;
+}
+
+.phrase {
+  font-weight: 600;
+}
+
+.copy {
+  animation: homeCopyIn 0.46s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
+}
+
+@keyframes homeHeroIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes homeMascotIn {
+  from {
+    opacity: 0;
+    transform: translateX(-14px) translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+}
+
+@keyframes homeCopyIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero,
+  .mascot,
+  .phrase,
+  .copy {
+    animation: none;
+  }
+}

@@ -1,6 +1,7 @@
 import type { HighlightLine } from "@/lib/code-highlight";
 import { shikiTokenStyle } from "@/lib/code-highlight";
 import { cn } from "@/lib/utils";
+import styles from "@/components/CodePreviewLines.module.css";
 
 export function CodePreviewLines({
   highlightedLines,
@@ -18,7 +19,7 @@ export function CodePreviewLines({
       {plainLines.map((plainLine, index) => (
         <span key={index} className={cn("flex", !wrap && "min-w-max")}>
           {lineNumbers ? (
-            <span className="cxb-code-line-number">
+            <span className={cn("cxb-code-line-number", styles.lineNumber)}>
               {index + 1}
             </span>
           ) : null}
@@ -47,7 +48,7 @@ function CodePreviewLine({
   return (
     <>
       {highlightedLine.map((token, index) => (
-        <span key={index} className="cxb-shiki-token" style={shikiTokenStyle(token)}>
+        <span key={index} className={cn("cxb-shiki-token", styles.token)} style={shikiTokenStyle(token)}>
           {token.content}
         </span>
       ))}

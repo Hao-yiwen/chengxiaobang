@@ -9,7 +9,9 @@ import {
   type CollectedArtifactDeclarations
 } from "@/lib/artifact";
 import { useVerifiedArtifacts } from "@/hooks/use-verified-artifacts";
+import chatLayoutStyles from "@/components/ChatLayout.module.css";
 import { iconForPath } from "@/lib/file-icon";
+import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 
 const EMPTY_ARTIFACT_COLLECTION: CollectedArtifactDeclarations = {
@@ -152,7 +154,10 @@ export function ArtifactFloatingPanel() {
     <aside
       data-testid="artifact-floating-panel"
       aria-label={t("rightPanel.artifacts")}
-      className="chat-artifact-floating pointer-events-auto rounded-xl border bg-card"
+      className={cn(
+        "chat-artifact-floating pointer-events-auto rounded-xl border bg-card",
+        chatLayoutStyles.artifactFloating
+      )}
     >
       <header className="min-w-0 border-b px-4 pb-3 pt-4">
         <div className="font-mono text-mono-label uppercase text-muted-foreground">

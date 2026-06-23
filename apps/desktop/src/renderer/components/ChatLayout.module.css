@@ -1,0 +1,105 @@
+.scope {
+  container-type: inline-size;
+}
+
+.scope[data-right-panel-maximized="true"] {
+  overflow: hidden;
+}
+
+.primaryColumn {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 48rem;
+  margin-inline: auto;
+}
+
+.scrollArea::-webkit-scrollbar {
+  width: 12px;
+}
+
+.scope[data-right-panel-maximized="true"] .scrollArea {
+  overflow: hidden;
+}
+
+.scrollProgress {
+  position: absolute;
+  top: 0.5rem;
+  right: -3rem;
+  bottom: 0.5rem;
+  z-index: 15;
+  width: 10px;
+  pointer-events: none;
+}
+
+.progressThumb {
+  position: absolute;
+  right: 0;
+  left: 0;
+  border-radius: 999px;
+  background: rgb(var(--ink) / 0.15);
+}
+
+.scope[data-right-panel-maximized="true"] .scrollProgress {
+  display: none;
+}
+
+:global(.dark) .progressThumb {
+  background: rgb(var(--ink) / 0.16);
+}
+
+.composerDock {
+  position: relative;
+  z-index: 20;
+  margin-top: -18px;
+  background: transparent;
+}
+
+.floatingStack {
+  position: absolute;
+  top: 1rem;
+  right: 1.5rem;
+  z-index: 30;
+  display: none;
+  width: 16.5rem;
+  max-height: calc(100% - 2rem);
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.progressFloating,
+.artifactFloating {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.artifactFloating {
+  flex: 0 1 auto;
+  max-height: min(22rem, calc(100vh - 6rem));
+}
+
+.progressFloating {
+  flex: 1 1 auto;
+  max-height: min(22rem, calc(100vh - 6rem));
+}
+
+@container (min-width: 916px) {
+  .primaryColumn {
+    max-width: calc(48rem + 200px);
+    padding-right: 200px;
+  }
+}
+
+@container (min-width: 960px) {
+  .primaryColumn {
+    max-width: calc(48rem + 18rem);
+    padding-right: 18rem;
+  }
+
+  .floatingStack {
+    display: flex;
+  }
+}

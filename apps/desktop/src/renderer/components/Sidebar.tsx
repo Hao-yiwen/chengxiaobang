@@ -54,6 +54,7 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { runAfterMenuClose } from "@/lib/menu-actions";
 import { cn } from "@/lib/utils";
+import styles from "@/components/Sidebar.module.css";
 import { getApiClient, useAppStore, type ProjectSortMode } from "@/store";
 
 type ProjectSessionGroup = { project: Project; sessions: Session[] };
@@ -920,7 +921,10 @@ export function Sidebar() {
       <div className="relative -mx-1 mt-4 min-h-0 flex-1">
         <div
           data-scrollbar-hidden="true"
-          className="sidebar-scroll-area h-full min-h-0 overflow-y-auto px-1 pb-6 font-normal"
+          className={cn(
+            "sidebar-scroll-area h-full min-h-0 overflow-y-auto px-1 pb-6 font-normal",
+            styles.scrollArea
+          )}
         >
           {hasPinned ? (
             <>

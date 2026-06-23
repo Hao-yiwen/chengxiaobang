@@ -20,6 +20,7 @@ import {
   toolLineRunningLabel
 } from "@/lib/tool-display";
 import { cn } from "@/lib/utils";
+import shimmerStyles from "@/components/ShimmerText.module.css";
 
 interface ToolCallGroupProps {
   /** 连续可分组的普通工具调用，长度 ≥ 2（由 groupTimelineItems 保证）。 */
@@ -70,7 +71,7 @@ export function ToolCallGroup({ toolCalls, onOpenFile }: ToolCallGroupProps) {
           ) : (
             <HeadIcon className="size-3.5 flex-none" />
           )}
-          <span className={cn("min-w-0 truncate", active && "shimmer-text")}>
+          <span className={cn("min-w-0 truncate", active && "shimmer-text", active && shimmerStyles.text)}>
             {summary}
             {activeLabelText ? ` · ${activeLabelText}` : ""}
           </span>
