@@ -27,8 +27,7 @@ export const toolNameSchema = z.enum([
   "ScheduleCancel",
   "Memory",
   "OcrExtractText",
-  "PowerShell",
-  "FeishuSendMessage"
+  "PowerShell"
 ]);
 export type ToolName = z.infer<typeof toolNameSchema>;
 
@@ -39,7 +38,6 @@ export const toolDisplayCategorySchema = z.enum([
   "command",
   "web",
   "artifact",
-  "message",
   "plan",
   "schedule",
   "memory",
@@ -142,10 +140,7 @@ export const builtinToolMetadata = {
   OcrExtractText: readTool("对图片或 PDF 执行 OCR 提取文字", "read", {
     deferPolicy: "deferred"
   }),
-  PowerShell: mutatingTool("在 Windows 原生 PowerShell 中执行命令", "command"),
-  FeishuSendMessage: mutatingTool("向外部飞书会话发送消息", "message", {
-    destructive: true
-  })
+  PowerShell: mutatingTool("在 Windows 原生 PowerShell 中执行命令", "command")
 } satisfies Record<ToolName, ToolMetadata>;
 
 export function isKnownToolName(name: string): name is ToolName {

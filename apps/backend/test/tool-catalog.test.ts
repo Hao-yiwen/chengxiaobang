@@ -21,7 +21,6 @@ const toolNames = [
   "MakeDirectory",
   "Bash",
   "PowerShell",
-  "FeishuSendMessage",
   "ScheduleCreate",
   "ScheduleCancel",
   "CreateSkill",

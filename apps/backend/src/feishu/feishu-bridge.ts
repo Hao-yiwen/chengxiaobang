@@ -12,19 +12,15 @@ export interface FeishuInboundMessage {
   messageType: string;
 }
 
-/** The outbound surface the agent tool needs (subset of the full bridge). */
-export interface FeishuSender {
-  sendText(chatId: string, text: string): Promise<void>;
-}
-
 /**
- * Thin seam over the Lark SDK so FeishuService is testable with a fake:
- * one WebSocket long-connection per configured bot.
+ * 封装 Lark SDK，方便 FeishuService 用 fake bridge 测试；
+ * 每个已配置机器人对应一条 WebSocket 长连接。
  */
-export interface FeishuBridge extends FeishuSender {
+export interface FeishuBridge {
   connect(onMessage: (message: FeishuInboundMessage) => void): Promise<{ botName?: string }>;
   disconnect(): Promise<void>;
   replyText(messageId: string, text: string): Promise<void>;
+  sendText(chatId: string, text: string): Promise<void>;
   resolveChatTitle(
     chatId: string,
     chatType: FeishuInboundMessage["chatType"],

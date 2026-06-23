@@ -4,8 +4,7 @@ import type { StateStore } from "../repository/state-store";
 import type {
   FeishuBridge,
   FeishuBridgeFactory,
-  FeishuInboundMessage,
-  FeishuSender
+  FeishuInboundMessage
 } from "./feishu-bridge";
 import type { FeishuConfigService } from "./feishu-config-service";
 import { chunkFeishuText } from "./feishu-text";
@@ -87,11 +86,6 @@ export class FeishuService {
 
   getStatus(): FeishuStatus {
     return this.status;
-  }
-
-  /** The outbound surface for the FeishuSendMessage tool, when connected. */
-  getSender(): FeishuSender | undefined {
-    return this.bridge;
   }
 
   private async handleMessage(message: FeishuInboundMessage): Promise<void> {

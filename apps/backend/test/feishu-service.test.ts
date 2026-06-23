@@ -99,7 +99,6 @@ describe("FeishuService", () => {
     await service.start();
     expect(service.getStatus()).toEqual({ status: "disconnected" });
     expect(bridge.connected).toBe(false);
-    expect(service.getSender()).toBeUndefined();
   });
 
   it("answers a DM in a dedicated session bound to the chat", async () => {

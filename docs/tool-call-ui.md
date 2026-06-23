@@ -1,6 +1,6 @@
 # 工具调用展示与底部审批方案
 
-> 最后更新:2026-06-13(随本方案落地)
+> 最后更新:2026-06-23(补齐项目级信任、智能审批和工具元数据)
 
 聊天界面中工具调用的展示与敏感操作审批的交互方案。参照 Claude / Codex 桌面端的形态:连续工具调用折叠为一行摘要、每个工具有专属图标、审批面板固定在输入框上方而不是漂在消息流里。
 
@@ -18,7 +18,7 @@
 
 - 折叠态:`[图标] 读取 3 个文件 · 检索 2 次 ⌄`,点击展开为逐条轻量行(图标 + 人话描述),每条仍可再点开看原始 result/diff。
 - 每个内置工具映射专属图标,未知工具名(模型可能请求不存在的工具)有兜底图标。
-- 审批面板移到 Composer 正上方;只做允许/拒绝,**不做**"后续同类不再询问"(留待后续白名单机制)。
+- 审批面板移到 Composer 正上方;支持拒绝、允许,以及项目会话里的“始终允许本项目”（同项目内同签名工具调用自动放行）。
 - `AskUserQuestion` 提问顺势接线现成的 `AskUserCard`(选项点击 + 键盘快捷键),告别 JSON 卡。
 
 ---
@@ -64,10 +64,10 @@ export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 na
 
 ### 2.5 状态呈现
 
-- 当前 run 里的真实活跃工具(`running` / `pending_smart_approval`)都会进入聊天时间线并显示执行态；只有 `Write` / `Edit` 显示路径预览,其他工具只显示泛化文案(如「抓取网页中」「网络搜索中」「运行命令中」),不展示 URL、搜索词、命令或路径。
+- 当前 run 里的真实活跃工具(`running` / `pending_smart_approval`)都会进入聊天时间线并显示执行态；只有 `Write` / `Edit` 显示路径预览,其他工具只显示泛化文案(如「抓取网页中」「网络搜索中」「运行命令中」),不展示 URL、搜索词、命令或路径。`pending_smart_approval` 是智能审批内部等待态,会出现在时间线里,但不会出现在底部普通审批 dock。
 - 运行态有 200ms 最短可见时间:如果工具很快完成,原始历史立即更新为终态,但聊天时间线会用 running 快照覆盖到满 200ms,再切换到完成/失败/拒绝历史态。
 - 有 failed/rejected → 头部红色 mono 计数(`1 失败`),但**不自动展开**——流式中自动展开会引起视口跳动。
-- 待审批的活动工具只进 `pendingTool` 不进 `toolHistory`(store 的 tool_call 事件分支),所以审批中的工具只出现在底部 dock,不会同时出现在时间线里。
+- 普通 `pending_approval` 活动工具只进 `pendingTool` 不进 `toolHistory`(store 的 tool_call 事件分支),所以普通审批中的工具只出现在底部 dock,不会同时出现在时间线里。`pending_smart_approval` 会按活跃工具进入时间线,用于提示智能审批正在判断。
 
 ### 2.5.1 无边框行,与思考面板同构对齐
 
@@ -105,6 +105,7 @@ export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 na
 - 预览区:`Bash` → 近黑 mono 命令块(DESIGN.md 代码卡片形态);`Edit/Write` → mono 路径 + `DiffView`(`buildToolCallDiff` 纯参数驱动,审批前即可算);其余 → JSON `<pre>`。
 - `pendingTool.name === "AskUserQuestion"` → 渲染 `AskUserCard`(选项单击提交、A-Z/↑↓/回车键盘直达、自定义输入),决议经同一个 `onDecide` 回调走 `approve(toolCallId, decision)`。
 - **决议即隐藏**:`decidedId` state 在提交瞬间卸载卡片,避免与时间线上随 `tool_call` 事件出现的回执短暂双显。
+- **始终允许本项目**:当当前会话属于项目时,允许按钮旁提供项目级放行入口,向后端提交 `{ approved: true, approvalScope: "project" }`。后端用 `projectId + toolName + args` 生成签名并保存信任规则,同项目内相同签名的后续工具调用自动放行。
 - 与 Composer 的 `awaitingAskUser` 通道(输入框文本当答案)共存:后端 `ApprovalQueue` 只取第一个决议,`AskUserCard` 自带 `lockedRef` 防重,无需前端互斥。
 - 侧栏 `SideChatPanel` 的内联审批卡是独立 side-chat 通道,本方案未动;后续可复用 ApprovalCard 统一形态。
 
@@ -131,7 +132,7 @@ StreamEvent(tool_call)
 
 | 文件 | 角色 |
 |---|---|
-| `renderer/lib/tool-display.ts` | **纯函数**:`toolIcon`(23 个内置工具 → 内置语义图标,兜底图标 + 一次性 debug 日志)、`toolCategory`/`categoryIcon`(10 个聚合类别)、`toolLineLabel`(人话描述 i18n key + 已截断参数)、`toolGroupSummary`(按类别首现顺序聚合计数)、`truncateEnd` |
+| `renderer/lib/tool-display.ts` | **纯函数**:`toolIcon`(当前 27 个内置工具 → 内置语义图标,兜底图标 + 一次性 debug 日志)、`toolCategory`/`categoryIcon`(10 个聚合类别,含 memory)、`toolLineLabel`(人话描述 i18n key + 已截断参数)、`toolGroupSummary`(按类别首现顺序聚合计数)、`truncateEnd` |
 | `renderer/lib/timeline.ts` | `groupTimelineItems` / `isGroupableToolCall` / `GroupedTimelineItem` |
 | `renderer/lib/artifact.ts` | `isDeliverableToolCall`(新提取,不看 status) |
 | `renderer/components/ToolCallLine.tsx` | 轻量单行:图标 + 描述 + 行尾状态(running→spinner / 待批准文案 / 失败红字 / 完成时长),可展开 result/diff,文件预览按钮 |
@@ -146,7 +147,7 @@ StreamEvent(tool_call)
 
 - 描述模板按工具取参:path 类用 `shortenPath`(尾两段);`search.query`/`glob.pattern` 截 40;`Bash.command` 压缩空白后截 60;`WebFetch.url` 截 60;`ExitPlanMode.title` 截 30。
 - 流式参数预览仅用于 `Write` / `Edit` 的 `file_path`;聊天时间线里的真实 running 工具可以显示泛化执行态,但 URL、搜索词或命令仍只在完成历史或审批面板里展示。
-- 摘要类别:read / edit / search / command / web / artifact / message / plan / schedule / other,组件层以 `" · "` 连接。
+- 摘要类别:read / edit / search / command / web / artifact / plan / schedule / memory / other,组件层以 `" · "` 连接。
 - `ToolCall.name` 是普通 string(模型可能请求未知工具),未知名 → `chat.toolLine.fallback`(「调用 {{name}}」)+ 兜底图标。
 
 ---
@@ -167,7 +168,7 @@ StreamEvent(tool_call)
 
 ## 5. 后续可演进
 
-- **"后续同类命令不再询问"**:需扩展 shared `ApprovalDecision` 契约 + 后端按命令前缀/工具名记录会话级放行规则,本次刻意未做。
+- **更细粒度的信任管理 UI**:当前已支持项目级“始终允许本项目”,但还没有设置页查看、撤销或按规则管理这些信任记录。
 - 侧栏 `SideChatPanel` 的审批卡复用 `ApprovalCard` 统一形态。
 - `chatTimeline()` 全量接线(plan/aside 渲染器)时,把 `groupTimelineItems` 合入其 fold。
 - 历史会话残留的 `pending_approval` 行(run 异常结束遗留)目前按 spinner 行呈现,可考虑显示"未审批"终态。

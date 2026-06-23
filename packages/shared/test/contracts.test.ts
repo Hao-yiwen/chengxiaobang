@@ -184,8 +184,7 @@ describe("toolNameSchema", () => {
       "ScheduleCancel",
       "Memory",
       "OcrExtractText",
-      "PowerShell",
-      "FeishuSendMessage"
+      "PowerShell"
     ]) {
       expect(toolNameSchema.parse(name)).toBe(name);
     }

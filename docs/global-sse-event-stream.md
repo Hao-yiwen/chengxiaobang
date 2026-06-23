@@ -1,6 +1,6 @@
 # 全局 SSE 事件流实现文档
 
-本文记录桌面端运行事件从“每次 run 独占一条 SSE”迁移到“应用级全局 SSE + POST commands + DB 快照恢复”的实现。当前版本只覆盖桌面端主聊天和右侧小聊天；飞书、定时任务等进程内消费者仍直接消费 `AgentRunner.stream()`。
+本文记录桌面端运行事件从“每次 run 独占一条 SSE”迁移到“应用级全局 SSE + POST commands + DB 快照恢复”的实现。当前全局 SSE 承载 `AppEvent`：主聊天和右侧小聊天消费 run 级 `StreamEvent`，定时任务调度器额外发布任务生命周期事件；飞书、微信和定时任务的 headless run 内容本身仍直接消费 `AgentRunner.stream()`。
 
 ## 背景
 
@@ -23,12 +23,13 @@
 - 主聊天和右侧小聊天用 `clientRequestId/runId` 过滤各自事件，允许并发运行。
 - SSE 断线期间不做事件 replay，重连后通过 DB 快照恢复可恢复状态。
 - 保留旧 `POST /api/runs/stream`，避免影响测试、飞书、定时任务和其他进程内消费路径。
+- 定时任务通过同一条 `/api/events` 推送 `scheduled_task_started/finished`，用于任务页刷新、会话运行态和通知。
 
 暂不做：
 
 - 不引入 WebSocket。
 - 不做持久化事件 replay。
-- 不把飞书和定时任务迁到 `EventHub`。
+- 不把飞书/微信回复流或定时任务 headless run 的完整内容迁到 `EventHub`。
 - 不改变审批、ask-user、plan 的业务语义。
 
 ## Shared 契约
@@ -42,6 +43,8 @@
 
 - `RunRequest.clientRequestId?: string`
 - `StreamEvent.run_started.clientRequestId?: string`
+- `ScheduledTaskEvent`
+- `AppEvent = StreamEvent | ScheduledTaskEvent`
 - `runStartResponseSchema`
 - `RunStartResponse`
 
@@ -58,6 +61,11 @@
 
 这保证 `POST /api/runs` 返回后，客户端即使还没收到全局 SSE 中的 `run_started`，也能把本地状态绑定到确定的 `runId/sessionId`。
 
+定时任务事件不属于单个 run 的流式输出,但同样经 `encodeSseEvent()` 发到 `/api/events`：
+
+- `scheduled_task_started`:任务开始执行,带 `taskId/sessionId/name/trigger/occurredAt`。
+- `scheduled_task_finished`:任务结束,带 `status`、可选 `runId/error`。
+
 ## Backend 实现
 
 相关文件：
@@ -68,6 +76,7 @@
 - `apps/backend/src/api/routes/runs.ts`
 - `apps/backend/src/agent/agent-runner.ts`
 - `apps/backend/src/agent/compaction.ts`
+- `apps/backend/src/tasks/task-scheduler.ts`
 
 ### EventHub
 
@@ -82,7 +91,7 @@
 
 ### GET /api/events
 
-`GET /api/events` 返回 SSE：
+`GET /api/events` 返回应用级 SSE：
 
 - 鉴权继续沿用 `x-chengxiaobang-token`。
 - 格式继续使用 shared 的 `encodeSseEvent()`。
@@ -114,6 +123,13 @@
 
 这保证老测试、内部 headless 消费路径和迁移外调用方不被一次性打断。
 
+### TaskScheduler
+
+定时任务执行仍然在后端进程内直接消费 `runner.stream(..., { headless: true })`，不会把完整 headless run 内容转发到 EventHub。调度器只在任务开始和结束时发布 `scheduled_task_started/finished`：
+
+- 开始事件让桌面端把绑定会话标记为运行中，并刷新任务列表。
+- 结束事件让桌面端清理运行态、刷新任务列表，并发应用内/系统通知。
+
 ### AgentRunner
 
 `AgentRunner.stream()` 的主逻辑保持原样，只在发 `run_started` 时附加 `clientRequestId`：
@@ -135,12 +151,13 @@
 
 - `apps/desktop/src/renderer/lib/api.ts`
 
-`ApiClient` 新增两个可选能力：
+`ApiClient` 新增全局事件能力：
 
 - `startRun(input): Promise<RunStartResponse>`
 - `subscribeRunEvents(onEvent, options): () => void`
+- `subscribeAppEvents(onEvent, options): () => void`
 
-`subscribeRunEvents()` 内部维护：
+`subscribeAppEvents()` 订阅 `/api/events` 并广播 `AppEvent`；`subscribeRunEvents()` 是 run-only 兼容封装。内部维护：
 
 - listener 集合。
 - 单个 `AbortController`。
@@ -148,7 +165,7 @@
 - 断线后的短退避重连。
 - `onReconnect` 和 `onError` 回调。
 
-当第一个 listener 注册时创建连接；最后一个 listener 退订时 abort 连接。事件到达后广播给当前所有 listener，主聊天和右侧小聊天各自过滤。
+当第一个 listener 注册时创建连接；最后一个 listener 退订时 abort 连接。事件到达后广播给当前所有 listener，主聊天用 `handleAppEvent()` 先分发任务事件和 run 事件，右侧小聊天只订阅/过滤 run 事件。
 
 重连策略：
 
@@ -171,6 +188,7 @@
 
 新增核心 action：
 
+- `handleAppEvent(event)`
 - `handleRunEvent(event, options?)`
 - `recoverActiveRunSnapshot()`
 
@@ -189,6 +207,8 @@
 
 ### handleRunEvent()
 
+所有应用级事件先经过 `handleAppEvent()`：`StreamEvent` 交给 `handleRunEvent()`，`scheduled_task_started/finished` 刷新任务列表、标记会话运行中并触发通知。
+
 所有主聊天运行事件都经过 `handleRunEvent()`：
 
 - `session_updated` 全局接收，只更新侧边栏会话元数据。
@@ -202,6 +222,7 @@
 - `tool_activity`：更新当前写入/编辑工具的路径预览；仅 `Write` / `Edit` 可携带 `argsPreview.file_path`，URL、搜索词、命令和正文不进入预览。
 - `message`：追加持久化消息；assistant 消息会清空实时 text/thinking 缓冲，并记录 `activeRunLastAssistant`。
 - `tool_call(pending_approval)`：进入 `pendingTool`，等待底部审批/ask-user/plan 卡片。
+- `tool_call(pending_smart_approval)`：进入 `runningTool`/时间线,不进入普通审批 dock。
 - `tool_call(running)`：进入 `runningTool` 并写入工具历史。
 - `tool_call(completed|failed|rejected)`：清理 pending/running，并 upsert 到工具历史。
 - `run_end`：清理运行态，写 usage/runMeta，然后触发 `refresh()` 和当前会话详情重拉。
@@ -216,7 +237,7 @@
 2. 拉取当前会话 runs/toolCalls。
 3. 找到当前 `activeRunId`。
 4. 如果 run 不存在或状态不是 `running`，说明运行已经结束或不可恢复，清理运行态。
-5. 如果 run 仍为 `running`，只从该 run 的 toolCalls 中恢复最新 `pending_approval` 或 `running` 工具。
+5. 如果 run 仍为 `running`，只从该 run 的 toolCalls 中恢复最新 `pending_approval`、`pending_smart_approval` 或 `running` 工具。
 
 这个限制很重要：没有当前 `activeRunId` 时不恢复历史 `status="running"` 残留，避免把旧脏数据误判成活跃 run。
 
@@ -267,7 +288,7 @@ sequenceDiagram
   participant Events as GET /api/events
   participant Runner as AgentRunner
 
-  Store->>Api: subscribeRunEvents(handleRunEvent)
+  Store->>Api: subscribeAppEvents(handleAppEvent)
   Api->>Events: fetch SSE /api/events
   Events->>Hub: subscribe()
 
@@ -278,18 +299,18 @@ sequenceDiagram
   Runs->>Hub: publish(run_started)
   Hub-->>Events: run_started
   Events-->>Api: SSE event
-  Api-->>Store: handleRunEvent(run_started)
+  Api-->>Store: handleAppEvent(run_started)
   Runs-->>Store: RunStartResponse
 
   Runner-->>Runs: message / delta / tool_call ...
   Runs->>Hub: publish(event)
   Hub-->>Events: event
   Events-->>Api: SSE event
-  Api-->>Store: handleRunEvent(event)
+  Api-->>Store: handleAppEvent(event)
 
   Runner-->>Runs: run_end
   Runs->>Hub: publish(run_end)
-  Api-->>Store: handleRunEvent(run_end)
+  Api-->>Store: handleAppEvent(run_end)
   Store->>Store: clear transient state and reload DB snapshot
 ```
 
@@ -351,7 +372,7 @@ sequenceDiagram
   - 启动前失败返回 HTTP error
   - 旧 `/api/runs/stream` 仍保留回归覆盖
 - `apps/desktop/test/composer.test.tsx`
-  - 主聊天使用 `startRun + subscribeRunEvents`
+  - 主聊天使用 `startRun + subscribeAppEvents`
   - 全局事件驱动 message/run_end
   - planMode 请求仍携带 `planMode: true`
   - ask-user 等待期仍可通过 composer 输入自定义回答
@@ -370,8 +391,7 @@ pnpm typecheck
 
 ## 后续可演进方向
 
-1. 更新 `docs/architecture.md`，把主运行入口从单一 `/api/runs/stream` 改成全局事件流架构。
-2. 将飞书和定时任务按需接入 `EventHub`，让后台 run 也能被桌面端实时观察。
-3. 如果需要跨后端重启恢复，可新增持久化 event log 和 `lastEventId` replay。
-4. 为全局事件流增加更细的 listener 诊断，例如当前订阅者数量、最近一次事件时间、重连次数。
-5. 把测试中的 React `act(...)` warning 单独清理，降低未来前端测试输出噪音。
+1. 如需让定时任务 headless run 内容在当前打开会话里直播，需要把 headless run 的消息流也投递到全局事件通道，而不只是发布任务开始/结束事件。
+2. 如果需要跨后端重启恢复，可新增持久化 event log 和 `lastEventId` replay。
+3. 为全局事件流增加更细的 listener 诊断，例如当前订阅者数量、最近一次事件时间、重连次数。
+4. 把测试中的 React `act(...)` warning 单独清理，降低未来前端测试输出噪音。

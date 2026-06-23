@@ -33,7 +33,6 @@ const BUILTIN_TOOLS = [
   "WebSearch",
   "ToolSearch",
   "CreateSkill",
-  "FeishuSendMessage",
   "ExitPlanMode",
   "AskUserQuestion",
   "Skill",
@@ -53,7 +52,6 @@ const CATEGORIES: ToolCategory[] = [
   "command",
   "web",
   "artifact",
-  "message",
   "plan",
   "schedule",
   "memory",
@@ -101,7 +99,6 @@ describe("toolCategory / categoryIcon", () => {
     expect(toolCategory("WebSearch")).toBe("web");
     expect(toolCategory("ToolSearch")).toBe("search");
     expect(toolCategory("CreateSkill")).toBe("edit");
-    expect(toolCategory("FeishuSendMessage")).toBe("message");
     expect(toolCategory("ExitPlanMode")).toBe("plan");
     expect(toolCategory("TodoWrite")).toBe("plan");
     expect(toolCategory("ScheduleCreate")).toBe("schedule");

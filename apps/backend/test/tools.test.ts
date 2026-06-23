@@ -6,7 +6,11 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { createAgentTools, findTool, requiresApproval } from "../src/tools/registry";
 import { assessToolApprovalRisk } from "../src/tools/approval-policy";
 import { buildToolFileChangeDetails } from "../src/tools/file-change";
+import { createPlanTools } from "../src/tools/plan-tools";
+import { createScheduleTools } from "../src/tools/schedule-tools";
 import { createShellTools } from "../src/tools/shell-tools";
+import { createSkillTools } from "../src/tools/skill-tools";
+import { createTodoTools } from "../src/tools/todo-tools";
 import { createToolSearchTool } from "../src/tools/tool-search-tool";
 import { resolveRgCommand } from "../src/tools/fs-tools";
 
@@ -27,11 +31,34 @@ async function executeTool(
   name: string,
   args: Record<string, unknown>
 ): Promise<Awaited<ReturnType<AgentTool<any>["execute"]>>> {
+  const tool = getTool(tools, name);
+  return tool.execute("tool_1", args);
+}
+
+function getTool(tools: AgentTool<any>[], name: string): AgentTool<any> {
   const tool = findTool(tools, name);
   if (!tool) {
     throw new Error(`tool not registered: ${name}`);
   }
-  return tool.execute("tool_1", args);
+  return tool;
+}
+
+function toolModelText(tool: AgentTool<any>): string {
+  return JSON.stringify({
+    description: tool.description,
+    parameters: tool.parameters
+  });
+}
+
+function expectToolGuidance(
+  tools: AgentTool<any>[],
+  name: string,
+  snippets: string[]
+): void {
+  const text = toolModelText(getTool(tools, name));
+  for (const snippet of snippets) {
+    expect(text).toContain(snippet);
+  }
 }
 
 describe("builtin agent tools", () => {
@@ -63,8 +90,7 @@ describe("builtin agent tools", () => {
       "GitDiff",
       "BashStatus",
       "BashCancel",
-      "WebFetch",
-      "FeishuSendMessage"
+      "WebFetch"
     ]);
   });
 
@@ -74,6 +100,63 @@ describe("builtin agent tools", () => {
 
     expect(windowsNames).toContain("PowerShell");
     expect(macNames).not.toContain("PowerShell");
+  });
+
+  it("keeps operational tool guidance in tool descriptions and parameter descriptions", () => {
+    expectToolGuidance(tools, "Read", ["最多 2000 行", "offset/limit", "先用它了解现状"]);
+    expectToolGuidance(tools, "Write", [
+      "覆盖已有文件前必须先用 Read 完整读取",
+      "小范围改动优先使用 Edit",
+      "优先生成 file_path"
+    ]);
+    expectToolGuidance(tools, "Edit", [
+      "old_string 不要包含 Read 输出里的行号前缀",
+      "replace_all=true",
+      "唯一匹配",
+      "优先生成 file_path"
+    ]);
+    expectToolGuidance(tools, "Glob", ["不要用 shell 拼等价命令"]);
+    expectToolGuidance(tools, "Grep", ["不要用 shell 拼等价命令"]);
+    expectToolGuidance(tools, "Bash", [
+      "默认前台等待 15000ms",
+      "run_in_background=true",
+      "timeout 最长 600000ms",
+      "BashStatus",
+      "BashCancel"
+    ]);
+    expectToolGuidance(createShellTools(dir, { platform: "win32" }), "PowerShell", [
+      "等待、后台、timeout、输出文件",
+      "BashStatus",
+      "BashCancel"
+    ]);
+
+    const planTools = createPlanTools({
+      getApprovedPlanArgs: () => undefined,
+      getAskUserAnswer: () => undefined,
+      loadSkill: async () => undefined
+    });
+    expectToolGuidance(planTools, "AskUserQuestion", [
+      "真正需要决策",
+      "一次性合并",
+      "2 到 4 个清晰选项"
+    ]);
+    expectToolGuidance(planTools, "Skill", ["PPT、Word、Excel", "先加载对应技能"]);
+
+    expectToolGuidance(createTodoTools(), "TodoWrite", [
+      "多步排查",
+      "完整 todos",
+      "最多一个 in_progress"
+    ]);
+    expectToolGuidance(
+      createScheduleTools({ store: {} as never, sessionId: "session_test" }),
+      "ScheduleCreate",
+      ["kind=once", "带时区 ISO 时间 run_at", "不要用 cron 表达一次性任务"]
+    );
+    expectToolGuidance(
+      createSkillTools({ skillMarketService: {} as never }),
+      "CreateSkill",
+      ["GitHub 链接", "口头描述需求", "name + description + content"]
+    );
   });
 
   it("ToolSearch loads deferred tools by exact name and keyword", async () => {
@@ -723,33 +806,8 @@ describe("builtin agent tools", () => {
   });
 });
 
-describe("FeishuSendMessage tool", () => {
-  it("sends through the injected sender and reports success", async () => {
-    const sent: Array<{ chatId: string; text: string }> = [];
-    const tools = createAgentTools("/tmp", () => ({
-      async sendText(chatId: string, text: string) {
-        sent.push({ chatId, text });
-      }
-    }));
-
-    const result = await run(tools, "FeishuSendMessage", {
-      chatId: "oc_123",
-      content: "进度：已完成"
-    });
-
-    expect(sent).toEqual([{ chatId: "oc_123", text: "进度：已完成" }]);
-    expect(result).toContain("oc_123");
-  });
-
-  it("fails with a configuration hint when no sender is available", async () => {
-    const tools = createAgentTools("/tmp");
-    await expect(
-      run(tools, "FeishuSendMessage", { chatId: "oc_123", content: "hi" })
-    ).rejects.toThrow("飞书未配置或未启用");
-  });
-
+describe("tool approval policy", () => {
   it("marks side-effect-capable tools for approval-aware contexts", () => {
-    expect(requiresApproval("FeishuSendMessage")).toBe(true);
     expect(requiresApproval("Write")).toBe(true);
     expect(requiresApproval("Bash")).toBe(true);
     expect(requiresApproval("PowerShell")).toBe(true);

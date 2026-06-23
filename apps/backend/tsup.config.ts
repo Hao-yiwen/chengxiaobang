@@ -22,6 +22,7 @@ export default defineConfig({
     "@tencent-weixin/openclaw-weixin",
     "hono",
     "adm-zip",
+    "diff",
     "js-yaml",
     "js-tiktoken",
     "lru-cache",

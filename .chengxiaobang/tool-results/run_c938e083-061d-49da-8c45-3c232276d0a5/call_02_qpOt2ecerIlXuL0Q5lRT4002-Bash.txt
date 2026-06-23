@@ -1,0 +1,1412 @@
+diff --git a/README.md b/README.md
+index eb28b93..50d741d 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # 程小帮（chengxiaobang）
+ 
+-程小帮是一个 **macOS / Windows Electron AI 助手桌面应用**（agentic coding companion）。它在本地拉起一个无头 HTTP 后端，由 [pi](https://www.npmjs.com/package/@earendil-works/pi-agent-core) 驱动 agent 循环，桌面端通过 SSE 实时消费模型输出、工具调用与审批事件。
++程小帮是一个 **macOS / Windows Electron AI 助手桌面应用**（agentic coding companion）。它在本地拉起一个无头 HTTP 后端，由 [pi](https://www.npmjs.com/package/@earendil-works/pi-agent-core) 驱动 agent 循环，桌面端通过应用级 SSE 实时消费模型输出、工具调用、审批与定时任务事件。
+ 
+ 技术栈：**pnpm + TypeScript monorepo，全仓 ESM**，后端运行时强制 **Bun**，桌面端为 **Electron + React + Vite + Tailwind**。
+ 
+@@ -99,35 +99,37 @@ chengxiaobang/
+ 
+ #### `packages/shared` —— 契约层
+ 
+-API / IPC 契约的唯一事实源。所有实体（Provider、Project、Session、Message、ToolCall、RunRequest…）都是 **Zod schema + 推导类型**：后端用它们 `.parse()` 请求，渲染层导入同一份类型。还拥有 `StreamEvent` 联合类型与 SSE codec（`encodeSseEvent` / `parseSseChunk`）。**改这里，两端必须跟随；它必须先 build。**
++API / IPC 契约的唯一事实源。所有实体（Provider、Project、Session、Message、ToolCall、RunRequest、ScheduledTask…）都是 **Zod schema + 推导类型**：后端用它们 `.parse()` 请求，渲染层导入同一份类型。还拥有 `StreamEvent` / `AppEvent` 联合类型、工具元数据（`toolMetadata`）与 SSE codec（`encodeSseEvent` / `parseSseChunk`）。**改这里，两端必须跟随；它必须先 build。**
+ 
+ #### `apps/backend` —— 后端层（Bun，非 Electron 进程）
+ 
+ - Hono 风格的 `fetch` handler（`api/app.ts`），由 `Bun.serve` 提供服务（`server.ts`，强制 Bun）。
+-- agent 循环是 **pi 的 `runAgentLoopContinue`**，由 `agent/agent-runner.ts` 驱动；pi 事件经 `agent/pi-events.ts`（`RunEventTranslator`）翻译为 `StreamEvent`，经 `POST /api/runs/stream` 以 **SSE** 流出。
++- agent 循环是 **pi 的 `runAgentLoopContinue`**，由 `agent/agent-runner.ts` 驱动；pi 事件经 `agent/pi-events.ts`（`RunEventTranslator`）翻译为 `StreamEvent`。桌面默认用 `POST /api/runs` 启动 run，再通过全局 `GET /api/events` 接收 `AppEvent`；旧 `POST /api/runs/stream` 仍作为测试和回退流式入口保留。
+ - 状态经 **sql.js 落 SQLite**（`repository/sqlite-state-store.ts`，藏在 `StateStore` 接口后）；assistant/tool 消息行带 backend-only 的 `payload` 列以无损回放多轮工具历史。
+ - 模型调用走 **pi-ai**（`streamSimple`）；`model/pi-model.ts` 把 `ProviderConfig` 映射为 pi `Model`（按 slug/baseUrl 自动探测 provider 兼容差异）。内置 provider 为 **DeepSeek** 和 **Kimi**。
+-- 工具是 TypeBox schema 的 pi `AgentTool`（`tools/registry.ts` 汇集 fs/shell/web/office/feishu 工具）。
+-- **定时任务**：模型经 `tools/schedule-tools.ts` 创建（5 字段 cron，croner 解析），`tasks/task-scheduler.ts` 轮询到期任务并在原会话追加 headless run。
++- 工具是 TypeBox schema 的 pi `AgentTool`（`tools/registry.ts` 汇集文件、Shell/PowerShell、Git、网页抓取/搜索、Memory、定时任务、Todo、技能、OCR、飞书和 MCP 插件工具）；展示、审批、deferred 与计划草稿可见性统一由 `toolMetadata` 描述。
++- **定时任务**：模型经 `tools/schedule-tools.ts` 创建一次性或周期任务（`kind=once + run_at` / `kind=recurring + 5 字段 cron`），`tasks/task-scheduler.ts` 轮询到期任务并在原会话追加 headless run，同时向全局事件流发布任务生命周期事件。
++- **插件 / MCP / 技能市场**：插件可声明 MCP server，启用后转成 `mcp__...` 工具；内置技能、市场技能、插件技能和自定义技能共同进入斜杠命令与 Skill 工具体系。
++- **手机通道**：飞书和微信绑定会话复用同一个 runner，外部消息串行进入对应会话，结果回发到手机通道。
+ 
+ #### `apps/desktop` —— 桌面层（Electron）
+ 
+ - **main 进程拉起并监督后端**（`main/backend-process.ts`）。
+ - 渲染层（React + Vite + Tailwind）沙箱化；`preload/index.ts` 只暴露最小的 `window.chengxiaobang` bridge（backend info、原生文件/目录选择器、读文件）。
+-- `renderer/lib/api.ts` 据 bridge 的 baseURL/token 构建类型化 `ApiClient` 并消费 SSE 流。
++- `renderer/lib/api.ts` 据 bridge 的 baseURL/token 构建类型化 `ApiClient`；默认用 `startRun` + `subscribeAppEvents` 接入全局 SSE，并保留 `streamRun` 兼容旧路径和测试。
+ - 渲染层拆为 `store/`（zustand 状态）、`components/`（视图）、`lib/`（IO）、`hooks/`、`i18n/`。
+ 
+ ### Agent 运行流程（核心循环）
+ 
+-`POST /api/runs/stream` → `AgentRunner.stream()`：
++桌面默认路径：`POST /api/runs` 启动 run，`GET /api/events` 接收 `AppEvent`；旧 `POST /api/runs/stream` 仍可直接流式消费 `AgentRunner.stream()`。
+ 
+ 1. 解析/创建会话，落库 user 消息，发 `run_started` + `message`。
+ 2. **用户可见的内置斜杠命令只保留 `/compact`**：它走仅总结的模型调用，不落 user 消息；文件、shell、Git 等能力保留为 agent 内部工具，由模型在 pi 循环中按需调用。
+-3. 从持久化行重建 pi 对话（`agent/history.ts`），交给 `runAgentLoopContinue`。`RunEventTranslator` 把 pi 事件映射到 `StreamEvent`：`delta` / `message` / `tool_call` / 最终 `run_end`。
+-4. **审批门控**在 pi 的 `beforeToolCall` 钩子：`approval` 模式下 mutating 工具先落 `pending_approval`，阻塞在 `ApprovalQueue.wait()` 直到 `POST /api/approvals/:toolCallId`。
+-5. `POST /api/runs/:runId/abort` 经以 runId 为键的 `AbortController` 取消。
++3. 从持久化行重建 pi 对话（`agent/history.ts`），交给 `runAgentLoopContinue`。`RunEventTranslator` 把 pi 事件映射到 `StreamEvent`：`setup_error` / `run_started` / `delta` / `plan_delta` / `message` / `tool_activity` / `tool_call` / `session_updated` / `run_end`。
++4. **审批门控**在 pi 的 `beforeToolCall` 钩子：`approval` 模式下需要确认的工具先落 `pending_approval` 或 `pending_smart_approval`，阻塞在 `ApprovalQueue.wait()` 直到 `POST /api/approvals/:toolCallId`；项目会话支持“始终允许本项目”的同签名工具调用信任。
++5. `POST /api/runs/:runId/abort` 经以 runId 为键的 `AbortController` 取消；`POST /api/runs/:runId/steering` 可向运行中的 run 注入用户引导。
+ 
+-每一步都是一个 `StreamEvent`，渲染层完全由这些事件驱动 UI。
++run 生命周期由 `StreamEvent` 驱动；定时任务开始/结束等应用级通知作为 `ScheduledTaskEvent` 合入 `AppEvent`，同一条全局 SSE 推给渲染层。
+ 
+ ---
+ 
+@@ -174,6 +176,11 @@ pnpm test -t "approval"                            # 按名过滤
+ - [`CLAUDE.md`](./CLAUDE.md) —— 工程准则（写码前先思考 / 简单优先 / 外科手术式修改 / 目标驱动）、约定与陷阱
+ - [`DESIGN.md`](./DESIGN.md) —— 设计系统（色板、字体层级、间距、组件形态）
+ - [`docs/architecture.md`](./docs/architecture.md) —— 完整架构设计
++- [`docs/global-sse-event-stream.md`](./docs/global-sse-event-stream.md) —— 全局 SSE 与运行事件恢复
+ - [`docs/scheduled-tasks.md`](./docs/scheduled-tasks.md) —— 定时任务
+ - [`docs/tool-call-ui.md`](./docs/tool-call-ui.md) —— 工具调用 UI
++- [`docs/memory.md`](./docs/memory.md) —— 长期记忆（Memory）工具
++- [`docs/shell-background-execution.md`](./docs/shell-background-execution.md) —— Shell / PowerShell 后台命令
++- [`docs/provider-catalog-yaml.md`](./docs/provider-catalog-yaml.md) —— 供应商与模型静态配置
++- [`docs/usage-cost-ledger.md`](./docs/usage-cost-ledger.md) —— token 用量与成本账本
+ - [`docs/sidebar-pinning.md`](./docs/sidebar-pinning.md) —— 侧边栏固定
+diff --git a/apps/backend/test/feishu-service.test.ts b/apps/backend/test/feishu-service.test.ts
+index 7679e5d..4133fc9 100644
+--- a/apps/backend/test/feishu-service.test.ts
++++ b/apps/backend/test/feishu-service.test.ts
+@@ -99,7 +99,6 @@ describe("FeishuService", () => {
+     await service.start();
+     expect(service.getStatus()).toEqual({ status: "disconnected" });
+     expect(bridge.connected).toBe(false);
+-    expect(service.getSender()).toBeUndefined();
+   });
+ 
+   it("answers a DM in a dedicated session bound to the chat", async () => {
+diff --git a/apps/backend/test/system-prompt.test.ts b/apps/backend/test/system-prompt.test.ts
+index 41f95e3..5f0c7b2 100644
+--- a/apps/backend/test/system-prompt.test.ts
++++ b/apps/backend/test/system-prompt.test.ts
+@@ -11,11 +11,13 @@ describe("buildSystemPrompt", () => {
+     expect(prompt).toContain("/tmp/proj");
+     expect(prompt).toContain("demo");
+     expect(prompt).toContain("审批模式");
+-    expect(prompt).toContain("Skill");
+-    expect(prompt).toContain("TodoWrite");
+-    expect(prompt).toContain("简单问答、小改动或单次工具调用不要创建 todo");
++    expect(prompt).toContain("简单问答、小改动或单次工具调用不要创建清单");
+     expect(prompt).toContain("<artifacts><artifact path=\"page.html\" />");
+     expect(prompt).toContain("不要放进 Markdown 代码块");
++    expect(prompt).not.toContain("TodoWrite");
++    expect(prompt).not.toContain("Bash 默认前台短等待");
++    expect(prompt).not.toContain("先用 LS / Glob / Grep / Read");
++    expect(prompt).not.toContain("ScheduleCreate");
+     expect(prompt).not.toContain("create_pptx");
+     expect(prompt).not.toContain("create_docx");
+     expect(prompt).not.toContain("create_xlsx");
+@@ -26,6 +28,20 @@ describe("buildSystemPrompt", () => {
+     expect(prompt).toContain("完全访问模式");
+   });
+ 
++  it("计划模式保留 ExitPlanMode 和 plan 参数的显式规则", () => {
++    const prompt = buildSystemPrompt({
++      workspacePath: "/w",
++      accessMode: "approval",
++      planMode: true
++    });
++
++    expect(prompt).toContain("当前为「计划模式」");
++    expect(prompt).toContain("ExitPlanMode");
++    expect(prompt).toContain("计划文本参数为 plan");
++    expect(prompt).toContain("Summary、Key Changes、Test Plan、Assumptions");
++    expect(prompt).toContain("用户确认前禁止调用写文件、运行命令等会改变环境的工具");
++  });
++
+   it("注入长期记忆段：含协议说明与目录快照，未启用时完全省略", () => {
+     const without = buildSystemPrompt({ workspacePath: "/w", accessMode: "approval" });
+     expect(without).not.toContain("长期记忆");
+@@ -46,9 +62,8 @@ describe("buildSystemPrompt", () => {
+     expect(listed).not.toContain("（记忆目录为空）");
+   });
+ 
+-  it("mentions the feishu tool and adds plain-text guidance for feishu sessions", () => {
++  it("adds plain-text guidance for feishu sessions without hardcoding the send tool", () => {
+     const local = buildSystemPrompt({ workspacePath: "/w", accessMode: "approval" });
+-    expect(local).toContain("FeishuSendMessage");
+     expect(local).not.toContain("当前对话来自飞书");
+ 
+     const viaFeishu = buildSystemPrompt({
+@@ -57,7 +72,7 @@ describe("buildSystemPrompt", () => {
+       viaFeishu: true
+     });
+     expect(viaFeishu).toContain("当前对话来自飞书");
+-    expect(viaFeishu).toContain("不要调用 FeishuSendMessage 重复发送你的回复");
++    expect(viaFeishu).toContain("不要额外主动发送重复回复");
+     expect(viaFeishu).not.toContain("<artifacts>");
+   });
+ 
+diff --git a/apps/backend/test/tool-catalog.test.ts b/apps/backend/test/tool-catalog.test.ts
+index f565c85..a3bf1ec 100644
+--- a/apps/backend/test/tool-catalog.test.ts
++++ b/apps/backend/test/tool-catalog.test.ts
+@@ -21,7 +21,6 @@ const toolNames = [
+   "MakeDirectory",
+   "Bash",
+   "PowerShell",
+-  "FeishuSendMessage",
+   "ScheduleCreate",
+   "ScheduleCancel",
+   "CreateSkill",
+diff --git a/apps/backend/test/tools.test.ts b/apps/backend/test/tools.test.ts
+index d79bf7b..77eb62c 100644
+--- a/apps/backend/test/tools.test.ts
++++ b/apps/backend/test/tools.test.ts
+@@ -6,7 +6,11 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
+ import { createAgentTools, findTool, requiresApproval } from "../src/tools/registry";
+ import { assessToolApprovalRisk } from "../src/tools/approval-policy";
+ import { buildToolFileChangeDetails } from "../src/tools/file-change";
++import { createPlanTools } from "../src/tools/plan-tools";
++import { createScheduleTools } from "../src/tools/schedule-tools";
+ import { createShellTools } from "../src/tools/shell-tools";
++import { createSkillTools } from "../src/tools/skill-tools";
++import { createTodoTools } from "../src/tools/todo-tools";
+ import { createToolSearchTool } from "../src/tools/tool-search-tool";
+ import { resolveRgCommand } from "../src/tools/fs-tools";
+ 
+@@ -27,11 +31,34 @@ async function executeTool(
+   name: string,
+   args: Record<string, unknown>
+ ): Promise<Awaited<ReturnType<AgentTool<any>["execute"]>>> {
++  const tool = getTool(tools, name);
++  return tool.execute("tool_1", args);
++}
++
++function getTool(tools: AgentTool<any>[], name: string): AgentTool<any> {
+   const tool = findTool(tools, name);
+   if (!tool) {
+     throw new Error(`tool not registered: ${name}`);
+   }
+-  return tool.execute("tool_1", args);
++  return tool;
++}
++
++function toolModelText(tool: AgentTool<any>): string {
++  return JSON.stringify({
++    description: tool.description,
++    parameters: tool.parameters
++  });
++}
++
++function expectToolGuidance(
++  tools: AgentTool<any>[],
++  name: string,
++  snippets: string[]
++): void {
++  const text = toolModelText(getTool(tools, name));
++  for (const snippet of snippets) {
++    expect(text).toContain(snippet);
++  }
+ }
+ 
+ describe("builtin agent tools", () => {
+@@ -63,8 +90,7 @@ describe("builtin agent tools", () => {
+       "GitDiff",
+       "BashStatus",
+       "BashCancel",
+-      "WebFetch",
+-      "FeishuSendMessage"
++      "WebFetch"
+     ]);
+   });
+ 
+@@ -76,6 +102,63 @@ describe("builtin agent tools", () => {
+     expect(macNames).not.toContain("PowerShell");
+   });
+ 
++  it("keeps operational tool guidance in tool descriptions and parameter descriptions", () => {
++    expectToolGuidance(tools, "Read", ["最多 2000 行", "offset/limit", "先用它了解现状"]);
++    expectToolGuidance(tools, "Write", [
++      "覆盖已有文件前必须先用 Read 完整读取",
++      "小范围改动优先使用 Edit",
++      "优先生成 file_path"
++    ]);
++    expectToolGuidance(tools, "Edit", [
++      "old_string 不要包含 Read 输出里的行号前缀",
++      "replace_all=true",
++      "唯一匹配",
++      "优先生成 file_path"
++    ]);
++    expectToolGuidance(tools, "Glob", ["不要用 shell 拼等价命令"]);
++    expectToolGuidance(tools, "Grep", ["不要用 shell 拼等价命令"]);
++    expectToolGuidance(tools, "Bash", [
++      "默认前台等待 15000ms",
++      "run_in_background=true",
++      "timeout 最长 600000ms",
++      "BashStatus",
++      "BashCancel"
++    ]);
++    expectToolGuidance(createShellTools(dir, { platform: "win32" }), "PowerShell", [
++      "等待、后台、timeout、输出文件",
++      "BashStatus",
++      "BashCancel"
++    ]);
++
++    const planTools = createPlanTools({
++      getApprovedPlanArgs: () => undefined,
++      getAskUserAnswer: () => undefined,
++      loadSkill: async () => undefined
++    });
++    expectToolGuidance(planTools, "AskUserQuestion", [
++      "真正需要决策",
++      "一次性合并",
++      "2 到 4 个清晰选项"
++    ]);
++    expectToolGuidance(planTools, "Skill", ["PPT、Word、Excel", "先加载对应技能"]);
++
++    expectToolGuidance(createTodoTools(), "TodoWrite", [
++      "多步排查",
++      "完整 todos",
++      "最多一个 in_progress"
++    ]);
++    expectToolGuidance(
++      createScheduleTools({ store: {} as never, sessionId: "session_test" }),
++      "ScheduleCreate",
++      ["kind=once", "带时区 ISO 时间 run_at", "不要用 cron 表达一次性任务"]
++    );
++    expectToolGuidance(
++      createSkillTools({ skillMarketService: {} as never }),
++      "CreateSkill",
++      ["GitHub 链接", "口头描述需求", "name + description + content"]
++    );
++  });
++
+   it("ToolSearch loads deferred tools by exact name and keyword", async () => {
+     const enabledDeferredToolNames = new Set<string>();
+     let runtimeTools: AgentTool<any>[] = [];
+@@ -723,33 +806,8 @@ describe("builtin agent tools", () => {
+   });
+ });
+ 
+-describe("FeishuSendMessage tool", () => {
+-  it("sends through the injected sender and reports success", async () => {
+-    const sent: Array<{ chatId: string; text: string }> = [];
+-    const tools = createAgentTools("/tmp", () => ({
+-      async sendText(chatId: string, text: string) {
+-        sent.push({ chatId, text });
+-      }
+-    }));
+-
+-    const result = await run(tools, "FeishuSendMessage", {
+-      chatId: "oc_123",
+-      content: "进度：已完成"
+-    });
+-
+-    expect(sent).toEqual([{ chatId: "oc_123", text: "进度：已完成" }]);
+-    expect(result).toContain("oc_123");
+-  });
+-
+-  it("fails with a configuration hint when no sender is available", async () => {
+-    const tools = createAgentTools("/tmp");
+-    await expect(
+-      run(tools, "FeishuSendMessage", { chatId: "oc_123", content: "hi" })
+-    ).rejects.toThrow("飞书未配置或未启用");
+-  });
+-
++describe("tool approval policy", () => {
+   it("marks side-effect-capable tools for approval-aware contexts", () => {
+-    expect(requiresApproval("FeishuSendMessage")).toBe(true);
+     expect(requiresApproval("Write")).toBe(true);
+     expect(requiresApproval("Bash")).toBe(true);
+     expect(requiresApproval("PowerShell")).toBe(true);
+diff --git a/apps/desktop/src/renderer/i18n/locales/en.json b/apps/desktop/src/renderer/i18n/locales/en.json
+index d7e5888..0758e23 100644
+--- a/apps/desktop/src/renderer/i18n/locales/en.json
++++ b/apps/desktop/src/renderer/i18n/locales/en.json
+@@ -364,7 +364,6 @@
+       "WebFetch": "Fetched {{url}}",
+       "WebSearch": "Searched web for {{query}}",
+       "ToolSearch": "Searched tools for {{query}}",
+-      "FeishuSendMessage": "Sent a Feishu message",
+       "ExitPlanMode": "Proposed plan \"{{title}}\"",
+       "TodoRead": "Read todo",
+       "TodoWrite": "Updated todo",
+@@ -407,7 +406,6 @@
+       "WebSearchGeneric": "Searching web",
+       "ToolSearch": "Searching tools for {{query}}",
+       "ToolSearchGeneric": "Searching tools",
+-      "FeishuSendMessage": "Sending Feishu message",
+       "ExitPlanMode": "Proposing plan \"{{title}}\"",
+       "ExitPlanModeGeneric": "Proposing plan",
+       "TodoRead": "Reading todo",
+@@ -444,8 +442,6 @@
+       "web_other": "Fetched {{count}} pages",
+       "artifact_one": "Generated 1 file",
+       "artifact_other": "Generated {{count}} files",
+-      "message_one": "Sent 1 message",
+-      "message_other": "Sent {{count}} messages",
+       "plan_one": "1 plan update",
+       "plan_other": "{{count}} plan updates",
+       "schedule_one": "1 schedule action",
+diff --git a/apps/desktop/src/renderer/i18n/locales/zh.json b/apps/desktop/src/renderer/i18n/locales/zh.json
+index b1deb8f..299d2c0 100644
+--- a/apps/desktop/src/renderer/i18n/locales/zh.json
++++ b/apps/desktop/src/renderer/i18n/locales/zh.json
+@@ -364,7 +364,6 @@
+       "WebFetch": "抓取 {{url}}",
+       "WebSearch": "网络搜索 {{query}}",
+       "ToolSearch": "搜索工具 {{query}}",
+-      "FeishuSendMessage": "发送飞书消息",
+       "ExitPlanMode": "提出计划「{{title}}」",
+       "TodoRead": "读取 Todo",
+       "TodoWrite": "更新 Todo",
+@@ -407,7 +406,6 @@
+       "WebSearchGeneric": "网络搜索中",
+       "ToolSearch": "搜索工具 {{query}} 中",
+       "ToolSearchGeneric": "搜索工具中",
+-      "FeishuSendMessage": "发送飞书消息中",
+       "ExitPlanMode": "提出计划「{{title}}」中",
+       "ExitPlanModeGeneric": "提出计划中",
+       "TodoRead": "读取 Todo 中",
+@@ -438,7 +436,6 @@
+       "command": "运行 {{count}} 条命令",
+       "web": "抓取 {{count}} 个网页",
+       "artifact": "生成 {{count}} 个文件",
+-      "message": "发送 {{count}} 条消息",
+       "plan": "{{count}} 项计划操作",
+       "schedule": "{{count}} 项定时任务操作",
+       "memory": "{{count}} 次记忆操作",
+diff --git a/apps/desktop/src/renderer/lib/tool-display.ts b/apps/desktop/src/renderer/lib/tool-display.ts
+index ecf4e34..365998e 100644
+--- a/apps/desktop/src/renderer/lib/tool-display.ts
++++ b/apps/desktop/src/renderer/lib/tool-display.ts
+@@ -12,7 +12,6 @@ import {
+   GitBranchIcon,
+   GlobeOutlineIcon,
+   LabFlaskOutlineIcon,
+-  PointerOutlineIcon,
+   PullRequestOpenIcon,
+   SearchIcon,
+   SkillIcon,
+@@ -50,7 +49,6 @@ const TOOL_ICONS: Record<string, Icon> = {
+   WebFetch: GlobeOutlineIcon,
+   WebSearch: SearchIcon,
+   ToolSearch: SearchIcon,
+-  FeishuSendMessage: PointerOutlineIcon,
+   ExitPlanMode: ChecklistPlanIcon,
+   TodoRead: ChecklistPlanIcon,
+   TodoWrite: ChecklistPlanIcon,
+@@ -92,7 +90,6 @@ const CATEGORY_ICONS: Record<ToolCategory, Icon> = {
+   command: TerminalIcon,
+   web: GlobeOutlineIcon,
+   artifact: DocumentIcon,
+-  message: PointerOutlineIcon,
+   plan: ChecklistPlanIcon,
+   schedule: ClockIcon,
+   memory: BrainIcon,
+@@ -128,7 +125,6 @@ type ToolLineName =
+   | "WebFetch"
+   | "WebSearch"
+   | "ToolSearch"
+-  | "FeishuSendMessage"
+   | "ExitPlanMode"
+   | "TodoRead"
+   | "TodoWrite"
+@@ -262,7 +258,6 @@ function genericRunningToolLineLabel(toolCall: ToolCall): ToolLineLabel | undefi
+     case "BashCancel":
+     case "GitStatus":
+     case "GitDiff":
+-    case "FeishuSendMessage":
+     case "TodoRead":
+     case "TodoWrite":
+     case "AskUserQuestion":
+@@ -346,7 +341,6 @@ function toolLineLabelInNamespace(
+     case "GitDiff":
+     case "BashStatus":
+     case "BashCancel":
+-    case "FeishuSendMessage":
+     case "TodoRead":
+     case "AskUserQuestion":
+     case "ScheduleList":
+diff --git a/docs/architecture.md b/docs/architecture.md
+index f14be57..972d8f7 100644
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -1,8 +1,8 @@
+ # 程小帮 架构设计文档
+ 
+-> 最后更新:2026-06-14(供应商与模型配置 YAML 化之后)
++> 最后更新:2026-06-23(与当前事件、工具、任务和插件体系对齐)
+ 
+-程小帮是一个 macOS / Windows Electron 桌面 AI 助手(agentic coding companion):模型通过工具真实地读写本地文件、执行命令、生成 Office 文档,并可通过飞书机器人远程对话。
++程小帮是一个 macOS / Windows Electron 桌面 AI 助手(agentic coding companion):模型通过工具真实地读写本地文件、执行命令、生成 Office 文档,并可通过桌面端、飞书或微信绑定会话对话。
+ 
+ 技术栈:pnpm + TypeScript monorepo,全仓 ESM;后端运行在 **Bun**;agent 循环与模型调用基于 **pi 框架**(`@earendil-works/pi-agent-core` / `@earendil-works/pi-ai`);持久化用 sql.js(SQLite);前端 React + Vite + Tailwind + zustand;测试 Vitest。
+ 
+@@ -27,13 +27,14 @@
+ │                        │                    │ AgentEvent                        │
+ │                        │            RunEventTranslator(pi-events.ts)           │
+ │                        │                    │ StreamEvent                       │
+-│                        └──── AsyncEventQueue ──→ SSE 流式响应                   │
++│                        └──── AsyncEventQueue ──→ /api/runs/stream 或 EventHub    │
+ │                                                                                 │
+-│  tools/(pi AgentTool×15) model/(config YAML + pi-ai) repository/(sql.js)   │
+-│  agent/history.ts(无损历史) secrets/(系统凭据) feishu/(长连接机器人)      │
++│  tools/(内置 + deferred + MCP) model/(config YAML + pi-ai) repository/(sql.js) │
++│  agent/history.ts(无损历史) events/(AppEvent) secrets/(系统凭据)              │
++│  feishu/(长连接机器人) wechat/(本机桥接) tasks/(定时任务) plugins/mcp/skills  │
+ └─────────────────────────────────────────────────────────────────────────────────┘
+                                    ▲
+-                packages/shared:实体 Zod schema、StreamEvent 契约、SSE codec
++                packages/shared:实体 Zod schema、StreamEvent/AppEvent 契约、SSE codec
+ ```
+ 
+ 设计原则(见根目录 CLAUDE.md):
+@@ -50,23 +51,31 @@
+ chengxiaobang/
+ ├── packages/shared/          # 契约层(必须先 build,其 dist/ 类型被两端消费)
+ │   └── src/{stream,message,tool,run,model,session,project,provider,
+-│            access-mode,feishu,slash-command,terminal,utils}.ts
++│            access-mode,scheduled-task,plugin,skill,todo,usage-stats,
++│            web-search,feishu,connect-phone,slash-command,terminal,utils}.ts
+ ├── apps/backend/
+ │   └── src/
+ │       ├── main.ts           # CLI 入口与依赖装配(startBackend)
+ │       ├── server.ts         # Bun.serve(必须 Bun;idleTimeout 255s 保 SSE)
+ │       ├── paths.ts          # 数据目录、会话工作目录、内置资源定位
+ │       ├── api/              # Hono app + routes/(projects/sessions/runs/
+-│       │                     #   slash-commands/terminal/settings)
++│       │                     #   slash-commands/plugins/skills/tasks/
++│       │                     #   terminal/settings/messages)
+ │       ├── agent/            # agent-runner / pi-events / history / compaction /
+-│       │                     #   system-prompt / approval-queue / async-queue
+-│       ├── tools/            # registry + fs/shell/web/office/feishu 工具工厂、
+-│       │                     #   workspace、slash-command-service、
+-│       │                     #   {pptx,docx,xlsx}-builder
++│       │                     #   system-prompt / approval-queue / smart-approval /
++│       │                     #   project-approval-trust / async-queue
++│       ├── tools/            # registry + fs/shell/web/memory/schedule/
++│       │                     #   ocr/todo/skill 工具工厂、插件与技能服务
++│       ├── mcp/              # 插件 MCP server 加载与工具桥接
++│       ├── events/           # 全局 AppEvent EventHub
++│       ├── tasks/            # 定时任务调度与 cron/run_at 解析
+ │       ├── model/            # provider-config-file、provider-service、pi-model
+ │       ├── repository/       # state-store 接口 + sqlite-state-store(sql.js)
+ │       ├── secrets/          # secret-store(Keychain / Credential Manager / 内存)
+-│       └── feishu/           # feishu-service / feishu-bridge / config / text
++│       ├── feishu/           # feishu-service / feishu-bridge / config / text
++│       ├── wechat/           # 微信配置、本机桥接与会话消费
++│       ├── web-search/       # Tavily 配置与搜索执行器
++│       └── usage/            # token 用量与人民币成本账本
+ └── apps/desktop/
+     └── src/{main,preload,renderer}/
+ ```
+@@ -75,26 +84,38 @@ chengxiaobang/
+ 
+ ## 3. 契约层:packages/shared
+ 
+-### 3.1 StreamEvent(SSE 事件契约,共 6 种)
++### 3.1 StreamEvent / AppEvent(SSE 事件契约)
+ 
+-agent 循环对外的全部输出。`src/stream.ts`:
++agent 循环对外的运行事件是 `StreamEvent`;应用级全局 SSE 还会广播定时任务事件,合并类型是 `AppEvent`。`packages/shared/src/stream.ts`:
+ 
+ ```ts
+ type StreamEvent =
+-  | { type: "run_started"; runId; sessionId }
+-  | { type: "delta";       runId; channel: "text" | "thinking"; delta }
+-  | { type: "message";     runId; message: Message }   // 已持久化的消息
+-  | { type: "tool_call";   runId; toolCall: ToolCall } // 每次状态迁移发一次
+-  | { type: "session_updated"; runId; session: Session } // run 中途的会话元数据变更
+-  | { type: "run_end";     runId; status: "completed"|"failed"|"aborted";
+-      usage?: TokenUsage; error? };                    // 永远是最后一个事件
++  | { type: "setup_error"; error }
++  | { type: "run_started"; runId; sessionId; clientRequestId?; providerId?; model?; reasoningMode? }
++  | { type: "delta"; runId; channel: "text" | "thinking"; delta }
++  | { type: "plan_delta"; runId; contentIndex; toolCallId?; markdown; delta; updatedAt }
++  | { type: "message"; runId; message: Message }
++  | { type: "tool_activity"; runId; activity: ToolActivity }
++  | { type: "tool_call"; runId; toolCall: ToolCall }
++  | { type: "session_updated"; runId; session: Session }
++  | { type: "run_end"; runId; status; usage?; error?; fileChanges? };
++
++type AppEvent =
++  | StreamEvent
++  | { type: "scheduled_task_started"; taskId; sessionId; name; trigger; occurredAt }
++  | { type: "scheduled_task_finished"; taskId; sessionId; name; trigger; status; runId?; error?; occurredAt };
+ ```
+ 
++- `setup_error`:run 尚未创建时的启动失败提示,不写入 run 历史。
++- `run_started`:run 已落库并启动;全局 SSE 路径会携带客户端生成的 `clientRequestId` 方便前端归属过滤。
+ - `delta`:模型增量输出,text/thinking 双通道。
++- `plan_delta`:计划模式中 `ExitPlanMode` 参数里的计划正文增量,用于计划卡直播。
+ - `message`:user 回显、assistant 中间叙述与最终回答(中止时含已流出的部分回答)。
+-- `tool_call`:状态机由 `ToolCall.status` 携带——`pending_approval → running → completed | failed | rejected`,每次迁移发一次事件,渲染层据此驱动审批卡片与工具历史。
++- `tool_activity`:工具执行前的轻量活动预览,目前只允许 `Write/Edit` 暴露路径预览,不把 URL、搜索词、命令等敏感参数提前塞进时间线。
++- `tool_call`:状态机由 `ToolCall.status` 携带——`pending_approval | pending_smart_approval | running | completed | failed | rejected`,每次迁移发一次事件,渲染层据此驱动审批、智能审批和工具历史。
+ - `session_updated`:run 中途的会话元数据变更(目前是 AI 生成的会话标题),渲染层据此即时更新侧边栏而无需整表刷新。
+-- `run_end`:唯一终态事件;completed 时带 `usage`。
++- `run_end`:唯一终态事件;completed 时可带 `usage`,有文件改动时可带 `fileChanges`。
++- `scheduled_task_started/finished`:由 `TaskScheduler` 发布到全局 `EventHub`,用于桌面端刷新任务页、标记会话运行中和发通知。
+ 
+ SSE 编解码(`encodeSseEvent`/`parseSseChunk`)同在此文件,前后端共用。
+ 
+@@ -103,12 +124,14 @@ SSE 编解码(`encodeSseEvent`/`parseSseChunk`)同在此文件,前后端共用
+ | 实体 | 要点 |
+ |---|---|
+ | `Message` | `role: user/assistant/tool/system`、`content`、`kind?: "compaction_summary"`、`reasoning?/reasoningMs?/durationMs?` |
+-| `ToolCall` | `name` 为自由字符串(模型可能请求未知工具,照常落库渲染为 failed)、`args` 为对象、`startedAt` 只在真正开始执行时落(审批等待不计时) |
+-| `RunRequest` | `prompt`、`sessionId?`、`projectId?`、`providerId?`、`accessMode: approval/full_access` |
++| `ToolCall` | `name` 为自由字符串(模型可能请求未知工具,照常落库渲染为 failed)、`status` 包含普通审批与智能审批状态、`argsPreview` 只放允许提前展示的参数摘要、`startedAt` 只在真正开始执行时落(审批等待不计时) |
++| `RunRequest` | `prompt`、`sessionId?`、`projectId?`、`clientRequestId?`、`providerId?`、`model?`、`reasoningMode?`、`accessMode: approval/full_access`、`planMode`、原生图片附件与展示附件 |
+ | `ProviderConfig` | 运行时 provider 快照:`kind`、`region/api/auth`、`baseURL`、`model`、`catalog`、`apiKeyRef`(密钥引用,非明文) |
+ | `TokenUsage` | `promptTokens/completionTokens/totalTokens/cachedPromptTokens?` |
++| `ScheduledTask` | `kind: once/recurring`;周期任务用 5 字段 `cron`,一次性任务用 `runAt`,调度器统一看 `nextRunAt` |
++| `ApprovalDecision` | `{ approved, answer?, editedSteps?, approvalScope? }`;`approvalScope: "project"` 表示把同项目内同签名工具调用记为可信 |
+ 
+-`toolNameSchema`(15 个内置工具名枚举)仅用于斜杠命令解析的类型,不再约束 `ToolCall.name`。
++`toolNameSchema` 当前列出内置工具名,但 `ToolCall.name` 仍是普通 string:模型未知工具、插件 MCP 工具(`mcp__...`)都可以落库并由 `toolMetadata(name)` 给出兜底展示与审批策略。
+ 
+ ---
+ 
+@@ -117,32 +140,40 @@ SSE 编解码(`encodeSseEvent`/`parseSseChunk`)同在此文件,前后端共用
+ ### 4.1 服务器与 API 层
+ 
+ - `server.ts`:`Bun.serve`,**强制 Bun 运行时**(非 Bun 直接抛错);`idleTimeout: 255` 防止安静的 SSE 流(如审批等待)被 Bun 默认 10s 空闲超时杀掉。
+-- `api/app.ts`:Hono。CORS 全开(本机服务)、token 中间件(`x-chengxiaobang-token`,`/api/health` 豁免)、统一 404/500 JSON。
++- `api/app.ts`:Hono。本机服务只放行可信来源:空 origin、`null`、`file://`、`localhost`、`127.0.0.1`、`::1`;token 中间件(`x-chengxiaobang-token`,`/api/health` 豁免)、统一 404/500 JSON。
+ - 路由一览:
+ 
+ | 路由 | 职责 |
+ |---|---|
+ | `GET /api/health` | 健康检查(无鉴权,desktop 启动探活) |
+-| `POST /api/runs/stream` | 发起一次 run,SSE 返回 StreamEvent;15s 注释心跳保活 |
++| `POST /api/runs` | 默认桌面入口:发起 run,首个 `run_started` 后返回 `RunStartResponse`,后续事件走全局 `/api/events` |
++| `GET /api/events` | 应用级全局 SSE,广播 `AppEvent`;15s 注释心跳保活,不做历史 replay |
++| `POST /api/runs/stream` | 旧流式入口:请求独占 SSE 返回 `StreamEvent`;仍用于回退路径、测试和部分进程内消费 |
++| `GET /api/runs/active` | 返回活跃 run 快照,供前端重连后按 DB 恢复 pending/running 工具 |
+ | `POST /api/runs/:runId/abort` | 中止 run |
+-| `POST /api/approvals/:toolCallId` | 审批决定 `{approved}` |
+-| `/api/projects*` | 项目 CRUD、`/files` @-mention 文件自动补全 |
+-| `/api/sessions*` | 会话 CRUD、messages、runs+toolCalls、rewind、fork |
+-| `/api/slash-commands` | 内置 + pi 模板/技能命令列表(项目覆盖全局) |
++| `POST /api/runs/:runId/steering` | 向运行中 run 注入用户引导 |
++| `POST /api/approvals/:toolCallId` | 审批/ask-user/计划确认决定,支持 `approvalScope: "project"` |
++| `/api/projects*` | 项目 CRUD、Git 改动摘要/详情、`/files` 与 `/files/tree` 文件树 |
++| `/api/sessions*` | 会话 CRUD、搜索、messages、已读、反馈、上下文用量、runs+toolCalls、debug-context、rewind、fork、side-chats |
++| `/api/messages*` | 消息级右侧小聊天读取与发送 |
++| `/api/slash-commands*` | 内置 + pi 模板/技能命令列表,以及命令禁用设置 |
++| `/api/plugins*` | 插件列表、安装、启停、配置与删除 |
++| `/api/skills*` | 内置/市场/自定义技能列表、详情、启停、导入、创建与删除 |
++| `/api/tasks*` | 定时任务列表、更新、删除、立即运行 |
+ | `/api/terminal/exec` | 终端面板在项目目录执行命令 |
+-| `/api/settings/*` | provider 配置文件管理与连通性测试、飞书配置 |
++| `/api/settings/*` | provider 配置/模型选项、飞书与微信状态、手机连接安装、网页搜索配置与测试、用量统计 |
+ 
+ 会话 messages 接口序列化时**剥离 `payload` 列**(模型上下文内部数据,不暴露给客户端)。
+ 
+ ### 4.2 Agent 运行核心(本项目的心脏)
+ 
+-`POST /api/runs/stream` → `AgentRunner.stream(input): AsyncGenerator<StreamEvent>`:
++`POST /api/runs` 或 `POST /api/runs/stream` → `AgentRunner.stream(input): AsyncGenerator<StreamEvent>`:
+ 
+ 1. **从 `~/.chengxiaobang/config.yaml` 解析 provider,再用 SecretStore 解析 API key**,无可用模型直接抛错(路由层转成 `run_end(failed)` 的 SSE)。
+ 2. **解析/创建会话**,确定工作目录:项目会话用项目路径,独立会话用 `~/.chengxiaobang/<sessionId>`。
+ 3. **斜杠命令展开**(`SlashCommandService`,基于 pi-agent-core 的 prompt 模板/技能加载,项目级 `.chengxiaobang/prompts|skills` 覆盖全局)。
+ 4. `/compact` 是元命令,走独立的压缩流程(见 4.6),不落 user 消息。
+-5. 落库 run + user 消息,发 `run_started` + `message`。
++5. 落库 run + user 消息,发 `run_started` + `message`。桌面默认路径会把这些事件发布到 `EventHub`;旧 `/runs/stream` 路径直接写入当前 SSE 响应。
+ 6. **pi 循环**:`runPiLoop` 用 `agent/history.ts` 从持久化行重建 pi 对话,调 pi 的 `runAgentLoopContinue(context, config, emit, signal, streamFn)`。文件、shell、Git 等能力只作为模型可调用的内部工具存在,不再暴露 `/ls`、`/read`、`/shell` 等用户斜杠快捷命令。
+ 
+ 关键配置:
+@@ -165,16 +196,19 @@ SSE 编解码(`encodeSseEvent`/`parseSseChunk`)同在此文件,前后端共用
+ | `message_update` text/thinking delta | `delta`(thinking 首增量起算 reasoningMs) |
+ | `message_end`(assistant) | 落库(content/reasoning/计时/payload);文本非空才发 `message`;stopReason=error 记错误标志;aborted 落部分文本并记中止标志 |
+ | `message_end`(toolResult) | 落 tool 行(含 payload),不发事件(UI 用 ToolCall 实体渲染) |
+-| `tool_execution_start` | 建 ToolCall 实体:需审批→`pending_approval`(无 startedAt),否则 `running`+startedAt;发 `tool_call` |
+-| `beforeToolCall` 钩子 | 等 `ApprovalQueue.wait()`;通过→`running`+startedAt;拒绝→实体 `rejected` + 返回 `{block:true, reason}`,pi 把 reason 作为错误工具结果喂回模型(**run 继续,不中断**) |
++| `tool_execution_start` | 建 ToolCall 实体:普通审批→`pending_approval`(无 startedAt);智能审批待判定→`pending_smart_approval`;可直接执行→`running`+startedAt;发 `tool_call` |
++| `beforeToolCall` 钩子 | 检查项目级信任、智能审批与普通审批;需要用户确认时等 `ApprovalQueue.wait()`;通过→可记录项目级信任并置 `running`;拒绝→实体 `rejected` + 返回 `{block:true, reason}`,pi 把 reason 作为错误工具结果喂回模型(**run 继续,不中断**) |
+ | `tool_execution_end` | 实体置 completed/failed(已 rejected 的跳过,不覆盖) |
+ | `agent_end` | **唯一终态决策点**:中止→aborted;错误→failed;模型级工具调用上限→failed(中文报错);否则 completed+usage |
+ 
+ pi 对模型错误/中止**从不抛异常**(以 `stopReason` 表达),所以 `agent_end` 必达;循环 Promise 真正 reject 只可能是基础设施故障(落库失败等),runner 兜底将 run 关为 failed/aborted,绝不留 "running" 僵尸。
+ 
+-### 4.3 审批与中止语义
++### 4.3 审批、智能审批与中止语义
+ 
+-- **审批**:`ApprovalQueue`(34 行)——`wait(toolCallId, signal)` 挂起直到 `decide()`;支持"先决定后等待"(早到的决定缓存);signal 中止时 resolve(false)。客户端通过 `POST /api/approvals/:toolCallId` 决定;飞书只读模式自动 decide(false)。
++- **普通审批**:`ApprovalQueue`——`wait(toolCallId, signal)` 挂起直到 `decide()`;支持"先决定后等待"(早到的决定缓存);signal 中止时 resolve(false)。客户端通过 `POST /api/approvals/:toolCallId` 决定。
++- **项目级信任**:桌面审批可提交 `{ approved: true, approvalScope: "project" }`;后端按 `projectId + toolName + args` 签名写入设置,同项目内相同签名的后续工具调用自动放行。
++- **智能审批**:`smart-approval.ts` 会在 approval 模式下对部分工具给出 allow/deny/ask_user 判定;需要用户介入时实体处于 `pending_smart_approval`,时间线显示执行态但底部普通审批 dock 不展示它。
++- **手机/无人值守兜底**:飞书只读模式、微信绑定会话与定时任务 headless run 遇到待审批工具时自动拒绝,避免无人回答导致 run 永久挂起。
+ - **中止**:`AgentRunner` 持有 `Map<runId, AbortController>`,signal 贯穿 pi 循环与工具执行:
+   - 模型流中途:部分回答照常落库并以 `message` 发出(平静收尾),再 `run_end(aborted)`;
+   - 审批等待中:wait→false→工具 rejected,`shouldStopAfterTurn` 见 signal.aborted 阻止再次调模型;
+@@ -199,15 +233,28 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
+ | `fs-tools.ts` | LS、Read、Glob、Grep | 否 |
+ | | Write、Edit、MakeDirectory | **是** |
+ | `shell-tools.ts` | GitStatus、GitDiff、BashStatus、BashCancel | 否 |
+-| | Bash | **是** |
+-| `web-tools.ts` | WebFetch(HTML→纯文本,30s 超时,20k 截断) | 否 |
+-| `feishu-tools.ts` | FeishuSendMessage(sender 经闭包懒解析,因 FeishuService 在 runner 之后构造) | **是** |
+-
+-- `registry.ts`:`createAgentTools(workspacePath, getFeishuSender?)` 汇集工厂;`MUTATING_TOOLS` 集合 + `requiresApproval(name)` 是审批门控的唯一事实源。
++| | Bash、Windows-only PowerShell | **是** |
++| `web-tools.ts` | WebFetch(模型辅助网页抽取)、WebSearch(Tavily 搜索)、ToolSearch(加载 deferred/MCP 工具) | 否 |
++| `memory-tools.ts` | Memory(`/memories` 下 view/create/str_replace/insert/delete/rename) | 否(只限专用目录) |
++| `schedule-tools.ts` | ScheduleCreate、ScheduleList、ScheduleCancel | 创建/取消是 |
++| `todo-tools.ts` | TodoRead、TodoWrite | 否(运行内计划进度) |
++| `ocr-tools.ts` | OcrExtractText | 否,deferred 且仅模型/附件条件满足时可见 |
++| `skill-tools.ts` | Skill、CreateSkill | Skill 否;CreateSkill 是 |
++
++- `packages/shared/src/tool.ts` 的 `toolMetadata(name)` 是展示、审批、deferred、计划草稿可见性和分类的统一事实源;未知工具与 `mcp__...` 工具走保守兜底策略。
++- `registry.ts`:`createAgentTools(workspacePath, options)` 汇集文件、Shell、Web、Memory、OCR、技能、MCP 等工厂;`requiresApproval(name)` / `isMutatingTool(name)` 由 `toolMetadata` 与 MCP 规则共同决定。
++- `selectAgentTools()` 会按计划阶段、飞书/headless 通道、OCR 条件、deferred 工具启用集合裁剪模型可见工具。计划草稿阶段只开放 read-only 与 `planDraftVisible` 工具;正式执行阶段隐藏 `ExitPlanMode`;飞书/headless 隐藏会阻塞的提问/计划工具。
+ - `workspace.ts`:`safeResolve` 强制路径不逃逸工作目录;Glob/Grep 的路径边界与忽略规则(忽略 node_modules/.git/dist 等);`listProjectFiles` 供 @-mention 自动补全。`Grep` 依赖 ripgrep,桌面打包时随平台 `rg/rg.exe` 打入并通过 `CHENGXIAOBANG_RG_PATH` 传给后端。
+-- Shell 命令通过 `Bash.timeout` / `Bash.run_in_background` 选择等待策略：默认前台等待 15 秒后转后台，`run_in_background=true` 立即转后台，`timeout` 最多等待 600000ms 后转后台；输出持续写入工作区文件,再由 `BashStatus` 查询状态、`BashCancel` 主动终止;详见 [Shell 执行与后台命令](./shell-background-execution.md)。
++- Shell 命令通过 `Bash`/`PowerShell` 的 `timeout` / `run_in_background` 选择等待策略：默认前台等待 15 秒后转后台，`run_in_background=true` 立即转后台，`timeout` 最多等待 600000ms 后转后台；输出持续写入工作区文件,再由 `BashStatus` 查询状态、`BashCancel` 主动终止;详见 [Shell 执行与后台命令](./shell-background-execution.md)。
+ - 参数校验由 pi 在执行前按 TypeBox schema 完成,非法参数直接变成错误工具结果(不经 beforeToolCall)。
+ 
++### 4.5.1 插件、MCP 与技能市场
++
++- 插件由 `PluginService` 管理安装、启停和配置;已启用插件可声明 MCP server,`McpManager` 懒加载后通过 `mcp-tool-bridge.ts` 转成 `mcp__...` pi 工具。
++- MCP 工具默认按 mutating/deferred/requiresApproval 处理,避免外部服务能力自报不完整时越权执行。
++- 技能市场由 `SkillMarketService` 管理启用状态、禁用命令和技能使用记录;内置技能、市场技能、插件技能与用户自定义技能共同进入 `SlashCommandService`。
++- `CreateSkill` 允许对话内创建/导入技能;自定义技能落在用户数据目录并立即被后续命令/技能发现。
++
+ ### 4.6 模型层与压缩
+ 
+ - 静态模型/供应商目录以 `packages/shared/provider-catalog.yaml` 为人工维护源,生成 `provider-catalog.generated.ts`;模型 label、输入模态、上下文窗口、价格、工具调用上限、provider 默认值、用量人民币展示汇率与 fallback 正则都来自这里。字段说明见 [供应商与模型静态配置 YAML](./provider-catalog-yaml.md)。
+@@ -225,7 +272,7 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
+ - 一切经 `StateStore` 接口,测试与实现解耦。
+ - `secrets/secret-store.ts`:darwin 用 macOS Keychain(`security` CLI),win32 用 Windows Credential Manager,其他平台内存实现;库里只存 `apiKeyRef` 引用,永不落明文。
+ 
+-### 4.8 飞书集成
++### 4.8 手机通道:飞书与微信
+ 
+ `feishu/feishu-service.ts`:长连接机器人(lark SDK,`feishu-bridge.ts` 封装)。入站文本消息 → 绑定到 per-chat 会话(`feishuChatId`)→ 无头消费 `runner.stream()`:
+ 
+@@ -233,6 +280,8 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
+ - 收集 assistant `message` 文本拼成单条回复(超长按飞书限制分片);`run_end` 的 failed/aborted 转为中文提示。
+ - 群聊只在 @机器人 时响应;同一 chat 串行(busy 提示)。
+ 
++`wechat/wechat-service.ts`:通过本机桥接运行微信绑定会话,配置与状态走 `/api/settings/wechat*`。语义与飞书类似:外部消息绑定到专用会话、串行消费 runner 输出、结果回发到手机通道。定时任务创建工具会拒绝飞书/微信绑定会话,因为后台执行结果只写入桌面会话,不会主动回发手机群聊。
++
+ ---
+ 
+ ## 5. 桌面端:apps/desktop
+@@ -240,35 +289,39 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
+ - **main 进程**(`main/backend-process.ts`):随机端口(30000–50000)+ 随机 token 拉起后端子进程——dev 用 `node_modules/.bin/bun --watch src/main.ts`(后端改动自动重启),打包后用捆绑的 Bun binary 跑 `resources/backend/main.js`;同时把随包携带的 `rg/rg.exe` 路径注入 `CHENGXIAOBANG_RG_PATH`;轮询 `/api/health` 就绪后经 `backend-info` IPC 把 `{baseURL, token}` 交给渲染层。每次启动 = 全新端口的全新后端。
+ - **preload**:沙箱渲染层只拿到最小 `window.chengxiaobang` bridge(backend info、原生文件/目录选择器、读文件)。
+ - **渲染层**:
+-  - `lib/api.ts`:类型化 `ApiClient`(从 shared 导入全部类型),`streamRun` 用 `readSseStream` 解析 SSE 并逐事件回调;
+-  - `store/index.ts`(zustand):StreamEvent 的 5 分支 switch 驱动全部运行态——`delta` 按通道累积 `streamText`/`thinking`(thinking 首增量记 `thinkingStartedAt` 供计时器);`message` 追加消息并在 assistant 时清空流式缓冲;`tool_call` 按 status 设/清 `pendingTool` 并 upsert `toolHistory`;`run_end` 收尾(completed 时存 usage,failed 时错误条);
+-  - `components/`:ChatView(时间线 + 流式 Markdown + 审批卡片)、ToolCallRow(按 status 渲染)、ReasoningPanel(DeepSeek 风格思考面板,250ms 计时)、Composer 等;`lib/timeline.ts` 把消息与 ToolCall 按时间合并(tool 行与空 content 的 assistant 行不渲染气泡);
++  - `lib/api.ts`:类型化 `ApiClient`(从 shared 导入全部类型)。桌面默认用 `startRun(POST /api/runs)` 启动,再用 `subscribeAppEvents(GET /api/events)` 接收全局 `AppEvent`;保留 `streamRun(POST /api/runs/stream)` 作为测试/旧客户端回退。
++  - `store/`(zustand):`handleAppEvent` 先拆分 `StreamEvent` 与定时任务事件。运行事件由 `handleRunEvent` 处理——`delta` 本地合帧后累积 `streamText`/`thinking`;`tool_activity` 更新允许展示的路径预览;`message` 追加消息并清空流式缓冲;`tool_call` 按 `pending_approval/pending_smart_approval/running/completed/failed/rejected` 维护 `pendingTool`、`runningTool` 与 `toolHistory`;`run_end` 收尾并刷新 usage/runMeta。定时任务事件会标记会话运行中、刷新任务列表并发应用内/系统通知。
++  - `recoverActiveRunSnapshot()`：全局 SSE 重连后按当前 `activeRunId` 从 DB 拉 messages/runs/toolCalls,只恢复当前 run 的 pending/running 工具,不把历史残留 running 行误判成活跃运行。
++  - `components/`:ChatView(时间线 + 流式 Markdown)、ApprovalDock(底部审批/ask-user/计划确认)、ToolCallRow(按 status 渲染)、ReasoningPanel(DeepSeek 风格思考面板,250ms 计时)、Composer 等;`lib/timeline.ts` 把消息与 ToolCall 按时间合并(tool 行与空 content 的 assistant 行不渲染气泡);
+   - i18n:react-i18next,zh/en,默认必须是 zh(有测试钉住)。
+ 
+ ---
+ 
+-## 6. 一次 run 的完整时序(approval 模式 + 一次工具调用)
++## 6. 一次 run 的完整时序(桌面默认路径,approval 模式 + 一次工具调用)
+ 
+ ```
+-renderer                 backend AgentRunner / pi              SQLite
+-   │ POST /api/runs/stream  │
+-   │────────────────────────▶ 建 run、落 user 消息 ──────────────▶ runs, messages
+-   │ ◀ run_started, message │
+-   │ ◀ delta(thinking/text) │ pi 流式模型输出
+-   │ ◀ message(assistant)   │ message_end:落中间叙述+payload ──▶ messages
+-   │ ◀ tool_call(pending)   │ tool_execution_start:建实体 ─────▶ tool_calls
+-   │                        │ beforeToolCall 挂起等审批…
+-   │ POST /approvals/:id ───▶ ApprovalQueue.decide(true)
+-   │ ◀ tool_call(running)   │ 实体置 running+startedAt ────────▶ tool_calls
+-   │                        │ AgentTool.execute(…)
+-   │ ◀ tool_call(completed) │ tool_execution_end ──────────────▶ tool_calls
+-   │                        │ toolResult 落库(含 payload)────▶ messages
+-   │ ◀ delta(text)          │ 下一轮模型输出(看得到工具结果)
+-   │ ◀ message(assistant)   │ 最终回答落库 ─────────────────────▶ messages
+-   │ ◀ run_end(completed)   │ agent_end → run 置 completed ────▶ runs
++renderer                    EventHub / API              backend AgentRunner / pi              SQLite
++   │ GET /api/events           │
++   │──────────────────────────▶ subscribe()
++   │ POST /api/runs            │
++   │───────────────────────────────────────────────▶ 建 run、落 user 消息 ─────────────▶ runs, messages
++   │ ◀ RunStartResponse        │ ◀ publish(run_started/message)
++   │ ◀ SSE run_started,message │
++   │ ◀ SSE delta(thinking/text)│                          pi 流式模型输出
++   │ ◀ SSE message(assistant)  │                          message_end:落中间叙述+payload ─▶ messages
++   │ ◀ SSE tool_call(pending)  │                          tool_execution_start:建实体 ─────▶ tool_calls
++   │                           │                          beforeToolCall 挂起等审批…
++   │ POST /approvals/:id ───────────────────────────────▶ ApprovalQueue.decide(true)
++   │ ◀ SSE tool_call(running)  │                          实体置 running+startedAt ───────▶ tool_calls
++   │                           │                          AgentTool.execute(…)
++   │ ◀ SSE tool_call(completed)│                          tool_execution_end ─────────────▶ tool_calls
++   │                           │                          toolResult 落库(含 payload)────▶ messages
++   │ ◀ SSE delta(text)         │                          下一轮模型输出(看得到工具结果)
++   │ ◀ SSE message(assistant)  │                          最终回答落库 ───────────────────▶ messages
++   │ ◀ SSE run_end(completed)  │                          agent_end → run 置 completed ───▶ runs
+ ```
+ 
+-防呆边界:工具调用上限按模型配置解析,默认 500 轮(超出 → `run_end(failed)` 中文报错);SSE 15s 心跳 + Bun idleTimeout 255s 保审批长等待;`agent_end` 兜底保证 run 永有终态。
++防呆边界:工具调用上限按模型配置解析,默认 500 轮(超出 → `run_end(failed)` 中文报错);全局 SSE 与旧 `/api/runs/stream` 都有 15s 心跳 + Bun idleTimeout 255s 保审批长等待;`agent_end` 兜底保证 run 永有终态。
+ 
+ ---
+ 
+@@ -297,8 +350,10 @@ renderer                 backend AgentRunner / pi              SQLite
+ | 决策 | 理由 |
+ |---|---|
+ | 用 pi 低层 `runAgentLoopContinue` 而非有状态 `Agent` 类 | 会话存 SQLite 且被桌面端/飞书共享,还有 fork/rewind;每个请求从库重建上下文的无状态模式不需要内存态 Agent(及其缓存失效问题) |
+-| StreamEvent 从 11 种收敛为 5 种 | `ToolCall.status` 本身就是状态机,3 种工具事件冗余;run 终态合一带 status;契约贴近 pi 形态 |
++| 用 `StreamEvent` 表达 run 生命周期、用 `AppEvent` 承载应用级通知 | run 事件仍贴近 pi 与持久化语义;定时任务这类非 run 生命周期事件不硬塞进 `StreamEvent`,而是在全局 SSE 层合并广播 |
++| 桌面默认用 `POST /api/runs` + 全局 `/api/events`,保留 `/api/runs/stream` | 前者让 run 与单个 HTTP 请求解耦,刷新/断线后可通过 DB 快照恢复;后者保留简单流式消费路径,方便测试、回退和进程内消费者 |
+ | payload 列而非改 shared `Message` 结构 | 渲染契约零破坏;模型上下文保真与 UI 展示解耦;旧数据自动回退 |
+ | `toolExecution: "sequential"` | 渲染层一次只渲染一个审批卡片;避免并发 pending 工具的 UI 竞态 |
+ | 审批放在 pi `beforeToolCall` 钩子 | 钩子可阻塞等待、`{block:true}` 自动把拒绝喂回模型,与既有 ApprovalQueue 语义完全对齐 |
++| 工具审批/展示统一走 `toolMetadata` | 同一份元数据同时服务审批、deferred、计划草稿可见性和 UI 聚合;未知工具与 MCP 工具按保守策略兜底 |
+ | `model.reasoning: false` | 不发 thinking 请求参数,与迁移前线上行为一致;DeepSeek 的 reasoning_content 增量 pi 无条件解析,思考面板不受影响 |
+diff --git a/docs/global-sse-event-stream.md b/docs/global-sse-event-stream.md
+index 0a1a745..25e3d46 100644
+--- a/docs/global-sse-event-stream.md
++++ b/docs/global-sse-event-stream.md
+@@ -1,6 +1,6 @@
+ # 全局 SSE 事件流实现文档
+ 
+-本文记录桌面端运行事件从“每次 run 独占一条 SSE”迁移到“应用级全局 SSE + POST commands + DB 快照恢复”的实现。当前版本只覆盖桌面端主聊天和右侧小聊天；飞书、定时任务等进程内消费者仍直接消费 `AgentRunner.stream()`。
++本文记录桌面端运行事件从“每次 run 独占一条 SSE”迁移到“应用级全局 SSE + POST commands + DB 快照恢复”的实现。当前全局 SSE 承载 `AppEvent`：主聊天和右侧小聊天消费 run 级 `StreamEvent`，定时任务调度器额外发布任务生命周期事件；飞书、微信和定时任务的 headless run 内容本身仍直接消费 `AgentRunner.stream()`。
+ 
+ ## 背景
+ 
+@@ -23,12 +23,13 @@
+ - 主聊天和右侧小聊天用 `clientRequestId/runId` 过滤各自事件，允许并发运行。
+ - SSE 断线期间不做事件 replay，重连后通过 DB 快照恢复可恢复状态。
+ - 保留旧 `POST /api/runs/stream`，避免影响测试、飞书、定时任务和其他进程内消费路径。
++- 定时任务通过同一条 `/api/events` 推送 `scheduled_task_started/finished`，用于任务页刷新、会话运行态和通知。
+ 
+ 暂不做：
+ 
+ - 不引入 WebSocket。
+ - 不做持久化事件 replay。
+-- 不把飞书和定时任务迁到 `EventHub`。
++- 不把飞书/微信回复流或定时任务 headless run 的完整内容迁到 `EventHub`。
+ - 不改变审批、ask-user、plan 的业务语义。
+ 
+ ## Shared 契约
+@@ -42,6 +43,8 @@
+ 
+ - `RunRequest.clientRequestId?: string`
+ - `StreamEvent.run_started.clientRequestId?: string`
++- `ScheduledTaskEvent`
++- `AppEvent = StreamEvent | ScheduledTaskEvent`
+ - `runStartResponseSchema`
+ - `RunStartResponse`
+ 
+@@ -58,6 +61,11 @@
+ 
+ 这保证 `POST /api/runs` 返回后，客户端即使还没收到全局 SSE 中的 `run_started`，也能把本地状态绑定到确定的 `runId/sessionId`。
+ 
++定时任务事件不属于单个 run 的流式输出,但同样经 `encodeSseEvent()` 发到 `/api/events`：
++
++- `scheduled_task_started`:任务开始执行,带 `taskId/sessionId/name/trigger/occurredAt`。
++- `scheduled_task_finished`:任务结束,带 `status`、可选 `runId/error`。
++
+ ## Backend 实现
+ 
+ 相关文件：
+@@ -68,6 +76,7 @@
+ - `apps/backend/src/api/routes/runs.ts`
+ - `apps/backend/src/agent/agent-runner.ts`
+ - `apps/backend/src/agent/compaction.ts`
++- `apps/backend/src/tasks/task-scheduler.ts`
+ 
+ ### EventHub
+ 
+@@ -82,7 +91,7 @@
+ 
+ ### GET /api/events
+ 
+-`GET /api/events` 返回 SSE：
++`GET /api/events` 返回应用级 SSE：
+ 
+ - 鉴权继续沿用 `x-chengxiaobang-token`。
+ - 格式继续使用 shared 的 `encodeSseEvent()`。
+@@ -114,6 +123,13 @@
+ 
+ 这保证老测试、内部 headless 消费路径和迁移外调用方不被一次性打断。
+ 
++### TaskScheduler
++
++定时任务执行仍然在后端进程内直接消费 `runner.stream(..., { headless: true })`，不会把完整 headless run 内容转发到 EventHub。调度器只在任务开始和结束时发布 `scheduled_task_started/finished`：
++
++- 开始事件让桌面端把绑定会话标记为运行中，并刷新任务列表。
++- 结束事件让桌面端清理运行态、刷新任务列表，并发应用内/系统通知。
++
+ ### AgentRunner
+ 
+ `AgentRunner.stream()` 的主逻辑保持原样，只在发 `run_started` 时附加 `clientRequestId`：
+@@ -135,12 +151,13 @@
+ 
+ - `apps/desktop/src/renderer/lib/api.ts`
+ 
+-`ApiClient` 新增两个可选能力：
++`ApiClient` 新增全局事件能力：
+ 
+ - `startRun(input): Promise<RunStartResponse>`
+ - `subscribeRunEvents(onEvent, options): () => void`
++- `subscribeAppEvents(onEvent, options): () => void`
+ 
+-`subscribeRunEvents()` 内部维护：
++`subscribeAppEvents()` 订阅 `/api/events` 并广播 `AppEvent`；`subscribeRunEvents()` 是 run-only 兼容封装。内部维护：
+ 
+ - listener 集合。
+ - 单个 `AbortController`。
+@@ -148,7 +165,7 @@
+ - 断线后的短退避重连。
+ - `onReconnect` 和 `onError` 回调。
+ 
+-当第一个 listener 注册时创建连接；最后一个 listener 退订时 abort 连接。事件到达后广播给当前所有 listener，主聊天和右侧小聊天各自过滤。
++当第一个 listener 注册时创建连接；最后一个 listener 退订时 abort 连接。事件到达后广播给当前所有 listener，主聊天用 `handleAppEvent()` 先分发任务事件和 run 事件，右侧小聊天只订阅/过滤 run 事件。
+ 
+ 重连策略：
+ 
+@@ -171,6 +188,7 @@
+ 
+ 新增核心 action：
+ 
++- `handleAppEvent(event)`
+ - `handleRunEvent(event, options?)`
+ - `recoverActiveRunSnapshot()`
+ 
+@@ -189,6 +207,8 @@
+ 
+ ### handleRunEvent()
+ 
++所有应用级事件先经过 `handleAppEvent()`：`StreamEvent` 交给 `handleRunEvent()`，`scheduled_task_started/finished` 刷新任务列表、标记会话运行中并触发通知。
++
+ 所有主聊天运行事件都经过 `handleRunEvent()`：
+ 
+ - `session_updated` 全局接收，只更新侧边栏会话元数据。
+@@ -202,6 +222,7 @@
+ - `tool_activity`：更新当前写入/编辑工具的路径预览；仅 `Write` / `Edit` 可携带 `argsPreview.file_path`，URL、搜索词、命令和正文不进入预览。
+ - `message`：追加持久化消息；assistant 消息会清空实时 text/thinking 缓冲，并记录 `activeRunLastAssistant`。
+ - `tool_call(pending_approval)`：进入 `pendingTool`，等待底部审批/ask-user/plan 卡片。
++- `tool_call(pending_smart_approval)`：进入 `runningTool`/时间线,不进入普通审批 dock。
+ - `tool_call(running)`：进入 `runningTool` 并写入工具历史。
+ - `tool_call(completed|failed|rejected)`：清理 pending/running，并 upsert 到工具历史。
+ - `run_end`：清理运行态，写 usage/runMeta，然后触发 `refresh()` 和当前会话详情重拉。
+@@ -216,7 +237,7 @@
+ 2. 拉取当前会话 runs/toolCalls。
+ 3. 找到当前 `activeRunId`。
+ 4. 如果 run 不存在或状态不是 `running`，说明运行已经结束或不可恢复，清理运行态。
+-5. 如果 run 仍为 `running`，只从该 run 的 toolCalls 中恢复最新 `pending_approval` 或 `running` 工具。
++5. 如果 run 仍为 `running`，只从该 run 的 toolCalls 中恢复最新 `pending_approval`、`pending_smart_approval` 或 `running` 工具。
+ 
+ 这个限制很重要：没有当前 `activeRunId` 时不恢复历史 `status="running"` 残留，避免把旧脏数据误判成活跃 run。
+ 
+@@ -267,7 +288,7 @@ sequenceDiagram
+   participant Events as GET /api/events
+   participant Runner as AgentRunner
+ 
+-  Store->>Api: subscribeRunEvents(handleRunEvent)
++  Store->>Api: subscribeAppEvents(handleAppEvent)
+   Api->>Events: fetch SSE /api/events
+   Events->>Hub: subscribe()
+ 
+@@ -278,18 +299,18 @@ sequenceDiagram
+   Runs->>Hub: publish(run_started)
+   Hub-->>Events: run_started
+   Events-->>Api: SSE event
+-  Api-->>Store: handleRunEvent(run_started)
++  Api-->>Store: handleAppEvent(run_started)
+   Runs-->>Store: RunStartResponse
+ 
+   Runner-->>Runs: message / delta / tool_call ...
+   Runs->>Hub: publish(event)
+   Hub-->>Events: event
+   Events-->>Api: SSE event
+-  Api-->>Store: handleRunEvent(event)
++  Api-->>Store: handleAppEvent(event)
+ 
+   Runner-->>Runs: run_end
+   Runs->>Hub: publish(run_end)
+-  Api-->>Store: handleRunEvent(run_end)
++  Api-->>Store: handleAppEvent(run_end)
+   Store->>Store: clear transient state and reload DB snapshot
+ ```
+ 
+@@ -351,7 +372,7 @@ sequenceDiagram
+   - 启动前失败返回 HTTP error
+   - 旧 `/api/runs/stream` 仍保留回归覆盖
+ - `apps/desktop/test/composer.test.tsx`
+-  - 主聊天使用 `startRun + subscribeRunEvents`
++  - 主聊天使用 `startRun + subscribeAppEvents`
+   - 全局事件驱动 message/run_end
+   - planMode 请求仍携带 `planMode: true`
+   - ask-user 等待期仍可通过 composer 输入自定义回答
+@@ -370,8 +391,7 @@ pnpm typecheck
+ 
+ ## 后续可演进方向
+ 
+-1. 更新 `docs/architecture.md`，把主运行入口从单一 `/api/runs/stream` 改成全局事件流架构。
+-2. 将飞书和定时任务按需接入 `EventHub`，让后台 run 也能被桌面端实时观察。
+-3. 如果需要跨后端重启恢复，可新增持久化 event log 和 `lastEventId` replay。
+-4. 为全局事件流增加更细的 listener 诊断，例如当前订阅者数量、最近一次事件时间、重连次数。
+-5. 把测试中的 React `act(...)` warning 单独清理，降低未来前端测试输出噪音。
++1. 如需让定时任务 headless run 内容在当前打开会话里直播，需要把 headless run 的消息流也投递到全局事件通道，而不只是发布任务开始/结束事件。
++2. 如果需要跨后端重启恢复，可新增持久化 event log 和 `lastEventId` replay。
++3. 为全局事件流增加更细的 listener 诊断，例如当前订阅者数量、最近一次事件时间、重连次数。
++4. 把测试中的 React `act(...)` warning 单独清理，降低未来前端测试输出噪音。
+diff --git a/docs/memory.md b/docs/memory.md
+index 3197aea..d85c82c 100644
+--- a/docs/memory.md
++++ b/docs/memory.md
+@@ -1,15 +1,15 @@
+ # 长期记忆（Memory）设计与实现
+ 
+-> 最后更新：2026-06-13（功能首次落地）
++> 最后更新：2026-06-23（同步 Memory 工具名与 toolMetadata 接线）
+ 
+-让程小帮**跨会话记住事情**：用户偏好与习惯、项目背景与约定、长期任务的进展、纠正过的结论。模型通过 `memory` 工具读写一个独立于工作目录的记忆目录，记忆以普通文本文件落盘，所有会话共享。
++让程小帮**跨会话记住事情**：用户偏好与习惯、项目背景与约定、长期任务的进展、纠正过的结论。模型通过 `Memory` 工具读写一个独立于工作目录的记忆目录，记忆以普通文本文件落盘，所有会话共享。
+ 
+-方案对齐 Anthropic 官方 [memory tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool)（`memory_20250818`）的设计：**一个客户端执行的 `memory` 工具，六个命令操作 `/memories` 虚拟目录** + 系统提示注入记忆协议。选文件系统而非键值库/向量库，是因为模型对文件操作的训练最充分——浏览目录、读文件、精确替换都是它最熟悉的动作，不需要额外的检索基建。
++方案对齐 Anthropic 官方 [memory tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool)（`memory_20250818`）的设计：**一个客户端执行的 `Memory` 工具，六个命令操作 `/memories` 虚拟目录** + 系统提示注入记忆协议。选文件系统而非键值库/向量库，是因为模型对文件操作的训练最充分——浏览目录、读文件、精确替换都是它最熟悉的动作，不需要额外的检索基建。
+ 
+ 核心取舍：
+ 
+ - **目录快照直接注入系统提示，而不是强制模型每轮先调 `view`**——官方做法是在系统提示里命令模型"开始任何事之前先查看记忆目录"，每个 run 多一次工具往返；我们把记忆目录两层清单（大小 + 路径）预先渲染进系统提示，模型只在需要内容时才 `view` 具体文件。
+-- **`memory` 工具不进审批队列**——读写仅限专用记忆目录（路径穿越被硬性拦截），风险可控；且 headless 定时任务会自动拒绝一切待审批工具，进队列等于让定时任务永远无法记忆。
++- **`Memory` 工具不进审批队列**——读写仅限专用记忆目录（路径穿越被硬性拦截），风险可控；且 headless 定时任务会自动拒绝一切待审批工具，进队列等于让定时任务永远无法记忆。
+ - **全局共享一个记忆根目录，不按项目分桶**——程小帮是个人桌面助手，"用户喜欢简洁回复"这类记忆天然跨项目；项目专属记忆由模型自己在 `/memories` 下建子目录组织（系统提示明确要求保持目录有条理）。
+ - **`create` 不允许覆盖已有文件**——遵循官方规范：已存在时报错，迫使模型先 `view` 再 `str_replace`，防止模型忘记文件存在而整文件覆盖、静默丢失记忆。
+ 
+@@ -27,7 +27,7 @@
+    ├─ buildSystemPrompt({ memory: { listing } })
+    │     「## 长期记忆」段：记忆协议 + 目录快照
+    │
+-   └─ 模型在循环中按需调用 memory 工具
++   └─ 模型在循环中按需调用 Memory 工具
+          view /memories/user.md        读取相关记忆
+          create / str_replace / …      写入新认知
+               │
+@@ -54,7 +54,7 @@
+ - 模型可见的路径永远是 `/memories/...` 虚拟前缀；真实落盘路径不暴露给模型。
+ - 目录懒创建：首次 `create` 时 `mkdir -p`，空目录不产生任何系统提示噪音之外的成本。
+ 
+-## 3. `memory` 工具（apps/backend/src/tools/memory-tools.ts）
++## 3. `Memory` 工具（apps/backend/src/tools/memory-tools.ts）
+ 
+ 单个工具 + `command` 参数区分操作（与官方一致，而非拆成六个工具）。参数用**扁平可选字段**而不是 TypeBox Union 判别式——DeepSeek/Kimi 的兼容端点对 `anyOf` 复合 schema 支持不稳，扁平 schema + 执行期校验最稳妥。
+ 
+@@ -95,24 +95,24 @@ main.ts
+ 
+ agent-runner.ts
+   AgentRunnerOptions.memoryDir
+-  ├─ 默认 createTools → createAgentTools(workspacePath, { memoryDir })  # 注册 memory 工具
++  ├─ 默认 createTools → createAgentTools(workspacePath, { memoryDir })  # 注册 Memory 工具
+   ├─ stream() / buildSessionDebugContext() → memoryPromptInput() → buildSystemPrompt
+   └─ 快照读取失败：warn 日志 + 空快照降级，run 照常进行
+ 
+ tools/registry.ts
+-  createAgentTools options 新增 memoryDir；DRAFT_EXTRA_TOOLS 加入 "memory"
+-  （计划模式起草阶段可读写记忆——制定计划前查记忆是协议核心环节）
+-  memory 不在 MUTATING_TOOLS：免审批（理由见「核心取舍」）
++  createAgentTools options 新增 memoryDir；提供时注册 Memory
++  selectAgentTools 在计划草稿阶段按 toolMetadata.planDraftVisible 放行 Memory
++  toolMetadata("Memory").requiresApproval === false（理由见「核心取舍」）
+ ```
+ 
+-契约与目录同步：shared `toolNameSchema`、`tool-schemas.ts` 的 `TOOL_DEFINITIONS`、`tool-catalog.ts` 的 DRAFT_EXTRA 同步加 `memory`。
++契约与展示同步：shared `toolNameSchema` 包含 `Memory`；`packages/shared/src/tool.ts` 的 `builtinToolMetadata.Memory` 声明它属于 `memory` 类别、mutating 但免审批、计划草稿可见；前端工具展示和 i18n 使用同名 key。
+ 
+ ## 6. 前端展示（apps/desktop）
+ 
+ `renderer/lib/tool-display.ts`：
+ 
+ - 图标 `BrainIcon`，独立聚合类别 `memory`（折叠摘要显示「N 次记忆操作」）。
+-- 工具行文案 `chat.toolLine.memory`：「访问记忆 {path}」/ "Accessed memory {path}"，path 取 `args.path ?? args.old_path`。
++- 工具行文案 `chat.toolLine.Memory`：「访问记忆 {path}」/ "Accessed memory {path}"，path 取 `args.path ?? args.old_path`。
+ 
+ 记忆是普通工具调用，复用既有 ToolCallRow 全部交互（展开看参数/结果），无新增 UI 面。
+ 
+@@ -129,7 +129,7 @@ tools/registry.ts
+ - **工具本体** 17 条：六命令正反路径全覆盖（view 行号与 view_range、create 防覆盖、str_replace 唯一性、insert 行号边界、delete 根目录保护、rename 防覆盖）、路径穿越攻击、缺参报错、隐藏文件跳过。
+ - **系统提示**（system-prompt.test.ts）：注入/省略/快照三态。
+ - **接线**（agent-runner.test.ts）：配置 `memoryDir` 后 debug 上下文里工具可见 + 提示含快照；未配置时两者都不出现。
+-- **注册与审批**（tools.test.ts）：仅在传入 `memoryDir` 时注册；`requiresApproval("memory") === false`。
++- **注册与审批**（tools.test.ts）：仅在传入 `memoryDir` 时注册；`requiresApproval("Memory") === false`。
+ - **契约**（contracts.test.ts、tool-catalog.test.ts）与**前端映射**（tool-display.test.ts）：枚举完整性。
+ 
+ ## 9. 未来扩展（暂不做）
+diff --git a/docs/scheduled-tasks.md b/docs/scheduled-tasks.md
+index 7b04f48..9665f40 100644
+--- a/docs/scheduled-tasks.md
++++ b/docs/scheduled-tasks.md
+@@ -1,12 +1,12 @@
+ # 定时任务（Scheduled Tasks）设计与实现
+ 
+-> 最后更新：2026-06-13（功能首次落地）
++> 最后更新：2026-06-23（补齐一次性任务、全局事件和手机通道限制）
+ 
+-用户在**任意会话**里用自然语言描述周期性需求（"每天早上 9 点生成 AI 日报"），由**模型调用工具**创建定时任务；任务绑定创建它的那个会话，到点后在**原会话中追加一次无人值守（headless）执行**，结果作为普通对话内容保留在会话里。侧边栏第三个固定入口「定时任务」提供统一的管理页。
++用户在**桌面端普通会话**里用自然语言描述一次性或周期性需求（"明天早上 9 点提醒我"、"每天早上 9 点生成 AI 日报"），由**模型调用工具**创建定时任务；任务绑定创建它的那个会话，到点后在**原会话中追加一次无人值守（headless）执行**，结果作为普通对话内容保留在会话里。侧边栏第三个固定入口「定时任务」提供统一的管理页。
+ 
+ 核心取舍（来自需求澄清）：
+ 
+-- **创建走模型工具而不是表单**——用户怎么说都行，模型负责把时间表达换算成 cron；UI 只做管理（启停/立即运行/删除），不做创建表单。
++- **创建走模型工具而不是表单**——用户怎么说都行，模型负责把时间表达换算成 `kind=once + run_at` 或 `kind=recurring + cron`；UI 只做管理（启停/立即运行/删除），不做创建表单。
+ - **执行复用原会话上下文**——不为每次执行新建会话；模型执行任务时能看到当初创建任务的完整对话背景。
+ - **应用关闭期间错过的任务，下次启动补跑一次**（at-most-once，绝不连环追赶）。
+ 
+@@ -15,7 +15,7 @@
+ ## 1. 总览（闭环链路）
+ 
+ ```
+-会话中自然语言 ──→ 模型调用 ScheduleCreate（审批卡确认 cron）──→ scheduled_tasks 落库
++会话中自然语言 ──→ 模型调用 ScheduleCreate（审批卡确认 run_at/cron）──→ scheduled_tasks 落库
+                                                                        │ nextRunAt
+         TasksView（侧边栏「定时任务」页）                                │
+         启停 / 立即运行 / 删除  ←── /api/tasks ──┐                      ▼
+@@ -26,14 +26,16 @@
+                                                                        │
+                                         runner.stream({sessionId, prompt…}, {headless: true})
+                                                                        │
+-                                  原会话追加 user + assistant 消息（打开会话即可见）
++                                  原会话追加 user + assistant 消息（重拉会话详情可见）
+                                                                        │
+                                           回写 lastRunAt / lastStatus / lastError
++                                                                       │
++                                     EventHub 发布 scheduled_task_started/finished
+ ```
+ 
+ 复用的两个既有模式：
+ 
+-- **headless run 消费**：照搬 `feishu/feishu-service.ts` 的做法——直接 `for await` 消费 `AgentRunner.stream()`，对 `pending_approval` 事件自动拒绝，从 `run_end` 取终态。
++- **headless run 消费**：照搬手机通道的做法——直接迭代消费 `AgentRunner.stream()`，对 `pending_approval` / `pending_smart_approval` 事件自动拒绝，从 `run_end` 取终态。
+ - **run 级上下文工具**：照搬 `tools/plan-tools.ts` 的做法——schedule 工具在 `agent-runner.ts` 的工具装配处与 plan 工具并列挂入，经闭包拿到当前 `sessionId` 与 `StateStore`。
+ 
+ ---
+@@ -42,11 +44,14 @@
+ 
+ ```ts
+ scheduledTaskStatusSchema = z.enum(["completed", "failed", "aborted"]);
++scheduledTaskKindSchema = z.enum(["once", "recurring"]);
+ 
+ scheduledTaskSchema = {
+   id, sessionId,            // 任务绑定创建它的会话（会话删除时级联删除任务）
+   name, prompt,             // prompt = 每次执行喂给模型的提示词
+-  cron,                     // 5 字段 cron（分 时 日 月 周），按本地时区解释
++  kind,                     // once = 一次性任务；recurring = 周期任务
++  cron?,                    // 周期任务的 5 字段 cron（分 时 日 月 周），按本地时区解释
++  runAt?,                   // 一次性任务的执行时间（UTC ISO）
+   fullAccess: boolean,      // false（默认）= 只读执行，写操作被自动拒绝
+   enabled: boolean,
+   nextRunAt?, lastRunAt?,   // UTC ISO
+@@ -54,14 +59,14 @@ scheduledTaskSchema = {
+   createdAt, updatedAt
+ };
+ 
+-scheduledTaskUpdateSchema = { name?, cron?, prompt?, enabled?, fullAccess? };  // PATCH 用
++scheduledTaskUpdateSchema = { name?, cron?, runAt?, prompt?, enabled?, fullAccess?, nextRunAt? };  // PATCH 用
+ ```
+ 
+-cron 锁定 **5 字段**：解析库 croner 同时兼容 6 字段（秒），`tasks/schedule.ts` 的 `validateCron` 显式校验字段数，防止模型生成 6 字段后语义偏移。
++周期任务的 cron 锁定 **5 字段**：解析库 croner 同时兼容 6 字段（秒），`tasks/schedule.ts` 的 `validateCron` 显式校验字段数，防止模型生成 6 字段后语义偏移。一次性任务必须传带时区的 `run_at`，后端归一化为 UTC ISO 存入 `runAt/run_at`。
+ 
+ ## 3. 存储（repository/）
+ 
+-`sqlite-state-store.ts` 新增表（新表直接 `create table if not exists`，无需 ensureColumn 迁移）：
++`sqlite-state-store.ts` 的任务表：
+ 
+ ```sql
+ create table if not exists scheduled_tasks (
+@@ -69,7 +74,9 @@ create table if not exists scheduled_tasks (
+   session_id text not null,        -- fk → sessions, on delete cascade
+   name text not null,
+   prompt text not null,
+-  cron text not null,
++  kind text not null default 'recurring',
++  cron text,
++  run_at text,
+   full_access integer not null default 0,
+   enabled integer not null default 1,
+   next_run_at text, last_run_at text, last_status text, last_error text,
+@@ -78,6 +85,8 @@ create table if not exists scheduled_tasks (
+ -- 索引：(enabled, next_run_at)、(session_id)
+ ```
+ 
++`kind/run_at` 由 `ensureColumn` 兼容旧库；旧任务默认视为 `recurring`。
++
+ `StateStore` 接口新增 `listScheduledTasks / getScheduledTask / createScheduledTask / updateScheduledTask / deleteScheduledTask`。两个刻意的语义：
+ 
+ - `updateScheduledTask` 对**不存在的行返回 undefined 而不抛错**——任务可能在执行途中被删除，调度器收尾写 `lastStatus` 时必须容忍。
+@@ -85,26 +94,27 @@ create table if not exists scheduled_tasks (
+ 
+ ## 4. cron 解析（tasks/schedule.ts + croner）
+ 
+-- 依赖选型：**croner**（零依赖、原生 ESM、支持 Bun），弃 cron-parser（带 luxon、有 CJS/ESM 双发坑）。已加入 `tsup.config.ts` 的 `noExternal`——生产环境没有 node_modules，新依赖必须打进 bundle（build 后可 `grep 'from "croner"' dist/main.js` 验证无裸 import）。
++- 依赖选型：**croner**（零依赖、原生 ESM、支持 Bun），弃 cron-parser（带 luxon、有 CJS/ESM 双发坑）。已加入 `tsup.config.ts` 的 `noExternal`——生产环境没有 node_modules，新依赖必须打进 bundle。
+ - 全仓只在 `tasks/schedule.ts` 接触 croner，对外只暴露两个纯函数：
+   - `validateCron(cron): string | undefined` —— 返回错误信息（含 5 字段校验）；
+   - `computeNextRunAt(cron, from: Date): string` —— 从 from 起算的下一次触发（UTC ISO）。
++  - `validateRunAt(runAt)` / `normalizeRunAt(runAt)` —— 校验一次性任务必须是带时区绝对时间，并归一化为 UTC ISO。
+ 
+ ## 5. 模型工具（tools/schedule-tools.ts）
+ 
+-`createScheduleTools({ store, sessionId, feishuChatId? })`，TypeBox 参数，在 `agent-runner.ts` 工具装配处按 run 挂入：
++`createScheduleTools({ store, sessionId, feishuChatId?, wechatChatId? })`，TypeBox 参数，在 `agent-runner.ts` 工具装配处按 run 挂入：
+ 
+ | 工具 | 审批 | 行为 |
+ |---|---|---|
+ | `ScheduleCreate(kind, name, prompt, cron?, run_at?, full_access?)` | **mutating**（审批门控） | `kind=recurring` 校验 5 字段 cron → 落库（算好 nextRunAt）→ 返回任务 id + **接下来 1-2 次触发时间**；`kind=once` 校验带时区 `run_at` → 创建一次性任务 |
+-| `ScheduleList()` | read-only | 列出全部任务（id、cron、启停、下次/上次执行、是否本会话） |
++| `ScheduleList()` | read-only | 列出全部任务（id、类型、cron/runAt、启停、下次/上次执行、是否本会话） |
+ | `ScheduleCancel(id)` | **mutating** | 删除任务 |
+ 
+ 配套改动：
+ 
+-- `registry.ts`：`MUTATING_TOOLS` += `ScheduleCreate/ScheduleCancel`（审批模式下用户会在审批卡上**看到 cron 参数再确认**），`READ_ONLY_TOOLS` += `ScheduleList`。
++- `packages/shared/src/tool.ts`：通过 `toolMetadata` 声明 `ScheduleCreate/ScheduleCancel` 为 mutating 且需要审批、`ScheduleList` 为 read-only；审批模式下用户会在审批卡上看到 `run_at` 或 `cron` 参数再确认。
+ - `system-prompt.ts` 注入**当前本地时间 + 时区**（一行，所有 run 受益）——模型没有时间就无法把"明早 9 点"换算成 cron。
+-- **飞书绑定会话拒绝创建**：调度执行的产出只写进会话、不会回发飞书群，对飞书用户是静默黑洞，工具直接报错提示去桌面端创建。
++- **飞书/微信绑定会话拒绝创建**：调度执行的产出只写进会话、不会回发手机群聊，对手机用户是静默黑洞，工具直接报错提示去桌面端创建。
+ - 渲染层 `chat.toolLine` 已配好三个工具的友好文案（"创建定时任务「{{name}}」"等）。
+ 
+ ## 6. headless 执行（agent-runner.ts 的改造）
+@@ -125,12 +135,13 @@ create table if not exists scheduled_tasks (
+ - **tick()**：取 `enabled && nextRunAt <= now` 的任务**逐个 await 串行执行**（mac 睡眠唤醒后多任务同时到期，不能并发打模型 + 并发 flush sql.js）；tick 自身有防重入标志。
+ - **execute(task)** 顺序严格如下：
+   1. 任务在 busy set 中 → 跳过（防同任务重入）；绑定会话在 `runner.activeSessionIds` 中 → 跳过且**不推进 nextRunAt**（下个 tick 重试，相当于延后执行）。
+-  2. **先推进再执行**：`nextRunAt = computeNextRunAt(cron, now)`、`lastRunAt = now` 落盘（sqlite store 每写必 flush）。以 **now 为基**推进——宕机错过 N 个周期也只补跑一次；落盘先于执行——`bun --watch` 重启不会重复补跑。
+-  3. 消费 headless run：`providerId` 显式取**会话自己的 provider**（避免 run 级 fallback 取"第一个有 key 的 provider"换模型执行）；`accessMode = fullAccess ? "full_access" : "approval"`；任何 `pending_approval` 事件一律自动拒绝（非 fullAccess 的只读语义；fullAccess 下正常不出现，是防挂死兜底）。
+-  4. 看门狗：拿到 `run_started` 的 runId 后设 30 分钟超时 `runner.abort(runId)`，防网络挂起把任务永久占住。
+-  5. finally 回写 `lastStatus / lastError`（行已删则 no-op）。
++  2. **先推进/清空再执行**：周期任务 `nextRunAt = computeNextRunAt(cron, now)`、一次性任务 `nextRunAt = null` 且 `enabled = false`，同时写 `lastRunAt = now` 落盘。以 **now 为基**推进——宕机错过 N 个周期也只补跑一次；落盘先于执行——`bun --watch` 重启不会重复补跑。
++  3. 发布 `scheduled_task_started` 到全局 `EventHub`，桌面端据此标记会话运行中并刷新任务页。
++  4. 消费 headless run：`providerId` 显式取**会话自己的 provider**（避免 run 级 fallback 取"第一个有 key 的 provider"换模型执行）；`accessMode = fullAccess ? "full_access" : "approval"`；任何 `pending_approval` / `pending_smart_approval` 事件一律自动拒绝（非 fullAccess 的只读语义；fullAccess 下正常不出现，是防挂死兜底）。
++  5. 看门狗：从执行开始计 30 分钟；拿到 `run_started` 后可显式 `runner.abort(runId)`，未拿到 runId 时也通过内部 abort signal 释放前置卡住的执行。
++  6. 写 `lastStatus / lastError`（行已删则 no-op），发布 `scheduled_task_finished` 到全局 `EventHub`。
+ - **runNow(taskId)**：「立即运行」按钮的入口，跳过到期检查直接 execute。
+-- **stop()**：clearInterval + abort 在飞行的 run。`main.ts` 的关停顺序为 **scheduler → feishu → server → store**，防止调度 run 向已关闭的 store 写入。
++- **stop()**：clearInterval + abort 在飞行的 run。`main.ts` 的关停顺序为 **scheduler → MCP → 微信 → 飞书 → server → store**，防止调度 run 向已关闭的 store 写入。
+ 
+ ## 8. API（api/routes/tasks.ts）
+ 
+@@ -139,16 +150,16 @@ create table if not exists scheduled_tasks (
+ | 端点 | 说明 |
+ |---|---|
+ | `GET /api/tasks` | 全部任务 |
+-| `PATCH /api/tasks/:id` | `scheduledTaskUpdateSchema`；cron 非法 → 400；**cron 变更或 enabled false→true 时重算 nextRunAt**（停用很久的任务一启用不应立刻"补跑"陈旧时间点） |
++| `PATCH /api/tasks/:id` | `scheduledTaskUpdateSchema`；cron/runAt 非法 → 400；时间字段变更或 enabled false→true 时重算/恢复 nextRunAt（停用很久的任务一启用不应立刻"补跑"陈旧时间点） |
+ | `DELETE /api/tasks/:id` | 删除 |
+ | `POST /api/tasks/:id/run` | fire-and-forget 调 `scheduler.runNow`，返回 **202**（执行可能耗时数分钟，结果经任务行 lastStatus 反映）；未注入调度器时 503 |
+ 
+ ## 9. 桌面端
+ 
+-- `store/index.ts`：`View` 增加 `"tasks"`（不持久化）；`tasks` state + `loadTasks / updateTask / deleteTask / runTaskNow` actions；`ApiClient` 对应四个方法。
++- `store/`：`View` 增加 `"tasks"`（不持久化）；`tasks` state + `loadTasks / updateTask / deleteTask / runTaskNow` actions；`handleAppEvent` 处理 `scheduled_task_started/finished`，刷新任务列表、标记会话运行中并发通知；`ApiClient` 对应四个任务方法。
+ - `Sidebar.tsx`：「新对话」「搜索」之后的第三个固定入口「定时任务」（Clock 图标）→ `setView("tasks")`。
+ - `App.tsx`：`view === "tasks"` 时主区域渲染 `TasksView`（侧边栏保留）；`RightPanel / RightPanelSwitch` 显示条件收紧为仅 `"chat"`。
+-- `TasksView.tsx`：任务卡片列表——名称、prompt、cron、下次/上次执行时间、上次状态（失败时行内展示 lastError）、启停 Switch、立即运行、删除；头部手动刷新；挂载时拉取。文案在 i18n `tasks.*`（zh/en）。
++- `TasksView.tsx`：任务卡片列表——名称、prompt、类型、cron/runAt、下次/上次执行时间、上次状态（失败时行内展示 lastError）、启停 Switch、立即运行、删除；头部手动刷新；挂载时拉取。文案在 i18n `tasks.*`（zh/en）。
+ 
+ ## 10. 测试
+ 
+@@ -156,9 +167,9 @@ create table if not exists scheduled_tasks (
+ 
+ | 文件 | 覆盖 |
+ |---|---|
+-| `test/schedule.test.ts` | cron 纯函数：合法/非法/6 字段拒绝、下次触发计算、补跑基准 |
+-| `test/task-scheduler.test.ts` | 到期执行进原会话并推进 nextRunAt；无 provider 时记录 failed；只读自动拒绝 mutating 工具且 run 完成；headless 不覆写会话设置；disabled/未到期不执行；会话忙跳过且不推进；busy 防重入；runNow 未知任务报错 |
+-| `test/schedule-tools.test.ts` | create 绑定会话 + 触发预览；非法 cron 友好报错；飞书会话拒绝；list/cancel 往返 |
++| `test/schedule.test.ts` | cron 纯函数：合法/非法/6 字段拒绝、下次触发计算；runAt 校验与 UTC 归一化 |
++| `test/task-scheduler.test.ts` | 到期执行进原会话并推进/清空 nextRunAt；一次性任务执行后停用；无 provider 时记录 failed；只读自动拒绝 mutating 工具且 run 完成；headless 不覆写会话设置；disabled/未到期不执行；会话忙跳过且不推进；busy 防重入；runNow 未知任务报错 |
++| `test/schedule-tools.test.ts` | create 绑定会话 + 触发预览；非法 cron/run_at 友好报错；飞书/微信会话拒绝；list/cancel 往返 |
+ | `test/agent-runner.test.ts`（增量） | headless 过滤 AskUserQuestion、交互 run 保留；schedule 工具对两种 run 均可见 |
+ | `test/api-app.test.ts`（增量） | 路由 CRUD、非法 cron 400、重新启用重算 nextRunAt、run-now 202/503 |
+ | `test/sqlite-state-store.test.ts`（增量) | 跨重启持久化、部分更新、null 清空 lastError、行缺失 no-op、删会话级联删任务 |
+@@ -168,7 +179,7 @@ create table if not exists scheduled_tasks (
+ 
+ ## 11. 已知限制与后续项
+ 
+-- **打开中的会话不实时刷新**：调度 run 在后台追加的消息要重进会话才可见（`selectSession` 总会重拉详情）。正解是全局 SSE 推送通道，超出本期范围。
+-- **飞书会话不支持任务**：后续可在调度器里对 feishu 绑定会话执行完后经 sender 回发摘要，解除创建限制。
++- **打开中的会话只收到任务生命周期提示，不直播 headless run 内容**：全局 SSE 已推送 `scheduled_task_started/finished`，任务页和通知会实时刷新；但后台 run 的 user/assistant 消息仍是进程内消费，当前打开的聊天内容需要重拉会话详情后看到。
++- **飞书/微信会话不支持创建任务**：后续可在调度器里对手机绑定会话执行完后经对应 sender 回发摘要，解除创建限制。
+ - **用户在调度 run 执行中向同会话发消息**不受互斥保护（反向已由 `activeSessionIds` 避让）；概率低、后果同既有并发行为，未做会话级锁（锁会被审批等待长期持有，队列语义复杂）。
+ - 崩溃残留的 `status="running"` runs 行暂未做启动清扫（通用卫生项，与本功能无直接耦合）。
+diff --git a/docs/shell-background-execution.md b/docs/shell-background-execution.md
+index f583d97..4980df5 100644
+--- a/docs/shell-background-execution.md
++++ b/docs/shell-background-execution.md
+@@ -1,19 +1,19 @@
+-# Shell 执行与后台命令
++# Shell / PowerShell 执行与后台命令
+ 
+-> 最后更新：2026-06-15
++> 最后更新：2026-06-23（补充 Windows PowerShell 工具）
+ 
+-本文说明程小帮的 `Bash` 工具如何执行命令并管理后台任务。目标是在不长期卡住 agent run 的前提下，让模型可以按任务选择等待窗口：默认短暂等待后转后台；`run_in_background=true` 立即释放工具调用；`timeout` 允许测试、构建等命令等待更久。完整输出落到工作区文件里，由模型按需读取、查询状态或主动终止。
++本文说明程小帮的 `Bash` 工具，以及 Windows 上额外暴露的 `PowerShell` 工具，如何执行命令并管理后台任务。目标是在不长期卡住 agent run 的前提下，让模型可以按任务选择等待窗口：默认短暂等待后转后台；`run_in_background=true` 立即释放工具调用；`timeout` 允许测试、构建等命令等待更久。完整输出落到工作区文件里，由模型按需读取、查询状态或主动终止。
+ 
+ ---
+ 
+ ## 1. 背景
+ 
+-模型经常会通过 `Bash` 工具运行测试、构建、安装依赖或调试脚本。这类命令有两个问题：
++模型经常会通过 `Bash`（macOS/Linux/Windows 可见）或 `PowerShell`（仅 Windows 可见）工具运行测试、构建、安装依赖或调试脚本。这类命令有两个问题：
+ 
+ - 有些命令本来就很慢，工具调用如果一直同步等待，会让本次 agent run 长时间没有反馈。
+ - 有些命令可能卡住或持续运行，用户和模型都需要一个明确方式把它停掉。
+ 
+-因此 `Bash` 工具有三种等待方式：
++因此 shell 类工具有三种等待方式：
+ 
+ - 默认不传 `timeout`：前台最多等待 **15 秒**；超过后返回后台命令信息，模型继续下一步决策。
+ - `run_in_background=true`：命令启动后立即转入后台，适合 dev server、watcher、监听进程等没有明确结束点的任务。
+@@ -23,10 +23,10 @@
+ 
+ ## 2. 运行流程
+ 
+-`Bash`、`GitStatus`、`GitDiff` 都通过同一条 shell 工具执行链路运行：
++`Bash`、Windows-only `PowerShell`、`GitStatus`、`GitDiff` 都通过同一条 shell 工具执行链路运行：
+ 
+ ```text
+-模型/斜杠命令调用 Bash
++模型调用 Bash / PowerShell
+         │
+         ▼
+ runShellCommand(command, cwd)
+@@ -43,7 +43,7 @@ runShellCommand(command, cwd)
+              └─ 工具结果返回后台命令 ID、PID、输出文件路径
+ ```
+ 
+-`timeout` / `run_in_background` 只决定本次工具调用等待多久，不决定命令是否被强制终止。除了用户中止 run 或模型主动调用 `BashCancel`，慢命令在等待窗口结束后会继续作为后台命令运行。
++`timeout` / `run_in_background` 只决定本次工具调用等待多久，不决定命令是否被强制终止。除了用户中止 run 或模型主动调用 `BashCancel`，慢命令在等待窗口结束后会继续作为后台命令运行。后台查询与取消统一使用 `BashStatus` / `BashCancel`，即使原始命令来自 `PowerShell` 也是如此。
+ 
+ 前台阶段命令完成时，模型会直接拿到命令输出。如果退出码非 0，`shell-tools.ts` 会把输出作为错误抛给 pi，pi 再把它变成错误工具结果喂回模型。
+ 
+@@ -63,7 +63,7 @@ runShellCommand(command, cwd)
+ .chengxiaobang/shell-outputs/<shell_id>.log
+ ```
+ 
+-其中 `<shell_id>` 当前形如 `shell_<uuid>`。输出文件位于本次工作区内，`Bash` 工具返回给模型的是相对路径，例如：
++其中 `<shell_id>` 当前形如 `shell_<uuid>`。输出文件位于本次工作区内，`Bash` / `PowerShell` 工具返回给模型的是相对路径，例如：
+ 
+ ```text
+ .chengxiaobang/shell-outputs/shell_1d2e3f.log
+@@ -109,6 +109,20 @@ stdout 和 stderr 会按产生顺序写入同一个文件。命令转后台后
+ - `timeout`：在指定等待窗口内结束则直接返回命令输出；超过 `timeout` 返回后台命令信息，命令继续执行。
+ - 前台等待期间收到 run abort：终止进程组并返回中止结果。
+ 
++### `PowerShell`
++
++仅在 `process.platform === "win32"` 时注册。在当前工作目录用 Windows 原生 PowerShell 执行命令，参数与 `Bash` 相同：
++
++```json
++{
++  "command": "Get-ChildItem -Force",
++  "timeout": 120000,
++  "description": "列出目录"
++}
++```
++
++行为与 `Bash` 共享同一套等待、后台转入、输出落盘、run abort 和审批语义。它适合 `Get-ChildItem`、`Select-String`、`Test-Path` 等 PowerShell 语法；后台命令仍用 `BashStatus` 查询、用 `BashCancel` 终止。
++
+ ### `GitStatus` / `GitDiff`
+ 
+ 这两个工具仍然是 read-only 工具，但底层同样走 shell 执行链路：
+@@ -188,6 +202,6 @@ stdout 和 stderr 会按产生顺序写入同一个文件。命令转后台后
+ ## 8. 相关实现
+ 
+ - `apps/backend/src/tools/shell.ts`：进程启动、等待窗口结束后转后台、输出落盘、状态记录、进程组终止。
+-- `apps/backend/src/tools/shell-tools.ts`：pi 工具封装、`timeout` / `run_in_background` 参数归一化、后台提示文案、`BashStatus` / `BashCancel`。
++- `apps/backend/src/tools/shell-tools.ts`：pi 工具封装、`timeout` / `run_in_background` 参数归一化、Windows `PowerShell` 注册、后台提示文案、`BashStatus` / `BashCancel`。
+ - `packages/shared/src/tool.ts`：内置工具名契约。
+-- `apps/backend/src/agent/system-prompt.ts`：提示模型如何读取后台输出、查询状态和取消慢命令。
++- `Bash` / `PowerShell` 工具描述与后台工具返回结果：提示模型如何读取后台输出、查询状态和取消慢命令。
+diff --git a/docs/tool-call-ui.md b/docs/tool-call-ui.md
+index 8b1ef5c..7a829be 100644
+--- a/docs/tool-call-ui.md
++++ b/docs/tool-call-ui.md
+@@ -1,6 +1,6 @@
+ # 工具调用展示与底部审批方案
+ 
+-> 最后更新:2026-06-13(随本方案落地)
++> 最后更新:2026-06-23(补齐项目级信任、智能审批和工具元数据)
+ 
+ 聊天界面中工具调用的展示与敏感操作审批的交互方案。参照 Claude / Codex 桌面端的形态:连续工具调用折叠为一行摘要、每个工具有专属图标、审批面板固定在输入框上方而不是漂在消息流里。
+ 
+@@ -18,7 +18,7 @@
+ 
+ - 折叠态:`[图标] 读取 3 个文件 · 检索 2 次 ⌄`,点击展开为逐条轻量行(图标 + 人话描述),每条仍可再点开看原始 result/diff。
+ - 每个内置工具映射专属图标,未知工具名(模型可能请求不存在的工具)有兜底图标。
+-- 审批面板移到 Composer 正上方;只做允许/拒绝,**不做**"后续同类不再询问"(留待后续白名单机制)。
++- 审批面板移到 Composer 正上方;支持拒绝、允许,以及项目会话里的“始终允许本项目”（同项目内同签名工具调用自动放行）。
+ - `AskUserQuestion` 提问顺势接线现成的 `AskUserCard`(选项点击 + 键盘快捷键),告别 JSON 卡。
+ 
+ ---
+@@ -64,10 +64,10 @@ export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 na
+ 
+ ### 2.5 状态呈现
+ 
+-- 当前 run 里的真实活跃工具(`running` / `pending_smart_approval`)都会进入聊天时间线并显示执行态；只有 `Write` / `Edit` 显示路径预览,其他工具只显示泛化文案(如「抓取网页中」「网络搜索中」「运行命令中」),不展示 URL、搜索词、命令或路径。
++- 当前 run 里的真实活跃工具(`running` / `pending_smart_approval`)都会进入聊天时间线并显示执行态；只有 `Write` / `Edit` 显示路径预览,其他工具只显示泛化文案(如「抓取网页中」「网络搜索中」「运行命令中」),不展示 URL、搜索词、命令或路径。`pending_smart_approval` 是智能审批内部等待态,会出现在时间线里,但不会出现在底部普通审批 dock。
+ - 运行态有 200ms 最短可见时间:如果工具很快完成,原始历史立即更新为终态,但聊天时间线会用 running 快照覆盖到满 200ms,再切换到完成/失败/拒绝历史态。
+ - 有 failed/rejected → 头部红色 mono 计数(`1 失败`),但**不自动展开**——流式中自动展开会引起视口跳动。
+-- 待审批的活动工具只进 `pendingTool` 不进 `toolHistory`(store 的 tool_call 事件分支),所以审批中的工具只出现在底部 dock,不会同时出现在时间线里。
++- 普通 `pending_approval` 活动工具只进 `pendingTool` 不进 `toolHistory`(store 的 tool_call 事件分支),所以普通审批中的工具只出现在底部 dock,不会同时出现在时间线里。`pending_smart_approval` 会按活跃工具进入时间线,用于提示智能审批正在判断。
+ 
+ ### 2.5.1 无边框行,与思考面板同构对齐
+ 
+@@ -105,6 +105,7 @@ export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 na
+ - 预览区:`Bash` → 近黑 mono 命令块(DESIGN.md 代码卡片形态);`Edit/Write` → mono 路径 + `DiffView`(`buildToolCallDiff` 纯参数驱动,审批前即可算);其余 → JSON `<pre>`。
+ - `pendingTool.name === "AskUserQuestion"` → 渲染 `AskUserCard`(选项单击提交、A-Z/↑↓/回车键盘直达、自定义输入),决议经同一个 `onDecide` 回调走 `approve(toolCallId, decision)`。
+ - **决议即隐藏**:`decidedId` state 在提交瞬间卸载卡片,避免与时间线上随 `tool_call` 事件出现的回执短暂双显。
++- **始终允许本项目**:当当前会话属于项目时,允许按钮旁提供项目级放行入口,向后端提交 `{ approved: true, approvalScope: "project" }`。后端用 `projectId + toolName + args` 生成签名并保存信任规则,同项目内相同签名的后续工具调用自动放行。
+ - 与 Composer 的 `awaitingAskUser` 通道(输入框文本当答案)共存:后端 `ApprovalQueue` 只取第一个决议,`AskUserCard` 自带 `lockedRef` 防重,无需前端互斥。
+ - 侧栏 `SideChatPanel` 的内联审批卡是独立 side-chat 通道,本方案未动;后续可复用 ApprovalCard 统一形态。
+ 
+@@ -131,7 +132,7 @@ StreamEvent(tool_call)
+ 
+ | 文件 | 角色 |
+ |---|---|
+-| `renderer/lib/tool-display.ts` | **纯函数**:`toolIcon`(23 个内置工具 → 内置语义图标,兜底图标 + 一次性 debug 日志)、`toolCategory`/`categoryIcon`(10 个聚合类别)、`toolLineLabel`(人话描述 i18n key + 已截断参数)、`toolGroupSummary`(按类别首现顺序聚合计数)、`truncateEnd` |
++| `renderer/lib/tool-display.ts` | **纯函数**:`toolIcon`(当前 27 个内置工具 → 内置语义图标,兜底图标 + 一次性 debug 日志)、`toolCategory`/`categoryIcon`(10 个聚合类别,含 memory)、`toolLineLabel`(人话描述 i18n key + 已截断参数)、`toolGroupSummary`(按类别首现顺序聚合计数)、`truncateEnd` |
+ | `renderer/lib/timeline.ts` | `groupTimelineItems` / `isGroupableToolCall` / `GroupedTimelineItem` |
+ | `renderer/lib/artifact.ts` | `isDeliverableToolCall`(新提取,不看 status) |
+ | `renderer/components/ToolCallLine.tsx` | 轻量单行:图标 + 描述 + 行尾状态(running→spinner / 待批准文案 / 失败红字 / 完成时长),可展开 result/diff,文件预览按钮 |
+@@ -146,7 +147,7 @@ StreamEvent(tool_call)
+ 
+ - 描述模板按工具取参:path 类用 `shortenPath`(尾两段);`search.query`/`glob.pattern` 截 40;`Bash.command` 压缩空白后截 60;`WebFetch.url` 截 60;`ExitPlanMode.title` 截 30。
+ - 流式参数预览仅用于 `Write` / `Edit` 的 `file_path`;聊天时间线里的真实 running 工具可以显示泛化执行态,但 URL、搜索词或命令仍只在完成历史或审批面板里展示。
+-- 摘要类别:read / edit / search / command / web / artifact / message / plan / schedule / other,组件层以 `" · "` 连接。
++- 摘要类别:read / edit / search / command / web / artifact / plan / schedule / memory / other,组件层以 `" · "` 连接。
+ - `ToolCall.name` 是普通 string(模型可能请求未知工具),未知名 → `chat.toolLine.fallback`(「调用 {{name}}」)+ 兜底图标。
+ 
+ ---
+@@ -167,7 +168,7 @@ StreamEvent(tool_call)
+ 
+ ## 5. 后续可演进
+ 
+-- **"后续同类命令不再询问"**:需扩展 shared `ApprovalDecision` 契约 + 后端按命令前缀/工具名记录会话级放行规则,本次刻意未做。
++- **更细粒度的信任管理 UI**:当前已支持项目级“始终允许本项目”,但还没有设置页查看、撤销或按规则管理这些信任记录。
+ - 侧栏 `SideChatPanel` 的审批卡复用 `ApprovalCard` 统一形态。
+ - `chatTimeline()` 全量接线(plan/aside 渲染器)时,把 `groupTimelineItems` 合入其 fold。
+ - 历史会话残留的 `pending_approval` 行(run 异常结束遗留)目前按 spinner 行呈现,可考虑显示"未审批"终态。
+diff --git a/packages/shared/test/contracts.test.ts b/packages/shared/test/contracts.test.ts
+index 24da02d..abe2f24 100644
+--- a/packages/shared/test/contracts.test.ts
++++ b/packages/shared/test/contracts.test.ts
+@@ -184,8 +184,7 @@ describe("toolNameSchema", () => {
+       "ScheduleCancel",
+       "Memory",
+       "OcrExtractText",
+-      "PowerShell",
+-      "FeishuSendMessage"
++      "PowerShell"
+     ]) {
+       expect(toolNameSchema.parse(name)).toBe(name);
+     }

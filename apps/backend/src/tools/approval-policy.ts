@@ -103,15 +103,6 @@ export function assessToolApprovalRisk(
     };
   }
 
-  if (toolName === "FeishuSendMessage") {
-    return {
-      risk: "high",
-      requiresGate: true,
-      smartVerdict: "ask_user",
-      reason: "工具会向外部飞书会话发送消息，需要你确认。"
-    };
-  }
-
   if (toolName === "ScheduleCreate" || toolName === "ScheduleCancel") {
     return {
       risk: "medium",

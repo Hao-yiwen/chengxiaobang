@@ -98,7 +98,8 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
   const askUser: AgentTool<typeof askUserParams> = {
     name: "AskUserQuestion",
     label: "询问用户",
-    description: "向用户提出 1 到 4 个真正需要决策的结构化问题。每题必须提供 2 到 4 个选项；multiSelect=true 时允许多选。",
+    description:
+      "向用户提出 1 到 4 个真正需要决策的结构化问题。只在确实需要用户选择时使用；多个澄清点一次性合并。每题必须提供 2 到 4 个清晰选项；multiSelect=true 时允许多选。",
     parameters: askUserParams,
     execute: async (toolCallId) => {
       const answer = runtime.getAskUserAnswer(toolCallId);
@@ -128,7 +129,8 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
   const useSkill: AgentTool<typeof useSkillParams> = {
     name: "Skill",
     label: "加载技能",
-    description: "按名称加载一个技能的完整说明，再根据说明继续执行任务。",
+    description:
+      "按名称加载一个技能的完整说明，再根据说明继续执行任务。制作 PPT、Word、Excel 等专业产物，或任务匹配可用技能时，先加载对应技能。",
     parameters: useSkillParams,
     execute: async (_toolCallId, params) => {
       const content = await runtime.loadSkill(params.skill, params.args);

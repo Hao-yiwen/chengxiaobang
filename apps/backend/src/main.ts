@@ -92,9 +92,6 @@ export async function startBackend(config: BackendConfig) {
     }
   });
   const webSearchConfigService = new WebSearchConfigService(store, secrets);
-  // Lazily resolved: the FeishuService is constructed after the runner
-  // (it consumes the runner), so the tools reach it through a closure.
-  let feishuServiceRef: FeishuService | undefined;
   // 长期记忆与 SQLite 同级落在 data-dir 下，跨所有会话共享。
   const memoryDir = join(config.dataDir, "memories");
   log.info(`[backend] 长期记忆目录 ${memoryDir}`);
@@ -103,7 +100,6 @@ export async function startBackend(config: BackendConfig) {
     memoryDir,
     createTools: async (workspacePath, runtime) =>
       createAgentTools(workspacePath, {
-        getFeishuSender: () => feishuServiceRef?.getSender(),
         webSearch: await webSearchConfigService.createSearcher(),
         ...(runtime?.modelInputModalities
           ? { modelInputModalities: runtime.modelInputModalities }
@@ -135,7 +131,6 @@ export async function startBackend(config: BackendConfig) {
     runner,
     bridgeFactory: createLarkBridge
   });
-  feishuServiceRef = feishuService;
   await feishuService.start();
   const wechatConfigService = new WechatConfigService(store);
   const wechatService = new WechatService({

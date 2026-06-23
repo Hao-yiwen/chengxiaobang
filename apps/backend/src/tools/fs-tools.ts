@@ -20,23 +20,29 @@ const lsParams = Type.Object({
 });
 
 const readParams = Type.Object({
-  file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径" }),
-  offset: Type.Optional(Type.Number({ description: "可选，起始行号，1 表示第一行" })),
+  file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径；用于读取已有文件内容" }),
+  offset: Type.Optional(Type.Number({ description: "可选，起始行号，1 表示第一行；用于分段读取长文件" })),
   limit: Type.Optional(Type.Number({ description: "可选，最多读取多少行；默认和上限均为 2000" }))
 });
 
 const writeParams = Type.Object({
   file_path: Type.String({
-    description: "相对工作目录的文件路径，或显式绝对路径；请优先生成该字段"
+    description: "相对工作目录的文件路径，或显式绝对路径；调用时优先生成 file_path，便于界面尽早展示正在写入的文件"
   }),
-  content: Type.String({ description: "要写入的完整文本内容" })
+  content: Type.String({ description: "要写入的完整文本内容；Write 会创建新文件或完整覆盖已有文本文件" })
 });
 
 const editParams = Type.Object({
-  file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径；请优先生成该字段" }),
-  old_string: Type.String({ description: "需要被替换的原文，必须逐字精确匹配" }),
+  file_path: Type.String({
+    description: "相对工作目录的文件路径，或显式绝对路径；调用时优先生成 file_path，便于界面尽早展示正在编辑的文件"
+  }),
+  old_string: Type.String({
+    description: "需要被替换的原文，必须逐字精确匹配；不要包含 Read 输出里的行号前缀"
+  }),
   new_string: Type.String({ description: "替换后的新文本" }),
-  replace_all: Type.Optional(Type.Boolean({ description: "默认 false；true 时替换所有匹配" }))
+  replace_all: Type.Optional(
+    Type.Boolean({ description: "默认 false，要求 old_string 唯一匹配；true 时替换所有匹配" })
+  )
 });
 
 const makeDirectoryParams = Type.Object({
@@ -156,7 +162,7 @@ export function createFsTools(workspacePath: string, options: FsToolOptions = {}
     name: "Read",
     label: "读取文件",
     description:
-      "读取工作目录或显式绝对路径中的文件。文本默认最多 2000 行并带行号；当前模型支持图片输入时，PNG/JPG/GIF/WEBP 图片会以 image content 返回。",
+      "读取工作目录或显式绝对路径中的文件。先用它了解现状再修改文件；文本默认最多 2000 行并带行号，可用 offset/limit 分段读取；当前模型支持图片输入时，PNG/JPG/GIF/WEBP 图片会以 image content 返回。",
     parameters: readParams,
     execute: async (_id, params) => {
       const target = resolveFsToolPath(workspacePath, "Read", params.file_path, false);
@@ -221,7 +227,7 @@ export function createFsTools(workspacePath: string, options: FsToolOptions = {}
     name: "Write",
     label: "写入文件",
     description:
-      "创建或完整覆盖工作目录或显式绝对路径中的一个文本文件，会自动创建父目录。新文件可直接创建；覆盖已有文件前必须先用 Read 完整读取。已有文件的小范围改动优先使用 Edit。",
+      "创建或完整覆盖工作目录或显式绝对路径中的一个文本文件，会自动创建父目录。新文件可直接创建；覆盖已有文件前必须先用 Read 完整读取当前内容。已有文件的小范围改动优先使用 Edit，完整重写才使用 Write。",
     parameters: writeParams,
     execute: async (_id, params) => {
       const target = await resolveFsWritablePath(workspacePath, "Write", params.file_path, true);
@@ -266,7 +272,7 @@ export function createFsTools(workspacePath: string, options: FsToolOptions = {}
     name: "Edit",
     label: "编辑文件",
     description:
-      "对已有文本文件做精确字符串替换。编辑前必须先用 Read 读取该文件；old_string 不要包含 Read 输出里的行号前缀。默认 old_string 必须唯一匹配；replace_all=true 仅用于确实要替换全部匹配。",
+      "对已有文本文件做精确字符串替换。编辑前必须先用 Read 读取该文件；old_string 不要包含 Read 输出里的行号前缀。默认 old_string 必须唯一匹配；replace_all=true 仅用于确实要替换全部匹配。文件在 Read 后变化会要求重新读取。",
     parameters: editParams,
     execute: async (_id, params) => {
       if (params.old_string.length === 0) {
@@ -351,7 +357,8 @@ export function createFsTools(workspacePath: string, options: FsToolOptions = {}
   const globTool: AgentTool<typeof globParams> = {
     name: "Glob",
     label: "查找文件",
-    description: "按通配符在工作目录或指定目录中递归查找文件，例如 '**/*.ts' 或 'src/**/*.md'。",
+    description:
+      "按通配符在工作目录或指定目录中递归查找文件，例如 '**/*.ts' 或 'src/**/*.md'。查找文件名或结构时优先用它，不要用 shell 拼等价命令。",
     parameters: globParams,
     execute: async (_id, params) => {
       const path = params.path || ".";
@@ -363,7 +370,8 @@ export function createFsTools(workspacePath: string, options: FsToolOptions = {}
   const grepTool: AgentTool<typeof grepParams> = {
     name: "Grep",
     label: "搜索内容",
-    description: "使用 ripgrep 在工作目录或显式绝对路径目录中搜索内容，支持输出模式、上下文和过滤参数。",
+    description:
+      "使用 ripgrep 在工作目录或显式绝对路径目录中搜索内容，支持输出模式、上下文和过滤参数。搜索文件内容时优先用它，不要用 shell 拼等价命令。",
     parameters: grepParams,
     execute: async (_id, params, signal) => {
       const path = params.path || ".";

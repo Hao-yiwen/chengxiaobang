@@ -66,7 +66,7 @@ export function createTodoTools(runtime: TodoToolRuntime = {}): AgentTool<any>[]
     name: "TodoWrite",
     label: "写入 Todo",
     description:
-      "替换 AI 自用执行清单的完整快照。适合多步任务进度展示；简单问答、小改动或单次工具调用不要创建 todo。",
+      "替换 AI 自用执行清单的完整快照。非计划模式下适合多步排查、跨文件修改、需要验证或持续较久的工作；每次状态变化都重写完整 todos，最多一个 in_progress。简单问答、小改动或单次工具调用不要创建 todo。",
     parameters: todoWriteParams,
     execute: async (_toolCallId, params) => {
       const parsed = todoWriteArgsSchema.safeParse(params);

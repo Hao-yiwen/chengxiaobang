@@ -1,6 +1,6 @@
 # 程小帮（chengxiaobang）
 
-程小帮是一个 **macOS / Windows Electron AI 助手桌面应用**（agentic coding companion）。它在本地拉起一个无头 HTTP 后端，由 [pi](https://www.npmjs.com/package/@earendil-works/pi-agent-core) 驱动 agent 循环，桌面端通过 SSE 实时消费模型输出、工具调用与审批事件。
+程小帮是一个 **macOS / Windows Electron AI 助手桌面应用**（agentic coding companion）。它在本地拉起一个无头 HTTP 后端，由 [pi](https://www.npmjs.com/package/@earendil-works/pi-agent-core) 驱动 agent 循环，桌面端通过应用级 SSE 实时消费模型输出、工具调用、审批与定时任务事件。
 
 技术栈：**pnpm + TypeScript monorepo，全仓 ESM**，后端运行时强制 **Bun**，桌面端为 **Electron + React + Vite + Tailwind**。
 
@@ -99,35 +99,37 @@ chengxiaobang/
 
 #### `packages/shared` —— 契约层
 
-API / IPC 契约的唯一事实源。所有实体（Provider、Project、Session、Message、ToolCall、RunRequest…）都是 **Zod schema + 推导类型**：后端用它们 `.parse()` 请求，渲染层导入同一份类型。还拥有 `StreamEvent` 联合类型与 SSE codec（`encodeSseEvent` / `parseSseChunk`）。**改这里，两端必须跟随；它必须先 build。**
+API / IPC 契约的唯一事实源。所有实体（Provider、Project、Session、Message、ToolCall、RunRequest、ScheduledTask…）都是 **Zod schema + 推导类型**：后端用它们 `.parse()` 请求，渲染层导入同一份类型。还拥有 `StreamEvent` / `AppEvent` 联合类型、工具元数据（`toolMetadata`）与 SSE codec（`encodeSseEvent` / `parseSseChunk`）。**改这里，两端必须跟随；它必须先 build。**
 
 #### `apps/backend` —— 后端层（Bun，非 Electron 进程）
 
 - Hono 风格的 `fetch` handler（`api/app.ts`），由 `Bun.serve` 提供服务（`server.ts`，强制 Bun）。
-- agent 循环是 **pi 的 `runAgentLoopContinue`**，由 `agent/agent-runner.ts` 驱动；pi 事件经 `agent/pi-events.ts`（`RunEventTranslator`）翻译为 `StreamEvent`，经 `POST /api/runs/stream` 以 **SSE** 流出。
+- agent 循环是 **pi 的 `runAgentLoopContinue`**，由 `agent/agent-runner.ts` 驱动；pi 事件经 `agent/pi-events.ts`（`RunEventTranslator`）翻译为 `StreamEvent`。桌面默认用 `POST /api/runs` 启动 run，再通过全局 `GET /api/events` 接收 `AppEvent`；旧 `POST /api/runs/stream` 仍作为测试和回退流式入口保留。
 - 状态经 **sql.js 落 SQLite**（`repository/sqlite-state-store.ts`，藏在 `StateStore` 接口后）；assistant/tool 消息行带 backend-only 的 `payload` 列以无损回放多轮工具历史。
 - 模型调用走 **pi-ai**（`streamSimple`）；`model/pi-model.ts` 把 `ProviderConfig` 映射为 pi `Model`（按 slug/baseUrl 自动探测 provider 兼容差异）。内置 provider 为 **DeepSeek** 和 **Kimi**。
-- 工具是 TypeBox schema 的 pi `AgentTool`（`tools/registry.ts` 汇集 fs/shell/web/office/feishu 工具）。
-- **定时任务**：模型经 `tools/schedule-tools.ts` 创建（5 字段 cron，croner 解析），`tasks/task-scheduler.ts` 轮询到期任务并在原会话追加 headless run。
+- 工具是 TypeBox schema 的 pi `AgentTool`（`tools/registry.ts` 汇集文件、Shell/PowerShell、Git、网页抓取/搜索、Memory、定时任务、Todo、技能、OCR、飞书和 MCP 插件工具）；展示、审批、deferred 与计划草稿可见性统一由 `toolMetadata` 描述。
+- **定时任务**：模型经 `tools/schedule-tools.ts` 创建一次性或周期任务（`kind=once + run_at` / `kind=recurring + 5 字段 cron`），`tasks/task-scheduler.ts` 轮询到期任务并在原会话追加 headless run，同时向全局事件流发布任务生命周期事件。
+- **插件 / MCP / 技能市场**：插件可声明 MCP server，启用后转成 `mcp__...` 工具；内置技能、市场技能、插件技能和自定义技能共同进入斜杠命令与 Skill 工具体系。
+- **手机通道**：飞书和微信绑定会话复用同一个 runner，外部消息串行进入对应会话，结果回发到手机通道。
 
 #### `apps/desktop` —— 桌面层（Electron）
 
 - **main 进程拉起并监督后端**（`main/backend-process.ts`）。
 - 渲染层（React + Vite + Tailwind）沙箱化；`preload/index.ts` 只暴露最小的 `window.chengxiaobang` bridge（backend info、原生文件/目录选择器、读文件）。
-- `renderer/lib/api.ts` 据 bridge 的 baseURL/token 构建类型化 `ApiClient` 并消费 SSE 流。
+- `renderer/lib/api.ts` 据 bridge 的 baseURL/token 构建类型化 `ApiClient`；默认用 `startRun` + `subscribeAppEvents` 接入全局 SSE，并保留 `streamRun` 兼容旧路径和测试。
 - 渲染层拆为 `store/`（zustand 状态）、`components/`（视图）、`lib/`（IO）、`hooks/`、`i18n/`。
 
 ### Agent 运行流程（核心循环）
 
-`POST /api/runs/stream` → `AgentRunner.stream()`：
+桌面默认路径：`POST /api/runs` 启动 run，`GET /api/events` 接收 `AppEvent`；旧 `POST /api/runs/stream` 仍可直接流式消费 `AgentRunner.stream()`。
 
 1. 解析/创建会话，落库 user 消息，发 `run_started` + `message`。
 2. **用户可见的内置斜杠命令只保留 `/compact`**：它走仅总结的模型调用，不落 user 消息；文件、shell、Git 等能力保留为 agent 内部工具，由模型在 pi 循环中按需调用。
-3. 从持久化行重建 pi 对话（`agent/history.ts`），交给 `runAgentLoopContinue`。`RunEventTranslator` 把 pi 事件映射到 `StreamEvent`：`delta` / `message` / `tool_call` / 最终 `run_end`。
-4. **审批门控**在 pi 的 `beforeToolCall` 钩子：`approval` 模式下 mutating 工具先落 `pending_approval`，阻塞在 `ApprovalQueue.wait()` 直到 `POST /api/approvals/:toolCallId`。
-5. `POST /api/runs/:runId/abort` 经以 runId 为键的 `AbortController` 取消。
+3. 从持久化行重建 pi 对话（`agent/history.ts`），交给 `runAgentLoopContinue`。`RunEventTranslator` 把 pi 事件映射到 `StreamEvent`：`setup_error` / `run_started` / `delta` / `plan_delta` / `message` / `tool_activity` / `tool_call` / `session_updated` / `run_end`。
+4. **审批门控**在 pi 的 `beforeToolCall` 钩子：`approval` 模式下需要确认的工具先落 `pending_approval` 或 `pending_smart_approval`，阻塞在 `ApprovalQueue.wait()` 直到 `POST /api/approvals/:toolCallId`；项目会话支持“始终允许本项目”的同签名工具调用信任。
+5. `POST /api/runs/:runId/abort` 经以 runId 为键的 `AbortController` 取消；`POST /api/runs/:runId/steering` 可向运行中的 run 注入用户引导。
 
-每一步都是一个 `StreamEvent`，渲染层完全由这些事件驱动 UI。
+run 生命周期由 `StreamEvent` 驱动；定时任务开始/结束等应用级通知作为 `ScheduledTaskEvent` 合入 `AppEvent`，同一条全局 SSE 推给渲染层。
 
 ---
 
@@ -174,6 +176,11 @@ pnpm test -t "approval"                            # 按名过滤
 - [`CLAUDE.md`](./CLAUDE.md) —— 工程准则（写码前先思考 / 简单优先 / 外科手术式修改 / 目标驱动）、约定与陷阱
 - [`DESIGN.md`](./DESIGN.md) —— 设计系统（色板、字体层级、间距、组件形态）
 - [`docs/architecture.md`](./docs/architecture.md) —— 完整架构设计
+- [`docs/global-sse-event-stream.md`](./docs/global-sse-event-stream.md) —— 全局 SSE 与运行事件恢复
 - [`docs/scheduled-tasks.md`](./docs/scheduled-tasks.md) —— 定时任务
 - [`docs/tool-call-ui.md`](./docs/tool-call-ui.md) —— 工具调用 UI
+- [`docs/memory.md`](./docs/memory.md) —— 长期记忆（Memory）工具
+- [`docs/shell-background-execution.md`](./docs/shell-background-execution.md) —— Shell / PowerShell 后台命令
+- [`docs/provider-catalog-yaml.md`](./docs/provider-catalog-yaml.md) —— 供应商与模型静态配置
+- [`docs/usage-cost-ledger.md`](./docs/usage-cost-ledger.md) —— token 用量与成本账本
 - [`docs/sidebar-pinning.md`](./docs/sidebar-pinning.md) —— 侧边栏固定

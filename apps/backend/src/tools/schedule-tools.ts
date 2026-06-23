@@ -80,7 +80,7 @@ export function createScheduleTools(runtime: ScheduleToolRuntime): AgentTool<any
     name: "ScheduleCreate",
     label: "创建定时任务",
     description:
-      "创建定时任务：kind=once 用带时区 ISO 时间 run_at 创建一次性任务；kind=recurring 用 5 字段 cron 创建周期任务。具体某天某时执行一次不要用 cron 表达。",
+      "创建定时任务：kind=once 用带时区 ISO 时间 run_at 创建具体某天某时只执行一次的任务；kind=recurring 用 5 字段 cron 创建每天、每周或每隔一段时间重复执行的周期任务。不要用 cron 表达一次性任务。",
     parameters: createParams,
     execute: async (_toolCallId, params) => {
       if (runtime.feishuChatId || runtime.wechatChatId) {

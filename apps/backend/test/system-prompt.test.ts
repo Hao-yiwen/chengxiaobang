@@ -11,11 +11,13 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("/tmp/proj");
     expect(prompt).toContain("demo");
     expect(prompt).toContain("审批模式");
-    expect(prompt).toContain("Skill");
-    expect(prompt).toContain("TodoWrite");
-    expect(prompt).toContain("简单问答、小改动或单次工具调用不要创建 todo");
+    expect(prompt).toContain("简单问答、小改动或单次工具调用不要创建清单");
     expect(prompt).toContain("<artifacts><artifact path=\"page.html\" />");
     expect(prompt).toContain("不要放进 Markdown 代码块");
+    expect(prompt).not.toContain("TodoWrite");
+    expect(prompt).not.toContain("Bash 默认前台短等待");
+    expect(prompt).not.toContain("先用 LS / Glob / Grep / Read");
+    expect(prompt).not.toContain("ScheduleCreate");
     expect(prompt).not.toContain("create_pptx");
     expect(prompt).not.toContain("create_docx");
     expect(prompt).not.toContain("create_xlsx");
@@ -24,6 +26,20 @@ describe("buildSystemPrompt", () => {
   it("describes full access mode", () => {
     const prompt = buildSystemPrompt({ workspacePath: "/w", accessMode: "full_access" });
     expect(prompt).toContain("完全访问模式");
+  });
+
+  it("计划模式保留 ExitPlanMode 和 plan 参数的显式规则", () => {
+    const prompt = buildSystemPrompt({
+      workspacePath: "/w",
+      accessMode: "approval",
+      planMode: true
+    });
+
+    expect(prompt).toContain("当前为「计划模式」");
+    expect(prompt).toContain("ExitPlanMode");
+    expect(prompt).toContain("计划文本参数为 plan");
+    expect(prompt).toContain("Summary、Key Changes、Test Plan、Assumptions");
+    expect(prompt).toContain("用户确认前禁止调用写文件、运行命令等会改变环境的工具");
   });
 
   it("注入长期记忆段：含协议说明与目录快照，未启用时完全省略", () => {
@@ -46,9 +62,8 @@ describe("buildSystemPrompt", () => {
     expect(listed).not.toContain("（记忆目录为空）");
   });
 
-  it("mentions the feishu tool and adds plain-text guidance for feishu sessions", () => {
+  it("adds plain-text guidance for feishu sessions without hardcoding the send tool", () => {
     const local = buildSystemPrompt({ workspacePath: "/w", accessMode: "approval" });
-    expect(local).toContain("FeishuSendMessage");
     expect(local).not.toContain("当前对话来自飞书");
 
     const viaFeishu = buildSystemPrompt({
@@ -57,7 +72,7 @@ describe("buildSystemPrompt", () => {
       viaFeishu: true
     });
     expect(viaFeishu).toContain("当前对话来自飞书");
-    expect(viaFeishu).toContain("不要调用 FeishuSendMessage 重复发送你的回复");
+    expect(viaFeishu).toContain("不要额外主动发送重复回复");
     expect(viaFeishu).not.toContain("<artifacts>");
   });
 

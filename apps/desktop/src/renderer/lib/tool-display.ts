@@ -12,7 +12,6 @@ import {
   GitBranchIcon,
   GlobeOutlineIcon,
   LabFlaskOutlineIcon,
-  PointerOutlineIcon,
   PullRequestOpenIcon,
   SearchIcon,
   SkillIcon,
@@ -50,7 +49,6 @@ const TOOL_ICONS: Record<string, Icon> = {
   WebFetch: GlobeOutlineIcon,
   WebSearch: SearchIcon,
   ToolSearch: SearchIcon,
-  FeishuSendMessage: PointerOutlineIcon,
   ExitPlanMode: ChecklistPlanIcon,
   TodoRead: ChecklistPlanIcon,
   TodoWrite: ChecklistPlanIcon,
@@ -92,7 +90,6 @@ const CATEGORY_ICONS: Record<ToolCategory, Icon> = {
   command: TerminalIcon,
   web: GlobeOutlineIcon,
   artifact: DocumentIcon,
-  message: PointerOutlineIcon,
   plan: ChecklistPlanIcon,
   schedule: ClockIcon,
   memory: BrainIcon,
@@ -128,7 +125,6 @@ type ToolLineName =
   | "WebFetch"
   | "WebSearch"
   | "ToolSearch"
-  | "FeishuSendMessage"
   | "ExitPlanMode"
   | "TodoRead"
   | "TodoWrite"
@@ -262,7 +258,6 @@ function genericRunningToolLineLabel(toolCall: ToolCall): ToolLineLabel | undefi
     case "BashCancel":
     case "GitStatus":
     case "GitDiff":
-    case "FeishuSendMessage":
     case "TodoRead":
     case "TodoWrite":
     case "AskUserQuestion":
@@ -346,7 +341,6 @@ function toolLineLabelInNamespace(
     case "GitDiff":
     case "BashStatus":
     case "BashCancel":
-    case "FeishuSendMessage":
     case "TodoRead":
     case "AskUserQuestion":
     case "ScheduleList":

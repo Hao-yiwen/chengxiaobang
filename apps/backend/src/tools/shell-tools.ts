@@ -25,13 +25,18 @@ const shellParams = Type.Object({
   command: Type.String({ description: "要执行的 shell 命令" }),
   timeout: Type.Optional(
     Type.Number({
-      description: "前台等待毫秒数，默认短等待；最大 600000。超过等待窗口后命令转后台继续执行。",
+      description:
+        "前台等待毫秒数。默认短等待 15000ms；测试、构建等较慢命令可用 120000；最大 600000。超过等待窗口后命令转后台继续执行。",
       minimum: 1,
       maximum: SHELL_BLOCKING_MAX_WAIT_MS
     })
   ),
   description: Type.Optional(Type.String({ description: "本次命令的简短说明，仅用于展示和日志" })),
-  run_in_background: Type.Optional(Type.Boolean({ description: "true 时立即转入后台执行" })),
+  run_in_background: Type.Optional(
+    Type.Boolean({
+      description: "true 时立即转入后台执行，适合长驻服务、监听进程或没有明确结束点的命令"
+    })
+  ),
   dangerouslyDisableSandbox: Type.Optional(
     Type.Boolean({ description: "仅为 schema 对齐保留，不会绕过审批和安全规则" })
   )
@@ -113,7 +118,8 @@ export function createShellTools(
   const shellTool: AgentTool<typeof shellParams> = {
     name: "Bash",
     label: "执行命令",
-    description: "在工作目录中执行一条 shell 命令并返回输出。用于构建、安装依赖、运行脚本等。",
+    description:
+      "在工作目录中执行一条 shell 命令并返回输出。用于构建、安装依赖、运行脚本等。默认前台等待 15000ms，未结束会转后台且不会强杀；run_in_background=true 会立即后台；timeout 最长 600000ms。后台命令输出持续写入返回的文件路径，后续可读取输出文件、用 BashStatus 查看是否结束、用 BashCancel 终止。",
     parameters: shellParams,
     execute: async (_id, params, signal) => {
       if (params.dangerouslyDisableSandbox) {
@@ -137,7 +143,7 @@ export function createShellTools(
     name: "PowerShell",
     label: "PowerShell",
     description:
-      "在 Windows 原生 PowerShell 中执行一条命令并返回输出。适合 Get-ChildItem、Select-String、Test-Path 等 PowerShell 语法。",
+      "在 Windows 原生 PowerShell 中执行一条命令并返回输出。适合 Get-ChildItem、Select-String、Test-Path 等 PowerShell 语法。等待、后台、timeout、输出文件、BashStatus 和 BashCancel 语义与 Bash 相同。",
     parameters: shellParams,
     execute: async (_id, params, signal) => {
       if (params.dangerouslyDisableSandbox) {
@@ -191,7 +197,8 @@ export function createShellTools(
   const shellStatus: AgentTool<typeof shellCommandIdParams> = {
     name: "BashStatus",
     label: "命令状态",
-    description: "查看一个已转入后台执行的 shell 命令状态和输出文件路径。",
+    description:
+      "查看一个已转入后台执行的 shell 命令状态和输出文件路径。只接受 Bash/PowerShell 返回的后台命令 ID。",
     parameters: shellCommandIdParams,
     execute: async (_id, params) => {
       const snapshot = getBackgroundShellCommand(params.id);
@@ -205,7 +212,8 @@ export function createShellTools(
   const shellCancel: AgentTool<typeof shellCommandIdParams> = {
     name: "BashCancel",
     label: "终止命令",
-    description: "终止一个仍在后台执行的 shell 命令，仅能作用于 shell 工具返回的后台命令 ID。",
+    description:
+      "终止一个仍在后台执行的 shell 命令，仅能作用于 Bash/PowerShell 返回的后台命令 ID；命令没进展、卡住或不再需要时使用。",
     parameters: shellCommandIdParams,
     execute: async (_id, params) => {
       const snapshot = cancelBackgroundShellCommand(params.id);

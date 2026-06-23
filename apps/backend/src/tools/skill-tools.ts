@@ -44,7 +44,7 @@ export function createSkillTools(runtime: SkillToolRuntime): AgentTool<any>[] {
     name: "CreateSkill",
     label: "创建技能",
     description:
-      "为用户创建并安装一个自定义技能。两种用法：①传 url（GitHub 仓库/目录/SKILL.md 链接），后端会抓取该处 SKILL.md 并安装；②传 name + description + content 现写一个技能。安装成功后该技能立即生效，用户可在「技能」页看到、并在对话中以 /技能名 调用。",
+      "为用户创建并安装一个自定义技能。用户给了 GitHub 链接时传 url（GitHub 仓库/目录/SKILL.md 链接），后端会抓取该处 SKILL.md 并安装；用户口头描述需求时，传 name + description + content 现写一个技能。安装成功后该技能立即生效，用户可在「技能」页看到、并在对话中以 /技能名 调用。",
     parameters: createParams,
     execute: async (_toolCallId, params) => {
       try {
