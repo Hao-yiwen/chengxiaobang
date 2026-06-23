@@ -68,7 +68,7 @@ export function assessToolApprovalRisk(
     };
   }
 
-  if (toolName === "Bash") {
+  if (toolName === "Bash" || toolName === "PowerShell") {
     const command = typeof args.command === "string" ? args.command : "";
     const dangerous = dangerousShellReason(command);
     if (dangerous) {
@@ -200,6 +200,9 @@ export function dangerousShellReason(command: string): string | undefined {
   ) {
     return "命令包含 PowerShell 递归或强制删除，智能审批已拒绝。";
   }
+  if (/\bremove-item\b[^;&|]*(?:-(?:r|recurse|force)\b)/.test(normalized)) {
+    return "命令包含 PowerShell 递归或强制删除，智能审批已拒绝。";
+  }
   return undefined;
 }
 
@@ -259,6 +262,12 @@ const LOW_RISK_SHELL_PATTERNS = [
   /^where(?:\.exe)?(?:\s|$)/,
   /^findstr(?:\s|$)/,
   /^ver$/,
+  /^get-childitem(?:\s|$)/,
+  /^gci(?:\s|$)/,
+  /^get-content(?:\s|$)/,
+  /^select-string(?:\s|$)/,
+  /^test-path(?:\s|$)/,
+  /^get-location$/,
   /^git\s+(?:status|diff|show|log|branch|rev-parse|ls-files)(?:\s|$)/,
   /^(?:pnpm|npm|bun)\s+(?:test|run\s+test|typecheck|run\s+typecheck|lint|run\s+lint|build|run\s+build|dev|run\s+dev|start|run\s+start|preview|run\s+preview|storybook|run\s+storybook)(?:\s|$)/,
   /^bun\s+test(?:\s|$)/,

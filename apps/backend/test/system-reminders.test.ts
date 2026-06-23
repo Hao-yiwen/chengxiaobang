@@ -27,11 +27,18 @@ describe("system-reminders", () => {
     expect(text).toContain("未必与当前任务相关");
   });
 
-  it("buildContextReminderMessage 最多注入 20 条技能", () => {
-    const skills = Array.from({ length: 25 }, (_, i) => ({ name: `s${i}`, description: "d" }));
-    const text = (buildContextReminderMessage({ skills })?.content as string) ?? "";
-    expect(text).toContain("s19");
-    expect(text).not.toContain("s20");
+  it("buildContextReminderMessage 注入 when_to_use 并按预算裁剪", () => {
+    const skills = Array.from({ length: 8 }, (_, i) => ({
+      name: `skill-${i}`,
+      description: `描述 ${i} ${"x".repeat(30)}`,
+      whenToUse: `场景 ${i}`
+    }));
+    const text =
+      (buildContextReminderMessage({ skills, skillListCharBudget: 180 })?.content as string) ?? "";
+
+    expect(text).toContain("适用场景: 场景 0");
+    expect(text).toContain("另有");
+    expect(text).not.toContain("skill-7: 描述 7");
   });
 
   it("重复/过载提醒文案带数量", () => {

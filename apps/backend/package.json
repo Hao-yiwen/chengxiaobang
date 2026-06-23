@@ -17,6 +17,7 @@
     "@larksuiteoapi/node-sdk": "1.66.1",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@tencent-weixin/openclaw-weixin": "2.4.3",
+    "@xmldom/xmldom": "^0.8.13",
     "adm-zip": "^0.5.16",
     "croner": "^10.0.1",
     "diff": "8.0.3",

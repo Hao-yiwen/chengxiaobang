@@ -57,6 +57,8 @@ export function buildSystemPrompt(input: {
   }
 
   const env = input.environment;
+  const inputModalities = env?.inputModalities;
+  const supportsImageInput = inputModalities?.includes("image");
   const environmentLines: string[] = [
     "",
     "# 环境信息",
@@ -69,7 +71,13 @@ export function buildSystemPrompt(input: {
     ...(env?.osVersion ? [`- 操作系统: ${env.osVersion}`] : []),
     // 模型需要当前时间才能把「明早 9 点」这类表达换算成 cron / 绝对时间。
     `- 当前时间: ${new Date().toLocaleString("zh-CN", { hour12: false })}（时区 ${Intl.DateTimeFormat().resolvedOptions().timeZone}）`,
-    ...(env?.model ? [`- 当前驱动模型: ${env.model}`] : [])
+    ...(env?.model ? [`- 当前驱动模型: ${env.model}`] : []),
+    ...(inputModalities
+      ? [
+          `- 当前模型输入能力: ${inputModalities.join(",")}`,
+          `- 当前模型支持图片输入: ${supportsImageInput ? "是" : "否"}（supportsImage=${supportsImageInput ? "true" : "false"}）`
+        ]
+      : [])
   ];
   if (env?.gitStatus) {
     environmentLines.push("", env.gitStatus);
@@ -100,6 +108,7 @@ export function buildSystemPrompt(input: {
     "- 需要操作工作目录外的路径时，优先使用显式绝对路径；不要用 ../ 这类相对路径逃逸工作目录。",
     "- 工作目录外的写入、编辑或建目录会触发审批，请在调用前说明要操作的绝对路径和原因。",
     "- 先用 LS / Glob / Grep / Read 了解现状，再动手修改。Read 使用 file_path，可用 offset/limit 分段读取；文本默认最多 2000 行并带行号。",
+    "- 修改已有文件前必须先用 Read 读取对应文件；覆盖已有文件需完整读取，小范围改动优先 Edit，完整重写才用 Write。old_string 不要包含 Read 输出里的行号前缀；replace_all 仅用于确实要替换全部匹配。",
     "- Bash 默认前台短等待，未结束就转后台；长驻服务、监听进程或没有明确结束点的命令用 run_in_background=true 立即后台；希望等待测试、构建等较慢命令直接返回结果时用 timeout=120000，timeout 最大 600000。等待超过窗口后不会强杀命令，而是转后台继续执行。后台命令的完整输出会持续写入返回的文件路径，后续用 Read 分段查看输出，用 BashStatus 查看是否结束；如果命令没有进展、卡住或不再需要，用 BashCancel 终止它。dangerouslyDisableSandbox 只是参数占位，不会绕过审批。",
     "- 非计划模式下，遇到稍复杂任务（多步排查、跨文件修改、需要验证或会持续较久的工作）时，用 TodoWrite 写入完整执行清单快照；每次状态变化都重写完整 todos，最多一个 in_progress。简单问答、小改动或单次工具调用不要创建 todo。",
     "- 用户消息中以 @相对路径 形式引用的文件，请先用 Read 读取其内容再继续。",

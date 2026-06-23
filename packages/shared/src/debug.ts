@@ -5,13 +5,23 @@ import { messageSchema } from "./message";
 import { projectSchema } from "./project";
 import { runRecordSchema } from "./run";
 import { sessionSchema } from "./session";
+import { modelVisibleSkillSchema } from "./skill";
 import { toolCallSchema } from "./tool";
+import { toolDeferPolicySchema, toolDisplayCategorySchema } from "./tool";
 
 export const agentDebugToolSchema = z.object({
   name: z.string().min(1),
   label: z.string().min(1).optional(),
   description: z.string().optional(),
-  requiresApproval: z.boolean()
+  requiresApproval: z.boolean(),
+  readOnly: z.boolean().optional(),
+  mutating: z.boolean().optional(),
+  destructive: z.boolean().optional(),
+  concurrencySafe: z.boolean().optional(),
+  searchHint: z.string().optional(),
+  deferPolicy: toolDeferPolicySchema.optional(),
+  maxInlineResultChars: z.number().int().positive().optional(),
+  category: toolDisplayCategorySchema.optional()
 });
 export type AgentDebugTool = z.infer<typeof agentDebugToolSchema>;
 
@@ -37,7 +47,7 @@ export const sessionDebugContextSchema = z.object({
       finished: z.boolean()
     })
     .optional(),
-  skills: z.array(z.object({ name: z.string().min(1), description: z.string() })),
+  skills: z.array(modelVisibleSkillSchema),
   availableTools: z.array(agentDebugToolSchema),
   generatedAt: z.string()
 });

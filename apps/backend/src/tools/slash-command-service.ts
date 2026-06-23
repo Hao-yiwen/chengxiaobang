@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import {
   formatPromptTemplateInvocation,
   formatSkillInvocation,
@@ -14,6 +15,7 @@ import {
   type Skill
 } from "@earendil-works/pi-agent-core/node";
 import type {
+  ModelVisibleSkill,
   Project,
   SlashCommand,
   SlashCommandDiagnostic,
@@ -21,6 +23,7 @@ import type {
 } from "@chengxiaobang/shared";
 import { builtinResourceRoot } from "../paths";
 import { loadPluginCommands } from "./plugin-commands";
+import type { SkillUsageStat } from "./skill-market-service";
 
 import { getLogger } from "../logging/logger";
 
@@ -40,6 +43,10 @@ interface LoadedResource {
   argumentHint?: string;
   /** 被单项停用：仍出现在 list（供 UI 重新启用），但不进入模型可见清单/命令展开。 */
   disabled?: boolean;
+  /** false 时对用户隐藏 /skill 入口，但模型仍可按需调用 Skill 工具加载。 */
+  userInvocable?: boolean;
+  /** 额外触发条件提示，来自 SKILL.md frontmatter 的 when_to_use。 */
+  whenToUse?: string;
   template?: PromptTemplate;
   skill?: Skill;
 }
@@ -57,6 +64,11 @@ export const builtinSlashCommands: SlashCommand[] = [
 
 type PluginRootsProvider = () => Promise<Array<{ pluginName: string; root: string }>>;
 
+export interface SkillUsageTracker {
+  skillUsageStats(): Promise<Record<string, SkillUsageStat>>;
+  recordSkillUsage(name: string): Promise<void>;
+}
+
 export interface SlashCommandServiceOptions {
   /** 随应用分发的市场技能目录；默认 builtin 根旁的 skills-market。 */
   marketRoot?: string;
@@ -68,6 +80,8 @@ export interface SlashCommandServiceOptions {
   disabledSkills?: () => Promise<Set<string>>;
   /** 被单项停用的插件命令名集合回调（黑名单），命中者从命令展开中剔除。 */
   disabledCommands?: () => Promise<Set<string>>;
+  /** 技能调用频率/最近使用时间，用于模型可见技能排序与调用后记录。 */
+  skillUsage?: SkillUsageTracker;
 }
 
 export class SlashCommandService {
@@ -76,6 +90,7 @@ export class SlashCommandService {
   private readonly enabledPluginRoots?: PluginRootsProvider;
   private readonly disabledSkills?: () => Promise<Set<string>>;
   private readonly disabledCommands?: () => Promise<Set<string>>;
+  private readonly skillUsage?: SkillUsageTracker;
 
   constructor(
     private readonly globalRoot = join(homedir(), ".chengxiaobang"),
@@ -87,6 +102,7 @@ export class SlashCommandService {
     this.enabledPluginRoots = options.enabledPluginRoots;
     this.disabledSkills = options.disabledSkills;
     this.disabledCommands = options.disabledCommands;
+    this.skillUsage = options.skillUsage;
   }
 
   async list(project?: Project): Promise<{
@@ -109,7 +125,7 @@ export class SlashCommandService {
     const diagnostics: SlashCommandDiagnostic[] = [];
     const resources = await this.loadResources(project, diagnostics);
     const resource = findResource(
-      resources.filter((entry) => !entry.disabled),
+      resources.filter((entry) => !entry.disabled && entry.userInvocable !== false),
       parsed.name
     );
     if (!resource) {
@@ -125,6 +141,7 @@ export class SlashCommandService {
       };
     }
     if (resource.kind === "skill" && resource.skill) {
+      await this.recordSkillUsage(resource.skill.name);
       return {
         prompt: formatSkillInvocation(resource.skill, parsed.rest.trim() || undefined),
         matched: true
@@ -137,26 +154,64 @@ export class SlashCommandService {
    * 模型可自主发现的技能清单（§5.3）：仅 name+description（正文经 Skill 按需拉取），
    * 过滤 disableModelInvocation，同名按 project > global > builtin 去重。
    */
-  async listSkills(project?: Project): Promise<Array<{ name: string; description: string }>> {
+  async listSkills(project?: Project): Promise<ModelVisibleSkill[]> {
     const resources = await this.loadResources(project, []);
-    const byName = new Map<string, { skill: Skill; source: SlashCommandSource }>();
+    const byName = new Map<string, { skill: Skill; source: SlashCommandSource; whenToUse?: string }>();
     for (const resource of modelVisibleSkills(resources)) {
       const existing = byName.get(resource.skill.name);
       if (existing && sourceRank(existing.source) >= sourceRank(resource.source)) {
         continue;
       }
-      byName.set(resource.skill.name, { skill: resource.skill, source: resource.source });
+      byName.set(resource.skill.name, {
+        skill: resource.skill,
+        source: resource.source,
+        ...(resource.whenToUse ? { whenToUse: resource.whenToUse } : {})
+      });
     }
-    return [...byName.values()].map(({ skill }) => ({
-      name: skill.name,
-      description: skill.description
-    }));
+    const usage = await this.skillUsageStats();
+    return [...byName.values()]
+      .sort((left, right) => compareModelVisibleSkills(left, right, usage))
+      .map(({ skill, whenToUse }) => ({
+        name: skill.name,
+        description: skill.description,
+        ...(whenToUse ? { whenToUse } : {})
+      }));
   }
 
   /** 按名称查找模型可调用的技能（§5.3）：复用 findResource 的优先级，尊重 disableModelInvocation。 */
   async findSkill(name: string, project?: Project): Promise<Skill | undefined> {
     const resources = await this.loadResources(project, []);
     return findResource(modelVisibleSkills(resources), name)?.skill;
+  }
+
+  async recordSkillUsage(name: string): Promise<void> {
+    if (!this.skillUsage) {
+      return;
+    }
+    try {
+      await this.skillUsage.recordSkillUsage(name);
+    } catch (error) {
+      log.warn("[slash-command-service] 技能使用记录失败", {
+        action: "skill_usage.record_failed",
+        name,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  private async skillUsageStats(): Promise<Record<string, SkillUsageStat>> {
+    if (!this.skillUsage) {
+      return {};
+    }
+    try {
+      return await this.skillUsage.skillUsageStats();
+    } catch (error) {
+      log.warn("[slash-command-service] 技能使用记录读取失败", {
+        action: "skill_usage.read_failed",
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return {};
+    }
   }
 
   private async loadResources(
@@ -186,11 +241,9 @@ export class SlashCommandService {
 
         const skillResult = await loadSkills(env, ["skills"]);
         resources.push(
-          ...skillResult.skills.map((skill) => ({
-            kind: "skill" as const,
-            source: source.name,
-            skill
-          }))
+          ...(await Promise.all(
+            skillResult.skills.map((skill) => skillToResource(skill, source.name))
+          ))
         );
         diagnostics.push(
           ...skillResult.diagnostics.map((diagnostic) => ({
@@ -238,13 +291,11 @@ export class SlashCommandService {
           source: "market" as const
         }))
       );
-      return skillResult.skills
-        .filter((skill) => enabled.has(skill.name))
-        .map((skill) => ({
-          kind: "skill" as const,
-          source: "market" as const,
-          skill
-        }));
+      return Promise.all(
+        skillResult.skills
+          .filter((skill) => enabled.has(skill.name))
+          .map((skill) => skillToResource(skill, "market" as const))
+      );
     } catch (error) {
       log.warn("[slash-command-service] 加载市场技能失败", {
         root: this.marketRoot,
@@ -277,13 +328,14 @@ export class SlashCommandService {
       try {
         const skillResult = await loadSkills(env, ["skills"]);
         resources.push(
-          ...skillResult.skills.map((skill) => ({
-            kind: "skill" as const,
-            source: "plugin" as const,
-            pluginName,
-            disabled: disabledSkills.has(skill.name),
-            skill
-          }))
+          ...(await Promise.all(
+            skillResult.skills.map((skill) =>
+              skillToResource(skill, "plugin" as const, {
+                pluginName,
+                disabled: disabledSkills.has(skill.name)
+              })
+            )
+          ))
         );
         diagnostics.push(
           ...skillResult.diagnostics.map((diagnostic) => ({
@@ -413,6 +465,9 @@ function mergeCommands(resources: LoadedResource[]): SlashCommand[] {
     byName.set(command.name, command);
   }
   for (const resource of resources) {
+    if (resource.userInvocable === false) {
+      continue;
+    }
     const command = resourceToCommand(resource);
     const existing = byName.get(command.name);
     if (existing && sourceRank(existing.source) > sourceRank(command.source)) {
@@ -514,6 +569,106 @@ function kindRank(kind: SlashCommand["kind"]): number {
     return 1;
   }
   return 0;
+}
+
+async function skillToResource(
+  skill: Skill,
+  source: SlashCommandSource,
+  overrides: Pick<LoadedResource, "pluginName" | "disabled"> = {}
+): Promise<LoadedResource> {
+  const metadata = await readSkillInvocationMetadata(skill);
+  return {
+    kind: "skill",
+    source,
+    ...overrides,
+    ...(metadata.whenToUse ? { whenToUse: metadata.whenToUse } : {}),
+    userInvocable: metadata.userInvocable,
+    skill
+  };
+}
+
+interface SkillInvocationMetadata {
+  whenToUse?: string;
+  userInvocable: boolean;
+}
+
+async function readSkillInvocationMetadata(skill: Skill): Promise<SkillInvocationMetadata> {
+  try {
+    const raw = await readFile(skill.filePath, "utf8");
+    return parseSkillInvocationMetadata(raw);
+  } catch (error) {
+    log.warn("[slash-command-service] 读取技能调用元数据失败，按默认值处理", {
+      action: "skill_metadata.read_failed",
+      skill: skill.name,
+      filePath: skill.filePath,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return { userInvocable: true };
+  }
+}
+
+function parseSkillInvocationMetadata(raw: string): SkillInvocationMetadata {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match?.[1]) {
+    return { userInvocable: true };
+  }
+  let whenToUse: string | undefined;
+  let userInvocable = true;
+  for (const line of match[1].split(/\r?\n/)) {
+    const matched = line.match(/^(when_to_use|user-invocable|user_invocable):\s*(.+)$/);
+    if (matched?.[1] === "when_to_use") {
+      whenToUse = unquoteFrontmatterValue(matched[2]);
+    } else if (matched?.[1] === "user-invocable" || matched?.[1] === "user_invocable") {
+      userInvocable = parseBooleanFrontmatterValue(matched[2], true);
+    }
+  }
+  return {
+    userInvocable,
+    ...(whenToUse ? { whenToUse } : {})
+  };
+}
+
+function compareModelVisibleSkills(
+  left: { skill: Skill; source: SlashCommandSource },
+  right: { skill: Skill; source: SlashCommandSource },
+  usage: Record<string, SkillUsageStat>
+): number {
+  const usageOrder = skillUsageScore(right.skill.name, usage) - skillUsageScore(left.skill.name, usage);
+  if (usageOrder !== 0) {
+    return usageOrder;
+  }
+  const sourceOrder = sourceRank(right.source) - sourceRank(left.source);
+  if (sourceOrder !== 0) {
+    return sourceOrder;
+  }
+  return left.skill.name.localeCompare(right.skill.name);
+}
+
+function skillUsageScore(name: string, usage: Record<string, SkillUsageStat>): number {
+  const stat = usage[name];
+  if (!stat) {
+    return 0;
+  }
+  const daysSinceUse = (Date.now() - stat.lastUsedAt) / (1000 * 60 * 60 * 24);
+  const recencyFactor = Math.pow(0.5, daysSinceUse / 7);
+  return stat.usageCount * Math.max(recencyFactor, 0.1);
+}
+
+function unquoteFrontmatterValue(value: string): string {
+  const trimmed = value.trim();
+  const quoted = trimmed.match(/^"(.*)"$|^'(.*)'$/);
+  return (quoted?.[1] ?? quoted?.[2] ?? trimmed).trim();
+}
+
+function parseBooleanFrontmatterValue(value: string, fallback: boolean): boolean {
+  const normalized = unquoteFrontmatterValue(value).toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  return fallback;
 }
 
 function parseSlashPrompt(prompt: string): { name: string; rest: string } | undefined {

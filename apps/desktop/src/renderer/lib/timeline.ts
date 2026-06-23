@@ -248,7 +248,23 @@ export interface FailedRunNotice {
 }
 export type RunErrorTimelineItem = { kind: "run-error"; at: string; notice: FailedRunNotice };
 
-export type ChatViewTimelineRenderItem = ChatViewTimelineItem | RunErrorTimelineItem;
+/** 中断 run 的轮次尾标数据：持久化记录 + 本次会话内的实时 run_end。 */
+export interface AbortedRunNotice {
+  id: string;
+  runId: string;
+  at: string;
+  persisted: boolean;
+}
+export type RunAbortedTimelineItem = {
+  kind: "run-aborted";
+  at: string;
+  notice: AbortedRunNotice;
+};
+
+export type ChatViewTimelineRenderItem =
+  | ChatViewTimelineItem
+  | RunErrorTimelineItem
+  | RunAbortedTimelineItem;
 
 const FAILED_RUN_FALLBACK = "运行失败，但未记录错误详情";
 
@@ -258,13 +274,20 @@ export function isFailedRunEndEvent(
   return event.type === "run_end" && event.status === "failed";
 }
 
+export function isAbortedRunEndEvent(
+  event: StreamEvent
+): event is Extract<StreamEvent, { type: "run_end" }> & { status: "aborted" } {
+  return event.type === "run_end" && event.status === "aborted";
+}
+
 /** ChatView 渲染时间线：在分组时间线上插入失败提示、把 ExitPlanMode 折成计划卡、丢弃 Todo 工具。 */
 export function chatViewTimelineItems(
   messages: Message[],
   toolCalls: ToolCall[],
   failedNotices: FailedRunNotice[],
   activeRunId?: string,
-  runs: RunRecord[] = []
+  runs: RunRecord[] = [],
+  abortedNotices: AbortedRunNotice[] = []
 ): ChatViewTimelineRenderItem[] {
   const groupedItems = groupTimelineItems(timelineItems(messages, toolCalls));
   const fileChangeItems = runs
@@ -280,6 +303,11 @@ export function chatViewTimelineItems(
     ...fileChangeItems,
     ...failedNotices.map((notice) => ({
       kind: "run-error" as const,
+      at: notice.at,
+      notice
+    })),
+    ...abortedNotices.map((notice) => ({
+      kind: "run-aborted" as const,
       at: notice.at,
       notice
     }))
@@ -340,6 +368,32 @@ export function failedRunNotices(runs: RunRecord[], events: StreamEvent[]): Fail
   return [...persisted, ...live].sort((left, right) => left.at.localeCompare(right.at));
 }
 
+export function abortedRunNotices(
+  runs: RunRecord[],
+  events: StreamEvent[],
+  liveAt = new Date().toISOString()
+): AbortedRunNotice[] {
+  const persisted = runs
+    .filter((run) => run.status === "aborted")
+    .map((run) => ({
+      id: run.id,
+      runId: run.id,
+      at: run.updatedAt,
+      persisted: true
+    }));
+  const persistedRunIds = new Set(persisted.map((notice) => notice.runId));
+  const live = events
+    .filter(isAbortedRunEndEvent)
+    .filter((event) => !persistedRunIds.has(event.runId))
+    .map((event, index) => ({
+      id: `live-${event.runId}-${index}`,
+      runId: event.runId,
+      at: liveAt,
+      persisted: false
+    }));
+  return [...persisted, ...live].sort((left, right) => left.at.localeCompare(right.at));
+}
+
 // ─────────────────── 轮次分组（「已工作 X 分 Y 秒」折叠头）───────────────────
 
 export type MessageRenderItem = Extract<ChatViewTimelineRenderItem, { kind: "message" }>;
@@ -377,6 +431,8 @@ export interface TurnBlock {
   /** 是否当前活跃 run：决定折叠头展开 + 实时计时，并承载运行中临时块。 */
   active: boolean;
   timing: TurnTiming;
+  /** 本轮结束态提示；目前只用于用户/连接中断，不与失败提示混用。 */
+  terminalStatus?: "aborted";
 }
 
 /** 不属于任何 AI 轮次、独立成块的卡片（/compact 摘要、system 消息）。 */
@@ -404,6 +460,7 @@ interface RawTurn {
   user?: MessageMember;
   members: TurnMember[];
   terminalAt?: string;
+  terminalStatus?: "aborted";
 }
 
 type RawBlock =
@@ -451,6 +508,14 @@ export function groupTurns(
       raw.push({ kind: "standalone", item, index });
       return;
     }
+    if (item.kind === "run-aborted") {
+      if (!cur) {
+        cur = { user: undefined, members: [] };
+      }
+      cur.terminalStatus = "aborted";
+      cur.terminalAt = item.at;
+      return;
+    }
     if (!cur) {
       cur = { user: undefined, members: [] };
     }
@@ -480,7 +545,7 @@ export function groupTurns(
 }
 
 function buildTurnBlock(turn: RawTurn, isLastTurn: boolean, ctx: GroupTurnsContext): TurnBlock {
-  const { user, members, terminalAt } = turn;
+  const { user, members, terminalAt, terminalStatus } = turn;
   if (!user) {
     console.debug("[timeline] 轮次缺起点用户消息，按孤立轮处理", {
       firstKind: members[0]?.item.kind,
@@ -517,7 +582,8 @@ function buildTurnBlock(turn: RawTurn, isLastTurn: boolean, ctx: GroupTurnsConte
     answer,
     afterAnswer,
     active,
-    timing: computeTurnTiming(user, answer, members, active, ctx, terminalAt)
+    timing: computeTurnTiming(user, answer, members, active, ctx, terminalAt),
+    ...(terminalStatus ? { terminalStatus } : {})
   };
 }
 
@@ -556,10 +622,12 @@ function computeTurnTiming(
   if (startMs === undefined) {
     return { mode: "unknown" };
   }
-  // 完成/历史：最终答复 createdAt − user createdAt；无答复（失败/中止）用成员最大时间戳兜底。
-  const endMs = answer
-    ? parseIsoMs(answer.item.message.createdAt)
-    : maxMemberMs(members, terminalAt);
+  // 完成/历史：终态事件时间优先；否则最终答复 createdAt − user createdAt；
+  // 无答复（失败/中止）用成员最大时间戳兜底。
+  const terminalMs = terminalAt ? parseIsoMs(terminalAt) : undefined;
+  const endMs =
+    terminalMs ??
+    (answer ? parseIsoMs(answer.item.message.createdAt) : maxMemberMs(members, terminalAt));
   if (endMs === undefined) {
     return { mode: "unknown" };
   }
@@ -610,6 +678,8 @@ function renderItemId(item: ChatViewTimelineRenderItem): string {
     case "run-file-changes":
       return `file-changes-${item.runId}`;
     case "run-error":
+      return item.notice.id;
+    case "run-aborted":
       return item.notice.id;
   }
 }

@@ -5,6 +5,7 @@ import {
   FileIcon,
   GitBranchIcon,
   RefreshIcon,
+  StopSquareFilledIcon,
   XMarkIcon
 } from "@/assets/file-type-icons";
 import {
@@ -40,6 +41,7 @@ import { WorkTimer } from "@/components/WorkTimer";
 import { parseArtifactDeclarations } from "@/lib/artifact";
 import { anchorScrollTop, contentTop, isNearBottom, tailSpacerHeight } from "@/lib/scroll";
 import {
+  abortedRunNotices,
   chatViewTimelineItems,
   failedRunNotices,
   groupTurns,
@@ -50,6 +52,9 @@ import {
 } from "@/lib/timeline";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
+import type { RunningToolVisualHold, StreamingPlan } from "@/store/types";
+
+const USER_SCROLL_DIRECTION_EPSILON_PX = 0.5;
 
 function toolCallsWithPendingPlan(toolCalls: ToolCall[], pendingTool?: ToolCall): ToolCall[] {
   if (!pendingTool || pendingTool.name !== "ExitPlanMode") {
@@ -63,6 +68,68 @@ function toolCallsWithPendingPlan(toolCalls: ToolCall[], pendingTool?: ToolCall)
     runId: pendingTool.runId
   });
   return [...toolCalls, pendingTool];
+}
+
+function toolCallsWithStreamingPlan(
+  toolCalls: ToolCall[],
+  streamingPlan: StreamingPlan | undefined,
+  activeRunId: string | undefined
+): ToolCall[] {
+  if (!streamingPlan || !activeRunId || streamingPlan.runId !== activeRunId) {
+    return toolCalls;
+  }
+  const markdown = streamingPlan.markdown.trim();
+  if (!markdown) {
+    return toolCalls;
+  }
+  const toolCallId =
+    streamingPlan.toolCallId ?? `streaming_plan_${streamingPlan.runId}_${streamingPlan.contentIndex}`;
+  if (toolCalls.some((toolCall) => toolCall.id === toolCallId)) {
+    return toolCalls;
+  }
+  console.debug("[ChatView] 将流式计划草稿并入聊天时间线", {
+    toolCallId,
+    runId: streamingPlan.runId,
+    markdownChars: markdown.length
+  });
+  return [
+    ...toolCalls,
+    {
+      id: toolCallId,
+      runId: streamingPlan.runId,
+      name: "ExitPlanMode",
+      args: { plan: markdown },
+      status: "running",
+      createdAt: streamingPlan.updatedAt,
+      updatedAt: streamingPlan.updatedAt
+    }
+  ];
+}
+
+function toolCallsWithRunningVisualHolds(
+  toolCalls: ToolCall[],
+  holds: Record<string, RunningToolVisualHold>
+): ToolCall[] {
+  const now = Date.now();
+  let changed = false;
+  const next = toolCalls.map((toolCall) => {
+    const hold = holds[toolCall.id];
+    if (
+      !hold ||
+      hold.visibleUntil <= now ||
+      toolCall.status === "running" ||
+      toolCall.status === "pending_smart_approval"
+    ) {
+      return toolCall;
+    }
+    changed = true;
+    return {
+      ...hold.toolCall,
+      // 视觉上保留 running，排序仍跟随真实终态，避免快速完成时行位置跳动。
+      updatedAt: toolCall.updatedAt
+    };
+  });
+  return changed ? next : toolCalls;
 }
 
 function toolActivityToTimelineTool(
@@ -222,13 +289,16 @@ export function ChatView() {
     thinkingStartedAt,
     thinkingDurationMs,
     pendingTool,
+    streamingPlan,
     toolActivity,
     runningTool,
+    runningToolVisualHolds,
     events,
     runHistory,
     isRunning,
     activeRunId,
-    activeRunStartedAt
+    activeRunStartedAt,
+    activeRunLastAssistant
   } = useAppStore(
     useShallow((state) => ({
       sessions: state.sessions,
@@ -240,13 +310,16 @@ export function ChatView() {
       thinkingStartedAt: state.thinkingStartedAt,
       thinkingDurationMs: state.thinkingDurationMs,
       pendingTool: state.pendingTool,
+      streamingPlan: state.streamingPlan,
       toolActivity: state.toolActivity,
       runningTool: state.runningTool,
+      runningToolVisualHolds: state.runningToolVisualHolds,
       events: state.events,
       runHistory: state.runHistory,
       isRunning: state.isRunning,
       activeRunId: state.activeRunId,
-      activeRunStartedAt: state.activeRunStartedAt
+      activeRunStartedAt: state.activeRunStartedAt,
+      activeRunLastAssistant: state.activeRunLastAssistant
     }))
   );
   const openFilePreview = useAppStore((state) => state.openFilePreview);
@@ -265,6 +338,7 @@ export function ChatView() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
   const scrollFrame = useRef<number | null>(null);
+  const lastScrollTopRef = useRef<number | undefined>(undefined);
   // 当前锚定到视口顶部的消息 id（刚发送的用户消息），以及上一轮消息尾部快照；
   // 后者用来区分会话切换/运行结束刷新这类整组替换和真正的新 user echo。
   const anchorIdRef = useRef<string | undefined>(undefined);
@@ -301,18 +375,27 @@ export function ChatView() {
     [toolActivity, activeRunId]
   );
   const activeRunAssistantIds = useMemo(
-    () =>
-      new Set(
-        events
-          .filter(
-            (event) =>
-              event.type === "message" &&
-              event.runId === activeRunId &&
-              event.message.role === "assistant"
-          )
-          .map((event) => (event.type === "message" ? event.message.id : ""))
-      ),
-    [activeRunId, events]
+    () => {
+      const ids = new Set<string>();
+      if (!activeRunId) {
+        return ids;
+      }
+      if (activeRunLastAssistant?.role === "assistant") {
+        ids.add(activeRunLastAssistant.id);
+      }
+      // events 现在通常只保留 run_end；这里继续兜底旧状态或测试中残留的 message 事件。
+      for (const event of events) {
+        if (
+          event.type === "message" &&
+          event.runId === activeRunId &&
+          event.message.role === "assistant"
+        ) {
+          ids.add(event.message.id);
+        }
+      }
+      return ids;
+    },
+    [activeRunId, activeRunLastAssistant, events]
   );
   const hasActiveRunToolHistory = useMemo(
     () => Boolean(activeRunId && toolHistory.some((toolCall) => toolCall.runId === activeRunId)),
@@ -325,6 +408,7 @@ export function ChatView() {
   const hasActiveRunOutput =
     Boolean(streamText) ||
     hasLiveThinking ||
+    Boolean(streamingPlan) ||
     Boolean(pendingTool) ||
     hasToolActivity ||
     hasActiveTimelineTool ||
@@ -343,13 +427,32 @@ export function ChatView() {
     () => failedRunNotices(runHistory, events),
     [runHistory, events]
   );
+  const abortedNotices = useMemo(
+    () => abortedRunNotices(runHistory, events),
+    [runHistory, events]
+  );
   const timelineToolCalls = useMemo(
-    () => toolCallsWithPendingPlan(toolHistory, pendingTool),
-    [toolHistory, pendingTool]
+    () => {
+      const withPlans = toolCallsWithStreamingPlan(
+        toolCallsWithPendingPlan(toolHistory, pendingTool),
+        streamingPlan,
+        activeRunId
+      );
+      return toolCallsWithRunningVisualHolds(withPlans, runningToolVisualHolds);
+    },
+    [toolHistory, pendingTool, streamingPlan, activeRunId, runningToolVisualHolds]
   );
   const items = useMemo(
-    () => chatViewTimelineItems(messages, timelineToolCalls, failedNotices, activeRunId, runHistory),
-    [messages, timelineToolCalls, failedNotices, activeRunId, runHistory]
+    () =>
+      chatViewTimelineItems(
+        messages,
+        timelineToolCalls,
+        failedNotices,
+        activeRunId,
+        runHistory,
+        abortedNotices
+      ),
+    [messages, timelineToolCalls, failedNotices, activeRunId, runHistory, abortedNotices]
   );
   const lastActionMessageId = useMemo(
     () => lastVisibleActionMessageId(items, activeRunAssistantIds),
@@ -389,7 +492,9 @@ export function ChatView() {
         reason,
         scrollTop: el?.scrollTop,
         scrollHeight: el?.scrollHeight,
-        clientHeight: el?.clientHeight
+        clientHeight: el?.clientHeight,
+        distanceToBottom:
+          el ? Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight) : undefined
       };
       if (paused) {
         console.info("[ChatView] 用户滚离底部，暂停本轮流式自动跟随", context);
@@ -405,7 +510,9 @@ export function ChatView() {
     if (!el) {
       return;
     }
-    el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    const target = Math.max(0, el.scrollHeight - el.clientHeight);
+    el.scrollTop = target;
+    lastScrollTopRef.current = target;
     setNearBottom(isNearBottom(el));
     syncScrollProgress(el);
   }, [syncScrollProgress]);
@@ -487,6 +594,7 @@ export function ChatView() {
       })}px`;
       const target = anchorScrollTop(top);
       el.scrollTop = target;
+      lastScrollTopRef.current = target;
       setNearBottom(isNearBottom(el));
       syncScrollProgress(el);
       console.debug("[ChatView] 锚定用户消息到视口顶部", { id: last.id, target });
@@ -502,6 +610,7 @@ export function ChatView() {
         spacerRef.current.style.height = "0px";
       }
       el.scrollTop = el.scrollHeight;
+      lastScrollTopRef.current = el.scrollTop;
       setNearBottom(true);
       syncScrollProgress(el);
       console.debug("[ChatView] 历史加载完成，滚动到底部", { count: messages.length });
@@ -541,6 +650,7 @@ export function ChatView() {
     streamText,
     thinking,
     pendingTool,
+    streamingPlan,
     toolActivity,
     runningTool,
     followStreamToBottom,
@@ -581,15 +691,23 @@ export function ChatView() {
       return;
     }
     const atBottom = isNearBottom(el);
+    const previousScrollTop = lastScrollTopRef.current ?? el.scrollTop;
+    const currentScrollTop = el.scrollTop;
+    const movedUp = currentScrollTop < previousScrollTop - USER_SCROLL_DIRECTION_EPSILON_PX;
+    const movedDown = currentScrollTop > previousScrollTop + USER_SCROLL_DIRECTION_EPSILON_PX;
+    lastScrollTopRef.current = currentScrollTop;
+
     setNearBottom(atBottom);
     syncScrollProgress(el);
 
     if (!isRunning || !anchorIdRef.current) {
       return;
     }
-    if (!atBottom) {
+    if (movedUp) {
       updateStreamAutoFollowPaused(true, "manual-scroll");
-    } else {
+      return;
+    }
+    if (atBottom && movedDown) {
       updateStreamAutoFollowPaused(false, "near-bottom");
     }
   }, [isRunning, syncScrollProgress, updateStreamAutoFollowPaused]);
@@ -603,11 +721,23 @@ export function ChatView() {
   useEffect(() => {
     if (
       !hasActiveTurn &&
-      (showWaiting || hasLiveThinking || Boolean(streamText) || Boolean(liveToolActivityCall))
+      (showWaiting ||
+        hasLiveThinking ||
+        Boolean(streamText) ||
+        Boolean(streamingPlan) ||
+        Boolean(liveToolActivityCall))
     ) {
       console.debug("[ChatView] 运行中暂无活跃轮承载临时块，已兜底挂末尾", { activeRunId });
     }
-  }, [hasActiveTurn, showWaiting, hasLiveThinking, streamText, liveToolActivityCall, activeRunId]);
+  }, [
+    hasActiveTurn,
+    showWaiting,
+    hasLiveThinking,
+    streamText,
+    streamingPlan,
+    liveToolActivityCall,
+    activeRunId
+  ]);
 
   // 单个时间线 item 的渲染分支（与原扁平渲染一致）；index 为其在全局 items 的下标，供
   // shouldHideMessageActions 等依赖全局位置的逻辑使用。
@@ -674,18 +804,28 @@ export function ChatView() {
         />
       );
     }
-    return (
-      <ToolCallRow
-        key={`tool-${item.toolCall.id}`}
-        toolCall={item.toolCall}
-        onOpenFile={openFilePreviewFromChat}
-      />
-    );
+    if (item.kind === "run-aborted") {
+      return <RunAbortedNotice key={`run-aborted-${item.notice.id}`} />;
+    }
+    if (item.kind === "tool") {
+      return (
+        <ToolCallRow
+          key={`tool-${item.toolCall.id}`}
+          toolCall={item.toolCall}
+          onOpenFile={openFilePreviewFromChat}
+        />
+      );
+    }
+    return null;
   };
 
   // 只有纯文本流式输出才保留 Markdown 内置 caret；thinking/工具/Todo 已经有更具体的运行态提示。
   const hasSpecificRuntimeIndicator =
-    hasLiveThinking || Boolean(liveToolActivityCall) || Boolean(runningTool) || Boolean(pendingTool);
+    hasLiveThinking ||
+    Boolean(liveToolActivityCall) ||
+    Boolean(runningTool) ||
+    Boolean(pendingTool) ||
+    Boolean(streamingPlan);
   const showStreamingMarkdownCaret = Boolean(streamText) && !hasSpecificRuntimeIndicator;
   const streamCaretDecisionPayload = useMemo(
     () => ({
@@ -696,6 +836,7 @@ export function ChatView() {
       liveToolActivity: streamCaretToolSummary(liveToolActivityCall),
       runningTool: streamCaretToolSummary(runningTool),
       pendingTool: streamCaretToolSummary(pendingTool),
+      streamingPlanChars: streamingPlan?.markdown.length ?? 0,
       showWaiting,
       hasLiveThinking,
       showCaret: showStreamingMarkdownCaret
@@ -709,6 +850,7 @@ export function ChatView() {
       runningTool,
       showStreamingMarkdownCaret,
       showWaiting,
+      streamingPlan,
       streamText.length
     ]
   );
@@ -721,6 +863,7 @@ export function ChatView() {
         liveToolActivity: streamCaretToolSummary(liveToolActivityCall),
         runningTool: streamCaretToolSummary(runningTool),
         pendingTool: streamCaretToolSummary(pendingTool),
+        streamingPlanChars: streamingPlan?.markdown.length ?? 0,
         showWaiting,
         hasLiveThinking,
         showCaret: showStreamingMarkdownCaret
@@ -734,12 +877,20 @@ export function ChatView() {
       runningTool,
       showStreamingMarkdownCaret,
       showWaiting,
+      streamingPlan,
       streamText
     ]
   );
 
   useEffect(() => {
-    if (!isRunning && !streamText && !liveToolActivityCall && !runningTool && !pendingTool) {
+    if (
+      !isRunning &&
+      !streamText &&
+      !streamingPlan &&
+      !liveToolActivityCall &&
+      !runningTool &&
+      !pendingTool
+    ) {
       streamCaretDecisionLogKeyRef.current = undefined;
       return;
     }
@@ -755,6 +906,7 @@ export function ChatView() {
     liveToolActivityCall,
     pendingTool,
     runningTool,
+    streamingPlan,
     streamCaretDecisionPayload,
     streamCaretDecisionLogKey,
     streamText
@@ -911,6 +1063,14 @@ function TurnView({
     block.afterAnswer.length > 0 ? (
       <>{block.afterAnswer.map((member) => renderItem(member.item, member.index))}</>
     ) : null;
+  const terminalNotice = block.terminalStatus === "aborted" ? <RunAbortedNotice /> : null;
+  const answerAfterContent =
+    afterAnswerContent || terminalNotice ? (
+      <>
+        {afterAnswerContent}
+        {terminalNotice}
+      </>
+    ) : null;
   const collapsible =
     block.intermediate.length > 0 || Boolean(answerReasoning) || Boolean(runtimeTail);
   return (
@@ -928,10 +1088,23 @@ function TurnView({
       {block.answer
         ? renderItem(block.answer.item, block.answer.index, {
             hideReasoning: true,
-            afterContent: afterAnswerContent
+            afterContent: answerAfterContent
           })
-        : afterAnswerContent}
+        : answerAfterContent}
     </>
+  );
+}
+
+function RunAbortedNotice() {
+  const { t } = useTranslation();
+  return (
+    <div
+      data-testid="run-aborted-notice"
+      className="mb-3 inline-flex max-w-full items-center gap-1.5 rounded-sm border border-hairline bg-canvas-soft-2 px-2.5 py-1 text-caption text-muted-foreground"
+    >
+      <StopSquareFilledIcon className="size-3.5 flex-none" />
+      <span className="truncate">{t("chat.runAborted")}</span>
+    </div>
   );
 }
 
@@ -1122,7 +1295,12 @@ function shouldHideMessageActions(
     item.message.role === "assistant" &&
     (activeRunAssistantIds.has(item.message.id) ||
       hasLaterAssistantAnswerInTurn(items, currentIndex) ||
-      Boolean(nextItem && nextItem.kind !== "message" && nextItem.kind !== "run-file-changes"))
+      Boolean(
+        nextItem &&
+          nextItem.kind !== "message" &&
+          nextItem.kind !== "run-file-changes" &&
+          nextItem.kind !== "run-aborted"
+      ))
   );
 }
 

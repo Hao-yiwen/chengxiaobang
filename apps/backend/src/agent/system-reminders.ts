@@ -1,4 +1,5 @@
 import type { Message as PiMessage } from "@earendil-works/pi-ai";
+import type { ModelVisibleSkill } from "@chengxiaobang/shared";
 
 /**
  * 集中管理注入到对话里的 system-reminder（SR）文案与构造。
@@ -11,23 +12,32 @@ export function wrapSystemReminder(body: string): string {
   return `<system-reminder>\n${body}\n</system-reminder>`;
 }
 
+const DEFAULT_SKILL_LIST_CHAR_BUDGET = 8_000;
+const MAX_SKILL_LIST_DESC_CHARS = 250;
+const MIN_SKILL_LIST_DESC_CHARS = 20;
+
 /**
  * 开场上下文 SR:把可用技能清单以「可能相关的背景」形式注入。
  * 无技能时返回 undefined。
  */
 export function buildContextReminderMessage(input: {
-  skills?: Array<{ name: string; description: string }>;
+  skills?: ModelVisibleSkill[];
+  skillListCharBudget?: number;
 }): PiMessage | undefined {
   const skills = input.skills ?? [];
   if (skills.length === 0) {
     return undefined;
   }
+  const skillLines = formatSkillsWithinBudget(
+    skills,
+    input.skillListCharBudget ?? DEFAULT_SKILL_LIST_CHAR_BUDGET
+  );
   const body = [
     "你在回答用户时可以参考以下背景上下文:",
     "",
     "## 可用技能",
     "当任务匹配以下技能时,先调用 Skill 工具加载技能说明,再按说明操作:",
-    ...skills.slice(0, 20).map((skill) => `- ${skill.name}:${skill.description}`),
+    ...skillLines,
     "",
     "以上上下文未必与当前任务相关;除非高度相关,否则不要主动提及或回应它们。"
   ].join("\n");
@@ -59,4 +69,47 @@ export function buildReminderMessage(reminders: string[]): PiMessage | undefined
 
 function reminderUserMessage(content: string): PiMessage {
   return { role: "user", content, timestamp: Date.now() };
+}
+
+function formatSkillsWithinBudget(skills: ModelVisibleSkill[], budget: number): string[] {
+  const lines: string[] = [];
+  let used = 0;
+  for (const skill of skills) {
+    const line = formatSkillLine(skill, MAX_SKILL_LIST_DESC_CHARS);
+    const cost = line.length + (lines.length > 0 ? 1 : 0);
+    if (used + cost > budget) {
+      const compactLine = `- ${skill.name}`;
+      const compactCost = compactLine.length + (lines.length > 0 ? 1 : 0);
+      if (compactLine.length >= MIN_SKILL_LIST_DESC_CHARS && used + compactCost <= budget) {
+        lines.push(compactLine);
+        used += compactCost;
+      }
+      continue;
+    }
+    lines.push(line);
+    used += cost;
+  }
+  if (lines.length < skills.length) {
+    const omitted = skills.length - lines.length;
+    const omittedLine = `（另有 ${omitted} 个技能未列出；如需要可先用 Skill 工具按名称加载已知技能。）`;
+    while (lines.length > 0 && used + omittedLine.length + 1 > budget) {
+      const removed = lines.pop() ?? "";
+      used -= removed.length + (lines.length > 0 ? 1 : 0);
+    }
+    if (lines.length === 0 || used + omittedLine.length + 1 <= budget) {
+      lines.push(omittedLine);
+    }
+  }
+  return lines.length > 0 ? lines : skills.slice(0, 1).map((skill) => `- ${skill.name}`);
+}
+
+function formatSkillLine(skill: ModelVisibleSkill, maxDescriptionChars: number): string {
+  const description = [skill.description, skill.whenToUse ? `适用场景: ${skill.whenToUse}` : ""]
+    .filter(Boolean)
+    .join(" - ");
+  return `- ${skill.name}: ${truncate(description, maxDescriptionChars)}`;
+}
+
+function truncate(text: string, maxChars: number): string {
+  return text.length > maxChars ? `${text.slice(0, Math.max(0, maxChars - 1))}…` : text;
 }

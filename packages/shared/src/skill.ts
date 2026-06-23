@@ -16,14 +16,28 @@ export type SkillSource = z.infer<typeof skillSourceSchema>;
 export const skillSummarySchema = z.object({
   name: z.string().min(1),
   description: z.string(),
+  /** 可选：更细的触发条件提示，来自 SKILL.md frontmatter 的 when_to_use。 */
+  whenToUse: z.string().optional(),
   category: skillCategorySchema,
   source: skillSourceSchema,
   /** builtin 恒为 true；market 由激活状态决定；custom 安装即激活；plugin 随插件启停且可单项停用。 */
   enabled: z.boolean(),
+  /** 技能被模型/用户调用的次数；用于后端排序与后续 UI 展示，缺失表示暂无记录。 */
+  usageCount: z.number().int().nonnegative().optional(),
+  /** 最近一次调用时间（ISO），缺失表示暂无记录。 */
+  lastUsedAt: z.string().optional(),
   /** 当 source 为 plugin 时提供该技能所属插件名，用于 UI 标注来源与跳转插件页。 */
   pluginName: z.string().optional()
 });
 export type SkillSummary = z.infer<typeof skillSummarySchema>;
+
+/** 注入模型上下文的轻量技能 discovery 项。正文仍通过 Skill 工具按需加载。 */
+export const modelVisibleSkillSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  whenToUse: z.string().optional()
+});
+export type ModelVisibleSkill = z.infer<typeof modelVisibleSkillSchema>;
 
 /** 技能详情：在概要基础上带上 SKILL.md 的正文（去掉 frontmatter），供详情页渲染。 */
 export const skillDetailSchema = skillSummarySchema.extend({

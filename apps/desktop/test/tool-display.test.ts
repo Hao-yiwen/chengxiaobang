@@ -24,12 +24,14 @@ const BUILTIN_TOOLS = [
   "Glob",
   "Grep",
   "Bash",
+  "PowerShell",
   "BashStatus",
   "BashCancel",
   "GitStatus",
   "GitDiff",
   "WebFetch",
   "WebSearch",
+  "ToolSearch",
   "CreateSkill",
   "FeishuSendMessage",
   "ExitPlanMode",
@@ -92,10 +94,12 @@ describe("toolCategory / categoryIcon", () => {
     expect(toolCategory("Grep")).toBe("search");
     expect(toolCategory("LS")).toBe("search");
     expect(toolCategory("Bash")).toBe("command");
+    expect(toolCategory("PowerShell")).toBe("command");
     expect(toolCategory("BashStatus")).toBe("command");
     expect(toolCategory("BashCancel")).toBe("command");
     expect(toolCategory("WebFetch")).toBe("web");
     expect(toolCategory("WebSearch")).toBe("web");
+    expect(toolCategory("ToolSearch")).toBe("search");
     expect(toolCategory("CreateSkill")).toBe("edit");
     expect(toolCategory("FeishuSendMessage")).toBe("message");
     expect(toolCategory("ExitPlanMode")).toBe("plan");
@@ -149,6 +153,8 @@ describe("toolLineLabel", () => {
       { name: "WebFetch", args: { url: "https://example.com" }, key: "chat.toolLineRunning.WebFetchGeneric" },
       { name: "WebSearch", args: { query: "private query" }, key: "chat.toolLineRunning.WebSearchGeneric" },
       { name: "Bash", args: { command: "pnpm test" }, key: "chat.toolLineRunning.BashGeneric" },
+      { name: "PowerShell", args: { command: "Get-ChildItem" }, key: "chat.toolLineRunning.PowerShellGeneric" },
+      { name: "ToolSearch", args: { query: "mcp" }, key: "chat.toolLineRunning.ToolSearchGeneric" },
       { name: "Skill", args: { skill: "ppt" }, key: "chat.toolLineRunning.SkillGeneric" }
     ];
     for (const item of cases) {
@@ -183,6 +189,16 @@ describe("toolLineLabel", () => {
     expect(toolLineLabel(toolCall({ name: "Bash", args: { command: "pnpm   test" } }))).toEqual({
       key: "chat.toolLine.Bash",
       params: { command: "pnpm test" }
+    });
+    expect(
+      toolLineLabel(toolCall({ name: "PowerShell", args: { command: "Get-ChildItem   src" } }))
+    ).toEqual({
+      key: "chat.toolLine.PowerShell",
+      params: { command: "Get-ChildItem src" }
+    });
+    expect(toolLineLabel(toolCall({ name: "ToolSearch", args: { query: "mcp demo" } }))).toEqual({
+      key: "chat.toolLine.ToolSearch",
+      params: { query: "mcp demo" }
     });
   });
 

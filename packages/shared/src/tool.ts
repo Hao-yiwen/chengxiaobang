@@ -15,6 +15,7 @@ export const toolNameSchema = z.enum([
   "GitDiff",
   "WebFetch",
   "WebSearch",
+  "ToolSearch",
   "ExitPlanMode",
   "AskUserQuestion",
   "Skill",
@@ -26,9 +27,170 @@ export const toolNameSchema = z.enum([
   "ScheduleCancel",
   "Memory",
   "OcrExtractText",
+  "PowerShell",
   "FeishuSendMessage"
 ]);
 export type ToolName = z.infer<typeof toolNameSchema>;
+
+export const toolDisplayCategorySchema = z.enum([
+  "read",
+  "edit",
+  "search",
+  "command",
+  "web",
+  "artifact",
+  "message",
+  "plan",
+  "schedule",
+  "memory",
+  "other"
+]);
+export type ToolDisplayCategory = z.infer<typeof toolDisplayCategorySchema>;
+
+export const toolDeferPolicySchema = z.enum(["eager", "deferred"]);
+export type ToolDeferPolicy = z.infer<typeof toolDeferPolicySchema>;
+
+export interface ToolMetadata {
+  readOnly: boolean;
+  mutating: boolean;
+  destructive: boolean;
+  concurrencySafe: boolean;
+  requiresApproval: boolean;
+  searchHint: string;
+  deferPolicy: ToolDeferPolicy;
+  maxInlineResultChars: number;
+  category: ToolDisplayCategory;
+  planDraftVisible: boolean;
+}
+
+export const DEFAULT_TOOL_MAX_INLINE_RESULT_CHARS = 24 * 1024;
+
+const readTool = (
+  searchHint: string,
+  category: ToolDisplayCategory,
+  overrides: Partial<ToolMetadata> = {}
+): ToolMetadata => ({
+  readOnly: true,
+  mutating: false,
+  destructive: false,
+  concurrencySafe: true,
+  requiresApproval: false,
+  searchHint,
+  deferPolicy: "eager",
+  maxInlineResultChars: DEFAULT_TOOL_MAX_INLINE_RESULT_CHARS,
+  category,
+  planDraftVisible: true,
+  ...overrides
+});
+
+const mutatingTool = (
+  searchHint: string,
+  category: ToolDisplayCategory,
+  overrides: Partial<ToolMetadata> = {}
+): ToolMetadata => ({
+  readOnly: false,
+  mutating: true,
+  destructive: false,
+  concurrencySafe: false,
+  requiresApproval: true,
+  searchHint,
+  deferPolicy: "eager",
+  maxInlineResultChars: DEFAULT_TOOL_MAX_INLINE_RESULT_CHARS,
+  category,
+  planDraftVisible: false,
+  ...overrides
+});
+
+export const builtinToolMetadata = {
+  Read: readTool("读取文本文件、查看文件行范围、检查当前内容", "read"),
+  Write: mutatingTool("创建或覆盖文本文件、保存生成内容", "edit", {
+    destructive: true
+  }),
+  Edit: mutatingTool("按精确字符串替换文本文件内容、生成 diff", "edit"),
+  LS: readTool("列出目录内容、查看文件夹结构", "search"),
+  MakeDirectory: mutatingTool("创建目录或嵌套目录", "edit"),
+  Glob: readTool("按 glob 模式查找文件路径", "search"),
+  Grep: readTool("按文本或正则搜索文件内容", "search"),
+  Bash: mutatingTool("运行 shell 命令、构建、测试、脚本和系统命令", "command"),
+  BashStatus: readTool("查看后台 shell 命令状态和输出文件", "command"),
+  BashCancel: readTool("终止后台 shell 命令", "command", {
+    concurrencySafe: false
+  }),
+  GitStatus: readTool("查看 git status 摘要", "command"),
+  GitDiff: readTool("查看 git diff 和 diff --check", "command"),
+  WebFetch: readTool("抓取网页 URL 并提取内容", "web"),
+  WebSearch: readTool("通过 Tavily 搜索互联网结果", "web"),
+  ToolSearch: readTool("查找并加载 deferred 工具、MCP 工具或重型工具", "search"),
+  ExitPlanMode: readTool("提交计划并等待用户确认", "plan"),
+  AskUserQuestion: readTool("向用户提出需要回答的问题", "plan", {
+    concurrencySafe: false
+  }),
+  Skill: readTool("加载技能说明和工作流指导", "plan"),
+  TodoRead: readTool("读取当前运行的 Todo 进度", "plan"),
+  TodoWrite: mutatingTool("更新当前运行的 Todo 进度", "plan", {
+    requiresApproval: false,
+    concurrencySafe: true
+  }),
+  CreateSkill: mutatingTool("创建、安装或导入技能", "edit"),
+  ScheduleCreate: mutatingTool("创建后台定时任务", "schedule"),
+  ScheduleList: readTool("查看后台定时任务列表", "schedule"),
+  ScheduleCancel: mutatingTool("取消后台定时任务", "schedule"),
+  Memory: mutatingTool("读取、创建、更新、删除长期记忆文件", "memory", {
+    requiresApproval: false,
+    planDraftVisible: true
+  }),
+  OcrExtractText: readTool("对图片或 PDF 执行 OCR 提取文字", "read", {
+    deferPolicy: "deferred"
+  }),
+  PowerShell: mutatingTool("在 Windows 原生 PowerShell 中执行命令", "command"),
+  FeishuSendMessage: mutatingTool("向外部飞书会话发送消息", "message", {
+    destructive: true
+  })
+} satisfies Record<ToolName, ToolMetadata>;
+
+export function isKnownToolName(name: string): name is ToolName {
+  return toolNameSchema.safeParse(name).success;
+}
+
+export function isDeferredToolName(name: string): boolean {
+  return toolMetadata(name).deferPolicy === "deferred";
+}
+
+export function toolMetadata(name: string): ToolMetadata {
+  if (isKnownToolName(name)) {
+    return builtinToolMetadata[name];
+  }
+  if (name.startsWith("mcp__")) {
+    return {
+      readOnly: false,
+      mutating: true,
+      destructive: false,
+      concurrencySafe: false,
+      requiresApproval: true,
+      searchHint: "外部 MCP 工具，可能访问第三方服务或产生副作用",
+      deferPolicy: "deferred",
+      maxInlineResultChars: DEFAULT_TOOL_MAX_INLINE_RESULT_CHARS,
+      category: "other",
+      planDraftVisible: false
+    };
+  }
+  return {
+    readOnly: false,
+    mutating: true,
+    destructive: false,
+    concurrencySafe: false,
+    requiresApproval: true,
+    searchHint: "未知工具",
+    deferPolicy: "deferred",
+    maxInlineResultChars: DEFAULT_TOOL_MAX_INLINE_RESULT_CHARS,
+    category: "other",
+    planDraftVisible: false
+  };
+}
+
+export function toolDisplayCategory(name: string): ToolDisplayCategory {
+  return toolMetadata(name).category;
+}
 
 /** 模型在 OpenAI-compatible tool_calls 中请求的一次工具调用。 */
 export interface AssistantToolCall {
@@ -75,6 +237,14 @@ export const fileChangeSchema = z.object({
 });
 export type FileChange = z.infer<typeof fileChangeSchema>;
 
+export const toolCallPreviewSchema = z.object({
+  kind: z.literal("text_diff"),
+  path: z.string().min(1),
+  oldText: z.string(),
+  newText: z.string()
+});
+export type ToolCallPreview = z.infer<typeof toolCallPreviewSchema>;
+
 export const toolCallSchema = z.object({
   id: z.string().min(1),
   runId: z.string().min(1),
@@ -90,6 +260,7 @@ export const toolCallSchema = z.object({
     "failed"
   ]),
   result: z.string().optional(),
+  preview: toolCallPreviewSchema.optional(),
   fileChange: fileChangeSchema.optional(),
   approval: toolCallApprovalSchema.optional(),
   /** 工具真正开始执行的时间（审批通过后），ISO 时间戳。 */

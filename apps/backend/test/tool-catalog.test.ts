@@ -13,12 +13,14 @@ const toolNames = [
   "GitDiff",
   "WebFetch",
   "WebSearch",
+  "ToolSearch",
   "ScheduleList",
   "OcrExtractText",
   "Write",
   "Edit",
   "MakeDirectory",
   "Bash",
+  "PowerShell",
   "FeishuSendMessage",
   "ScheduleCreate",
   "ScheduleCancel",
@@ -28,6 +30,7 @@ const toolNames = [
   "AskUserQuestion",
   "Skill",
   "Memory",
+  "mcp__demo__write",
   "TodoWrite",
   "TodoWrite"
 ];
@@ -54,10 +57,13 @@ describe("selectAgentTools", () => {
     expect(visible).not.toContain("ExitPlanMode");
     expect(visible).toContain("Write");
     expect(visible).toContain("Bash");
+    expect(visible).toContain("PowerShell");
+    expect(visible).toContain("ToolSearch");
     expect(visible).toContain("AskUserQuestion");
     expect(visible).toContain("Skill");
     expect(visible).toContain("TodoWrite");
     expect(visible).toContain("TodoWrite");
+    expect(visible).not.toContain("mcp__demo__write");
   });
 
   it("draft 阶段只保留只读工具和计划起草辅助工具", () => {
@@ -73,6 +79,7 @@ describe("selectAgentTools", () => {
       "GitDiff",
       "WebFetch",
       "WebSearch",
+      "ToolSearch",
       "ScheduleList",
       "ExitPlanMode",
       "AskUserQuestion",
@@ -86,10 +93,13 @@ describe("selectAgentTools", () => {
     }
     expect(visible).toContain("ExitPlanMode");
     expect(visible).toContain("Read");
+    expect(visible).toContain("ToolSearch");
     expect(visible).not.toContain("Write");
     expect(visible).not.toContain("Bash");
+    expect(visible).not.toContain("PowerShell");
     expect(visible).not.toContain("TodoWrite");
     expect(visible).not.toContain("TodoRead");
+    expect(visible).not.toContain("mcp__demo__write");
   });
 
   it("only exposes OCR when the current run has OCR-capable attachments", () => {
@@ -112,6 +122,8 @@ describe("selectAgentTools", () => {
     expect(visible).toContain("Write");
     expect(visible).toContain("ScheduleCreate");
     expect(visible).toContain("CreateSkill");
+    expect(visible).toContain("PowerShell");
+    expect(visible).not.toContain("mcp__demo__write");
   });
 
   it("viaFeishu 任意阶段隐藏会阻塞或混淆飞书通道的工具", () => {
@@ -134,5 +146,38 @@ describe("selectAgentTools", () => {
     expect(visible).not.toContain("TodoWrite");
     expect(visible).toContain("Write");
     expect(visible).toContain("ScheduleList");
+  });
+
+  it("deferred 工具只有被选中后才进入模型工具列表", () => {
+    const selected = new Set<string>(["mcp__demo__write"]);
+
+    const hidden = names({ planPhase: "none", viaFeishu: false });
+    const visible = names({
+      planPhase: "none",
+      viaFeishu: false,
+      enabledDeferredToolNames: selected
+    });
+
+    expect(hidden).not.toContain("mcp__demo__write");
+    expect(visible).toContain("mcp__demo__write");
+    expect(visible).toContain("ToolSearch");
+  });
+
+  it("为并发不安全工具补 sequential 执行模式，WebFetch 保持默认并发", () => {
+    const selected = new Set<string>(["mcp__demo__write"]);
+    const visible = selectAgentTools(fakeTools(), {
+      planPhase: "none",
+      viaFeishu: false,
+      enabledDeferredToolNames: selected
+    });
+    const byName = new Map(visible.map((tool) => [tool.name, tool]));
+
+    expect(byName.get("WebFetch")?.executionMode).toBeUndefined();
+    expect(byName.get("WebSearch")?.executionMode).toBeUndefined();
+    expect(byName.get("Read")?.executionMode).toBeUndefined();
+    expect(byName.get("Write")?.executionMode).toBe("sequential");
+    expect(byName.get("Bash")?.executionMode).toBe("sequential");
+    expect(byName.get("AskUserQuestion")?.executionMode).toBe("sequential");
+    expect(byName.get("mcp__demo__write")?.executionMode).toBe("sequential");
   });
 });

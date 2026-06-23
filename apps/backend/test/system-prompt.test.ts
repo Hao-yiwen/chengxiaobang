@@ -84,6 +84,7 @@ describe("buildSystemPrompt", () => {
         shell: "zsh",
         osVersion: "darwin 25.5.0 arm64",
         model: "glm-test",
+        inputModalities: ["text", "image"],
         gitStatus: "这是对话开始时的 Git 状态快照，对话过程中不会更新。\n当前分支: main"
       }
     });
@@ -91,6 +92,25 @@ describe("buildSystemPrompt", () => {
     expect(withEnv).toContain("Shell: zsh");
     expect(withEnv).toContain("操作系统: darwin 25.5.0 arm64");
     expect(withEnv).toContain("当前驱动模型: glm-test");
+    expect(withEnv).toContain("当前模型输入能力: text,image");
+    expect(withEnv).toContain("supportsImage=true");
     expect(withEnv).toContain("当前分支: main");
+  });
+
+  it("环境信息段：文本模型明确标记不支持图片输入", () => {
+    const prompt = buildSystemPrompt({
+      workspacePath: "/w",
+      accessMode: "approval",
+      environment: {
+        isGitRepo: false,
+        shell: "zsh",
+        osVersion: "darwin 25.5.0 arm64",
+        model: "deepseek",
+        inputModalities: ["text"]
+      }
+    });
+
+    expect(prompt).toContain("当前模型输入能力: text");
+    expect(prompt).toContain("supportsImage=false");
   });
 });

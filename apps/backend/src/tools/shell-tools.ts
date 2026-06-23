@@ -5,8 +5,10 @@ import {
   DEFAULT_SHELL_BACKGROUND_AFTER_MS,
   cancelBackgroundShellCommand,
   getBackgroundShellCommand,
+  resolvePowerShellCommand,
   runShellCommand,
-  type BackgroundShellCommandSnapshot
+  type BackgroundShellCommandSnapshot,
+  type ResolvedShellCommand
 } from "./shell";
 import { getLogger } from "../logging/logger";
 import { resolveToolPath } from "./workspace";
@@ -47,6 +49,7 @@ const shellCommandIdParams = Type.Object({
 
 export interface ShellToolOptions {
   backgroundAfterMs?: number;
+  platform?: NodeJS.Platform;
 }
 
 interface ShellRunRequestOptions {
@@ -54,6 +57,8 @@ interface ShellRunRequestOptions {
   timeout?: number;
   // 检查类命令(如 git diff --check)非零退出属正常结果,不应抛错;开启后把退出码与输出一并返回。
   allowNonZeroExit?: boolean;
+  shell?: ResolvedShellCommand;
+  toolName?: "Bash" | "PowerShell";
 }
 
 interface NormalizedShellRunOptions {
@@ -70,9 +75,10 @@ async function runShell(
   requestOptions: ShellRunRequestOptions = {}
 ): Promise<string> {
   const normalized = normalizeShellRunOptions(command, cwd, options, requestOptions);
+  const toolName = requestOptions.toolName ?? "Bash";
   log.info("准备执行 shell 命令", {
     action: "shell_tool.run",
-    toolName: "Bash",
+    toolName,
     mode: normalized.mode,
     timeoutMs: normalized.backgroundAfterMs,
     cwd,
@@ -80,7 +86,8 @@ async function runShell(
   });
   const result = await runShellCommand(command, cwd, {
     signal,
-    backgroundAfterMs: normalized.backgroundAfterMs
+    backgroundAfterMs: normalized.backgroundAfterMs,
+    ...(requestOptions.shell ? { shell: requestOptions.shell } : {})
   });
   if (result.kind === "background") {
     return renderBackgroundStarted(result.command, normalized, workspacePath);
@@ -102,6 +109,7 @@ export function createShellTools(
   workspacePath: string,
   options: ShellToolOptions = {}
 ): AgentTool<any>[] {
+  const platform = options.platform ?? process.platform;
   const shellTool: AgentTool<typeof shellParams> = {
     name: "Bash",
     label: "执行命令",
@@ -120,6 +128,32 @@ export function createShellTools(
         await runShell(params.command, cwd, workspacePath, signal, options, {
           runInBackground: params.run_in_background,
           timeout: params.timeout
+        })
+      );
+    }
+  };
+
+  const powerShellTool: AgentTool<typeof shellParams> = {
+    name: "PowerShell",
+    label: "PowerShell",
+    description:
+      "在 Windows 原生 PowerShell 中执行一条命令并返回输出。适合 Get-ChildItem、Select-String、Test-Path 等 PowerShell 语法。",
+    parameters: shellParams,
+    execute: async (_id, params, signal) => {
+      if (params.dangerouslyDisableSandbox) {
+        log.warn("PowerShell 收到 dangerouslyDisableSandbox，但不会绕过审批或安全规则", {
+          action: "shell_tool.sandbox_flag_ignored",
+          toolName: "PowerShell",
+          command: commandForLog(params.command)
+        });
+      }
+      const cwd = resolveShellCwd(workspacePath, "PowerShell", ".");
+      return textResult(
+        await runShell(params.command, cwd, workspacePath, signal, options, {
+          runInBackground: params.run_in_background,
+          timeout: params.timeout,
+          shell: resolvePowerShellCommand(),
+          toolName: "PowerShell"
         })
       );
     }
@@ -182,7 +216,14 @@ export function createShellTools(
     }
   };
 
-  return [shellTool, gitStatus, gitDiff, shellStatus, shellCancel];
+  return [
+    shellTool,
+    ...(platform === "win32" ? [powerShellTool] : []),
+    gitStatus,
+    gitDiff,
+    shellStatus,
+    shellCancel
+  ];
 }
 
 function renderBackgroundStarted(
@@ -228,7 +269,12 @@ function normalizeShellRunOptions(
     return { mode, backgroundAfterMs: 0 };
   }
   if (mode === "blocking") {
-    const timeoutMs = normalizeBlockingWaitMs(requestOptions.timeout, command, cwd);
+    const timeoutMs = normalizeBlockingWaitMs(
+      requestOptions.timeout,
+      command,
+      cwd,
+      requestOptions.toolName ?? "Bash"
+    );
     return { mode, backgroundAfterMs: timeoutMs };
   }
   return {
@@ -240,19 +286,21 @@ function normalizeShellRunOptions(
 function normalizeBlockingWaitMs(
   timeoutMs: number | undefined,
   command: string,
-  cwd: string
+  cwd: string,
+  toolName: "Bash" | "PowerShell"
 ): number {
   const value = timeoutMs ?? SHELL_BLOCKING_DEFAULT_WAIT_MS;
   if (!Number.isInteger(value) || value < 1 || value > SHELL_BLOCKING_MAX_WAIT_MS) {
-    log.warn("Bash timeout 参数非法", {
+    log.warn("shell timeout 参数非法", {
       action: "shell_tool.invalid_timeout",
+      toolName,
       timeout: value,
       maxTimeoutMs: SHELL_BLOCKING_MAX_WAIT_MS,
       cwd,
       command: commandForLog(command)
     });
     throw new Error(
-      `Bash timeout 必须是 1 到 ${SHELL_BLOCKING_MAX_WAIT_MS} 之间的整数毫秒`
+      `${toolName} timeout 必须是 1 到 ${SHELL_BLOCKING_MAX_WAIT_MS} 之间的整数毫秒`
     );
   }
   return value;
@@ -291,7 +339,7 @@ function renderBackgroundStatus(snapshot: BackgroundShellCommandSnapshot, worksp
 
 function resolveShellCwd(
   workspacePath: string,
-  toolName: "Bash" | "GitStatus" | "GitDiff",
+  toolName: "Bash" | "PowerShell" | "GitStatus" | "GitDiff",
   path: string
 ): string {
   const resolved = resolveToolPath(workspacePath, path);

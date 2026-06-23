@@ -885,6 +885,41 @@ describe("Composer 计划模式（＋下拉 Switch + 标记）", () => {
     resolveStream?.();
   });
 
+  it("renders a proposed plan while ExitPlanMode arguments are still streaming", async () => {
+    let resolveStream: (() => void) | undefined;
+    const streamRun = vi.fn(async (..._args: Parameters<ApiClient["streamRun"]>) => {
+      const onEvent = _args[1];
+      onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+      onEvent({
+        type: "plan_delta",
+        runId: "run_1",
+        contentIndex: 0,
+        toolCallId: "tool_plan",
+        markdown:
+          "# 示例计划\n\n## Summary\n先确认计划。\n\n## Key Changes\n- 调整 UI。",
+        delta:
+          "# 示例计划\n\n## Summary\n先确认计划。\n\n## Key Changes\n- 调整 UI。",
+        updatedAt: "2026-06-13T00:00:01.000Z"
+      });
+      return new Promise<void>((resolve) => {
+        resolveStream = resolve;
+      });
+    });
+    const client = createClient({ streamRun: streamRun as never });
+
+    render(<App client={client} />);
+    const input = await screen.findByLabelText("输入消息");
+    await selectDeepSeekProvider();
+    fireEvent.change(input, { target: { value: "先做个计划" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    const planCard = await screen.findByTestId("plan-card");
+    expect(planCard).toHaveTextContent("示例计划");
+    expect(planCard).toHaveTextContent("先确认计划");
+    expect(screen.queryByTestId("plan-approval-dock")).not.toBeInTheDocument();
+    resolveStream?.();
+  });
+
   it("opens the skills page with the add dialog from the + menu", async () => {
     const client = createClient();
     render(<App client={client} />);
@@ -979,6 +1014,8 @@ describe("Composer ask-user 等待期（UI-SPEC §8）", () => {
         "排队第二句"
       )
     );
+    expect(screen.getByTestId("composer-shell")).not.toHaveClass("overflow-hidden");
+    expect(await screen.findByTestId("composer-queue-stack")).toBeInTheDocument();
     expect(await screen.findByText("排队第二句")).toBeInTheDocument();
     resolveStream?.();
   });

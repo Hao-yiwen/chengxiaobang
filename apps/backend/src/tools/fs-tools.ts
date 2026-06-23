@@ -1,10 +1,11 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, type Stats } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { dirname, extname } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { ModelInputModality } from "@chengxiaobang/shared";
 import { errorToLogFields, getLogger } from "../logging/logger";
 import { globFiles, resolveToolPath, type ToolPathResolution } from "./workspace";
 import { buildToolFileChangeDetails, type ToolFileChangeDetails } from "./file-change";
@@ -25,7 +26,9 @@ const readParams = Type.Object({
 });
 
 const writeParams = Type.Object({
-  file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径；请优先生成该字段" }),
+  file_path: Type.String({
+    description: "相对工作目录的文件路径，或显式绝对路径；请优先生成该字段"
+  }),
   content: Type.String({ description: "要写入的完整文本内容" })
 });
 
@@ -75,6 +78,42 @@ const MAX_READ_LINE_LIMIT = 2000;
 const DEFAULT_GREP_HEAD_LIMIT = 200;
 const MAX_GREP_HEAD_LIMIT = 2000;
 const MAX_GREP_OUTPUT_BYTES = 512 * 1024;
+const MAX_TEXT_READ_BYTES = 10 * 1024 * 1024;
+const MAX_TEXT_MUTATION_BYTES = 8 * 1024 * 1024;
+const BINARY_SAMPLE_BYTES = 4096;
+
+const BINARY_TEXT_BLOCK_EXTENSIONS = new Set([
+  ".7z",
+  ".app",
+  ".bin",
+  ".bmp",
+  ".class",
+  ".dmg",
+  ".doc",
+  ".docx",
+  ".exe",
+  ".gif",
+  ".gz",
+  ".ico",
+  ".jar",
+  ".jpeg",
+  ".jpg",
+  ".mov",
+  ".mp3",
+  ".mp4",
+  ".o",
+  ".pdf",
+  ".png",
+  ".ppt",
+  ".pptx",
+  ".pyc",
+  ".so",
+  ".wasm",
+  ".webp",
+  ".xls",
+  ".xlsx",
+  ".zip"
+]);
 
 const IMAGE_MIME_BY_EXT: Record<string, string> = {
   ".png": "image/png",
@@ -84,7 +123,15 @@ const IMAGE_MIME_BY_EXT: Record<string, string> = {
   ".webp": "image/webp"
 };
 
-export function createFsTools(workspacePath: string): AgentTool<any>[] {
+export interface FsToolOptions {
+  modelInputModalities?: readonly ModelInputModality[];
+}
+
+export function createFsTools(workspacePath: string, options: FsToolOptions = {}): AgentTool<any>[] {
+  const readFileState = new Map<string, FsReadState>();
+  const supportsImageInput =
+    !options.modelInputModalities || options.modelInputModalities.includes("image");
+
   const lsTool: AgentTool<typeof lsParams> = {
     name: "LS",
     label: "浏览目录",
@@ -109,22 +156,64 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
     name: "Read",
     label: "读取文件",
     description:
-      "读取工作目录或显式绝对路径中的文件。文本默认最多 2000 行并带行号；PNG/JPG/GIF/WEBP 图片会以 image content 返回。",
+      "读取工作目录或显式绝对路径中的文件。文本默认最多 2000 行并带行号；当前模型支持图片输入时，PNG/JPG/GIF/WEBP 图片会以 image content 返回。",
     parameters: readParams,
     execute: async (_id, params) => {
       const target = resolveFsToolPath(workspacePath, "Read", params.file_path, false);
-      const info = await stat(target);
+      const info = await statExistingPathForTool(workspacePath, "Read", params.file_path, target);
       if (info.isDirectory()) {
         throw new Error(`Read 只能读取文件，收到目录：${params.file_path}`);
       }
+      assertRegularFile("Read", params.file_path, target, info);
       const mimeType = imageMimeForPath(target);
       if (mimeType) {
+        if (!supportsImageInput) {
+          log.info("Read 拒绝向文本模型返回图片内容", {
+            action: "fs.read_image_blocked_for_text_model",
+            toolName: "Read",
+            path: params.file_path,
+            target,
+            mimeType,
+            modelInputModalities: options.modelInputModalities ?? []
+          });
+          return textResult(
+            [
+              `当前模型不支持图片原生输入，不能直接读取图片内容：${params.file_path}`,
+              `文件类型：${mimeType}，大小：${formatBytes(info.size)}。`,
+              "如果需要理解图片内容，请改用支持图片输入的模型；或对截图/PDF 等素材使用 OCR/文本检查链路。"
+            ].join("\n")
+          );
+        }
         return imageResult(await readFile(target), mimeType);
       }
+      await assertTextFileCanBeRead("Read", params.file_path, target, info.size);
       if (info.size === 0) {
+        recordReadState(readFileState, {
+          path: params.file_path,
+          target,
+          content: "",
+          mtimeMs: info.mtimeMs,
+          fullRead: true,
+          offset: 1,
+          limit: 0
+        });
         return textResult(`${params.file_path} 文件为空`);
       }
-      return textResult(await readLineRange(params.file_path, target, params.offset, params.limit));
+      const range = await readLineRange(params.file_path, target, params.offset, params.limit);
+      if (range.offset <= range.totalLines) {
+        const stateContent = range.fullRead ? await readFile(target, "utf8") : range.selectedText;
+        const latestInfo = await stat(target);
+        recordReadState(readFileState, {
+          path: params.file_path,
+          target,
+          content: stateContent,
+          mtimeMs: latestInfo.mtimeMs,
+          fullRead: range.fullRead,
+          offset: range.offset,
+          limit: range.limit
+        });
+      }
+      return textResult(range.text);
     }
   };
 
@@ -132,16 +221,33 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
     name: "Write",
     label: "写入文件",
     description:
-      "创建或完整覆盖工作目录或显式绝对路径中的一个文本文件，会自动创建父目录。调用时优先生成 file_path，便于界面尽早展示正在写入的文件。",
+      "创建或完整覆盖工作目录或显式绝对路径中的一个文本文件，会自动创建父目录。新文件可直接创建；覆盖已有文件前必须先用 Read 完整读取。已有文件的小范围改动优先使用 Edit。",
     parameters: writeParams,
     execute: async (_id, params) => {
       const target = await resolveFsWritablePath(workspacePath, "Write", params.file_path, true);
-      const before = await readTextBeforeWrite(target);
+      assertTextPathExtension("Write", params.file_path, target);
+      assertTextContentSize("Write", params.file_path, Buffer.byteLength(params.content, "utf8"));
+      const before = await readTextSnapshotBeforeWrite(params.file_path, target);
+      if (before.exists) {
+        validateFullReadBeforeWrite(readFileState, {
+          toolName: "Write",
+          path: params.file_path,
+          target,
+          currentContent: before.content,
+          currentMtimeMs: before.mtimeMs
+        });
+      }
       await writeFile(target, params.content, "utf8");
+      await refreshReadStateAfterWrite(readFileState, {
+        toolName: "Write",
+        path: params.file_path,
+        target,
+        content: params.content
+      });
       const fileChange = buildToolFileChangeDetails({
         path: params.file_path,
         operation: "write",
-        before,
+        before: before.content,
         after: params.content
       });
       log.info("Write 写入完成", {
@@ -160,14 +266,26 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
     name: "Edit",
     label: "编辑文件",
     description:
-      "对已有文本文件做精确字符串替换。默认 old_string 必须唯一匹配；replace_all=true 时替换全部匹配。调用时优先生成 file_path，便于界面尽早展示正在编辑的文件。",
+      "对已有文本文件做精确字符串替换。编辑前必须先用 Read 读取该文件；old_string 不要包含 Read 输出里的行号前缀。默认 old_string 必须唯一匹配；replace_all=true 仅用于确实要替换全部匹配。",
     parameters: editParams,
     execute: async (_id, params) => {
       if (params.old_string.length === 0) {
         throw new Error("Edit 的 old_string 不能为空");
       }
       const target = await resolveFsWritablePath(workspacePath, "Edit", params.file_path, false);
+      const currentInfo = await statExistingPathForTool(workspacePath, "Edit", params.file_path, target);
+      if (currentInfo.isDirectory()) {
+        throw new Error(`Edit 只能编辑文件，收到目录：${params.file_path}`);
+      }
+      assertRegularFile("Edit", params.file_path, target, currentInfo);
+      await assertTextFileCanBeMutated("Edit", params.file_path, target, currentInfo.size);
       const source = await readFile(target, "utf8");
+      validateReadBeforeEdit(readFileState, {
+        path: params.file_path,
+        target,
+        currentContent: source,
+        currentMtimeMs: currentInfo.mtimeMs
+      });
       const occurrences = countOccurrences(source, params.old_string);
       if (occurrences === 0) {
         log.warn("Edit 未找到要替换的内容", {
@@ -188,6 +306,12 @@ export function createFsTools(workspacePath: string): AgentTool<any>[] {
         ? source.split(params.old_string).join(params.new_string)
         : source.replace(params.old_string, params.new_string);
       await writeFile(target, next, "utf8");
+      await refreshReadStateAfterWrite(readFileState, {
+        toolName: "Edit",
+        path: params.file_path,
+        target,
+        content: next
+      });
       const fileChange = buildToolFileChangeDetails({
         path: params.file_path,
         operation: "edit",
@@ -264,12 +388,201 @@ async function resolveFsWritablePath(
   return target;
 }
 
-async function readTextBeforeWrite(target: string): Promise<string> {
+interface FsReadState {
+  path: string;
+  target: string;
+  content: string;
+  mtimeMs: number;
+  fullRead: boolean;
+  offset: number;
+  limit: number;
+}
+
+interface ReadLineRangeResult {
+  text: string;
+  selectedText: string;
+  offset: number;
+  limit: number;
+  fullRead: boolean;
+  totalLines: number;
+}
+
+interface TextSnapshot {
+  exists: boolean;
+  content: string;
+  mtimeMs?: number;
+}
+
+function recordReadState(
+  readFileState: Map<string, FsReadState>,
+  state: FsReadState
+): void {
+  readFileState.set(state.target, state);
+  log.info("Read 已记录文件读取状态", {
+    action: "fs.read_state_recorded",
+    toolName: "Read",
+    path: state.path,
+    target: state.target,
+    fullRead: state.fullRead,
+    offset: state.offset,
+    limit: state.limit,
+    mtimeMs: state.mtimeMs,
+    contentLength: state.content.length
+  });
+}
+
+async function refreshReadStateAfterWrite(
+  readFileState: Map<string, FsReadState>,
+  input: {
+    toolName: "Write" | "Edit";
+    path: string;
+    target: string;
+    content: string;
+  }
+): Promise<void> {
+  const info = await stat(input.target);
+  readFileState.set(input.target, {
+    path: input.path,
+    target: input.target,
+    content: input.content,
+    mtimeMs: info.mtimeMs,
+    fullRead: true,
+    offset: 1,
+    limit: lineCountForState(input.content)
+  });
+  log.info("文件写入后已刷新读取状态", {
+    action: "fs.read_state_refreshed_after_write",
+    toolName: input.toolName,
+    path: input.path,
+    target: input.target,
+    mtimeMs: info.mtimeMs,
+    contentLength: input.content.length
+  });
+}
+
+function validateFullReadBeforeWrite(
+  readFileState: Map<string, FsReadState>,
+  input: {
+    toolName: "Write";
+    path: string;
+    target: string;
+    currentContent: string;
+    currentMtimeMs?: number;
+  }
+): void {
+  const state = readFileState.get(input.target);
+  if (!state) {
+    log.warn("Write 覆盖已有文件前缺少读取状态", {
+      action: "fs.write_without_read",
+      toolName: input.toolName,
+      path: input.path,
+      target: input.target,
+      currentMtimeMs: input.currentMtimeMs
+    });
+    throw new Error("覆盖已有文件前必须先用 Read 完整读取该文件");
+  }
+  if (!state.fullRead) {
+    log.warn("Write 覆盖已有文件前只读过部分内容", {
+      action: "fs.write_after_partial_read",
+      toolName: input.toolName,
+      path: input.path,
+      target: input.target,
+      readOffset: state.offset,
+      readLimit: state.limit,
+      readMtimeMs: state.mtimeMs,
+      currentMtimeMs: input.currentMtimeMs
+    });
+    throw new Error("覆盖已有文件前必须先用 Read 完整读取该文件，当前只读过部分内容");
+  }
+  if (input.currentContent !== state.content) {
+    log.warn("Write 覆盖已有文件前检测到文件已变化", {
+      action: "fs.write_stale_read",
+      toolName: input.toolName,
+      path: input.path,
+      target: input.target,
+      readMtimeMs: state.mtimeMs,
+      currentMtimeMs: input.currentMtimeMs,
+      readLength: state.content.length,
+      currentLength: input.currentContent.length
+    });
+    throw new Error("文件在 Read 后已被修改，请重新 Read 后再写入");
+  }
+  if (input.currentMtimeMs !== undefined && input.currentMtimeMs !== state.mtimeMs) {
+    log.info("Write 检测到 mtime 变化但内容未变，允许继续", {
+      action: "fs.write_mtime_changed_content_same",
+      toolName: input.toolName,
+      path: input.path,
+      target: input.target,
+      readMtimeMs: state.mtimeMs,
+      currentMtimeMs: input.currentMtimeMs
+    });
+  }
+}
+
+function validateReadBeforeEdit(
+  readFileState: Map<string, FsReadState>,
+  input: {
+    path: string;
+    target: string;
+    currentContent: string;
+    currentMtimeMs: number;
+  }
+): void {
+  const state = readFileState.get(input.target);
+  if (!state) {
+    log.warn("Edit 前缺少读取状态", {
+      action: "fs.edit_without_read",
+      toolName: "Edit",
+      path: input.path,
+      target: input.target,
+      currentMtimeMs: input.currentMtimeMs
+    });
+    throw new Error("编辑已有文件前必须先用 Read 读取该文件");
+  }
+  if (state.fullRead) {
+    if (input.currentContent !== state.content) {
+      log.warn("Edit 前检测到完整读取后的文件内容已变化", {
+        action: "fs.edit_stale_full_read",
+        toolName: "Edit",
+        path: input.path,
+        target: input.target,
+        readMtimeMs: state.mtimeMs,
+        currentMtimeMs: input.currentMtimeMs,
+        readLength: state.content.length,
+        currentLength: input.currentContent.length
+      });
+      throw new Error("文件在 Read 后已被修改，请重新 Read 后再编辑");
+    }
+    return;
+  }
+  if (input.currentMtimeMs !== state.mtimeMs) {
+    log.warn("Edit 前检测到局部读取后的文件 mtime 已变化", {
+      action: "fs.edit_stale_partial_read",
+      toolName: "Edit",
+      path: input.path,
+      target: input.target,
+      readOffset: state.offset,
+      readLimit: state.limit,
+      readMtimeMs: state.mtimeMs,
+      currentMtimeMs: input.currentMtimeMs
+    });
+    throw new Error("文件在 Read 后已被修改，请重新 Read 后再编辑");
+  }
+}
+
+async function readTextSnapshotBeforeWrite(path: string, target: string): Promise<TextSnapshot> {
   try {
-    return await readFile(target, "utf8");
+    const info = await stat(target);
+    if (info.isDirectory()) {
+      throw new Error(`Write 不能覆盖目录：${path}`);
+    }
+    assertRegularFile("Write", path, target, info);
+    await assertTextFileCanBeMutated("Write", path, target, info.size);
+    const content = await readFile(target, "utf8");
+    return { exists: true, content, mtimeMs: info.mtimeMs };
   } catch (error) {
     if (isMissingPathError(error)) {
-      return "";
+      return { exists: false, content: "" };
     }
     log.warn("Write 读取写入前内容失败", {
       action: "fs.read_before_write_failed",
@@ -292,7 +605,11 @@ function fileChangeResult(
 }
 
 function isMissingPathError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT";
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
 }
 
 function resolveFsToolPath(
@@ -325,6 +642,187 @@ function resolveFsToolPathWithMeta(
   return resolved;
 }
 
+async function statExistingPathForTool(
+  workspacePath: string,
+  toolName: "Read" | "Edit",
+  path: string,
+  target: string
+): Promise<Stats> {
+  try {
+    return await stat(target);
+  } catch (error) {
+    if (!isMissingPathError(error)) {
+      throw error;
+    }
+    const suggestion = await suggestSimilarPath(target);
+    log.warn("文件工具路径不存在", {
+      action: "fs.path_missing",
+      toolName,
+      workspacePath,
+      path,
+      target,
+      ...(suggestion ? { suggestion } : {})
+    });
+    throw new Error(
+      suggestion
+        ? `${toolName} 找不到文件：${path}。你是不是要访问 ${suggestion}？`
+        : `${toolName} 找不到文件：${path}`
+    );
+  }
+}
+
+function assertRegularFile(
+  toolName: "Read" | "Write" | "Edit",
+  path: string,
+  target: string,
+  info: Stats
+): void {
+  if (info.isFile()) {
+    return;
+  }
+  log.warn("文件工具拒绝非普通文件", {
+    action: "fs.reject_non_regular_file",
+    toolName,
+    path,
+    target,
+    isBlockDevice: info.isBlockDevice(),
+    isCharacterDevice: info.isCharacterDevice(),
+    isFIFO: info.isFIFO(),
+    isSocket: info.isSocket()
+  });
+  throw new Error(`${toolName} 只能处理普通文件，拒绝设备文件、管道或 socket：${path}`);
+}
+
+async function assertTextFileCanBeRead(
+  toolName: "Read",
+  path: string,
+  target: string,
+  size: number
+): Promise<void> {
+  assertTextContentSize(toolName, path, size, MAX_TEXT_READ_BYTES);
+  assertTextPathExtension(toolName, path, target);
+  await assertNoBinarySample(toolName, path, target);
+}
+
+async function assertTextFileCanBeMutated(
+  toolName: "Write" | "Edit",
+  path: string,
+  target: string,
+  size: number
+): Promise<void> {
+  assertTextContentSize(toolName, path, size, MAX_TEXT_MUTATION_BYTES);
+  assertTextPathExtension(toolName, path, target);
+  await assertNoBinarySample(toolName, path, target);
+}
+
+function assertTextPathExtension(
+  toolName: "Read" | "Write" | "Edit",
+  path: string,
+  target: string
+): void {
+  const ext = extname(target).toLowerCase();
+  if (!BINARY_TEXT_BLOCK_EXTENSIONS.has(ext)) {
+    return;
+  }
+  log.warn("文件工具拒绝疑似二进制扩展名", {
+    action: "fs.reject_binary_extension",
+    toolName,
+    path,
+    target,
+    ext
+  });
+  throw new Error(`${toolName} 只支持文本文件，拒绝疑似二进制文件：${path}`);
+}
+
+function assertTextContentSize(
+  toolName: "Read" | "Write" | "Edit",
+  path: string,
+  size: number,
+  limit = MAX_TEXT_MUTATION_BYTES
+): void {
+  if (size <= limit) {
+    return;
+  }
+  log.warn("文件工具拒绝超大文本操作", {
+    action: "fs.reject_oversized_text",
+    toolName,
+    path,
+    size,
+    limit
+  });
+  throw new Error(`${toolName} 拒绝处理超大文本文件：${path}（${formatBytes(size)}，上限 ${formatBytes(limit)}）`);
+}
+
+async function assertNoBinarySample(
+  toolName: "Read" | "Write" | "Edit",
+  path: string,
+  target: string
+): Promise<void> {
+  const sample = await readBinarySample(target);
+  if (!sample.includes(0)) {
+    return;
+  }
+  log.warn("文件工具拒绝包含 NUL 字节的文件", {
+    action: "fs.reject_binary_sample",
+    toolName,
+    path,
+    target,
+    sampleBytes: sample.length
+  });
+  throw new Error(`${toolName} 只支持文本文件，检测到二进制内容：${path}`);
+}
+
+async function readBinarySample(target: string): Promise<Buffer> {
+  const content = await readFile(target);
+  return content.subarray(0, BINARY_SAMPLE_BYTES);
+}
+
+async function suggestSimilarPath(target: string): Promise<string | undefined> {
+  try {
+    const dir = dirname(target);
+    const requested = basename(target);
+    const entries = await readdir(dir);
+    const normalizedRequested = normalizePathNameForSuggestion(requested);
+    const scored = entries
+      .map((entry) => ({
+        entry,
+        score: pathSuggestionScore(normalizedRequested, normalizePathNameForSuggestion(entry))
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score || a.entry.localeCompare(b.entry));
+    const best = scored[0];
+    return best ? join(dir, best.entry) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizePathNameForSuggestion(name: string): string {
+  return name.toLowerCase().replace(/[-_.\s]+/g, "");
+}
+
+function pathSuggestionScore(requested: string, candidate: string): number {
+  if (!requested || !candidate) {
+    return 0;
+  }
+  if (requested === candidate) {
+    return 100;
+  }
+  if (candidate.includes(requested) || requested.includes(candidate)) {
+    return 80;
+  }
+  const commonPrefix = [...requested].findIndex((char, index) => char !== candidate[index]);
+  const prefixLength = commonPrefix === -1 ? Math.min(requested.length, candidate.length) : commonPrefix;
+  return prefixLength >= Math.min(4, requested.length) ? prefixLength : 0;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${Math.round(bytes / 1024 / 1024)}MB`;
+  }
+  return `${Math.round(bytes / 1024)}KB`;
+}
+
 function imageMimeForPath(path: string): string | undefined {
   return IMAGE_MIME_BY_EXT[extname(path).toLowerCase()];
 }
@@ -341,7 +839,7 @@ async function readLineRange(
   target: string,
   requestedOffset: number | undefined,
   requestedLimit: number | undefined
-): Promise<string> {
+): Promise<ReadLineRangeResult> {
   const offset = requestedOffset ?? 1;
   const rawLimit = requestedLimit ?? DEFAULT_READ_LINE_LIMIT;
   if (!Number.isInteger(offset) || !Number.isInteger(rawLimit) || offset < 1 || rawLimit < 1) {
@@ -379,15 +877,37 @@ async function readLineRange(
   }
 
   if (offset > totalLines) {
-    return `${path} 的第 ${offset} 行之后没有内容（共 ${totalLines} 行）`;
+    return {
+      text: `${path} 的第 ${offset} 行之后没有内容（共 ${totalLines} 行）`,
+      selectedText: "",
+      offset,
+      limit,
+      fullRead: false,
+      totalLines
+    };
   }
   const endLine = offset + selected.length - 1;
   const hasMore = endLine < totalLines;
-  return [
-    `${path} 的第 ${offset}-${endLine} 行（共 ${totalLines} 行）：`,
-    withLineNumbers(selected, offset),
-    ...(hasMore ? [`（内容未读完；下一段可从 offset=${endLine + 1} 继续读取）`] : [])
-  ].join("\n");
+  const selectedText = selected.join("\n");
+  return {
+    text: [
+      `${path} 的第 ${offset}-${endLine} 行（共 ${totalLines} 行）：`,
+      withLineNumbers(selected, offset),
+      ...(hasMore ? [`（内容未读完；下一段可从 offset=${endLine + 1} 继续读取）`] : [])
+    ].join("\n"),
+    selectedText,
+    offset,
+    limit,
+    fullRead: offset === 1 && !hasMore,
+    totalLines
+  };
+}
+
+function lineCountForState(content: string): number {
+  if (content.length === 0) {
+    return 0;
+  }
+  return content.split("\n").length;
 }
 
 function withLineNumbers(lines: string[], startLine: number): string {

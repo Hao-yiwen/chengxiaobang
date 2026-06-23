@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { readFile } from "node:fs/promises";
 import type {
   AgentEvent,
   BeforeToolCallContext,
@@ -24,6 +25,7 @@ import {
   type TokenUsage,
   type ToolActivityArgsPreview,
   type ToolCallApproval,
+  type ToolCallPreview,
   type ToolCall
 } from "@chengxiaobang/shared";
 import type { StateStore } from "../repository/state-store";
@@ -36,6 +38,7 @@ import {
   type ToolFileChangeDetails
 } from "../tools/file-change";
 import { requiresApproval } from "../tools/registry";
+import { resolveToolPath } from "../tools/workspace";
 import { normalizeDecision, type ApprovalQueue } from "./approval-queue";
 import type { AsyncEventQueue } from "./async-queue";
 import type { ProjectApprovalTrustService } from "./project-approval-trust";
@@ -93,6 +96,7 @@ export class RunEventTranslator {
   private readonly fileChangeAggregates = new Map<string, RunFileChangeAggregate>();
   private readonly toolCallOccurrences = new Map<string, number>();
   private readonly toolActivitySignatures = new Map<number, string>();
+  private readonly planDrafts = new Map<number, { markdown: string; toolCallId?: string }>();
   private aborted = false;
   private errorMessage?: string;
   private maxIterationsHit = false;
@@ -212,6 +216,7 @@ export class RunEventTranslator {
           this.reasoningStartedAt = undefined;
           this.reasoningMs = undefined;
           this.toolActivitySignatures.clear();
+          this.planDrafts.clear();
         }
         return;
       case "message_update": {
@@ -472,6 +477,11 @@ export class RunEventTranslator {
       : needsSmartApproval
         ? "pending_smart_approval"
         : "running";
+    const preview = await buildToolCallPreview(
+      this.options.workspacePath,
+      toolName,
+      normalizedArgs
+    );
     // 只取一次时间，避免 createdAt / startedAt 跨毫秒后出现反序。
     const at = nowIso();
     const active = this.toolCalls.get(toolCallId);
@@ -480,6 +490,7 @@ export class RunEventTranslator {
         ...active,
         name: toolName,
         args: normalizedArgs,
+        ...(preview ?? active.preview ? { preview: preview ?? active.preview } : {}),
         status: pendingStatus === "running" ? "running" : active.status,
         ...(pendingStatus === "running" ? { startedAt: active.startedAt ?? at } : {}),
         updatedAt: at
@@ -501,6 +512,7 @@ export class RunEventTranslator {
       name: toolName,
       args: normalizedArgs,
       status: pendingStatus,
+      ...(preview ? { preview } : {}),
       ...(pendingStatus === "running" ? { startedAt: at } : {}),
       createdAt: at,
       updatedAt: at
@@ -519,6 +531,7 @@ export class RunEventTranslator {
       risk: risk.risk,
       requiresGate,
       projectTrusted,
+      hasPreview: Boolean(preview),
       reason: risk.reason
     });
     this.push({ type: "tool_call", runId: this.options.runId, toolCall });
@@ -624,6 +637,10 @@ export class RunEventTranslator {
       this.logSkippedToolActivity(update, toolCall, appToolCallId, "missing_tool_name");
       return;
     }
+    if (toolCall.name === "ExitPlanMode") {
+      this.onPlanDraftActivity(update, toolCall.arguments, appToolCallId);
+      return;
+    }
     if (!isToolActivityPreviewToolName(toolCall.name)) {
       this.logSkippedToolActivity(update, toolCall, appToolCallId, "unsupported_tool");
       return;
@@ -663,6 +680,43 @@ export class RunEventTranslator {
         argsPreview,
         updatedAt: nowIso()
       }
+    });
+  }
+
+  private onPlanDraftActivity(
+    update: ToolActivityUpdate,
+    args: unknown,
+    appToolCallId: string | undefined
+  ): void {
+    const markdown = previewPlanMarkdown(args);
+    if (!markdown) {
+      return;
+    }
+    const current = this.planDrafts.get(update.contentIndex);
+    const toolCallId = appToolCallId ?? current?.toolCallId;
+    if (current?.markdown === markdown && current.toolCallId === toolCallId) {
+      return;
+    }
+    const delta = current?.markdown && markdown.startsWith(current.markdown)
+      ? markdown.slice(current.markdown.length)
+      : markdown;
+    this.planDrafts.set(update.contentIndex, { markdown, ...(toolCallId ? { toolCallId } : {}) });
+    log.debug("计划参数流更新", {
+      action: "plan.delta",
+      runId: this.options.runId,
+      contentIndex: update.contentIndex,
+      toolCallId,
+      markdownChars: markdown.length,
+      deltaChars: delta.length
+    });
+    this.push({
+      type: "plan_delta",
+      runId: this.options.runId,
+      contentIndex: update.contentIndex,
+      ...(toolCallId ? { toolCallId } : {}),
+      markdown,
+      delta,
+      updatedAt: nowIso()
     });
   }
 
@@ -938,6 +992,137 @@ interface RunFileChangeAggregate {
   toolCallIds: string[];
 }
 
+async function buildToolCallPreview(
+  workspacePath: string,
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<ToolCallPreview | undefined> {
+  if (toolName !== "Write" && toolName !== "Edit") {
+    return undefined;
+  }
+  const path = stringArg(args.file_path);
+  if (!path) {
+    return undefined;
+  }
+  try {
+    const target = resolveToolPath(workspacePath, path).target;
+    const preview =
+      toolName === "Write"
+        ? await buildWritePreview(path, target, args)
+        : await buildEditPreview(path, target, args);
+    if (preview) {
+      log.info("已生成工具审批预览 diff", {
+        action: "tool.preview_built",
+        toolName,
+        path,
+        target,
+        oldLength: preview.oldText.length,
+        newLength: preview.newText.length
+      });
+    }
+    return preview;
+  } catch (error) {
+    log.warn("生成工具审批预览 diff 失败，降级为参数预览", {
+      action: "tool.preview_failed",
+      toolName,
+      path,
+      workspacePath,
+      ...errorToLogFields(error)
+    });
+    return undefined;
+  }
+}
+
+async function buildWritePreview(
+  path: string,
+  target: string,
+  args: Record<string, unknown>
+): Promise<ToolCallPreview | undefined> {
+  const content = stringArg(args.content);
+  if (content === undefined) {
+    return undefined;
+  }
+  const oldText = await readTextOrEmpty(target);
+  if (oldText === content) {
+    return undefined;
+  }
+  return {
+    kind: "text_diff",
+    path,
+    oldText,
+    newText: content
+  };
+}
+
+async function buildEditPreview(
+  path: string,
+  target: string,
+  args: Record<string, unknown>
+): Promise<ToolCallPreview | undefined> {
+  const oldString = stringArg(args.old_string);
+  const newString = stringArg(args.new_string);
+  if (!oldString || newString === undefined) {
+    return undefined;
+  }
+  const source = await readFile(target, "utf8");
+  const occurrences = countStringOccurrences(source, oldString);
+  const replaceAll = args.replace_all === true;
+  if (occurrences === 0) {
+    return undefined;
+  }
+  if (!replaceAll && occurrences > 1) {
+    return undefined;
+  }
+  const next = replaceAll
+    ? source.split(oldString).join(newString)
+    : source.replace(oldString, newString);
+  if (next === source) {
+    return undefined;
+  }
+  return {
+    kind: "text_diff",
+    path,
+    oldText: source,
+    newText: next
+  };
+}
+
+async function readTextOrEmpty(target: string): Promise<string> {
+  try {
+    return await readFile(target, "utf8");
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return "";
+    }
+    throw error;
+  }
+}
+
+function countStringOccurrences(source: string, needle: string): number {
+  let count = 0;
+  let index = 0;
+  while (true) {
+    const found = source.indexOf(needle, index);
+    if (found === -1) {
+      return count;
+    }
+    count += 1;
+    index = found + needle.length;
+  }
+}
+
+function stringArg(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
+}
+
 function mergeTokenUsage(
   first: TokenUsage | undefined,
   second: TokenUsage | undefined
@@ -1061,7 +1246,25 @@ function previewToolArgs(args: unknown): ToolActivityArgsPreview {
   return preview;
 }
 
+function previewPlanMarkdown(args: unknown): string | undefined {
+  const source = normalizeArgs(args);
+  const plan = typeof args === "string" ? readPartialJsonStringField(args, "plan") : source.plan;
+  return typeof plan === "string" && plan.length > 0 ? plan : undefined;
+}
+
 function readJsonStringField(source: string, key: string): string | undefined {
+  return readJsonStringFieldInternal(source, key, false);
+}
+
+function readPartialJsonStringField(source: string, key: string): string | undefined {
+  return readJsonStringFieldInternal(source, key, true);
+}
+
+function readJsonStringFieldInternal(
+  source: string,
+  key: string,
+  allowPartial: boolean
+): string | undefined {
   const encodedKey = JSON.stringify(key);
   let searchFrom = 0;
   while (searchFrom < source.length) {
@@ -1080,7 +1283,7 @@ function readJsonStringField(source: string, key: string): string | undefined {
       searchFrom = keyIndex + encodedKey.length;
       continue;
     }
-    return readJsonStringValue(source, cursor);
+    return readJsonStringValue(source, cursor, allowPartial);
   }
   return undefined;
 }
@@ -1092,7 +1295,11 @@ function skipJsonWhitespace(source: string, cursor: number): number {
   return cursor;
 }
 
-function readJsonStringValue(source: string, quoteIndex: number): string | undefined {
+function readJsonStringValue(
+  source: string,
+  quoteIndex: number,
+  allowPartial = false
+): string | undefined {
   let escaped = false;
   for (let index = quoteIndex + 1; index < source.length; index += 1) {
     const char = source[index];
@@ -1114,7 +1321,59 @@ function readJsonStringValue(source: string, quoteIndex: number): string | undef
       return undefined;
     }
   }
-  return undefined;
+  return allowPartial ? decodePartialJsonStringContent(source.slice(quoteIndex + 1)) : undefined;
+}
+
+function decodePartialJsonStringContent(raw: string): string {
+  let value = "";
+  let escaped = false;
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index] ?? "";
+    if (!escaped) {
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      value += char;
+      continue;
+    }
+    switch (char) {
+      case "\"":
+      case "\\":
+      case "/":
+        value += char;
+        break;
+      case "b":
+        value += "\b";
+        break;
+      case "f":
+        value += "\f";
+        break;
+      case "n":
+        value += "\n";
+        break;
+      case "r":
+        value += "\r";
+        break;
+      case "t":
+        value += "\t";
+        break;
+      case "u": {
+        const hex = raw.slice(index + 1, index + 5);
+        if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+          return value;
+        }
+        value += String.fromCharCode(Number.parseInt(hex, 16));
+        index += 4;
+        break;
+      }
+      default:
+        value += char;
+        break;
+    }
+    escaped = false;
+  }
+  return value;
 }
 
 function truncatePreview(value: string): string {

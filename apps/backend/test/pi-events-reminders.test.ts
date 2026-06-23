@@ -222,3 +222,85 @@ describe("RunEventTranslator reasoning 计时", () => {
     }
   });
 });
+
+describe("RunEventTranslator 计划流式预览", () => {
+  it("从 ExitPlanMode 的未闭合 JSON 参数中流式提取计划文本", async () => {
+    const pushedEvents: StreamEvent[] = [];
+    const translator = new RunEventTranslator({
+      store: {
+        insertToolCall: async () => {},
+        updateToolCall: async (toolCall: unknown) => toolCall
+      } as unknown as StateStore,
+      queue: {
+        push: (event: StreamEvent) => {
+          pushedEvents.push(event);
+        }
+      } as unknown as AsyncEventQueue<StreamEvent>,
+      approvals: {} as unknown as ApprovalQueue,
+      runId: "run_plan",
+      sessionId: "sess_plan",
+      projectId: null,
+      workspacePath: "/w",
+      accessMode: "approval",
+      projectApprovalTrustService: {
+        isTrusted: async () => false
+      } as unknown as ProjectApprovalTrustService,
+      signal: new AbortController().signal,
+      model: "test-model",
+      maxToolIterations: 10
+    });
+
+    await translator.emit({ type: "message_start", message: { role: "assistant" } } as never);
+    await translator.emit({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "toolcall_delta",
+        contentIndex: 0,
+        delta: "{\"plan\":\"# 示例计划",
+        partial: {
+          content: [
+            {
+              type: "toolCall",
+              id: "plan_call",
+              name: "ExitPlanMode",
+              arguments: "{\"plan\":\"# 示例计划\\n\\n## Summary\\n先"
+            }
+          ]
+        }
+      }
+    } as never);
+    await translator.emit({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "toolcall_delta",
+        contentIndex: 0,
+        delta: "做验证",
+        partial: {
+          content: [
+            {
+              type: "toolCall",
+              id: "plan_call",
+              name: "ExitPlanMode",
+              arguments: "{\"plan\":\"# 示例计划\\n\\n## Summary\\n先做验证"
+            }
+          ]
+        }
+      }
+    } as never);
+
+    const planEvents = pushedEvents.filter((event) => event.type === "plan_delta");
+    expect(planEvents).toHaveLength(2);
+    expect(planEvents[0]).toMatchObject({
+      type: "plan_delta",
+      runId: "run_plan",
+      markdown: "# 示例计划\n\n## Summary\n先"
+    });
+    expect(planEvents[0]?.delta).toBe(planEvents[0]?.markdown);
+    expect(planEvents[1]).toMatchObject({
+      type: "plan_delta",
+      runId: "run_plan",
+      markdown: "# 示例计划\n\n## Summary\n先做验证",
+      delta: "做验证"
+    });
+  });
+});

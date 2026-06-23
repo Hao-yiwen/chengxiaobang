@@ -15,7 +15,9 @@ import {
   sessionUpdateSchema,
   scheduledTaskEventSchema,
   streamEventSchema,
+  builtinToolMetadata,
   toolCallSchema,
+  toolDisplayCategory,
   toolNameSchema,
   todoWriteArgsSchema,
   webSearchConfigInputSchema,
@@ -170,6 +172,7 @@ describe("toolNameSchema", () => {
       "GitDiff",
       "WebFetch",
       "WebSearch",
+      "ToolSearch",
       "ExitPlanMode",
       "AskUserQuestion",
       "Skill",
@@ -181,9 +184,21 @@ describe("toolNameSchema", () => {
       "ScheduleCancel",
       "Memory",
       "OcrExtractText",
+      "PowerShell",
       "FeishuSendMessage"
     ]) {
       expect(toolNameSchema.parse(name)).toBe(name);
+    }
+  });
+
+  it("每个内置工具都有治理元数据", () => {
+    for (const name of toolNameSchema.options) {
+      const metadata = builtinToolMetadata[name];
+      expect(metadata, name).toBeTruthy();
+      expect(metadata.searchHint, name).toEqual(expect.any(String));
+      expect(metadata.maxInlineResultChars, name).toBeGreaterThan(0);
+      expect(toolDisplayCategory(name), name).toBe(metadata.category);
+      expect(metadata.readOnly && metadata.mutating, name).toBe(false);
     }
   });
 
@@ -300,6 +315,29 @@ describe("toolCallSchema", () => {
       deletions: 0,
       toolCallIds: ["tc_1"]
     });
+  });
+
+  it("解析写入工具审批预览 diff", () => {
+    for (const status of ["pending_approval", "completed", "failed"] as const) {
+      const parsed = toolCallSchema.parse({
+        ...toolCall,
+        name: "Write",
+        status,
+        preview: {
+          kind: "text_diff",
+          path: "src/app.ts",
+          oldText: "old\n",
+          newText: "new\n"
+        }
+      });
+
+      expect(parsed.preview).toEqual({
+        kind: "text_diff",
+        path: "src/app.ts",
+        oldText: "old\n",
+        newText: "new\n"
+      });
+    }
   });
 });
 
@@ -585,6 +623,15 @@ describe("streamEventSchema", () => {
       { type: "message", runId: "run_1", message },
       { type: "delta", runId: "run_1", channel: "text", delta: "好" },
       {
+        type: "plan_delta",
+        runId: "run_1",
+        contentIndex: 0,
+        toolCallId: "tc_plan",
+        markdown: "# 计划\n\n## Summary\n先确认。",
+        delta: "## Summary\n先确认。",
+        updatedAt: "2026-06-11T00:00:00.000Z"
+      },
+      {
         type: "tool_activity",
         runId: "run_1",
         activity: {
@@ -605,7 +652,7 @@ describe("streamEventSchema", () => {
         fileChanges: [fileChange]
       }
     ];
-    expect(events).toHaveLength(8);
+    expect(events).toHaveLength(9);
     for (const event of events) {
       expect(streamEventSchema.parse(event)).toEqual(event);
     }

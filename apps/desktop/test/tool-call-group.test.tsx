@@ -62,7 +62,7 @@ describe("ToolCallGroup", () => {
     expect(screen.getByText("3 matches")).toBeInTheDocument();
   });
 
-  it("appends the running call's description to the header", () => {
+  it("appends generic running descriptions for parameterized tools", () => {
     render(
       <ToolCallGroup
         toolCalls={[
@@ -72,10 +72,70 @@ describe("ToolCallGroup", () => {
       />
     );
 
-    expect(
-      screen.getByText("读取 1 个文件 · 运行 1 条命令 · 运行命令中")
-    ).toBeInTheDocument();
+    const summary = screen.getByText("读取 1 个文件 · 运行 1 条命令 · 运行命令中");
+    expect(summary).toBeInTheDocument();
+    expect(summary).toHaveClass("shimmer-text");
     expect(screen.queryByText(/pnpm dev/)).not.toBeInTheDocument();
+  });
+
+  it("keeps Write/Edit running descriptions in the group header", () => {
+    render(
+      <ToolCallGroup
+        toolCalls={[
+          toolCall({ name: "Read" }),
+          toolCall({
+            name: "Write",
+            args: { file_path: "out.txt", content: "正文不进状态条" },
+            status: "running"
+          })
+        ]}
+      />
+    );
+
+    expect(
+      screen.getByText("读取 1 个文件 · 修改 1 个文件 · 写入 out.txt 中")
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/正文不进状态条/)).not.toBeInTheDocument();
+  });
+
+  it("keeps WebFetch running in the group header without showing the URL", () => {
+    render(
+      <ToolCallGroup
+        toolCalls={[
+          toolCall({ name: "Read" }),
+          toolCall({
+            name: "WebFetch",
+            args: { url: "https://example.com" },
+            status: "running"
+          })
+        ]}
+      />
+    );
+
+    const summary = screen.getByText("读取 1 个文件 · 抓取 1 个网页 · 抓取网页中");
+    expect(summary).toBeInTheDocument();
+    expect(summary).toHaveClass("shimmer-text");
+    expect(screen.queryByText(/example\.com/)).not.toBeInTheDocument();
+  });
+
+  it("keeps WebSearch running in the group header without showing the query", () => {
+    render(
+      <ToolCallGroup
+        toolCalls={[
+          toolCall({ name: "Read" }),
+          toolCall({
+            name: "WebSearch",
+            args: { query: "敏感搜索词" },
+            status: "running"
+          })
+        ]}
+      />
+    );
+
+    const summary = screen.getByText("读取 1 个文件 · 抓取 1 个网页 · 网络搜索中");
+    expect(summary).toBeInTheDocument();
+    expect(summary).toHaveClass("shimmer-text");
+    expect(screen.queryByText(/敏感搜索词/)).not.toBeInTheDocument();
   });
 
   it("surfaces a failure count but stays collapsed", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Message, ToolCall } from "@chengxiaobang/shared";
 import {
+  chatViewTimelineItems,
   chatTimeline,
   derivePlanView,
   groupTimelineItems,
@@ -354,4 +355,116 @@ describe("chatTimeline", () => {
     expect(flags).toEqual([true, false]);
   });
 
+  it("keeps active running tools from the active run timeline", () => {
+    const calls = [
+      tool("WebSearch", {
+        id: "search",
+        runId: "run_live",
+        status: "running",
+        args: { query: "发布信息" }
+      }),
+      tool("Bash", {
+        id: "bash",
+        runId: "run_live",
+        status: "pending_smart_approval",
+        args: { command: "pnpm test" }
+      }),
+      tool("Read", {
+        id: "read",
+        runId: "run_live",
+        status: "running",
+        args: { file_path: "src/app.ts" }
+      }),
+      tool("Skill", {
+        id: "skill",
+        runId: "run_live",
+        status: "running",
+        args: { skill: "excel" }
+      }),
+      tool("WebFetch", {
+        id: "fetch",
+        runId: "run_live",
+        status: "running",
+        args: { url: "https://example.com" }
+      })
+    ];
+
+    const items = chatTimeline([], calls, { activeRunId: "run_live" });
+
+    expect(items.map((item) => (item.kind === "tool" ? item.toolCall.name : item.kind))).toEqual([
+      "WebSearch",
+      "Bash",
+      "Read",
+      "Skill",
+      "WebFetch"
+    ]);
+  });
+
+  it("does not hide residual active-looking tools from older runs", () => {
+    const stale = tool("WebSearch", {
+      runId: "run_old",
+      status: "running",
+      args: { query: "旧查询" }
+    });
+
+    const items = chatTimeline([], [stale], { activeRunId: "run_live" });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.kind === "tool" && items[0].toolCall.id).toBe(stale.id);
+  });
+
+  it("keeps completed tool history visible for parameterized tools", () => {
+    const fetch = tool("WebFetch", {
+      runId: "run_live",
+      status: "completed",
+      args: { url: "https://example.com" }
+    });
+    const search = tool("WebSearch", {
+      runId: "run_live",
+      status: "completed",
+      args: { query: "发布信息" },
+      at: "2026-06-11T00:00:06.000Z"
+    });
+    const bash = tool("Bash", {
+      runId: "run_live",
+      status: "completed",
+      args: { command: "pnpm test" },
+      at: "2026-06-11T00:00:07.000Z"
+    });
+
+    const items = chatTimeline([], [fetch, search, bash], { activeRunId: "run_live" });
+
+    expect(items.map((item) => (item.kind === "tool" ? item.toolCall.name : item.kind))).toEqual([
+      "WebFetch",
+      "WebSearch",
+      "Bash"
+    ]);
+  });
+
+  it("keeps active tools before ChatView grouping", () => {
+    const completedFetches = [1, 2, 3, 4].map((index) =>
+      tool("WebFetch", {
+        id: `fetch_${index}`,
+        runId: "run_live",
+        status: "completed",
+        args: { url: `https://example-${index}.com` },
+        at: `2026-06-11T00:00:0${index}.000Z`
+      })
+    );
+    const runningSearch = tool("WebSearch", {
+      id: "search_running",
+      runId: "run_live",
+      status: "running",
+      args: { query: "继续搜索" },
+      at: "2026-06-11T00:00:05.000Z"
+    });
+
+    const items = chatViewTimelineItems([], [...completedFetches, runningSearch], [], "run_live");
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.kind).toBe("tool-group");
+    expect(
+      items[0]?.kind === "tool-group" ? items[0].toolCalls.map((call) => call.id) : []
+    ).toEqual(["fetch_1", "fetch_2", "fetch_3", "fetch_4", "search_running"]);
+  });
 });

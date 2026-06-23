@@ -3,7 +3,13 @@ import {
   isStreamEvent,
   isToolActivityPreviewToolName
 } from "@chengxiaobang/shared";
-import type { MessageAttachment, Session, StreamEvent, ToolActivity } from "@chengxiaobang/shared";
+import type {
+  MessageAttachment,
+  Session,
+  StreamEvent,
+  ToolActivity,
+  ToolCall
+} from "@chengxiaobang/shared";
 import i18n from "../../i18n";
 import { saveDisplayAttachmentSnapshots } from "../../lib/attachment-preparation";
 import { showSystemNotification } from "../../lib/notifications";
@@ -74,6 +80,7 @@ function missingRunProviderPatch(state: AppState, source: string): Partial<AppSt
 }
 
 const STREAM_DELTA_FLUSH_MS = 32;
+const RUNNING_TOOL_MIN_VISIBLE_MS = 200;
 
 function jsonForLog(payload: Record<string, unknown>): string {
   try {
@@ -99,6 +106,10 @@ function validToolActivityPreview(activity: ToolActivity): boolean {
     typeof activity.argsPreview.file_path === "string" &&
     activity.argsPreview.file_path.length > 0
   );
+}
+
+function isTimelineRunningToolStatus(status: ToolCall["status"]): boolean {
+  return status === "running" || status === "pending_smart_approval";
 }
 
 type RunEndEvent = Extract<StreamEvent, { type: "run_end" }>;
@@ -238,6 +249,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
   let bufferedThinkingStartedAt: number | undefined;
   let bufferedDeltaRunId: string | undefined;
   let bufferedDeltaTimer: number | undefined;
+  const runningToolVisualHoldTimers = new Map<string, number>();
 
   const clearBufferedDeltaTimer = () => {
     if (bufferedDeltaTimer === undefined) {
@@ -320,6 +332,38 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
       bufferedDeltaTimer = undefined;
       flushBufferedDeltas();
     }, STREAM_DELTA_FLUSH_MS);
+  };
+
+  const clearRunningToolVisualHoldTimer = (toolCallId: string) => {
+    const timer = runningToolVisualHoldTimers.get(toolCallId);
+    if (timer === undefined) {
+      return;
+    }
+    window.clearTimeout(timer);
+    runningToolVisualHoldTimers.delete(toolCallId);
+  };
+
+  const scheduleRunningToolVisualHoldExpiry = (toolCall: ToolCall, visibleUntil: number) => {
+    clearRunningToolVisualHoldTimer(toolCall.id);
+    const delayMs = Math.max(0, visibleUntil - Date.now());
+    const timer = window.setTimeout(() => {
+      runningToolVisualHoldTimers.delete(toolCall.id);
+      set((current) => {
+        const hold = current.runningToolVisualHolds[toolCall.id];
+        if (!hold || hold.visibleUntil > Date.now()) {
+          return {};
+        }
+        const { [toolCall.id]: _expired, ...rest } = current.runningToolVisualHolds;
+        console.debug("[store] 清理工具运行态最短展示 hold", {
+          toolCallId: toolCall.id,
+          runId: toolCall.runId,
+          toolName: toolCall.name,
+          status: toolCall.status
+        });
+        return { runningToolVisualHolds: rest };
+      });
+    }, delayMs);
+    runningToolVisualHoldTimers.set(toolCall.id, timer);
   };
 
   return {
@@ -703,6 +747,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             pendingTool: undefined,
             runningTool: undefined,
             toolActivity: undefined,
+            streamingPlan: undefined,
             thinkingDurationMs: undefined,
             ...(current.activeRunId
               ? clearRunRunning(current, current.activeRunId, current.activeSessionId)
@@ -1116,6 +1161,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
               pendingTool: undefined,
               runningTool: undefined,
               toolActivity: undefined,
+              streamingPlan: undefined,
               streamText: "",
               thinking: "",
               thinkingStartedAt: undefined,
@@ -1143,6 +1189,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
               progressPanelOpen: false,
               progressPanelAutoOpenedRunId: undefined,
               activeRunModel: runModel,
+              streamingPlan: undefined,
               view: "chat",
               isRunning: true,
               activeRunStartedAt: get().activeRunStartedAt ?? Date.now(),
@@ -1153,6 +1200,28 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
           }
           case "delta":
             enqueueDelta(event);
+            break;
+          case "plan_delta":
+            flushBufferedDeltas();
+            console.info("[store] 收到计划流式增量", {
+              runId: event.runId,
+              activeRunId: get().activeRunId,
+              toolCallId: event.toolCallId,
+              contentIndex: event.contentIndex,
+              markdownChars: event.markdown.length,
+              deltaChars: event.delta.length
+            });
+            set((current) => ({
+              streamingPlan: {
+                runId: event.runId,
+                contentIndex: event.contentIndex,
+                ...(event.toolCallId ? { toolCallId: event.toolCallId } : {}),
+                markdown: event.markdown,
+                updatedAt: event.updatedAt
+              },
+              toolActivity: undefined,
+              ...closeLiveThinkingPatch(current)
+            }));
             break;
           case "tool_activity":
             if (!validToolActivityPreview(event.activity)) {
@@ -1194,6 +1263,14 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
             flushBufferedDeltas();
             // 一个 run 会推送 user 回显、工具间 assistant 轮次和最终回答。
             // assistant 消息已带持久化 reasoning，因此这里只清理实时缓冲。
+            if (event.message.role === "assistant") {
+              console.debug("[store] 当前 run assistant 消息已落库，更新运行态标记", {
+                runId: event.runId,
+                messageId: event.message.id,
+                contentChars: event.message.content.length,
+                reasoningChars: event.message.reasoning?.length ?? 0
+              });
+            }
             set((current) => ({
               messages: appendMessage(current.messages, event.message),
               ...(event.message.role === "assistant"
@@ -1207,8 +1284,15 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
                 : {})
             }));
             break;
-          case "tool_call":
+          case "tool_call": {
             flushBufferedDeltas();
+            const timelineRunningStatus = isTimelineRunningToolStatus(event.toolCall.status);
+            const runningToolVisualHoldUntil = timelineRunningStatus
+              ? Date.now() + RUNNING_TOOL_MIN_VISIBLE_MS
+              : undefined;
+            if (runningToolVisualHoldUntil !== undefined) {
+              scheduleRunningToolVisualHoldExpiry(event.toolCall, runningToolVisualHoldUntil);
+            }
             console.info(
               "[stream-caret-debug] store-event " +
                 jsonForLog({
@@ -1219,6 +1303,13 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
                   toolCallId: event.toolCall.id,
                   status: event.toolCall.status,
                   runningArgsHiddenInTimeline: shouldHideRunningToolArgs(event.toolCall),
+                  runningToolHiddenInTimeline: timelineRunningStatus ? false : undefined,
+                  runningToolMinVisibleMs: timelineRunningStatus
+                    ? RUNNING_TOOL_MIN_VISIBLE_MS
+                    : undefined,
+                  runningToolVisualHoldUntil: runningToolVisualHoldUntil !== undefined
+                    ? new Date(runningToolVisualHoldUntil).toISOString()
+                    : undefined,
                   filePath: previewFilePath(event.toolCall.args),
                   streamTextChars: get().streamText.length,
                   thinkingChars: get().thinking.length
@@ -1231,6 +1322,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
                 pendingTool: event.toolCall,
                 runningTool: undefined,
                 toolActivity: undefined,
+                ...(event.toolCall.name === "ExitPlanMode" ? { streamingPlan: undefined } : {}),
                 ...closeLiveThinkingPatch(get())
               });
             } else if (
@@ -1241,7 +1333,19 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
                 pendingTool: undefined,
                 runningTool: event.toolCall,
                 toolActivity: undefined,
+                ...(event.toolCall.name === "ExitPlanMode" ? { streamingPlan: undefined } : {}),
                 toolHistory: upsertToolCall(current.toolHistory, event.toolCall),
+                ...(runningToolVisualHoldUntil !== undefined
+                  ? {
+                      runningToolVisualHolds: {
+                        ...current.runningToolVisualHolds,
+                        [event.toolCall.id]: {
+                          toolCall: event.toolCall,
+                          visibleUntil: runningToolVisualHoldUntil
+                        }
+                      }
+                    }
+                  : {}),
                 ...closeLiveThinkingPatch(current),
                 ...autoOpenProgressPanelPatch(current, event.toolCall)
               }));
@@ -1250,12 +1354,14 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
                 pendingTool: undefined,
                 runningTool: undefined,
                 toolActivity: undefined,
+                ...(event.toolCall.name === "ExitPlanMode" ? { streamingPlan: undefined } : {}),
                 toolHistory: upsertToolCall(current.toolHistory, event.toolCall),
                 ...closeLiveThinkingPatch(current),
                 ...autoOpenProgressPanelPatch(current, event.toolCall)
               }));
             }
             break;
+          }
           case "run_end": {
             flushBufferedDeltas();
             const sessionId = runEndSessionId ?? get().activeSessionId;
@@ -1269,6 +1375,7 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
               pendingTool: undefined,
               runningTool: undefined,
               toolActivity: undefined,
+              streamingPlan: undefined,
               streamText: "",
               thinking: "",
               thinkingStartedAt: undefined,

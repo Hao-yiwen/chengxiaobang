@@ -24,7 +24,13 @@ function memorySettings() {
 async function writeSkill(
   root: string,
   dirName: string,
-  frontmatter: { name: string; description: string; category?: string },
+  frontmatter: {
+    name: string;
+    description: string;
+    category?: string;
+    whenToUse?: string;
+    userInvocable?: boolean;
+  },
   body = "正文"
 ): Promise<void> {
   await mkdir(join(root, dirName), { recursive: true });
@@ -32,6 +38,10 @@ async function writeSkill(
     "---",
     `name: ${frontmatter.name}`,
     `description: ${frontmatter.description}`,
+    ...(frontmatter.whenToUse ? [`when_to_use: ${frontmatter.whenToUse}`] : []),
+    ...(frontmatter.userInvocable !== undefined
+      ? [`user-invocable: ${frontmatter.userInvocable}`]
+      : []),
     ...(frontmatter.category ? ["metadata:", `  category: ${frontmatter.category}`] : []),
     "---",
     body
@@ -136,6 +146,31 @@ describe("SkillMarketService", () => {
     expect(detail?.enabled).toBe(true);
 
     await expect(service.getDetail("nope")).resolves.toBeUndefined();
+  });
+
+  it("records skill usage and exposes usage metadata in summaries", async () => {
+    await writeSkill(join(dir, "custom"), "daily-report", {
+      name: "daily-report",
+      description: "生成日报",
+      whenToUse: "用户需要日报时"
+    });
+
+    await service.recordSkillUsage("daily-report", Date.parse("2026-06-23T00:00:00.000Z"));
+    await service.recordSkillUsage("daily-report", Date.parse("2026-06-23T00:00:30.000Z"));
+
+    const skills = await service.list();
+    expect(skills[0]).toMatchObject({
+      name: "daily-report",
+      whenToUse: "用户需要日报时",
+      usageCount: 1,
+      lastUsedAt: "2026-06-23T00:00:00.000Z"
+    });
+    await expect(service.skillUsageStats()).resolves.toEqual({
+      "daily-report": {
+        usageCount: 1,
+        lastUsedAt: Date.parse("2026-06-23T00:00:00.000Z")
+      }
+    });
   });
 
   it("enables and disables market skills, persisting the set", async () => {
@@ -251,7 +286,32 @@ describe("parseSkillFile", () => {
         "\n"
       )
     );
-    expect(meta).toEqual({ name: "a-skill", description: "做事", category: "coding" });
+    expect(meta).toEqual({
+      name: "a-skill",
+      description: "做事",
+      userInvocable: true,
+      category: "coding"
+    });
+  });
+
+  it("reads when_to_use and user-invocable", () => {
+    const meta = parseSkillFile(
+      [
+        "---",
+        "name: hidden-skill",
+        "description: 内部辅助",
+        "when_to_use: 需要内部辅助时",
+        "user-invocable: false",
+        "---",
+        "x"
+      ].join("\n")
+    );
+    expect(meta).toMatchObject({
+      name: "hidden-skill",
+      description: "内部辅助",
+      whenToUse: "需要内部辅助时",
+      userInvocable: false
+    });
   });
 
   it("defaults unknown categories to other and rejects missing fields", () => {

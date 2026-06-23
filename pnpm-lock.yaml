@@ -80,6 +80,9 @@ importers:
       '@tencent-weixin/openclaw-weixin':
         specifier: 2.4.3
         version: 2.4.3(openclaw@2026.6.6)
+      '@xmldom/xmldom':
+        specifier: ^0.8.13
+        version: 0.8.13
       adm-zip:
         specifier: ^0.5.16
         version: 0.5.17

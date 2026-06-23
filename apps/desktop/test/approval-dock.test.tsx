@@ -168,6 +168,29 @@ describe("ApprovalDock", () => {
     expect(diff).toHaveTextContent("x = 2");
   });
 
+  it("uses backend preview diffs for Write approvals", () => {
+    useAppStore.setState({
+      pendingTool: pendingTool({
+        name: "Write",
+        args: { file_path: "src/a.ts", content: "fallback only\n" },
+        preview: {
+          kind: "text_diff",
+          path: "src/a.ts",
+          oldText: "old value\n",
+          newText: "new value\n"
+        }
+      }),
+      approve: vi.fn()
+    });
+    render(<ApprovalDock />);
+
+    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+    const diff = screen.getByLabelText("变更对比");
+    expect(diff).toHaveTextContent("old value");
+    expect(diff).toHaveTextContent("new value");
+    expect(diff).not.toHaveTextContent("fallback only");
+  });
+
   it("renders AskUserQuestion as the option card and forwards the picked answer", async () => {
     const approve = vi.fn();
     useAppStore.setState({

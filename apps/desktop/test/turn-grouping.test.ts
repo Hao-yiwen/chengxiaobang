@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Message, RunRecord, ToolCall } from "@chengxiaobang/shared";
 import {
+  abortedRunNotices,
   chatViewTimelineItems,
   groupTurns,
   type FailedRunNotice,
@@ -32,6 +33,17 @@ function tool(
     startedAt: overrides.startedAt,
     createdAt: overrides.createdAt ?? at,
     updatedAt: overrides.updatedAt ?? at
+  };
+}
+
+function run(overrides: Partial<RunRecord> = {}): RunRecord {
+  return {
+    id: "run_1",
+    sessionId: "s1",
+    status: "completed",
+    createdAt: "2026-06-11T00:00:00.000Z",
+    updatedAt: "2026-06-11T00:00:03.000Z",
+    ...overrides
   };
 }
 
@@ -166,10 +178,80 @@ describe("groupTurns", () => {
     expect(turn.answer).toBeUndefined();
     expect(turn.intermediate.some((m) => m.item.kind === "run-error")).toBe(false);
     expect((blocks[1] as StandaloneBlock).item.kind).toBe("run-error");
+    expect(turn.terminalStatus).toBeUndefined();
     expect(turn.timing.mode).toBe("settled");
     if (turn.timing.mode === "settled") {
       expect(turn.timing.durationMs).toBe(3000);
     }
+  });
+
+  it("持久化中断轮：附着到当前轮并使用 run 更新时间计时", () => {
+    const u = msg("user", "2026-06-11T00:00:00.000Z", "q");
+    const partial = msg("assistant", "2026-06-11T00:00:02.000Z", "部分回答");
+    const aborted = run({
+      status: "aborted",
+      updatedAt: "2026-06-11T00:00:04.000Z"
+    });
+    const notices = abortedRunNotices([aborted], []);
+    const blocks = groupTurns(
+      chatViewTimelineItems([u, partial], [], [], undefined, [aborted], notices),
+      ctx()
+    );
+
+    const turn = blocks[0] as TurnBlock;
+    expect(turn.terminalStatus).toBe("aborted");
+    expect(turn.answer?.item.message.id).toBe(partial.id);
+    expect(turn.timing).toEqual({ mode: "settled", durationMs: 4000 });
+  });
+
+  it("实时中断轮：run_end(aborted) 在刷新前也生成轮次终态", () => {
+    const u = msg("user", "2026-06-11T00:00:00.000Z", "q");
+    const partial = msg("assistant", "2026-06-11T00:00:02.000Z", "部分回答");
+    const notices = abortedRunNotices(
+      [],
+      [{ type: "run_end", runId: "run_1", status: "aborted" }],
+      "2026-06-11T00:00:05.000Z"
+    );
+    const blocks = groupTurns(chatViewTimelineItems([u, partial], [], [], undefined, [], notices), ctx());
+
+    const turn = blocks[0] as TurnBlock;
+    expect(turn.terminalStatus).toBe("aborted");
+    expect(turn.answer?.item.message.id).toBe(partial.id);
+    expect(turn.timing).toEqual({ mode: "settled", durationMs: 5000 });
+  });
+
+  it("中断尾标排在部分答复、工具和文件 diff 之后", () => {
+    const u = msg("user", "2026-06-11T00:00:00.000Z", "q");
+    const partial = msg("assistant", "2026-06-11T00:00:02.000Z", "部分回答");
+    const t = tool("Bash", { at: "2026-06-11T00:00:03.000Z" });
+    const aborted = run({
+      status: "aborted",
+      updatedAt: "2026-06-11T00:00:05.000Z",
+      fileChanges: [
+        {
+          path: "src/app.ts",
+          operation: "write",
+          patch: "diff --git a/src/app.ts b/src/app.ts\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -0,0 +1 @@\n+hello\n",
+          additions: 1,
+          deletions: 0,
+          toolCallIds: ["tool_1"]
+        }
+      ]
+    });
+    const notices = abortedRunNotices([aborted], []);
+    const blocks = groupTurns(
+      chatViewTimelineItems([u, partial], [t], [], undefined, [aborted], notices),
+      ctx()
+    );
+
+    const turn = blocks[0] as TurnBlock;
+    expect(turn.terminalStatus).toBe("aborted");
+    expect(turn.answer?.item.message.id).toBe(partial.id);
+    expect(turn.afterAnswer.map((member) => member.item.kind)).toEqual([
+      "tool",
+      "run-file-changes"
+    ]);
+    expect(turn.timing).toEqual({ mode: "settled", durationMs: 5000 });
   });
 
   it("中止轮：保留部分答复，非活跃，settled", () => {

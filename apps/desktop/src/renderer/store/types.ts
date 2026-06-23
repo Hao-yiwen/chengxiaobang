@@ -90,6 +90,19 @@ export interface RunPromptDisplay {
   attachments?: MessageAttachment[];
 }
 
+export interface StreamingPlan {
+  runId: string;
+  contentIndex: number;
+  toolCallId?: string;
+  markdown: string;
+  updatedAt: string;
+}
+
+export interface RunningToolVisualHold {
+  toolCall: ToolCall;
+  visibleUntil: number;
+}
+
 export interface RunPromptOptions {
   sessionId?: string;
   projectId?: string | null;
@@ -217,8 +230,10 @@ export interface AppState {
   // 当前活跃 run 起点（epoch ms），跨多条中间消息保持到 run_end，用于轮次「已工作」实时计时。
   activeRunStartedAt?: number;
   events: StreamEvent[];
+  streamingPlan?: StreamingPlan;
   toolActivity?: ToolActivity;
   runningTool?: ToolCall;
+  runningToolVisualHolds: Record<string, RunningToolVisualHold>;
   pendingTool?: ToolCall;
   isRunning: boolean;
   runningSessionsById: Record<string, true>;

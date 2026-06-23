@@ -322,14 +322,14 @@ function ApprovalPreview({ toolCall }: { toolCall: ToolCall }) {
     );
   }
   const diff = buildToolCallDiff(toolCall);
-  if (diff && typeof toolCall.args.file_path === "string") {
+  if (diff) {
     return (
       <div className="overflow-hidden rounded-md border border-border bg-card">
         <div className="border-b px-3 py-1.5 font-mono text-micro text-muted-foreground">
-          {toolCall.args.file_path}
+          {diff.fileName}
         </div>
         <div className="max-h-[128px] overflow-auto">
-          <DiffView source={diff} />
+          {diff.kind === "text" ? <DiffView source={diff} /> : <DiffView blocks={diff.blocks} />}
         </div>
       </div>
     );

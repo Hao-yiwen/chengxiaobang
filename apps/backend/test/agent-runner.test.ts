@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Type } from "@earendil-works/pi-ai";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
   nowIso,
   type ProviderConfig,
@@ -49,6 +51,10 @@ function smartDecision(
 
 function longRunningShellCommand(): string {
   return process.platform === "win32" ? "ping 127.0.0.1 -n 6 >nul" : "sleep 5";
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 describe("AgentRunner", () => {
@@ -141,6 +147,115 @@ describe("AgentRunner", () => {
 
     expect(transitions).toEqual(["running", "completed"]);
     await expect(readFile(join(dir, "ordinary.txt"), "utf8")).resolves.toBe("hello");
+  });
+
+  it("executes multiple WebFetch calls from one assistant turn in parallel", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const started: string[] = [];
+    const fetchTool: AgentTool<any> = {
+      name: "WebFetch",
+      label: "抓取网页",
+      description: "测试用 WebFetch",
+      parameters: Type.Any(),
+      execute: async (toolCallId) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        started.push(toolCallId);
+        await delay(30);
+        active -= 1;
+        return {
+          content: [{ type: "text", text: `result:${toolCallId}` }],
+          details: undefined
+        };
+      }
+    };
+    const { runner, calls } = runnerWith(
+      store,
+      secrets,
+      [
+        {
+          toolCalls: [1, 2, 3, 4].map((index) => ({
+            id: `fetch_${index}`,
+            name: "WebFetch",
+            arguments: { url: `https://example.com/${index}`, prompt: "读取" }
+          }))
+        },
+        { text: "完成" }
+      ],
+      { createTools: () => [fetchTool] }
+    );
+
+    for await (const _event of runner.stream({
+      prompt: "同时抓取四个网页",
+      projectId: null,
+      accessMode: "full_access"
+    })) {
+      // 消费完整事件流，等待工具批次和下一轮模型调用结束。
+    }
+
+    expect(started).toEqual(["fetch_1", "fetch_2", "fetch_3", "fetch_4"]);
+    expect(maxActive).toBeGreaterThan(1);
+    const replayToolResultIds = calls[1].context.messages
+      .filter((message) => message.role === "toolResult")
+      .map((message) => ("toolCallId" in message ? message.toolCallId : undefined));
+    expect(replayToolResultIds).toEqual(["fetch_1", "fetch_2", "fetch_3", "fetch_4"]);
+  });
+
+  it("keeps a tool batch sequential when it contains a concurrency-unsafe tool", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const started: string[] = [];
+    const trackedTool = (name: string): AgentTool<any> => ({
+      name,
+      label: name,
+      description: `测试用 ${name}`,
+      parameters: Type.Any(),
+      execute: async (toolCallId) => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        started.push(toolCallId);
+        await delay(20);
+        active -= 1;
+        return {
+          content: [{ type: "text", text: `result:${toolCallId}` }],
+          details: undefined
+        };
+      }
+    });
+    const { runner } = runnerWith(
+      store,
+      secrets,
+      [
+        {
+          toolCalls: [
+            {
+              id: "fetch_1",
+              name: "WebFetch",
+              arguments: { url: "https://example.com/1", prompt: "读取" }
+            },
+            {
+              id: "write_1",
+              name: "Write",
+              arguments: { file_path: "note.txt", content: "hello" }
+            }
+          ]
+        },
+        { text: "完成" }
+      ],
+      { createTools: () => [trackedTool("WebFetch"), trackedTool("Write")] }
+    );
+
+    for await (const _event of runner.stream({
+      prompt: "抓取网页并写文件",
+      projectId: null,
+      accessMode: "full_access"
+    })) {
+      // 消费完整事件流，等待工具批次和下一轮模型调用结束。
+    }
+
+    expect(started).toEqual(["fetch_1", "write_1"]);
+    expect(maxActive).toBe(1);
   });
 
   it("skips model tool approval after trusting the same command for the project", async () => {
@@ -732,6 +847,7 @@ describe("AgentRunner", () => {
     }
 
     expect(calls[0].model.input).toEqual(["text", "image"]);
+    expect(calls[0].context.systemPrompt).toContain("supportsImage=true");
     const userContext = calls[0].context.messages.find(
       (message) => message.role === "user" && Array.isArray(message.content)
     );
@@ -1517,12 +1633,13 @@ describe("AgentRunner", () => {
     expect(toolNames(calls[0])).not.toContain("create_docx");
     expect(toolNames(calls[0])).not.toContain("create_xlsx");
     expect(toolNames(calls[0])).toContain("Skill");
+    expect(calls[0].context.systemPrompt).toContain("supportsImage=false");
   });
 
   it("loads skill instructions without adding office tools to the next turn", async () => {
     const { runner, calls } = runnerWith(store, secrets, [
       {
-        toolCalls: [{ id: "call_skill", name: "Skill", arguments: { name: "ppt" } }]
+        toolCalls: [{ id: "call_skill", name: "Skill", arguments: { name: "pptx" } }]
       },
       { text: "可以开始做 PPT" }
     ], {
@@ -1638,7 +1755,7 @@ describe("AgentRunner", () => {
     });
 
     for await (const _event of runner.stream({
-      prompt: "/ppt 做一个产品路线图",
+      prompt: "/pptx 做一个产品路线图",
       projectId: null,
       accessMode: "approval"
     })) {
@@ -1649,7 +1766,7 @@ describe("AgentRunner", () => {
       .filter((message) => message.role === "user")
       .map((message) => message.content)
       .join("\n");
-    expect(userContents).toContain("scripts/create-pptx.mjs");
+    expect(userContents).toContain("pptx-author.mjs");
     expect(userContents).not.toContain("create_pptx");
     expect(toolNames(calls[0])).not.toContain("create_pptx");
     expect(toolNames(calls[0])).not.toContain("create_docx");

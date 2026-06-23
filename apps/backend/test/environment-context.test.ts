@@ -42,12 +42,17 @@ describe("collectEnvironmentContext", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("非 Git 目录降级：isGitRepo=false 且无 Git 快照，仍带 shell/os/model", async () => {
-    const ctx = await collectEnvironmentContext({ workspacePath: dir, model: "m1" });
+  it("非 Git 目录降级：isGitRepo=false 且无 Git 快照，仍带 shell/os/model/输入能力", async () => {
+    const ctx = await collectEnvironmentContext({
+      workspacePath: dir,
+      model: "m1",
+      inputModalities: ["text", "image"]
+    });
     expect(ctx.isGitRepo).toBe(false);
     expect(ctx.gitStatus).toBeUndefined();
     expect(ctx.shell.length).toBeGreaterThan(0);
     expect(ctx.osVersion.length).toBeGreaterThan(0);
     expect(ctx.model).toBe("m1");
+    expect(ctx.inputModalities).toEqual(["text", "image"]);
   });
 });

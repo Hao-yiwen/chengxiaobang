@@ -100,6 +100,72 @@ describe("SlashCommandService", () => {
       expect(skills).toHaveLength(2);
     });
 
+    it("listSkills includes when_to_use and sorts recently used skills first", async () => {
+      const usage = {
+        skillUsageStats: async () => ({
+          ppt: { usageCount: 3, lastUsedAt: Date.now() },
+          excel: { usageCount: 1, lastUsedAt: Date.now() - 20 * 24 * 60 * 60 * 1000 }
+        }),
+        recordSkillUsage: async () => undefined
+      };
+      isolated = new SlashCommandService(join(dir, "global"), join(dir, "builtin"), {
+        skillUsage: usage
+      });
+      await writeSkill(join(dir, "global"), "excel", "处理表格", "when_to_use: 数据分析\n");
+      await writeSkill(join(dir, "global"), "ppt", "做演示文稿", "when_to_use: 汇报展示\n");
+
+      const skills = await isolated.listSkills();
+
+      expect(skills).toEqual([
+        { name: "ppt", description: "做演示文稿", whenToUse: "汇报展示" },
+        { name: "excel", description: "处理表格", whenToUse: "数据分析" }
+      ]);
+    });
+
+    it("user-invocable false hides slash entry but keeps model Skill access", async () => {
+      await writeSkill(
+        join(dir, "global"),
+        "hidden-helper",
+        "隐藏辅助技能",
+        "user-invocable: false\nwhen_to_use: 模型需要内部辅助时\n"
+      );
+
+      const { commands } = await isolated.list();
+      expect(commands.some((command) => command.name === "/hidden-helper")).toBe(false);
+      await expect(isolated.expandPrompt("/hidden-helper x")).resolves.toEqual({
+        matched: false,
+        prompt: "/hidden-helper x"
+      });
+      await expect(isolated.listSkills()).resolves.toEqual([
+        {
+          name: "hidden-helper",
+          description: "隐藏辅助技能",
+          whenToUse: "模型需要内部辅助时"
+        }
+      ]);
+      await expect(isolated.findSkill("hidden-helper")).resolves.toMatchObject({
+        name: "hidden-helper"
+      });
+    });
+
+    it("records usage when expanding a slash skill", async () => {
+      const recorded: string[] = [];
+      isolated = new SlashCommandService(join(dir, "global"), join(dir, "builtin"), {
+        skillUsage: {
+          skillUsageStats: async () => ({}),
+          recordSkillUsage: async (name) => {
+            recorded.push(name);
+          }
+        }
+      });
+      await writeSkill(join(dir, "global"), "excel", "处理表格");
+
+      const result = await isolated.expandPrompt("/excel 处理 A1");
+
+      expect(result.matched).toBe(true);
+      expect(recorded).toEqual(["excel"]);
+    });
+
     it("listSkills filters skills with disable-model-invocation", async () => {
       await writeSkill(join(dir, "global"), "excel", "处理表格");
       await writeSkill(join(dir, "global"), "secret", "隐藏技能", "disable-model-invocation: true\n");

@@ -5,13 +5,13 @@ import type {
   AfterToolCallResult,
   AgentToolResult
 } from "@earendil-works/pi-agent-core";
+import { toolMetadata } from "@chengxiaobang/shared";
 
 import { getLogger } from "../logging/logger";
 
 const log = getLogger({ module: "agent/tool-result-spill" });
 
 export const TOOL_RESULT_SPILL_DIR = ".chengxiaobang/tool-results";
-const MAX_INLINE_TOOL_RESULT_CHARS = 24 * 1024;
 const TOOL_RESULT_PREVIEW_CHARS = 4 * 1024;
 
 interface ToolResultSpillContext {
@@ -42,7 +42,8 @@ export async function protectAgentToolResult<TDetails>(
   context: ToolResultSpillContext
 ): Promise<{ result: AgentToolResult<TDetails>; spilled: boolean; filePath?: string }> {
   const text = collectText(result.content);
-  if (text.length <= MAX_INLINE_TOOL_RESULT_CHARS) {
+  const maxInlineResultChars = toolMetadata(context.toolName).maxInlineResultChars;
+  if (text.length <= maxInlineResultChars) {
     return { result, spilled: false };
   }
   let spill: { summary: string; filePath?: string };
@@ -54,6 +55,7 @@ export async function protectAgentToolResult<TDetails>(
       toolCallId: context.toolCallId,
       toolName: context.toolName,
       chars: text.length,
+      maxInlineResultChars,
       error: error instanceof Error ? error.message : String(error)
     });
     spill = { summary: buildFallbackSummary(text, context) };

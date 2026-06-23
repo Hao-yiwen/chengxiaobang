@@ -143,6 +143,7 @@ export function settledSessionHistoryPatch(
           pendingTool: undefined,
           runningTool: undefined,
           toolActivity: undefined,
+          streamingPlan: undefined,
           streamText: "",
           thinking: "",
           thinkingStartedAt: undefined,
@@ -201,13 +202,14 @@ export function activeRunRecoveryPatch(
     // 同 run 恢复保留本地计时起点；异 run 清空，让 groupTurns 回退到 user.createdAt。
     activeRunStartedAt:
       state.activeRunId === snapshot.run.id ? state.activeRunStartedAt : undefined,
-  toolActivity: undefined,
-  streamText: "",
-  thinking: "",
-  thinkingStartedAt: undefined,
-  thinkingDurationMs: undefined,
-  ...markRunRunning(state, snapshot.run.id, snapshot.run.sessionId)
-};
+    toolActivity: undefined,
+    streamingPlan: undefined,
+    streamText: "",
+    thinking: "",
+    thinkingStartedAt: undefined,
+    thinkingDurationMs: undefined,
+    ...markRunRunning(state, snapshot.run.id, snapshot.run.sessionId)
+  };
 }
 
 export function shouldHandleRunEvent(

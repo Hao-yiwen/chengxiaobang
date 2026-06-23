@@ -14,6 +14,7 @@ export default defineConfig({
     "@earendil-works/pi-ai",
     "@earendil-works/pi-agent-core",
     "@modelcontextprotocol/sdk",
+    "@xmldom/xmldom",
     "pptxgenjs",
     "docx",
     "exceljs",

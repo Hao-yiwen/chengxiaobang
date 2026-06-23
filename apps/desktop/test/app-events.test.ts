@@ -189,6 +189,43 @@ describe("app event handling", () => {
     expect(useAppStore.getState().runHistory).toEqual([]);
   });
 
+  it("tracks streaming plan deltas until the final plan approval tool arrives", () => {
+    useAppStore.getState().handleRunEvent(
+      { type: "run_started", runId: "run_plan", sessionId: session.id },
+      { force: true }
+    );
+    useAppStore.getState().handleRunEvent({
+      type: "plan_delta",
+      runId: "run_plan",
+      contentIndex: 0,
+      toolCallId: "tool_plan",
+      markdown: "# 示例计划\n\n## Summary\n先确认计划。",
+      delta: "# 示例计划\n\n## Summary\n先确认计划。",
+      updatedAt: "2026-06-13T00:00:01.000Z"
+    });
+
+    expect(useAppStore.getState().streamingPlan).toMatchObject({
+      runId: "run_plan",
+      toolCallId: "tool_plan",
+      markdown: "# 示例计划\n\n## Summary\n先确认计划。"
+    });
+
+    useAppStore.getState().handleRunEvent({
+      type: "tool_call",
+      runId: "run_plan",
+      toolCall: toolCall({
+        id: "tool_plan",
+        runId: "run_plan",
+        name: "ExitPlanMode",
+        args: { plan: "# 示例计划\n\n## Summary\n先确认计划。" },
+        status: "pending_approval"
+      })
+    });
+
+    expect(useAppStore.getState().streamingPlan).toBeUndefined();
+    expect(useAppStore.getState().pendingTool?.id).toBe("tool_plan");
+  });
+
   it("tracks non-current run events without taking over the active composer", () => {
     const otherSessionId = "session_other";
 

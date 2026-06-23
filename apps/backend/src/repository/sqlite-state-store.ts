@@ -1201,8 +1201,8 @@ export class SqliteStateStore implements StateStore {
     await this.assertRunExists(toolCall.runId);
     this.run(
       `insert into tool_calls
-       (id, run_id, name, args_json, status, result, file_change_json, approval_json, started_at, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, run_id, name, args_json, status, result, preview_json, file_change_json, approval_json, started_at, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         toolCall.id,
         toolCall.runId,
@@ -1210,6 +1210,7 @@ export class SqliteStateStore implements StateStore {
         JSON.stringify(toolCall.args),
         toolCall.status,
         toolCall.result ?? null,
+        toolCall.preview ? JSON.stringify(toolCall.preview) : null,
         toolCall.fileChange ? JSON.stringify(toolCall.fileChange) : null,
         toolCall.approval ? JSON.stringify(toolCall.approval) : null,
         toolCall.startedAt ?? null,
@@ -1226,12 +1227,13 @@ export class SqliteStateStore implements StateStore {
     // args 一并更新：ExitPlanMode 的确认后参数会写回，跨 run 展示依赖最终参数。
     this.run(
       `update tool_calls
-       set args_json = ?, status = ?, result = ?, file_change_json = ?, approval_json = ?, started_at = ?, updated_at = ?
+       set args_json = ?, status = ?, result = ?, preview_json = ?, file_change_json = ?, approval_json = ?, started_at = ?, updated_at = ?
        where id = ?`,
       [
         JSON.stringify(toolCall.args),
         toolCall.status,
         toolCall.result ?? null,
+        toolCall.preview ? JSON.stringify(toolCall.preview) : null,
         toolCall.fileChange ? JSON.stringify(toolCall.fileChange) : null,
         toolCall.approval ? JSON.stringify(toolCall.approval) : null,
         toolCall.startedAt ?? null,

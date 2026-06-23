@@ -30,6 +30,7 @@ export interface RunCommandOptions {
 export interface RunShellCommandOptions {
   backgroundAfterMs?: number;
   signal?: AbortSignal;
+  shell?: ResolvedShellCommand;
 }
 
 export interface BackgroundShellCommandSnapshot {
@@ -76,6 +77,15 @@ export function resolveShellCommand(
   return {
     command: env.SHELL ?? "/bin/zsh",
     args: ["-lc"]
+  };
+}
+
+export function resolvePowerShellCommand(
+  env: NodeJS.ProcessEnv = process.env
+): ResolvedShellCommand {
+  return {
+    command: env.CHENGXIAOBANG_POWERSHELL_PATH ?? env.PWSH ?? "powershell.exe",
+    args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command"]
   };
 }
 
@@ -230,7 +240,7 @@ export async function runShellCommand(
   return new Promise((resolvePromise, reject) => {
     const startedAt = nowIso();
     const outputStream = createWriteStream(outputPath, { flags: "w" });
-    const shell = resolveShellCommand();
+    const shell = options.shell ?? resolveShellCommand();
     const child = spawn(shell.command, [...shell.args, command], {
       cwd,
       env: process.env,

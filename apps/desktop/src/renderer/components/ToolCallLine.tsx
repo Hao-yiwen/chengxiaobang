@@ -146,7 +146,7 @@ export function ToolCallLine({ toolCall, onOpenFile }: ToolCallLineProps) {
         </div>
       ) : open && diff ? (
         <div className="mt-1 overflow-hidden rounded-sm border">
-          <DiffView source={diff} />
+          {diff.kind === "text" ? <DiffView source={diff} /> : <DiffView blocks={diff.blocks} />}
         </div>
       ) : open && result ? (
         <pre className="mt-1 max-h-[220px] overflow-auto whitespace-pre-wrap break-words rounded-sm bg-muted/50 px-3 py-2 font-mono text-micro leading-relaxed text-muted-foreground">

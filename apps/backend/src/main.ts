@@ -77,7 +77,8 @@ export async function startBackend(config: BackendConfig) {
     enabledMarketSkills: () => skillMarketService.enabledMarketSkillNames(),
     enabledPluginRoots: () => pluginService.enabledPluginRoots(),
     disabledSkills: () => skillMarketService.disabledSkillNames(),
-    disabledCommands: () => skillMarketService.disabledCommandNames()
+    disabledCommands: () => skillMarketService.disabledCommandNames(),
+    skillUsage: skillMarketService
   });
   // MCP 桥接：懒加载已启用插件声明的 MCP server，把其工具注入 agent 工具集合。
   const mcpManager = new McpManager({
@@ -104,6 +105,9 @@ export async function startBackend(config: BackendConfig) {
       createAgentTools(workspacePath, {
         getFeishuSender: () => feishuServiceRef?.getSender(),
         webSearch: await webSearchConfigService.createSearcher(),
+        ...(runtime?.modelInputModalities
+          ? { modelInputModalities: runtime.modelInputModalities }
+          : {}),
         ...(runtime?.provider && runtime.apiKey
           ? {
               webFetch: {

@@ -1,5 +1,18 @@
 import type { ToolCall } from "@chengxiaobang/shared";
-import { createTextDiffSource, type TextDiffSource } from "./diff";
+import {
+  createTextDiffSource,
+  parseGitPatchDiff,
+  type PatchDiffBlock,
+  type TextDiffSource
+} from "./diff";
+
+export type ToolCallDiffSource =
+  | TextDiffSource
+  | {
+      kind: "patch";
+      fileName: string;
+      blocks: PatchDiffBlock[];
+    };
 
 /** 已完成工具调用的执行耗时；基于 startedAt，避免把审批等待时间算进去。 */
 export function toolCallDurationMs(toolCall: ToolCall): number | undefined {
@@ -35,8 +48,30 @@ export function shortenPath(path: string, segments = 2): string {
   return `…/${parts.slice(-segments).join("/")}`;
 }
 
-/** 文件写入类工具的文本 diff 源，直接由工具参数推导。 */
-export function buildToolCallDiff(toolCall: ToolCall): TextDiffSource | undefined {
+/** 文件写入类工具的 diff 源；优先使用后端按当前文件生成的真实预览。 */
+export function buildToolCallDiff(toolCall: ToolCall): ToolCallDiffSource | undefined {
+  if (toolCall.preview?.kind === "text_diff") {
+    return createTextDiffSource({
+      fileName: toolCall.preview.path,
+      oldText: toolCall.preview.oldText,
+      newText: toolCall.preview.newText,
+      cacheKey: `${toolCall.id}:${toolCall.updatedAt}:preview`
+    });
+  }
+  if (toolCall.fileChange?.patch) {
+    const blocks = parseGitPatchDiff({
+      patch: toolCall.fileChange.patch,
+      path: toolCall.fileChange.path,
+      cacheKeyPrefix: `${toolCall.id}:${toolCall.updatedAt}:fileChange`
+    });
+    if (blocks.length > 0) {
+      return {
+        kind: "patch",
+        fileName: toolCall.fileChange.path,
+        blocks
+      };
+    }
+  }
   if (toolCall.name === "Edit") {
     const { old_string, new_string } = toolCall.args;
     if (typeof old_string === "string" && typeof new_string === "string") {

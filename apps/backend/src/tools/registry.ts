@@ -1,4 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { isDeferredToolName, toolMetadata, type ModelInputModality } from "@chengxiaobang/shared";
 import type { FeishuSender } from "../feishu/feishu-bridge";
 import type { WebSearchExecutor } from "../web-search/web-search-config-service";
 import { createFsTools } from "./fs-tools";
@@ -14,77 +15,56 @@ import { isMcpToolName } from "../mcp/mcp-tool-bridge";
 
 export type PlanPhase = "none" | "draft" | "execute";
 
-const MUTATING_TOOLS = new Set<string>([
-  "Write",
-  "Edit",
-  "MakeDirectory",
-  "Bash",
-  // 主动向外发消息也需要用户同意；审批门控也能保证飞书只读运行不会自行发消息。
-  "FeishuSendMessage",
-  // 创建/取消定时任务会改变后台行为，需用户在审批卡上看到 cron 或执行时间后确认。
-  "ScheduleCreate",
-  "ScheduleCancel",
-  // 安装技能会向全局技能目录写入文件、改变后续可用能力，需用户确认。
-  "CreateSkill"
-]);
-
-const READ_ONLY_TOOLS = new Set<string>([
-  "LS",
-  "Read",
-  "Glob",
-  "Grep",
-  "BashStatus",
-  "BashCancel",
-  "GitStatus",
-  "GitDiff",
-  "WebFetch",
-  "WebSearch",
-  "ScheduleList",
-  "OcrExtractText",
-  "TodoRead"
-]);
-
-// memory 在起草阶段也可见：制定计划前先查记忆。
-const DRAFT_EXTRA_TOOLS = new Set<string>(["ExitPlanMode", "AskUserQuestion", "Skill", "Memory"]);
-
 export function requiresApproval(name: string): boolean {
-  return MUTATING_TOOLS.has(name) || isMcpToolName(name);
+  return toolMetadata(name).requiresApproval || isMcpToolName(name);
 }
 
 export function isMutatingTool(name: string): boolean {
   // 外部 MCP server 的工具可能产生任意副作用，一律按需审批，不依赖其自报的能力。
-  return MUTATING_TOOLS.has(name) || isMcpToolName(name);
+  return toolMetadata(name).mutating || isMcpToolName(name);
 }
 
 /** 计划模式下按阶段裁剪模型可见工具；飞书/headless 通道隐藏会阻塞的计划/提问工具。 */
 export function selectAgentTools(
   tools: AgentTool<any>[],
-  options: { planPhase: PlanPhase; viaFeishu: boolean; headless?: boolean; enableOcr?: boolean }
+  options: {
+    planPhase: PlanPhase;
+    viaFeishu: boolean;
+    headless?: boolean;
+    enableOcr?: boolean;
+    enabledDeferredToolNames?: ReadonlySet<string>;
+  }
 ): AgentTool<any>[] {
-  return tools.filter((tool) => {
-    if (tool.name === "OcrExtractText") {
-      return Boolean(options.enableOcr);
-    }
-    if (options.viaFeishu && (tool.name === "ExitPlanMode" || tool.name === "AskUserQuestion")) {
-      return false;
-    }
-    // 定时任务的无人值守执行：AskUserQuestion 无条件进入 pending_approval 等待，
-    // 没有人会回答，必须在工具层面隐藏而不是依赖自动拒绝。
-    if (options.headless && tool.name === "AskUserQuestion") {
-      return false;
-    }
-    // todo 是桌面端旁观进度，不在正式计划、飞书或无人值守场景里混用。
-    if (tool.name === "TodoRead" || tool.name === "TodoWrite") {
-      return options.planPhase === "none" && !options.viaFeishu && !options.headless;
-    }
-    if (options.planPhase === "draft") {
-      return READ_ONLY_TOOLS.has(tool.name) || DRAFT_EXTRA_TOOLS.has(tool.name);
-    }
-    if (options.planPhase === "execute") {
+  return tools
+    .filter((tool) => {
+      if (tool.name === "OcrExtractText") {
+        return Boolean(options.enableOcr);
+      }
+      if (options.viaFeishu && (tool.name === "ExitPlanMode" || tool.name === "AskUserQuestion")) {
+        return false;
+      }
+      // 定时任务的无人值守执行：AskUserQuestion 无条件进入 pending_approval 等待，
+      // 没有人会回答，必须在工具层面隐藏而不是依赖自动拒绝。
+      if (options.headless && tool.name === "AskUserQuestion") {
+        return false;
+      }
+      // todo 是桌面端旁观进度，不在正式计划、飞书或无人值守场景里混用。
+      if (tool.name === "TodoRead" || tool.name === "TodoWrite") {
+        return options.planPhase === "none" && !options.viaFeishu && !options.headless;
+      }
+      if (isDeferredAgentTool(tool.name, options.enabledDeferredToolNames)) {
+        return false;
+      }
+      if (options.planPhase === "draft") {
+        const metadata = toolMetadata(tool.name);
+        return metadata.readOnly || metadata.planDraftVisible;
+      }
+      if (options.planPhase === "execute") {
+        return tool.name !== "ExitPlanMode";
+      }
       return tool.name !== "ExitPlanMode";
-    }
-    return tool.name !== "ExitPlanMode";
-  });
+    })
+    .map(withToolExecutionMode);
 }
 
 /** 绑定到工作区的基础工具；飞书 sender 因构造顺序需要懒解析。 */
@@ -102,6 +82,8 @@ export function createAgentTools(
         skillMarketService?: SkillMarketService;
         /** OCR 工具运行时；提供后注册按需 OCR 只读工具。 */
         ocr?: OcrToolRuntime;
+        /** 当前 run 模型的输入能力；用于 Read 图片时按模型能力返回 image 或文本提示。 */
+        modelInputModalities?: readonly ModelInputModality[];
         /** 已就绪的 MCP 桥接工具；由 McpManager.getToolsForWorkspace 提供，并入工具集合。 */
         mcpTools?: AgentTool<any>[];
       }
@@ -111,7 +93,7 @@ export function createAgentTools(
       ? { getFeishuSender: optionsOrFeishuSender }
       : (optionsOrFeishuSender ?? {});
   return [
-    ...createFsTools(workspacePath),
+    ...createFsTools(workspacePath, { modelInputModalities: options.modelInputModalities }),
     ...createShellTools(workspacePath),
     ...createWebTools(options.webSearch, options.webFetch),
     ...createFeishuTools(options.getFeishuSender),
@@ -129,4 +111,22 @@ export function findTool(
   name: string
 ): AgentTool<any> | undefined {
   return tools.find((tool) => tool.name === name);
+}
+
+function isDeferredAgentTool(
+  name: string,
+  enabledDeferredToolNames?: ReadonlySet<string>
+): boolean {
+  if (enabledDeferredToolNames?.has(name)) {
+    return false;
+  }
+  return isMcpToolName(name) || isDeferredToolName(name);
+}
+
+function withToolExecutionMode(tool: AgentTool<any>): AgentTool<any> {
+  const metadata = toolMetadata(tool.name);
+  if (metadata.concurrencySafe) {
+    return tool;
+  }
+  return tool.executionMode === "sequential" ? tool : { ...tool, executionMode: "sequential" };
 }

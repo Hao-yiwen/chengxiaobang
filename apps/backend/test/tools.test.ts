@@ -7,6 +7,7 @@ import { createAgentTools, findTool, requiresApproval } from "../src/tools/regis
 import { assessToolApprovalRisk } from "../src/tools/approval-policy";
 import { buildToolFileChangeDetails } from "../src/tools/file-change";
 import { createShellTools } from "../src/tools/shell-tools";
+import { createToolSearchTool } from "../src/tools/tool-search-tool";
 import { resolveRgCommand } from "../src/tools/fs-tools";
 
 async function run(
@@ -64,6 +65,66 @@ describe("builtin agent tools", () => {
       "BashCancel",
       "WebFetch",
       "FeishuSendMessage"
+    ]);
+  });
+
+  it("registers PowerShell only for Windows shell tool catalogs", () => {
+    const windowsNames = createShellTools(dir, { platform: "win32" }).map((tool) => tool.name);
+    const macNames = createShellTools(dir, { platform: "darwin" }).map((tool) => tool.name);
+
+    expect(windowsNames).toContain("PowerShell");
+    expect(macNames).not.toContain("PowerShell");
+  });
+
+  it("ToolSearch loads deferred tools by exact name and keyword", async () => {
+    const enabledDeferredToolNames = new Set<string>();
+    let runtimeTools: AgentTool<any>[] = [];
+    runtimeTools = [
+      {
+        name: "mcp__demo__write",
+        label: "Demo writer",
+        description: "Write to demo service",
+        parameters: {} as never,
+        execute: async () => ({
+          content: [{ type: "text", text: "ok" }],
+          details: undefined
+        })
+      },
+      createToolSearchTool({
+        tools: () => runtimeTools,
+        enabledDeferredToolNames
+      })
+    ];
+
+    await expect(
+      run(runtimeTools, "ToolSearch", { query: "select:mcp__demo__write" })
+    ).resolves.toContain("mcp__demo__write");
+    expect(enabledDeferredToolNames.has("mcp__demo__write")).toBe(true);
+
+    enabledDeferredToolNames.clear();
+    await expect(run(runtimeTools, "ToolSearch", { query: "demo writer" })).resolves.toContain(
+      "mcp__demo__write"
+    );
+    expect(enabledDeferredToolNames.has("mcp__demo__write")).toBe(true);
+  });
+
+  it("Read 读取图片时按当前模型能力决定是否返回 image content", async () => {
+    const imagePath = join(dir, "sample.png");
+    await writeFile(imagePath, Buffer.from("89504e470d0a1a0a", "hex"));
+
+    const textOnlyTools = createAgentTools(dir, { modelInputModalities: ["text"] });
+    const textOnlyResult = await executeTool(textOnlyTools, "Read", { file_path: "sample.png" });
+    expect(textOnlyResult.content).toEqual([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("当前模型不支持图片原生输入")
+      })
+    ]);
+
+    const imageTools = createAgentTools(dir, { modelInputModalities: ["text", "image"] });
+    const imageResult = await executeTool(imageTools, "Read", { file_path: "sample.png" });
+    expect(imageResult.content).toEqual([
+      expect.objectContaining({ type: "image", mimeType: "image/png" })
     ]);
   });
 
@@ -198,6 +259,7 @@ describe("builtin agent tools", () => {
 
   it("Write returns diff details when replacing an existing text file", async () => {
     await writeFile(join(dir, "replace.txt"), "old\n", "utf8");
+    await run(tools, "Read", { file_path: "replace.txt" });
 
     const result = await executeTool(tools, "Write", {
       file_path: "replace.txt",
@@ -216,8 +278,70 @@ describe("builtin agent tools", () => {
     expect(result.details?.patch).toContain("+new");
   });
 
+  it("rejects replacing an existing file before a full Read", async () => {
+    await writeFile(join(dir, "replace-unread.txt"), "old\n", "utf8");
+
+    await expect(
+      run(tools, "Write", {
+        file_path: "replace-unread.txt",
+        content: "new\n"
+      })
+    ).rejects.toThrow("必须先用 Read 完整读取");
+  });
+
+  it("rejects replacing an existing file after only a partial Read", async () => {
+    await writeFile(join(dir, "replace-partial.txt"), "one\ntwo\nthree\n", "utf8");
+    await run(tools, "Read", { file_path: "replace-partial.txt", offset: 1, limit: 1 });
+
+    await expect(
+      run(tools, "Write", {
+        file_path: "replace-partial.txt",
+        content: "new\n"
+      })
+    ).rejects.toThrow("只读过部分内容");
+  });
+
+  it("allows replacing an existing file after a full Read", async () => {
+    await writeFile(join(dir, "replace-read.txt"), "old\n", "utf8");
+    await run(tools, "Read", { file_path: "replace-read.txt" });
+
+    await expect(
+      run(tools, "Write", {
+        file_path: "replace-read.txt",
+        content: "new\n"
+      })
+    ).resolves.toContain("已写入");
+    await expect(readFile(join(dir, "replace-read.txt"), "utf8")).resolves.toBe("new\n");
+  });
+
+  it("rejects Write when the file changed after Read", async () => {
+    await writeFile(join(dir, "replace-stale.txt"), "old\n", "utf8");
+    await run(tools, "Read", { file_path: "replace-stale.txt" });
+    await writeFile(join(dir, "replace-stale.txt"), "changed\n", "utf8");
+
+    await expect(
+      run(tools, "Write", {
+        file_path: "replace-stale.txt",
+        content: "new\n"
+      })
+    ).rejects.toThrow("重新 Read");
+  });
+
+  it("refreshes read state after Write so a follow-up overwrite can continue", async () => {
+    await run(tools, "Write", { file_path: "refresh-write.txt", content: "one\n" });
+
+    await expect(
+      run(tools, "Write", {
+        file_path: "refresh-write.txt",
+        content: "two\n"
+      })
+    ).resolves.toContain("已写入");
+    await expect(readFile(join(dir, "refresh-write.txt"), "utf8")).resolves.toBe("two\n");
+  });
+
   it("Edit requires a unique exact match unless replace_all is true", async () => {
     await writeFile(join(dir, "edit-all.txt"), "one\ntwo\none", "utf8");
+    await run(tools, "Read", { file_path: "edit-all.txt" });
 
     await expect(
       run(tools, "Edit", {
@@ -237,8 +361,65 @@ describe("builtin agent tools", () => {
     await expect(readFile(join(dir, "edit-all.txt"), "utf8")).resolves.toBe("ONE\ntwo\nONE");
   });
 
+  it("requires Read before Edit but does not require the read slice to contain old_string", async () => {
+    await writeFile(join(dir, "edit-partial-read.txt"), "header\ntarget\n", "utf8");
+    await run(tools, "Read", { file_path: "edit-partial-read.txt", offset: 1, limit: 1 });
+
+    await expect(
+      run(tools, "Edit", {
+        file_path: "edit-partial-read.txt",
+        old_string: "target",
+        new_string: "done"
+      })
+    ).resolves.toContain("已编辑");
+    await expect(readFile(join(dir, "edit-partial-read.txt"), "utf8")).resolves.toBe(
+      "header\ndone\n"
+    );
+  });
+
+  it("rejects Edit when the file has not been read", async () => {
+    await writeFile(join(dir, "edit-unread.txt"), "old\n", "utf8");
+
+    await expect(
+      run(tools, "Edit", {
+        file_path: "edit-unread.txt",
+        old_string: "old",
+        new_string: "new"
+      })
+    ).rejects.toThrow("必须先用 Read");
+  });
+
+  it("rejects Edit when the file changed after Read", async () => {
+    await writeFile(join(dir, "edit-stale.txt"), "old\n", "utf8");
+    await run(tools, "Read", { file_path: "edit-stale.txt" });
+    await writeFile(join(dir, "edit-stale.txt"), "changed\n", "utf8");
+
+    await expect(
+      run(tools, "Edit", {
+        file_path: "edit-stale.txt",
+        old_string: "changed",
+        new_string: "new"
+      })
+    ).rejects.toThrow("重新 Read");
+  });
+
+  it("preserves CRLF line endings when editing text files", async () => {
+    await writeFile(join(dir, "crlf.txt"), "first\r\nsecond\r\n", "utf8");
+    await run(tools, "Read", { file_path: "crlf.txt" });
+
+    await expect(
+      run(tools, "Edit", {
+        file_path: "crlf.txt",
+        old_string: "second",
+        new_string: "SECOND"
+      })
+    ).resolves.toContain("已编辑");
+    await expect(readFile(join(dir, "crlf.txt"), "utf8")).resolves.toBe("first\r\nSECOND\r\n");
+  });
+
   it("Edit returns diff details for replace_all edits", async () => {
     await writeFile(join(dir, "edit-details.txt"), "one\ntwo\none\n", "utf8");
+    await run(tools, "Read", { file_path: "edit-details.txt" });
 
     const result = await executeTool(tools, "Edit", {
       file_path: "edit-details.txt",
@@ -261,6 +442,7 @@ describe("builtin agent tools", () => {
 
   it("does not return diff details when Edit makes no content change", async () => {
     await writeFile(join(dir, "edit-noop.txt"), "same\n", "utf8");
+    await run(tools, "Read", { file_path: "edit-noop.txt" });
 
     const result = await executeTool(tools, "Edit", {
       file_path: "edit-noop.txt",
@@ -292,6 +474,7 @@ describe("builtin agent tools", () => {
     await expect(
       run(tools, "Edit", { file_path: "edit-args.txt", old_string: "", new_string: "x" })
     ).rejects.toThrow("old_string");
+    await run(tools, "Read", { file_path: "edit-args.txt" });
     await expect(
       run(tools, "Edit", { file_path: "edit-args.txt", old_string: "one", new_string: "ONE" })
     ).resolves.toContain("已编辑");
@@ -299,6 +482,7 @@ describe("builtin agent tools", () => {
 
   it("fails Edit when old_string is missing", async () => {
     await writeFile(join(dir, "a.txt"), "abc", "utf8");
+    await run(tools, "Read", { file_path: "a.txt" });
     await expect(
       run(tools, "Edit", { file_path: "a.txt", old_string: "zzz", new_string: "y" })
     ).rejects.toThrow("没有找到要替换的内容");
@@ -309,6 +493,27 @@ describe("builtin agent tools", () => {
     await expect(run(tools, "LS", { path: "a/b" })).resolves.toContain("c");
     // LS defaults to the workspace root.
     await expect(run(tools, "LS", {})).resolves.toContain("a");
+  });
+
+  it("rejects binary text operations and oversized writes", async () => {
+    await writeFile(join(dir, "archive.zip"), Buffer.from([0, 1, 2, 3]));
+
+    await expect(run(tools, "Read", { file_path: "archive.zip" })).rejects.toThrow("二进制");
+    await expect(
+      run(tools, "Write", {
+        file_path: "huge.txt",
+        content: "x".repeat(8 * 1024 * 1024 + 1)
+      })
+    ).rejects.toThrow("超大文本");
+  });
+
+  it("suggests a similar path when a file is missing", async () => {
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "src", "app.ts"), "export const ok = true;\n", "utf8");
+
+    await expect(run(tools, "Read", { file_path: "src/app.tss" })).rejects.toThrow(
+      "app.ts"
+    );
   });
 
   it("globs files recursively and ignores node_modules", async () => {
@@ -547,7 +752,9 @@ describe("FeishuSendMessage tool", () => {
     expect(requiresApproval("FeishuSendMessage")).toBe(true);
     expect(requiresApproval("Write")).toBe(true);
     expect(requiresApproval("Bash")).toBe(true);
+    expect(requiresApproval("PowerShell")).toBe(true);
     expect(requiresApproval("ScheduleCreate")).toBe(true);
+    expect(requiresApproval("ToolSearch")).toBe(false);
     expect(requiresApproval("BashStatus")).toBe(false);
     expect(requiresApproval("BashCancel")).toBe(false);
     expect(requiresApproval("Read")).toBe(false);
@@ -629,11 +836,22 @@ describe("FeishuSendMessage tool", () => {
       risk: "low",
       requiresGate: false
     });
+    expect(assessToolApprovalRisk("PowerShell", { command: "Get-ChildItem" })).toMatchObject({
+      risk: "low",
+      requiresGate: false
+    });
     expect(assessToolApprovalRisk("Bash", { command: "npm run dev" })).toMatchObject({
       risk: "low",
       requiresGate: false
     });
     expect(assessToolApprovalRisk("Bash", { command: "rm -rf build" })).toMatchObject({
+      risk: "high",
+      requiresGate: true,
+      smartVerdict: "deny"
+    });
+    expect(
+      assessToolApprovalRisk("PowerShell", { command: "Remove-Item -Recurse build" })
+    ).toMatchObject({
       risk: "high",
       requiresGate: true,
       smartVerdict: "deny"

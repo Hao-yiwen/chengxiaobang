@@ -75,6 +75,52 @@ describe("shortenPath", () => {
 });
 
 describe("buildToolCallDiff", () => {
+  it("prefers backend text diff previews over argument-derived diffs", () => {
+    const source = buildToolCallDiff(
+      toolCall({
+        name: "Write",
+        args: { file_path: "a.txt", content: "arg-only\n" },
+        preview: {
+          kind: "text_diff",
+          path: "a.txt",
+          oldText: "old\n",
+          newText: "preview\n"
+        }
+      })
+    );
+    expect(source).toMatchObject({
+      kind: "text",
+      fileName: "a.txt",
+      oldText: "old\n",
+      newText: "preview\n",
+      cacheKey: "tool_1:2026-06-08T00:00:01.200Z:preview"
+    });
+  });
+
+  it("uses completed fileChange patches before argument-derived diffs", () => {
+    const source = buildToolCallDiff(
+      toolCall({
+        name: "Write",
+        args: { file_path: "a.txt", content: "arg-only\n" },
+        fileChange: {
+          path: "a.txt",
+          operation: "write",
+          patch:
+            "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+patch\n",
+          additions: 1,
+          deletions: 1,
+          toolCallIds: ["tool_1"]
+        }
+      })
+    );
+
+    expect(source).toMatchObject({
+      kind: "patch",
+      fileName: "a.txt"
+    });
+    expect(source && source.kind === "patch" ? source.blocks.length : 0).toBeGreaterThan(0);
+  });
+
   it("diffs Edit old_string → new_string from its args", () => {
     const source = buildToolCallDiff(
       toolCall({

@@ -368,6 +368,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           thinkingDurationMs: undefined,
           activeRunStartedAt: undefined,
           events: [],
+          streamingPlan: undefined,
           toolActivity: undefined,
           runningTool: undefined,
           pendingTool: undefined,

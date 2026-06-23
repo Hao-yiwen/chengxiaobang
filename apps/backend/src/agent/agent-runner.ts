@@ -23,6 +23,7 @@ import {
   type ActiveRunSnapshot,
   type AskUserAnswer,
   type MessageAttachment,
+  type ModelVisibleSkill,
   type ModelInputModality,
   type ProposePlanArgs,
   type Project,
@@ -53,6 +54,7 @@ import { renderMemoryListing } from "../tools/memory-tools";
 import { createPlanTools } from "../tools/plan-tools";
 import { createScheduleTools } from "../tools/schedule-tools";
 import { SlashCommandService } from "../tools/slash-command-service";
+import { createToolSearchTool } from "../tools/tool-search-tool";
 import { createTodoTools } from "../tools/todo-tools";
 import { defaultSessionDir } from "../paths";
 import { ActiveRunRegistry } from "./active-runs";
@@ -143,6 +145,7 @@ export interface AgentToolRuntimeContext {
   signal?: AbortSignal;
   runId?: string;
   sessionId?: string;
+  modelInputModalities?: readonly ModelInputModality[];
 }
 
 export class AgentRunner {
@@ -179,6 +182,9 @@ export class AgentRunner {
           workspacePath,
           {
             ...(options.memoryDir ? { memoryDir: options.memoryDir } : {}),
+            ...(runtime?.modelInputModalities
+              ? { modelInputModalities: runtime.modelInputModalities }
+              : {}),
             ...(runtime?.provider && runtime.apiKey
               ? {
                   webFetch: {
@@ -366,27 +372,33 @@ export class AgentRunner {
         ? "execute"
         : "draft"
       : "none";
-    const tools = [
-      ...(await this.createTools(workspacePath)),
-      ...createTodoTools({
-        listToolCalls: () => this.store.listToolCallsForSession(session.id)
-      }),
-      ...createPlanTools({
-        getApprovedPlanArgs: () => undefined,
-        getAskUserAnswer: () => undefined,
-        loadSkill: async (skill) => this.loadSkillContent(skill, project)
-      }),
-      ...createScheduleTools({
-        store: this.store,
-        sessionId: session.id,
-        ...(session.feishuChatId ? { feishuChatId: session.feishuChatId } : {}),
-        ...(session.wechatChatId ? { wechatChatId: session.wechatChatId } : {})
-      })
-    ];
+    const enabledDeferredToolNames = new Set<string>();
+    const tools = attachToolSearchTool(
+      [
+        ...(await this.createTools(workspacePath)),
+        ...createTodoTools({
+          listToolCalls: () => this.store.listToolCallsForSession(session.id)
+        }),
+        ...createPlanTools({
+          getApprovedPlanArgs: () => undefined,
+          getAskUserAnswer: () => undefined,
+          loadSkill: async (skill) => this.loadSkillContent(skill, project),
+          recordSkillUsage: async (skill) => this.slashCommandService.recordSkillUsage(skill)
+        }),
+        ...createScheduleTools({
+          store: this.store,
+          sessionId: session.id,
+          ...(session.feishuChatId ? { feishuChatId: session.feishuChatId } : {}),
+          ...(session.wechatChatId ? { wechatChatId: session.wechatChatId } : {})
+        })
+      ],
+      enabledDeferredToolNames
+    );
     const availableTools = selectAgentTools(tools, {
       planPhase,
       viaFeishu,
-      headless: false
+      headless: false,
+      enabledDeferredToolNames
     }).map(toAgentDebugTool);
     const environment = await collectEnvironmentContext({
       workspacePath,
@@ -465,6 +477,7 @@ export class AgentRunner {
       model: options.model ?? session.model ?? providerBase.model,
       ...(effectiveReasoningMode ? { reasoningMode: effectiveReasoningMode } : {})
     };
+    const modelInputModalities = resolveProviderConfigModelInputModalities(provider, provider.model);
     const { project, workspacePath } = await this.resolveSessionWorkspace(session);
     const [rows, toolCalls, sessionCostCny, skills] = await Promise.all([
       this.store.listMessages(session.id),
@@ -480,26 +493,32 @@ export class AgentRunner {
         ? "execute"
         : "draft"
       : "none";
-    const tools = [
-      ...(await this.createTools(workspacePath)),
-      ...createTodoTools({
-        listToolCalls: () => this.store.listToolCallsForSession(session.id)
-      }),
-      ...createPlanTools({
-        getApprovedPlanArgs: () => undefined,
-        getAskUserAnswer: () => undefined,
-        loadSkill: async (skill) => this.loadSkillContent(skill, project)
-      }),
-      ...createScheduleTools({
-        store: this.store,
-        sessionId: session.id,
-        ...(session.feishuChatId ? { feishuChatId: session.feishuChatId } : {}),
-        ...(session.wechatChatId ? { wechatChatId: session.wechatChatId } : {})
-      })
-    ];
+    const enabledDeferredToolNames = new Set<string>();
+    const tools = attachToolSearchTool(
+      [
+        ...(await this.createTools(workspacePath, { modelInputModalities })),
+        ...createTodoTools({
+          listToolCalls: () => this.store.listToolCallsForSession(session.id)
+        }),
+        ...createPlanTools({
+          getApprovedPlanArgs: () => undefined,
+          getAskUserAnswer: () => undefined,
+          loadSkill: async (skill) => this.loadSkillContent(skill, project),
+          recordSkillUsage: async (skill) => this.slashCommandService.recordSkillUsage(skill)
+        }),
+        ...createScheduleTools({
+          store: this.store,
+          sessionId: session.id,
+          ...(session.feishuChatId ? { feishuChatId: session.feishuChatId } : {}),
+          ...(session.wechatChatId ? { wechatChatId: session.wechatChatId } : {})
+        })
+      ],
+      enabledDeferredToolNames
+    );
     const environment = await collectEnvironmentContext({
       workspacePath,
       model: provider.model,
+      inputModalities: modelInputModalities,
       includeGitStatus: false
     });
     const leadingMessages = await this.buildLeadingMessages({ workspacePath, skills });
@@ -521,7 +540,12 @@ export class AgentRunner {
         ...leadingMessages,
         ...buildAgentMessages(rows, session.compactedUpToMessageId)
       ],
-      tools: selectAgentTools(tools, { planPhase, viaFeishu, headless: false }),
+      tools: selectAgentTools(tools, {
+        planPhase,
+        viaFeishu,
+        headless: false,
+        enabledDeferredToolNames
+      }),
       sessionCostCny,
       compactedUpToMessageId: session.compactedUpToMessageId
     });
@@ -796,30 +820,36 @@ export class AgentRunner {
       const approvedPlans = new Map<string, ProposePlanArgs>();
       const askUserAnswers = new Map<string, AskUserAnswer>();
       const skills = await this.slashCommandService.listSkills(project);
-      const tools = [
-        ...(await this.createTools(workspacePath, {
-          provider,
-          apiKey,
-          signal: controller.signal,
-          runId,
-          sessionId: activeSession.id
-        })),
-        ...createTodoTools({
-          listToolCalls: () => this.store.listToolCallsForSession(activeSession.id),
-          runId
-        }),
-        ...createPlanTools({
-          getApprovedPlanArgs: (toolCallId) => approvedPlans.get(toolCallId),
-          getAskUserAnswer: (toolCallId) => askUserAnswers.get(toolCallId),
-          loadSkill: async (skill) => this.loadSkillContent(skill, project)
-        }),
-        ...createScheduleTools({
-          store: this.store,
-          sessionId: activeSession.id,
-          ...(activeSession.feishuChatId ? { feishuChatId: activeSession.feishuChatId } : {}),
-          ...(activeSession.wechatChatId ? { wechatChatId: activeSession.wechatChatId } : {})
-        })
-      ];
+      const enabledDeferredToolNames = new Set<string>();
+      const tools = attachToolSearchTool(
+        [
+          ...(await this.createTools(workspacePath, {
+            provider,
+            apiKey,
+            signal: controller.signal,
+            runId,
+            sessionId: activeSession.id,
+            modelInputModalities
+          })),
+          ...createTodoTools({
+            listToolCalls: () => this.store.listToolCallsForSession(activeSession.id),
+            runId
+          }),
+          ...createPlanTools({
+            getApprovedPlanArgs: (toolCallId) => approvedPlans.get(toolCallId),
+            getAskUserAnswer: (toolCallId) => askUserAnswers.get(toolCallId),
+            loadSkill: async (skill) => this.loadSkillContent(skill, project),
+            recordSkillUsage: async (skill) => this.slashCommandService.recordSkillUsage(skill)
+          }),
+          ...createScheduleTools({
+            store: this.store,
+            sessionId: activeSession.id,
+            ...(activeSession.feishuChatId ? { feishuChatId: activeSession.feishuChatId } : {}),
+            ...(activeSession.wechatChatId ? { wechatChatId: activeSession.wechatChatId } : {})
+          })
+        ],
+        enabledDeferredToolNames
+      );
       const planSnapshot = planMode
         ? derivePlanState(await this.store.listToolCallsForSession(activeSession.id))
         : undefined;
@@ -832,7 +862,8 @@ export class AgentRunner {
         : "none";
       const environment = await collectEnvironmentContext({
         workspacePath,
-        model: provider.model
+        model: provider.model,
+        inputModalities: modelInputModalities
       });
       const leadingMessages = await this.buildLeadingMessages({ workspacePath, skills });
       const systemPrompt = buildSystemPrompt({
@@ -866,6 +897,7 @@ export class AgentRunner {
           viaFeishu,
           headless,
           enableOcrTool,
+          enabledDeferredToolNames,
           signal: controller.signal
         });
       } catch (error) {
@@ -914,6 +946,7 @@ export class AgentRunner {
         viaFeishu,
         headless,
         enableOcrTool,
+        enabledDeferredToolNames,
         modelInputModalities,
         systemPrompt,
         leadingMessages,
@@ -1134,7 +1167,7 @@ export class AgentRunner {
    */
   private async buildLeadingMessages(input: {
     workspacePath: string;
-    skills: Array<{ name: string; description: string }>;
+    skills: ModelVisibleSkill[];
   }): Promise<PiMessage[]> {
     const messages: PiMessage[] = [];
     const projectInstruction = await this.loadProjectInstructionMessage(input.workspacePath);
@@ -1165,6 +1198,7 @@ export class AgentRunner {
     viaFeishu: boolean;
     headless: boolean;
     enableOcrTool: boolean;
+    enabledDeferredToolNames: ReadonlySet<string>;
     signal: AbortSignal;
   }): AsyncGenerator<
     StreamEvent,
@@ -1175,7 +1209,8 @@ export class AgentRunner {
       planPhase: options.planPhase,
       viaFeishu: options.viaFeishu,
       headless: options.headless,
-      enableOcr: options.enableOcrTool
+      enableOcr: options.enableOcrTool,
+      enabledDeferredToolNames: options.enabledDeferredToolNames
     });
     const usage = buildContextUsageReport({
       sessionId: options.session.id,
@@ -1279,6 +1314,7 @@ export class AgentRunner {
     viaFeishu: boolean;
     headless: boolean;
     enableOcrTool: boolean;
+    enabledDeferredToolNames: ReadonlySet<string>;
     modelInputModalities: ModelInputModality[];
     systemPrompt: string;
     initialUsage?: TokenUsage;
@@ -1428,9 +1464,20 @@ export class AgentRunner {
         planPhase: planPhase(),
         viaFeishu: options.viaFeishu,
         headless: options.headless,
-        enableOcr: enableOcrTool
+        enableOcr: enableOcrTool,
+        enabledDeferredToolNames: options.enabledDeferredToolNames
       })
     };
+    const sequentialToolCount =
+      currentAgentContext.tools?.filter((tool) => tool.executionMode === "sequential").length ?? 0;
+    log.info("已配置本轮工具并发执行策略", {
+      action: "agent.tool_execution_mode",
+      runId: options.runId,
+      sessionId: options.sessionId,
+      toolExecution: "parallel",
+      tools: currentAgentContext.tools?.length ?? 0,
+      sequentialTools: sequentialToolCount
+    });
     const modelStreamOptions = buildModelStreamOptions(options.provider);
 
     void runAgentLoopContinue(
@@ -1483,7 +1530,7 @@ export class AgentRunner {
           }
           return llmMessages;
         },
-        toolExecution: "sequential",
+        toolExecution: "parallel",
         beforeToolCall: translator.beforeToolCall,
         afterToolCall: (context) =>
           protectToolResultForContext(context, {
@@ -1498,7 +1545,8 @@ export class AgentRunner {
               planPhase: planPhase(),
               viaFeishu: options.viaFeishu,
               headless: options.headless,
-              enableOcr: enableOcrTool
+              enableOcr: enableOcrTool,
+              enabledDeferredToolNames: options.enabledDeferredToolNames
             })
           };
           return { context: currentAgentContext };
@@ -1648,6 +1696,21 @@ export class AgentRunner {
     }
     return content;
   }
+}
+
+function attachToolSearchTool(
+  tools: AgentTool<any>[],
+  enabledDeferredToolNames: Set<string>
+): AgentTool<any>[] {
+  let allTools: AgentTool<any>[] = [];
+  allTools = [
+    ...tools,
+    createToolSearchTool({
+      tools: () => allTools,
+      enabledDeferredToolNames
+    })
+  ];
+  return allTools;
 }
 
 function shouldEnableOcrTool(

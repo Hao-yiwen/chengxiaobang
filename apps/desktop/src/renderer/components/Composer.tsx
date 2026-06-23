@@ -1184,7 +1184,7 @@ export function Composer() {
   return (
     <div
       data-testid="composer-shell"
-      className="relative w-full rounded-lg border border-border bg-card transition-colors focus-within:border-hairline-strong/40 overflow-hidden"
+      className="relative w-full rounded-lg border border-border bg-card transition-colors focus-within:border-hairline-strong/40"
     >
       {queuedRuns.length > 0 ? (
         <QueuedRunStack

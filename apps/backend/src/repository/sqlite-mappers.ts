@@ -4,6 +4,7 @@ import {
   providerModelOverridesSchema,
   tokenUsageSchema,
   toolCallApprovalSchema,
+  toolCallPreviewSchema,
   type FileChange,
   type Message,
   type MessageAttachment,
@@ -306,6 +307,9 @@ export function mapToolCall(row: Row): ToolCall {
     args: JSON.parse(String(row.args_json)) as Record<string, unknown>,
     status: row.status as ToolCall["status"],
     result: row.result === null ? undefined : String(row.result),
+    ...(row.preview_json === null || row.preview_json === undefined
+      ? {}
+      : { preview: parseToolCallPreview(row.preview_json) }),
     ...(row.file_change_json === null || row.file_change_json === undefined
       ? {}
       : { fileChange: parseFileChange(row.file_change_json) }),
@@ -430,6 +434,17 @@ function parseToolCallApproval(value: unknown): ToolCall["approval"] {
     return toolCallApprovalSchema.parse(JSON.parse(String(value)));
   } catch (error) {
     log.warn("[state-store] 解析 tool_call approval 失败", { error });
+    return undefined;
+  }
+}
+
+function parseToolCallPreview(value: unknown): ToolCall["preview"] {
+  try {
+    return toolCallPreviewSchema.parse(JSON.parse(String(value)));
+  } catch (error) {
+    log.warn("[state-store] 解析 tool_call preview 失败", {
+      error: error instanceof Error ? error.message : String(error)
+    });
     return undefined;
   }
 }

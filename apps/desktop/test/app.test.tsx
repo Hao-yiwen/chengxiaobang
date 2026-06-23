@@ -1666,13 +1666,16 @@ describe("App", () => {
     act(() => {
       emit?.({ type: "message", runId: "run_1", message: reasoningMessage });
       emit?.({ type: "tool_call", runId: "run_1", toolCall: completedTool });
-      emit?.({ type: "run_end", runId: "run_1", status: "completed" });
     });
 
+    expect(within(chatScroll).getByText("写入 out.txt 中")).toBeInTheDocument();
     await waitFor(() => {
       expect(within(chatScroll).queryByText("写入 out.txt 中")).not.toBeInTheDocument();
       expect(within(chatScroll).getByText("写入 out.txt")).toBeInTheDocument();
       expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
+    });
+    act(() => {
+      emit?.({ type: "run_end", runId: "run_1", status: "completed" });
     });
     resolveStream?.();
   });
@@ -1781,8 +1784,8 @@ describe("App", () => {
         }
       });
     });
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    await waitFor(() => {
+      expect(within(chatScroll).getByText("抓取 https://a.example")).toBeInTheDocument();
     });
     expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
 
@@ -1816,6 +1819,139 @@ describe("App", () => {
     await waitFor(() => {
       expect(within(chatScroll).getByText(/思考中/)).toBeInTheDocument();
     });
+    expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
+    resolveStream?.();
+  });
+
+  it("keeps quickly completed WebFetch running for at least 200ms", async () => {
+    type StreamRunEvent = Parameters<ApiClient["streamRun"]>[1] extends (
+      event: infer E
+    ) => void
+      ? E
+      : never;
+    let emit: ((event: StreamRunEvent) => void) | undefined;
+    let resolveStream: (() => void) | undefined;
+    const webFetchTool = (status: ToolCall["status"]): ToolCall => ({
+      id: "tool_fetch_fast",
+      runId: "run_1",
+      name: "WebFetch",
+      args: { url: "https://fast.example", prompt: "提取正文" },
+      status,
+      ...(status === "running" ? { startedAt: "2026-06-13T00:00:01.000Z" } : {}),
+      result: status === "completed" ? "fast" : undefined,
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: status === "running" ? "2026-06-13T00:00:01.000Z" : "2026-06-13T00:00:01.010Z"
+    });
+    const client = createClient({
+      streamRun: vi.fn(async (_input, onEvent) => {
+        emit = onEvent;
+        onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+        return new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        });
+      })
+    });
+
+    render(<App client={client} />);
+    await selectDeepSeekForHome();
+
+    fireEvent.change(await screen.findByLabelText("输入消息"), {
+      target: { value: "快速抓取网页" }
+    });
+    fireEvent.click(screen.getByTitle("发送"));
+    const chatScroll = await screen.findByTestId("chat-scroll");
+    await waitFor(() => expect(emit).toBeDefined());
+
+    vi.useFakeTimers();
+    try {
+      act(() => {
+        emit?.({ type: "tool_call", runId: "run_1", toolCall: webFetchTool("running") });
+      });
+      expect(within(chatScroll).getByText("抓取网页中")).toBeInTheDocument();
+      expect(within(chatScroll).queryByText("抓取 https://fast.example")).not.toBeInTheDocument();
+
+      act(() => {
+        emit?.({ type: "tool_call", runId: "run_1", toolCall: webFetchTool("completed") });
+      });
+      expect(within(chatScroll).getByText("抓取网页中")).toBeInTheDocument();
+      expect(within(chatScroll).queryByText("抓取 https://fast.example")).not.toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(199);
+      });
+      expect(within(chatScroll).getByText("抓取网页中")).toBeInTheDocument();
+      expect(within(chatScroll).queryByText("抓取 https://fast.example")).not.toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(within(chatScroll).getByText("抓取 https://fast.example")).toBeInTheDocument();
+      expect(within(chatScroll).queryByText("抓取网页中")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+      resolveStream?.();
+    }
+  });
+
+  it("keeps a completed web group summary with the active 网络搜索 suffix", async () => {
+    type StreamRunEvent = Parameters<ApiClient["streamRun"]>[1] extends (
+      event: infer E
+    ) => void
+      ? E
+      : never;
+    let emit: ((event: StreamRunEvent) => void) | undefined;
+    let resolveStream: (() => void) | undefined;
+    const webFetchTool = (index: number): ToolCall => ({
+      id: `tool_fetch_${index}`,
+      runId: "run_1",
+      name: "WebFetch",
+      args: { url: `https://example-${index}.com`, prompt: "提取正文" },
+      status: "completed",
+      result: `网页 ${index}`,
+      createdAt: `2026-06-13T00:00:0${index}.000Z`,
+      updatedAt: `2026-06-13T00:00:0${index}.500Z`
+    });
+    const runningSearch: ToolCall = {
+      id: "tool_search_1",
+      runId: "run_1",
+      name: "WebSearch",
+      args: { query: "继续搜索更多资料" },
+      status: "running",
+      startedAt: "2026-06-13T00:00:05.000Z",
+      createdAt: "2026-06-13T00:00:05.000Z",
+      updatedAt: "2026-06-13T00:00:05.500Z"
+    };
+    const client = createClient({
+      streamRun: vi.fn(async (_input, onEvent) => {
+        emit = onEvent;
+        onEvent({ type: "run_started", runId: "run_1", sessionId: "session_1" });
+        return new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        });
+      })
+    });
+
+    render(<App client={client} />);
+    await selectDeepSeekForHome();
+
+    fireEvent.change(await screen.findByLabelText("输入消息"), {
+      target: { value: "搜索并抓取网页" }
+    });
+    fireEvent.click(screen.getByTitle("发送"));
+    const chatScroll = await screen.findByTestId("chat-scroll");
+    await waitFor(() => expect(emit).toBeDefined());
+
+    act(() => {
+      for (const index of [1, 2, 3, 4]) {
+        emit?.({ type: "tool_call", runId: "run_1", toolCall: webFetchTool(index) });
+      }
+      emit?.({ type: "tool_call", runId: "run_1", toolCall: runningSearch });
+    });
+
+    await waitFor(() => {
+      expect(within(chatScroll).getByText("抓取 5 个网页 · 网络搜索中")).toBeInTheDocument();
+    });
+    expect(within(chatScroll).queryByText(/继续搜索更多资料/)).not.toBeInTheDocument();
     expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
     resolveStream?.();
   });
@@ -2022,6 +2158,10 @@ describe("App", () => {
     fireEvent.click(await screen.findByTitle("停止"));
 
     await waitFor(() => expect(abort).toHaveBeenCalledWith("run_1"));
+    const chatScroll = await screen.findByTestId("chat-scroll");
+    await waitFor(() => {
+      expect(within(chatScroll).getByText("已中断本次运行")).toBeInTheDocument();
+    });
   });
 
   it("updates the sidebar title as soon as session_updated arrives mid-run", async () => {

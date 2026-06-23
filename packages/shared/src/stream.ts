@@ -21,6 +21,7 @@ export type ScheduledTaskTrigger = "schedule" | "manual";
  * agent 循环和客户端（渲染层、飞书）之间的 SSE 契约。
  *
  * - `delta`：按 text/thinking 通道流式输出模型增量。
+ * - `plan_delta`：计划模式下 ExitPlanMode 工具参数里的 plan 文本增量。
  * - `message`：传递已持久化消息（用户回显、assistant 轮次，以及 abort 时保留的部分回答）。
  * - `tool_call`：每次工具调用状态迁移都会触发，status 字段承载状态机。
  * - `session_updated`：传递 run 中途更新的会话元数据，让客户端不必等 run 结束再刷新。
@@ -39,6 +40,15 @@ export type StreamEvent =
       reasoningMode?: ReasoningMode;
     }
   | { type: "delta"; runId: string; channel: "text" | "thinking"; delta: string }
+  | {
+      type: "plan_delta";
+      runId: string;
+      contentIndex: number;
+      toolCallId?: string;
+      markdown: string;
+      delta: string;
+      updatedAt: string;
+    }
   | { type: "message"; runId: string; message: Message }
   | { type: "tool_activity"; runId: string; activity: ToolActivity }
   | { type: "tool_call"; runId: string; toolCall: ToolCall }
@@ -97,6 +107,15 @@ export const streamEventSchema = z.discriminatedUnion("type", [
     runId: z.string().min(1),
     channel: z.enum(["text", "thinking"]),
     delta: z.string()
+  }),
+  z.object({
+    type: z.literal("plan_delta"),
+    runId: z.string().min(1),
+    contentIndex: z.number().int().nonnegative(),
+    toolCallId: z.string().min(1).optional(),
+    markdown: z.string(),
+    delta: z.string(),
+    updatedAt: z.string().min(1)
   }),
   z.object({
     type: z.literal("message"),

@@ -64,7 +64,8 @@ export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 na
 
 ### 2.5 状态呈现
 
-- 组内有 running/pending → 头部 spinner + 当前工具的人话描述；非 `Write` / `Edit` 的运行中描述使用泛化文案（如 `… · 运行命令中`）。
+- 当前 run 里的真实活跃工具(`running` / `pending_smart_approval`)都会进入聊天时间线并显示执行态；只有 `Write` / `Edit` 显示路径预览,其他工具只显示泛化文案(如「抓取网页中」「网络搜索中」「运行命令中」),不展示 URL、搜索词、命令或路径。
+- 运行态有 200ms 最短可见时间:如果工具很快完成,原始历史立即更新为终态,但聊天时间线会用 running 快照覆盖到满 200ms,再切换到完成/失败/拒绝历史态。
 - 有 failed/rejected → 头部红色 mono 计数(`1 失败`),但**不自动展开**——流式中自动展开会引起视口跳动。
 - 待审批的活动工具只进 `pendingTool` 不进 `toolHistory`(store 的 tool_call 事件分支),所以审批中的工具只出现在底部 dock,不会同时出现在时间线里。
 
@@ -144,7 +145,7 @@ StreamEvent(tool_call)
 ### 文案与截断规则
 
 - 描述模板按工具取参:path 类用 `shortenPath`(尾两段);`search.query`/`glob.pattern` 截 40;`Bash.command` 压缩空白后截 60;`WebFetch.url` 截 60;`ExitPlanMode.title` 截 30。
-- 流式参数预览仅用于 `Write` / `Edit` 的 `file_path`;聊天时间线里的运行中工具也只允许 `Write` / `Edit` 显示路径，其他工具到完成历史或审批面板里再展示 URL、搜索词或命令。
+- 流式参数预览仅用于 `Write` / `Edit` 的 `file_path`;聊天时间线里的真实 running 工具可以显示泛化执行态,但 URL、搜索词或命令仍只在完成历史或审批面板里展示。
 - 摘要类别:read / edit / search / command / web / artifact / message / plan / schedule / other,组件层以 `" · "` 连接。
 - `ToolCall.name` 是普通 string(模型可能请求未知工具),未知名 → `chat.toolLine.fallback`(「调用 {{name}}」)+ 兜底图标。
 
@@ -155,9 +156,9 @@ StreamEvent(tool_call)
 | 测试文件 | 钉住的行为 |
 |---|---|
 | `test/tool-display.test.ts` | 全部内置名有专属图标且不落兜底;未知名兜底;每个 key 在 zh/en 文案中存在;截断规则;摘要聚合顺序 |
-| `test/timeline.test.ts`(扩) | 连续成组 / 消息打断 / 专属工具与交付物独立(含 running 状态) / Write 按扩展名分流 / 单工具退化 / 组 at = 首工具 |
+| `test/timeline.test.ts`(扩) | 连续成组 / 消息打断 / 当前 run running 工具可见 / 专属工具与交付物独立(含 running 状态) / Write 按扩展名分流 / 单工具退化 / 组 at = 首工具 |
 | `test/artifact.test.ts`(扩) | `isDeliverableToolCall` 忽略 status;`artifactFromToolCall` 回归 |
-| `test/tool-call-group.test.tsx` | 默认折叠摘要;展开逐条;行内再展开 result;running 头部描述;失败红标不展开;**rerender 追加后展开状态保留**;onOpenFile 透传 |
+| `test/tool-call-group.test.tsx` | 默认折叠摘要;展开逐条;行内再展开 result;running 头部泛化描述且不露参数;失败红标不展开;**rerender 追加后展开状态保留**;onOpenFile 透传 |
 | `test/tool-call-row.test.tsx`(改) | 人话描述替代裸工具名;时长/diff/预览/三个专属分支回归 |
 | `test/approval-dock.test.tsx` | shell 命令预览 + 允许/拒绝 decision;Edit 路径+diff 预览;AskUserQuestion 选项转发 `{approved, answer}`;决议即消失;无 pendingTool 渲染空 |
 | `test/app.test.tsx`(扩) | 集成:pending_approval 事件 → dock 出现在 composer 侧,消息流中无审批卡 |

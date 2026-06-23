@@ -79,6 +79,7 @@ export interface PlanToolRuntime {
   getApprovedPlanArgs(toolCallId: string): ProposePlanArgs | undefined;
   getAskUserAnswer(toolCallId: string): AskUserAnswer | undefined;
   loadSkill(skill: string, args?: string): Promise<string | undefined>;
+  recordSkillUsage?(skill: string): Promise<void>;
 }
 
 export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
@@ -134,6 +135,15 @@ export function createPlanTools(runtime: PlanToolRuntime): AgentTool<any>[] {
       if (!content) {
         log.warn(`[plan-tools] 技能不存在 skill=${params.skill}`);
         throw new Error(`技能不存在：${params.skill}`);
+      }
+      try {
+        await runtime.recordSkillUsage?.(params.skill);
+      } catch (error) {
+        log.warn("[plan-tools] 技能使用记录失败", {
+          action: "skill_usage.record_failed",
+          skill: params.skill,
+          error: error instanceof Error ? error.message : String(error)
+        });
       }
       log.info(`[plan-tools] 加载技能 skill=${params.skill} chars=${content.length}`);
       return textResult(content);

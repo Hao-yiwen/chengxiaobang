@@ -92,6 +92,7 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       args_json text not null,
       status text not null,
       result text,
+      preview_json text,
       file_change_json text,
       approval_json text,
       started_at text,
@@ -166,6 +167,7 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
   ensureColumn(connection, "tool_calls", "approval_json", "text");
   ensureColumn(connection, "tool_calls", "started_at", "text");
   ensureColumn(connection, "tool_calls", "file_change_json", "text");
+  ensureColumn(connection, "tool_calls", "preview_json", "text");
   ensureColumn(connection, "runs", "provider_id", "text");
   ensureColumn(connection, "runs", "provider_kind", "text");
   ensureColumn(connection, "runs", "model", "text");

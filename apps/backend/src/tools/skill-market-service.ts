@@ -21,10 +21,15 @@ const ENABLED_SETTING_KEY = "skills.enabledMarketSkills";
 const DISABLED_SKILLS_KEY = "skills.disabled";
 /** 被单项停用的插件来源命令名集合（黑名单），JSON 数组存 settings KV。 */
 const DISABLED_COMMANDS_KEY = "commands.disabled";
+/** 技能使用频率/最近使用时间，JSON 对象存 settings KV，用于模型可见清单排序。 */
+const SKILL_USAGE_KEY = "skills.usage";
 
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const SKILL_IMPORT_TIMEOUT_MS = 10_000;
 const SKILL_IMPORT_MAX_BYTES = 256 * 1024;
+const SKILL_USAGE_DEBOUNCE_MS = 60_000;
+
+const lastSkillUsageWriteAt = new Map<string, number>();
 
 type SettingsStore = Pick<StateStore, "getSetting" | "setSetting">;
 
@@ -34,7 +39,14 @@ type PluginRootsProvider = () => Promise<Array<{ pluginName: string; root: strin
 interface SkillFileMeta {
   name: string;
   description: string;
+  whenToUse?: string;
+  userInvocable: boolean;
   category: SkillCategory;
+}
+
+export interface SkillUsageStat {
+  usageCount: number;
+  lastUsedAt: number;
 }
 
 export interface SkillMarketServiceOptions {
@@ -75,6 +87,7 @@ export class SkillMarketService {
       this.disabledSkillNames(),
       this.pluginRoots()
     ]);
+    const usage = await this.skillUsageStats();
     const [builtin, market, custom] = await Promise.all([
       readSkillDir(this.builtinRoot),
       readSkillDir(this.marketRoot),
@@ -82,9 +95,9 @@ export class SkillMarketService {
     ]);
     const plugin = await this.readPluginSkillSummaries(pluginRoots, disabled);
     return [
-      ...builtin.map((meta) => toSummary(meta, "builtin", true)),
-      ...market.map((meta) => toSummary(meta, "market", enabled.has(meta.name))),
-      ...custom.map((meta) => toSummary(meta, "custom", true)),
+      ...builtin.map((meta) => toSummary(meta, "builtin", true, undefined, usage)),
+      ...market.map((meta) => toSummary(meta, "market", enabled.has(meta.name), undefined, usage)),
+      ...custom.map((meta) => toSummary(meta, "custom", true, undefined, usage)),
       ...plugin
     ];
   }
@@ -94,7 +107,10 @@ export class SkillMarketService {
    * 按 builtin → market → custom 顺序查找首个匹配的 name；找不到返回 undefined。
    */
   async getDetail(name: string): Promise<SkillDetail | undefined> {
-    const enabled = await this.enabledMarketSkillNames();
+    const [enabled, usage] = await Promise.all([
+      this.enabledMarketSkillNames(),
+      this.skillUsageStats()
+    ]);
     const sources = [
       { root: this.builtinRoot, source: "builtin" as const },
       { root: this.marketRoot, source: "market" as const },
@@ -116,7 +132,7 @@ export class SkillMarketService {
       }
       const isEnabled = source === "market" ? enabled.has(name) : true;
       return {
-        ...toSummary(hit, source, isEnabled),
+        ...toSummary(hit, source, isEnabled, undefined, usage),
         content: stripFrontmatter(raw),
         filePath
       };
@@ -137,7 +153,7 @@ export class SkillMarketService {
         return undefined;
       }
       return {
-        ...toSummary(hit, "plugin", !disabled.has(name), pluginName),
+        ...toSummary(hit, "plugin", !disabled.has(name), pluginName, usage),
         content: stripFrontmatter(raw),
         filePath
       };
@@ -212,6 +228,31 @@ export class SkillMarketService {
     log.info(`[skill-market] ${disabled ? "停用" : "启用"}命令 name=${name}`);
   }
 
+  async skillUsageStats(): Promise<Record<string, SkillUsageStat>> {
+    return parseSkillUsageStats(await this.store.getSetting(SKILL_USAGE_KEY));
+  }
+
+  async recordSkillUsage(name: string, now = Date.now()): Promise<void> {
+    const lastWrite = lastSkillUsageWriteAt.get(name);
+    if (lastWrite !== undefined && now - lastWrite < SKILL_USAGE_DEBOUNCE_MS) {
+      return;
+    }
+    lastSkillUsageWriteAt.set(name, now);
+    const stats = await this.skillUsageStats();
+    const existing = stats[name];
+    stats[name] = {
+      usageCount: (existing?.usageCount ?? 0) + 1,
+      lastUsedAt: now
+    };
+    await this.store.setSetting(SKILL_USAGE_KEY, JSON.stringify(stats));
+    log.info("[skill-market] 已记录技能使用", {
+      action: "skill_usage.recorded",
+      name,
+      usageCount: stats[name].usageCount,
+      lastUsedAt: new Date(now).toISOString()
+    });
+  }
+
   private async pluginRoots(): Promise<Array<{ pluginName: string; root: string }>> {
     return this.enabledPluginRoots ? this.enabledPluginRoots() : [];
   }
@@ -220,11 +261,12 @@ export class SkillMarketService {
     roots: Array<{ pluginName: string; root: string }>,
     disabled: Set<string>
   ): Promise<SkillSummary[]> {
+    const usage = await this.skillUsageStats();
     const summaries: SkillSummary[] = [];
     for (const { pluginName, root } of roots) {
       const skills = await readSkillDir(join(root, "skills"));
       for (const meta of skills) {
-        summaries.push(toSummary(meta, "plugin", !disabled.has(meta.name), pluginName));
+        summaries.push(toSummary(meta, "plugin", !disabled.has(meta.name), pluginName, usage));
       }
     }
     return summaries;
@@ -351,14 +393,23 @@ function toSummary(
   meta: SkillFileMeta,
   source: SkillSummary["source"],
   enabled: boolean,
-  pluginName?: string
+  pluginName?: string,
+  usage: Record<string, SkillUsageStat> = {}
 ): SkillSummary {
+  const stat = usage[meta.name];
   return {
     name: meta.name,
     description: meta.description,
+    ...(meta.whenToUse ? { whenToUse: meta.whenToUse } : {}),
     category: meta.category,
     source,
     enabled,
+    ...(stat
+      ? {
+          usageCount: stat.usageCount,
+          lastUsedAt: new Date(stat.lastUsedAt).toISOString()
+        }
+      : {}),
     ...(pluginName ? { pluginName } : {})
   };
 }
@@ -374,6 +425,40 @@ function parseNameSet(raw: string | undefined, label: string): Set<string> {
   } catch (error) {
     log.warn(`[skill-market] ${label}解析失败，按空集处理: ${String(error)}`);
     return new Set();
+  }
+}
+
+function parseSkillUsageStats(raw: string | undefined): Record<string, SkillUsageStat> {
+  if (!raw) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    const stats: Record<string, SkillUsageStat> = {};
+    for (const [name, value] of Object.entries(parsed)) {
+      if (!SKILL_NAME_PATTERN.test(name) || !value || typeof value !== "object") {
+        continue;
+      }
+      const usageCount = (value as { usageCount?: unknown }).usageCount;
+      const lastUsedAt = (value as { lastUsedAt?: unknown }).lastUsedAt;
+      if (
+        typeof usageCount === "number" &&
+        typeof lastUsedAt === "number" &&
+        Number.isInteger(usageCount) &&
+        Number.isFinite(lastUsedAt) &&
+        usageCount >= 0 &&
+        lastUsedAt > 0
+      ) {
+        stats[name] = { usageCount, lastUsedAt };
+      }
+    }
+    return stats;
+  } catch (error) {
+    log.warn(`[skill-market] 技能使用记录解析失败，按空记录处理: ${String(error)}`);
+    return {};
   }
 }
 
@@ -420,13 +505,19 @@ export function parseSkillFile(content: string): SkillFileMeta | undefined {
   }
   let name: string | undefined;
   let description: string | undefined;
+  let whenToUse: string | undefined;
+  let userInvocable = true;
   let category: string | undefined;
   for (const line of match[1].split(/\r?\n/)) {
-    const topLevel = line.match(/^(name|description):\s*(.+)$/);
+    const topLevel = line.match(/^(name|description|when_to_use|user-invocable|user_invocable):\s*(.+)$/);
     if (topLevel?.[1] === "name") {
       name = unquote(topLevel[2]);
     } else if (topLevel?.[1] === "description") {
       description = unquote(topLevel[2]);
+    } else if (topLevel?.[1] === "when_to_use") {
+      whenToUse = unquote(topLevel[2]);
+    } else if (topLevel?.[1] === "user-invocable" || topLevel?.[1] === "user_invocable") {
+      userInvocable = parseFrontmatterBoolean(topLevel[2], true);
     }
     const nested = line.match(/^\s+category:\s*(.+)$/);
     if (nested?.[1]) {
@@ -439,6 +530,8 @@ export function parseSkillFile(content: string): SkillFileMeta | undefined {
   return {
     name,
     description,
+    ...(whenToUse ? { whenToUse } : {}),
+    userInvocable,
     category: category === "coding" || category === "office" ? category : "other"
   };
 }
@@ -453,6 +546,17 @@ function unquote(value: string): string {
   const trimmed = value.trim();
   const quoted = trimmed.match(/^"(.*)"$|^'(.*)'$/);
   return (quoted?.[1] ?? quoted?.[2] ?? trimmed).trim();
+}
+
+function parseFrontmatterBoolean(value: string, fallback: boolean): boolean {
+  const normalized = unquote(value).toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  return fallback;
 }
 
 /**

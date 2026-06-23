@@ -1,6 +1,6 @@
 import { arch, release } from "node:os";
 import { posix, win32 } from "node:path";
-import type { TerminalExecResult } from "@chengxiaobang/shared";
+import type { ModelInputModality, TerminalExecResult } from "@chengxiaobang/shared";
 import { detectGitRepository, parsePorcelainStatus } from "../tools/git-changes";
 import { runCommand } from "../tools/shell";
 
@@ -14,6 +14,7 @@ export interface EnvironmentContext {
   shell: string;
   osVersion: string;
   model?: string;
+  inputModalities?: ModelInputModality[];
   /** 已渲染好的 Git 状态块;仅在 Git 仓库且要求采集时存在。 */
   gitStatus?: string;
 }
@@ -44,6 +45,7 @@ export function osVersionLabel(platform: NodeJS.Platform = process.platform): st
 export async function collectEnvironmentContext(input: {
   workspacePath: string;
   model?: string;
+  inputModalities?: ModelInputModality[];
   includeGitStatus?: boolean;
 }): Promise<EnvironmentContext> {
   const includeGitStatus = input.includeGitStatus ?? true;
@@ -53,6 +55,7 @@ export async function collectEnvironmentContext(input: {
     shell: currentShell(),
     osVersion: osVersionLabel(),
     ...(input.model ? { model: input.model } : {}),
+    ...(input.inputModalities ? { inputModalities: input.inputModalities } : {}),
     ...(git.block ? { gitStatus: git.block } : {})
   };
 }

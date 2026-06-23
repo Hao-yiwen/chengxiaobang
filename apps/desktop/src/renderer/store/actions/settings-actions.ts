@@ -425,6 +425,7 @@ export function createSettingsActions(set: AppStoreSet, get: AppStoreGet): Parti
           thinkingDurationMs: undefined,
           activeRunStartedAt: undefined,
           events: [],
+          streamingPlan: undefined,
           toolActivity: undefined,
           runningTool: undefined,
           pendingTool: undefined,

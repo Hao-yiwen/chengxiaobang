@@ -19,24 +19,19 @@ import {
   TerminalIcon,
   type FileIconSvgProps
 } from "@/assets/file-type-icons";
-import { proposePlanArgsSchema, proposedPlanTitle, type ToolCall } from "@chengxiaobang/shared";
+import {
+  proposePlanArgsSchema,
+  proposedPlanTitle,
+  toolDisplayCategory,
+  type ToolCall,
+  type ToolDisplayCategory
+} from "@chengxiaobang/shared";
 import { shortenPath } from "./tool-call";
 
 type Icon = ComponentType<FileIconSvgProps>;
 
 /** 工具在折叠摘要中聚合的类别。 */
-export type ToolCategory =
-  | "read"
-  | "edit"
-  | "search"
-  | "command"
-  | "web"
-  | "artifact"
-  | "message"
-  | "plan"
-  | "schedule"
-  | "memory"
-  | "other";
+export type ToolCategory = ToolDisplayCategory;
 
 const TOOL_ICONS: Record<string, Icon> = {
   Read: DocumentIcon,
@@ -47,12 +42,14 @@ const TOOL_ICONS: Record<string, Icon> = {
   Glob: FoldersIcon,
   Grep: SearchIcon,
   Bash: TerminalIcon,
+  PowerShell: TerminalIcon,
   BashStatus: TerminalIcon,
   BashCancel: TerminalIcon,
   GitStatus: GitBranchIcon,
   GitDiff: PullRequestOpenIcon,
   WebFetch: GlobeOutlineIcon,
   WebSearch: SearchIcon,
+  ToolSearch: SearchIcon,
   FeishuSendMessage: PointerOutlineIcon,
   ExitPlanMode: ChecklistPlanIcon,
   TodoRead: ChecklistPlanIcon,
@@ -84,35 +81,8 @@ export function toolIcon(name: string): Icon {
   return FALLBACK_TOOL_ICON;
 }
 
-const TOOL_CATEGORIES: Record<string, ToolCategory> = {
-  Read: "read",
-  Write: "edit",
-  Edit: "edit",
-  MakeDirectory: "edit",
-  LS: "search",
-  Glob: "search",
-  Grep: "search",
-  Bash: "command",
-  BashStatus: "command",
-  BashCancel: "command",
-  GitStatus: "command",
-  GitDiff: "command",
-  WebFetch: "web",
-  WebSearch: "web",
-  FeishuSendMessage: "message",
-  ExitPlanMode: "plan",
-  TodoRead: "plan",
-  TodoWrite: "plan",
-  ScheduleCreate: "schedule",
-  ScheduleList: "schedule",
-  ScheduleCancel: "schedule",
-  Memory: "memory",
-  OcrExtractText: "read",
-  CreateSkill: "edit"
-};
-
 export function toolCategory(name: string): ToolCategory {
-  return TOOL_CATEGORIES[name] ?? "other";
+  return toolDisplayCategory(name);
 }
 
 const CATEGORY_ICONS: Record<ToolCategory, Icon> = {
@@ -150,12 +120,14 @@ type ToolLineName =
   | "Glob"
   | "Grep"
   | "Bash"
+  | "PowerShell"
   | "BashStatus"
   | "BashCancel"
   | "GitStatus"
   | "GitDiff"
   | "WebFetch"
   | "WebSearch"
+  | "ToolSearch"
   | "FeishuSendMessage"
   | "ExitPlanMode"
   | "TodoRead"
@@ -176,8 +148,10 @@ type ToolLineRunningOnlyName =
   | "GlobGeneric"
   | "GrepGeneric"
   | "BashGeneric"
+  | "PowerShellGeneric"
   | "WebFetchGeneric"
   | "WebSearchGeneric"
+  | "ToolSearchGeneric"
   | "ExitPlanModeGeneric"
   | "SkillGeneric"
   | "CreateSkillGeneric"
@@ -266,10 +240,14 @@ function genericRunningToolLineLabel(toolCall: ToolCall): ToolLineLabel | undefi
       return { key: labelKey("chat.toolLineRunning", "GrepGeneric") };
     case "Bash":
       return { key: labelKey("chat.toolLineRunning", "BashGeneric") };
+    case "PowerShell":
+      return { key: labelKey("chat.toolLineRunning", "PowerShellGeneric") };
     case "WebFetch":
       return { key: labelKey("chat.toolLineRunning", "WebFetchGeneric") };
     case "WebSearch":
       return { key: labelKey("chat.toolLineRunning", "WebSearchGeneric") };
+    case "ToolSearch":
+      return { key: labelKey("chat.toolLineRunning", "ToolSearchGeneric") };
     case "ExitPlanMode":
       return { key: labelKey("chat.toolLineRunning", "ExitPlanModeGeneric") };
     case "Skill":
@@ -335,8 +313,15 @@ function toolLineLabelInNamespace(
         key: labelKey(namespace, "Bash"),
         params: { command: truncateEnd((stringArg(args, "command") ?? "").replace(/\s+/g, " ").trim(), 60) }
       };
+    case "PowerShell":
+      return {
+        key: labelKey(namespace, "PowerShell"),
+        params: { command: truncateEnd((stringArg(args, "command") ?? "").replace(/\s+/g, " ").trim(), 60) }
+      };
     case "WebFetch":
       return { key: labelKey(namespace, "WebFetch"), params: { url: truncateEnd(stringArg(args, "url") ?? "", 60) } };
+    case "ToolSearch":
+      return { key: labelKey(namespace, "ToolSearch"), params: { query: truncateEnd(stringArg(args, "query") ?? "", 40) } };
     case "ExitPlanMode":
       return {
         key: labelKey(namespace, "ExitPlanMode"),

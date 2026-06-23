@@ -399,6 +399,44 @@ describe("anchor-on-send scrolling", () => {
     });
   });
 
+  it("pauses auto-follow when the user scrolls slightly upward near the bottom", async () => {
+    const client = createClient();
+    const run = scriptedRun();
+    client.streamRun = run.streamRun as ApiClient["streamRun"];
+    render(<App client={client} />);
+    await screen.findByText("很长的回答");
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+
+    metrics.scrollHeight = 860;
+    metrics.rectTops.u2 = 10;
+    let runPromise!: Promise<void>;
+    act(() => {
+      runPromise = useAppStore.getState().runPrompt("新问题");
+    });
+    await screen.findByText("新问题");
+    expect(scroller.scrollTop).toBe(794);
+
+    // 距离底部仍在 120px 阈值内时，也应该尊重用户向上滚动的意图。
+    scroller.scrollTop = 774;
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+
+    metrics.scrollHeight = 1200;
+    await act(async () => {
+      run.afterEcho.resolve();
+      await Promise.resolve();
+    });
+    await screen.findByText("流式片段");
+    expect(scroller.scrollTop).toBe(774);
+    expect(screen.getByRole("button", { name: "回到底部" })).toBeInTheDocument();
+
+    await act(async () => {
+      run.afterDelta.resolve();
+      await runPromise;
+    });
+  });
+
   it("resumes auto-follow after clicking the scroll-to-bottom button", async () => {
     const client = createClient();
     const run = scriptedRun();

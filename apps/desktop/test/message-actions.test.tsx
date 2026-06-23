@@ -398,12 +398,42 @@ describe("MessageActions", () => {
       useAppStore.setState({
         isRunning: true,
         activeRunId: "run_1",
-        events: [{ type: "message", runId: "run_1", message: assistantMessage }]
+        activeRunLastAssistant: assistantMessage
       });
     });
 
     // 运行中的本轮 assistant 回复可能只是中间过程，先只保留用户消息复制。
     expect(screen.getAllByRole("button", { name: "复制" })).toHaveLength(1);
+  });
+
+  it("hides actions for an active-run interim assistant before the next tool event arrives", async () => {
+    const interimMessage: Message = {
+      id: "a_stream_interim",
+      sessionId: session.id,
+      role: "assistant",
+      content: "现在我来写生成脚本。先用 TodoWrite 规划步骤。",
+      createdAt: "2026-06-08T00:00:01.000Z"
+    };
+    const client = createClient({
+      listMessages: vi.fn(async () => [userMessage, interimMessage])
+    });
+
+    render(<App client={client} />);
+    await screen.findByText("现在我来写生成脚本。先用 TodoWrite 规划步骤。");
+
+    act(() => {
+      useAppStore.setState({
+        isRunning: true,
+        activeRunId: "run_1",
+        activeRunLastAssistant: interimMessage
+      });
+    });
+
+    // 此时还没有后续 tool_call 可辅助判定，中间 assistant 也不能闪出复制按钮。
+    expect(screen.getAllByRole("button", { name: "复制" })).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: "从这条消息创建分支" })
+    ).not.toBeInTheDocument();
   });
 
   it("hides actions for interim assistant messages followed by a tool call", async () => {
