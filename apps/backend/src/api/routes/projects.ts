@@ -6,7 +6,7 @@ import {
   projectUpdateSchema,
   type Project
 } from "@chengxiaobang/shared";
-import { collectGitChanges, collectGitFileDiff, detectGitRepository } from "../../tools/git-changes";
+import { collectGitChanges, collectGitFileDiff, collectGitInfo } from "../../tools/git-changes";
 import { listProjectDirectoryEntries, listProjectFiles } from "../../tools/workspace";
 import type { AppContext } from "../context";
 
@@ -14,10 +14,64 @@ import { getLogger } from "../../logging/logger";
 
 const log = getLogger({ module: "api/routes/projects" });
 
+function parseRequiredPage(query: (name: string) => string | undefined):
+  | { ok: true; limit: number; offset: number }
+  | { ok: false; error: string } {
+  const limitRaw = query("limit");
+  const offsetRaw = query("offset");
+  const limit = Number(limitRaw);
+  const offset = Number(offsetRaw);
+  if (!limitRaw || !offsetRaw || !Number.isInteger(limit) || !Number.isInteger(offset)) {
+    return { ok: false, error: "缺少有效的分页参数 limit/offset" };
+  }
+  if (limit < 1 || offset < 0) {
+    return { ok: false, error: "分页参数 limit/offset 超出范围" };
+  }
+  return { ok: true, limit, offset };
+}
+
+function parsePinned(value: string | undefined): boolean {
+  return value === "true";
+}
+
 export function projectRoutes(context: AppContext): Hono {
   const app = new Hono();
 
-  app.get("/", async (c) => c.json({ projects: await context.store.listProjects() }));
+  app.get("/", async (c) => {
+    const page = parseRequiredPage((name) => c.req.query(name));
+    if (!page.ok) {
+      return c.json({ error: page.error }, 400);
+    }
+    const sortParam = c.req.query("sort");
+    if (sortParam && sortParam !== "created" && sortParam !== "recent") {
+      return c.json({ error: "项目排序参数无效" }, 400);
+    }
+    const sort: "created" | "recent" = sortParam === "recent" ? "recent" : "created";
+    const pinned = parsePinned(c.req.query("pinned"));
+    const result = await context.store.listProjects({
+      limit: page.limit,
+      offset: page.offset,
+      sort,
+      pinned
+    });
+    log.debug("[projects] 返回项目分页列表", {
+      limit: page.limit,
+      offset: page.offset,
+      sort,
+      pinned,
+      count: result.items.length,
+      total: result.total
+    });
+    return c.json(result);
+  });
+
+  app.get("/:projectId", async (c) => {
+    const project = await context.store.getProject(c.req.param("projectId"));
+    if (!project) {
+      return c.json({ error: "项目不存在" }, 404);
+    }
+    return c.json({ project });
+  });
 
   app.post("/", async (c) => {
     const input = projectInputSchema.parse(await c.req.json());
@@ -95,9 +149,13 @@ export function projectRoutes(context: AppContext): Hono {
     if (!project) {
       return c.json({ error: "项目不存在" }, 404);
     }
-    const isRepo = await detectGitRepository(project.path);
-    log.debug(`[projects] Git 信息读取完成 projectId=${project.id} isRepo=${isRepo}`);
-    return c.json({ info: { isRepo } });
+    const info = await collectGitInfo(project.path);
+    log.debug("[projects] Git 信息读取完成", {
+      projectId: project.id,
+      isRepo: info.isRepo,
+      hasBranchName: Boolean(info.branchName)
+    });
+    return c.json({ info });
   });
 
   app.get("/:projectId/files", async (c) => {

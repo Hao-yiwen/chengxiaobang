@@ -94,7 +94,25 @@ beforeEach(() => {
 async function openProvidersSection(client: ApiClient): Promise<HTMLElement> {
   render(<App client={client} />);
   fireEvent.click(await screen.findByText("设置"));
-  fireEvent.click(await screen.findByText("供应商"));
+  if (!screen.queryByTestId("settings-provider-list")) {
+    fireEvent.click(await screen.findByRole("button", { name: "供应商" }));
+  }
+  return screen.findByTestId("settings-provider-list");
+}
+
+async function openAddProviderForm(): Promise<HTMLElement> {
+  const card = await screen.findByTestId("settings-provider-create-card");
+  const existingForm = within(card).queryByTestId("settings-provider-form");
+  if (existingForm) {
+    return existingForm;
+  }
+  fireEvent.click(within(card).getByRole("button", { name: "展开添加供应商" }));
+  return within(card).findByTestId("settings-provider-form");
+}
+
+async function openConfiguredProviderForm(name: string): Promise<HTMLElement> {
+  const list = await screen.findByTestId("settings-provider-list");
+  fireEvent.click(within(list).getByRole("button", { name: `展开 ${name}` }));
   return screen.findByTestId("settings-provider-form");
 }
 
@@ -148,7 +166,9 @@ async function clickCascadeConfirm(): Promise<void> {
 
 describe("设置页供应商：级联选择后展开表单", () => {
   it("starts with one cascaded provider select and expands the form after picking a provider", async () => {
-    const form = await openProvidersSection(createClient());
+    await openProvidersSection(createClient());
+    expect(screen.queryByTestId("settings-provider-form")).not.toBeInTheDocument();
+    const form = await openAddProviderForm();
 
     // 初始只有一个级联选择，不直接铺开全部供应商或整张表单。
     expect(
@@ -172,16 +192,57 @@ describe("设置页供应商：级联选择后展开表单", () => {
     expect(within(form).getByLabelText("Base URL")).toHaveValue("https://api.deepseek.com");
     expect(within(form).getByLabelText("API Key")).toBeInTheDocument();
 
-    // 取消后回到类型选择阶段。
+    // 已有供应商时取消会收起新增卡片，未保存草稿不再留在页面上。
     fireEvent.click(within(form).getByRole("button", { name: "取消" }));
-    expect(within(form).queryByLabelText("Base URL")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("settings-provider-form")).not.toBeInTheDocument();
+  });
+
+  it("shows the empty provider card expanded when no provider is configured", async () => {
+    await openProvidersSection(createClient({ listProviders: vi.fn(async () => []) }));
+    const card = screen.getByTestId("settings-provider-create-card");
+
+    expect(within(card).getByRole("button", { name: "折叠添加供应商" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(within(card).getByText("请先配置至少一个带 API Key 的供应商，保存后就可以开始使用。")).toBeInTheDocument();
+    expect(within(card).getByText("选择区域和供应商")).toBeInTheDocument();
+  });
+
+  it("moves a newly saved provider above the add-provider card", async () => {
+    let currentProviders: ProviderConfig[] = [];
+    const listProviders = vi.fn(async () => currentProviders);
+    const saveProvider = vi.fn(async (_input: ProviderInput) => {
+      currentProviders = [deepseek];
+      return deepseek;
+    });
+    await openProvidersSection(
+      createClient({ listProviders, saveProvider: saveProvider as never })
+    );
+    const form = await openAddProviderForm();
+
+    await chooseProviderFromCascade(form, "国内供应商", "DeepSeek");
+    fireEvent.change(within(form).getByLabelText("API Key"), { target: { value: "sk-test" } });
+    fireEvent.click(within(form).getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("settings-provider-card-deepseek")).toBeInTheDocument()
+    );
+    const providerCard = screen.getByTestId("settings-provider-card-deepseek");
+    const createCard = screen.getByTestId("settings-provider-create-card");
+    expect(providerCard.compareDocumentPosition(createCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(createCard).getByRole("button", { name: "展开添加供应商" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
   });
 });
 
 describe("设置页供应商：保存校验", () => {
   it("blocks saving until Base URL and API Key are filled", async () => {
     const saveProvider = vi.fn(async (_input: ProviderInput) => deepseek);
-    const form = await openProvidersSection(createClient({ saveProvider: saveProvider as never }));
+    await openProvidersSection(createClient({ saveProvider: saveProvider as never }));
+    const form = await openAddProviderForm();
 
     await chooseProviderFromCascade(form, "国内供应商", "DeepSeek");
     fireEvent.change(within(form).getByLabelText("Base URL"), { target: { value: "不是网址" } });
@@ -194,7 +255,8 @@ describe("设置页供应商：保存校验", () => {
 
   it("saves one provider with catalog defaults and no model overrides", async () => {
     const saveProvider = vi.fn(async (_input: ProviderInput) => deepseek);
-    const form = await openProvidersSection(createClient({ saveProvider: saveProvider as never }));
+    await openProvidersSection(createClient({ saveProvider: saveProvider as never }));
+    const form = await openAddProviderForm();
 
     await chooseProviderFromCascade(form, "国内供应商", "DeepSeek");
     expect(within(form).queryByText("启用的模型")).not.toBeInTheDocument();
@@ -218,7 +280,8 @@ describe("设置页供应商：保存校验", () => {
 
   it("blocks saving when all models are cleared", async () => {
     const saveProvider = vi.fn(async (_input: ProviderInput) => deepseek);
-    const form = await openProvidersSection(createClient({ saveProvider: saveProvider as never }));
+    await openProvidersSection(createClient({ saveProvider: saveProvider as never }));
+    const form = await openAddProviderForm();
 
     await chooseProviderFromCascade(form, "国内供应商", "DeepSeek");
     if (!screen.queryByText("清空")) {
@@ -245,15 +308,14 @@ describe("设置页供应商：保存校验", () => {
       }
     };
     const saveProvider = vi.fn(async (_input: ProviderInput) => deepseek);
-    const form = await openProvidersSection(
+    await openProvidersSection(
       createClient({
         listProviders: vi.fn(async () => [providerWithLegacyOverride, kimi]),
         saveProvider: saveProvider as never
       })
     );
-    const list = screen.getByTestId("settings-provider-list");
+    const form = await openConfiguredProviderForm("DeepSeek");
 
-    fireEvent.click(within(list).getByRole("button", { name: /^DeepSeek/ }));
     expect(within(form).queryByText("工具调用上限")).not.toBeInTheDocument();
     expect(within(form).queryByLabelText(/工具调用上限/)).not.toBeInTheDocument();
     fireEvent.click(within(form).getByRole("button", { name: "保存" }));
@@ -263,7 +325,8 @@ describe("设置页供应商：保存校验", () => {
   });
 
   it("does not offer custom providers from the new-provider picker", async () => {
-    const form = await openProvidersSection(createClient());
+    await openProvidersSection(createClient());
+    const form = await openAddProviderForm();
 
     openProviderCascade(form);
 
@@ -289,29 +352,41 @@ describe("设置页供应商：列表选中与删除", () => {
     );
     const list = screen.getByTestId("settings-provider-list");
 
-    expect(within(list).getByRole("button", { name: /^DeepSeek/ })).toBeInTheDocument();
-    expect(within(list).getByRole("button", { name: /^Kimi/ })).toBeInTheDocument();
+    expect(within(list).getByRole("button", { name: "展开 DeepSeek" })).toBeInTheDocument();
+    expect(within(list).getByRole("button", { name: "展开 Kimi" })).toBeInTheDocument();
     expect(within(list).queryByText("OpenAI")).not.toBeInTheDocument();
   });
 
   it("does not show an in-use badge and opens providers for editing", async () => {
-    const form = await openProvidersSection(createClient());
+    await openProvidersSection(createClient());
     const list = screen.getByTestId("settings-provider-list");
 
     // 已配置的供应商都会出现在模型选择器中，设置页不再标记单个「使用中」。
     expect(within(list).queryByText("使用中")).not.toBeInTheDocument();
-    const deepseekRow = within(list).getByRole("button", { name: /^DeepSeek/ });
+    const deepseekRow = within(list).getByRole("button", { name: "展开 DeepSeek" });
     expect(deepseekRow).not.toHaveTextContent("使用中");
 
-    const kimiRow = within(list).getByRole("button", { name: /^Kimi/ });
+    const kimiRow = within(list).getByRole("button", { name: "展开 Kimi" });
     expect(kimiRow).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(kimiRow);
 
-    expect(kimiRow).toHaveAttribute("aria-pressed", "true");
+    const openKimiRow = within(list).getByRole("button", { name: "折叠 Kimi" });
+    expect(openKimiRow).toHaveAttribute("aria-pressed", "true");
     // 选中后表单进入编辑态：连接字段回填，密钥提示保持不变。
+    const form = await screen.findByTestId("settings-provider-form");
     expect(within(form).getByText("Kimi")).toBeInTheDocument();
     expect(within(form).getByLabelText("Base URL")).toHaveValue("https://api.moonshot.ai/v1");
     expect(within(form).getByPlaceholderText("已保存 API Key，留空保持不变")).toBeInTheDocument();
+
+    fireEvent.click(within(list).getByRole("button", { name: "展开 DeepSeek" }));
+    expect(within(list).getByRole("button", { name: "折叠 DeepSeek" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(within(list).getByRole("button", { name: "展开 Kimi" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
   });
 
   it("deletes a configured provider straight from the list", async () => {

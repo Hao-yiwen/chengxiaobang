@@ -245,7 +245,7 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
 - `registry.ts`:`createAgentTools(workspacePath, options)` 汇集文件、Shell、Web、Memory、OCR、技能、MCP 等工厂;`requiresApproval(name)` / `isMutatingTool(name)` 由 `toolMetadata` 与 MCP 规则共同决定。
 - `selectAgentTools()` 会按计划阶段、飞书/headless 通道、OCR 条件、deferred 工具启用集合裁剪模型可见工具。计划草稿阶段只开放 read-only 与 `planDraftVisible` 工具;正式执行阶段隐藏 `ExitPlanMode`;飞书/headless 隐藏会阻塞的提问/计划工具。
 - `workspace.ts`:`safeResolve` 强制路径不逃逸工作目录;Glob/Grep 的路径边界与忽略规则(忽略 node_modules/.git/dist 等);`listProjectFiles` 供 @-mention 自动补全。`Grep` 依赖 ripgrep,桌面打包时随平台 `rg/rg.exe` 打入并通过 `CHENGXIAOBANG_RG_PATH` 传给后端。
-- Shell 命令通过 `Bash`/`PowerShell` 的 `timeout` / `run_in_background` 选择等待策略：默认前台等待 15 秒后转后台，`run_in_background=true` 立即转后台，`timeout` 最多等待 600000ms 后转后台；输出持续写入工作区文件,再由 `BashStatus` 查询状态、`BashCancel` 主动终止;详见 [Shell 执行与后台命令](./shell-background-execution.md)。
+- Shell 命令通过 `Bash`/`PowerShell` 的 `timeout` / `run_in_background` 选择等待策略：默认前台等待 15 秒后转后台，`run_in_background=true` 立即转后台，`timeout` 最多等待 600000ms 后转后台；输出持续写入 `dataDir` 下的全局运行产物文件,再由 `BashStatus` 查询状态、`BashCancel` 主动终止;详见 [Shell 执行与后台命令](./shell-background-execution.md)。
 - 参数校验由 pi 在执行前按 TypeBox schema 完成,非法参数直接变成错误工具结果(不经 beforeToolCall)。
 
 ### 4.5.1 插件、MCP 与技能市场

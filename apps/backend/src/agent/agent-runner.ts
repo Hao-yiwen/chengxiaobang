@@ -1,4 +1,5 @@
 import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import {
   runAgentLoopContinue,
   type AgentContext,
@@ -56,7 +57,8 @@ import { createScheduleTools } from "../tools/schedule-tools";
 import { SlashCommandService } from "../tools/slash-command-service";
 import { createToolSearchTool } from "../tools/tool-search-tool";
 import { createTodoTools } from "../tools/todo-tools";
-import { defaultSessionDir } from "../paths";
+import { defaultDataDir, defaultSessionDir } from "../paths";
+import { SHELL_GLOBAL_OUTPUT_DIR } from "../tools/shell";
 import { ActiveRunRegistry } from "./active-runs";
 import { ApprovalQueue } from "./approval-queue";
 import {
@@ -83,7 +85,7 @@ import {
   shouldAutoCompactContext
 } from "./context-usage";
 import { generateSessionTitle, normalizeTitle } from "./session-title";
-import { protectToolResultForContext } from "./tool-result-spill";
+import { protectToolResultForContext, TOOL_RESULT_SPILL_DIR } from "./tool-result-spill";
 import { createSmartApprovalJudge, type SmartApprovalJudge } from "./smart-approval";
 import {
   UsageCostLedgerService,
@@ -131,6 +133,10 @@ export interface AgentRunnerOptions {
   providerRepository?: ProviderRepository;
   /** 项目级工具审批信任服务；默认使用 StateStore settings KV。 */
   projectApprovalTrustService?: ProjectApprovalTrustService;
+  /** 长工具结果的全局落盘目录，默认位于 data-dir/tool-results。 */
+  toolResultSpillDir?: string;
+  /** 后台 shell 输出的全局落盘目录，默认位于 data-dir/shell-outputs。 */
+  shellOutputDir?: string;
 }
 
 export interface ResolvedSessionWorkspace {
@@ -168,6 +174,8 @@ export class AgentRunner {
   private readonly providerRepository: ProviderRepository;
   private readonly projectApprovalTrustService: ProjectApprovalTrustService;
   private readonly memoryDir?: string;
+  private readonly toolResultSpillDir: string;
+  private readonly shellOutputDir: string;
 
   constructor(
     private readonly store: StateStore,
@@ -175,6 +183,9 @@ export class AgentRunner {
     options: AgentRunnerOptions = {}
   ) {
     this.memoryDir = options.memoryDir;
+    this.toolResultSpillDir =
+      options.toolResultSpillDir ?? join(defaultDataDir(), TOOL_RESULT_SPILL_DIR);
+    this.shellOutputDir = options.shellOutputDir ?? join(defaultDataDir(), SHELL_GLOBAL_OUTPUT_DIR);
     this.createTools =
       options.createTools ??
       ((workspacePath, runtime) =>
@@ -185,6 +196,8 @@ export class AgentRunner {
             ...(runtime?.modelInputModalities
               ? { modelInputModalities: runtime.modelInputModalities }
               : {}),
+            shellOutputDir: this.shellOutputDir,
+            ...(runtime?.runId ? { runId: runtime.runId } : {}),
             ...(runtime?.provider && runtime.apiKey
               ? {
                   webFetch: {
@@ -1534,7 +1547,7 @@ export class AgentRunner {
         beforeToolCall: translator.beforeToolCall,
         afterToolCall: (context) =>
           protectToolResultForContext(context, {
-            workspacePath: options.workspacePath,
+            toolResultSpillDir: this.toolResultSpillDir,
             runId: options.runId
           }),
         shouldStopAfterTurn: translator.shouldStopAfterTurn,

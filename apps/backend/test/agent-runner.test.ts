@@ -12,6 +12,7 @@ import {
 } from "@chengxiaobang/shared";
 import { AgentRunner, type AgentRunnerOptions } from "../src/agent/agent-runner";
 import { TOOL_RESULT_SPILL_DIR } from "../src/agent/tool-result-spill";
+import { defaultDataDir } from "../src/paths";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 import { MemorySecretStore } from "../src/secrets/secret-store";
 import { SlashCommandService } from "../src/tools/slash-command-service";
@@ -1563,9 +1564,10 @@ describe("AgentRunner", () => {
     );
     const runId = started?.type === "run_started" ? started.runId : "";
     const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
+    const spillRoot = join(defaultDataDir(), TOOL_RESULT_SPILL_DIR);
 
     expect(summary).toContain("结果过长，已写入文件");
-    expect(summary).toContain(`${TOOL_RESULT_SPILL_DIR}/${runId}/`);
+    expect(summary).toContain(join(spillRoot, runId));
     expect(summary).toContain("DIRECT_START");
     expect(summary).toContain("DIRECT_END");
     expect(summary).not.toContain("DIRECT_MIDDLE");
@@ -1584,11 +1586,19 @@ describe("AgentRunner", () => {
     const spillPathMatch = summary.match(/完整结果路径：(.+)/);
     expect(spillPathMatch?.[1]).toBeTruthy();
     const spillPath = spillPathMatch![1]!;
-    const spilledContent = await readFile(isAbsolute(spillPath) ? spillPath : join(dir, spillPath), "utf8");
+    expect(isAbsolute(spillPath)).toBe(true);
+    expect(spillPath.startsWith(spillRoot)).toBe(true);
+    const spilledContent = await readFile(spillPath, "utf8");
     expect(spilledContent).toContain("large.txt 的第 1-5 行");
     expect(spilledContent).toContain("1\tDIRECT_START");
     expect(spilledContent).toContain("3\tDIRECT_MIDDLE");
     expect(spilledContent).toContain("5\tDIRECT_END");
+    await expect(
+      readFile(
+        join(dir, ".chengxiaobang", "tool-results", runId, "large_read_tool-Read.txt"),
+        "utf8"
+      )
+    ).rejects.toThrow();
   });
 
   it("expands pi prompt template slash commands before model streaming", async () => {

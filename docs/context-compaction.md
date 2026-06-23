@@ -14,7 +14,7 @@
 
 - `Message.kind = "compaction_summary"`：一条 assistant 摘要消息，保存模型生成的压缩摘要。
 - `Session.compactedUpToMessageId`：指向已经被摘要覆盖到的最后一条普通消息。
-- `.chengxiaobang/tool-results/**`：超长工具结果的完整落盘位置，只服务于防止工具结果直接进入模型上下文。
+- `<dataDir>/tool-results/**`：超长工具结果的完整落盘位置，只服务于防止工具结果直接进入模型上下文；默认在 `~/.chengxiaobang/data/tool-results/**`。
 
 运行时大致顺序：
 
@@ -176,10 +176,10 @@ autoCompactThresholdTokens = 模型显式 autoCompactThresholdTokens
 当前策略：
 
 - 单次工具文本结果不超过 `24KB`：原样进入上下文。
-- 超过 `24KB`：完整结果写入工作区文件：
+- 超过 `24KB`：完整结果写入后端 `dataDir` 下的全局运行产物目录：
 
 ```text
-.chengxiaobang/tool-results/<runId>/<toolCallId>-<toolName>.txt
+<dataDir>/tool-results/<runId>/<toolCallId>-<toolName>.txt
 ```
 
 - 返回给模型的内容替换为短摘要，包含：
@@ -215,7 +215,7 @@ autoCompactThresholdTokens = 模型显式 autoCompactThresholdTokens
 | 最近消息保留数 | `4` | 每次摘要压缩都会保留最后 4 条普通消息 |
 | 默认自动压缩比例 | YAML `runtimeDefaults.autoCompactThresholdRatio = 0.8` | 未配置显式 tokens 时，达到模型窗口 80% 触发自动压缩 |
 | DeepSeek V4 窗口 | `1,000,000` tokens | YAML 显式压缩阈值 `800,000` tokens |
-| 长工具结果内联上限 | `24KB` | 超过后写入 `.chengxiaobang/tool-results/**` |
+| 长工具结果内联上限 | `24KB` | 超过后写入 `<dataDir>/tool-results/**` |
 | 长工具结果预览 | 头尾各 `4KB` | 返回给模型的短摘要里包含开头和末尾预览 |
 | `Read` 分段上限 | `2000` 行 | 防止模型再次一次性读入过大文件 |
 

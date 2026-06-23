@@ -66,7 +66,7 @@ describe("RunFileChangesCard", () => {
 
     fireEvent.click(screen.getByText("2 个文件已更改"));
     expect(screen.getByTestId("run-file-changes-list-collapse").className).toContain(
-      "transition-[height,opacity]"
+      "transition-[grid-template-rows,opacity]"
     );
     expect(screen.getByText("app.ts")).toBeInTheDocument();
     expect(screen.getByText("util.ts")).toBeInTheDocument();
@@ -74,9 +74,9 @@ describe("RunFileChangesCard", () => {
     expect(screen.queryByText("src/util.ts")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("app.ts"));
-    expect(screen.getByTestId("run-file-change-diff-collapse").className).toContain(
-      "transition-[height,opacity]"
-    );
+    const diffBody = screen.getByTestId("run-file-change-diff-body");
+    expect(diffBody).toBeInTheDocument();
+    expect(diffBody.className).not.toContain("transition-[grid-template-rows,opacity]");
     expect(screen.getByLabelText("变更对比")).toHaveTextContent("hello");
     expect(screen.getByLabelText("变更对比")).toHaveClass("scrollbar-hidden");
     expect(screen.getByLabelText("变更对比")).toHaveStyle("--diffs-gap-block: 0px");
@@ -90,6 +90,70 @@ describe("RunFileChangesCard", () => {
     expect(diffView).toHaveTextContent("old");
     expect(diffView).toHaveTextContent("new");
     expect(diffView).not.toHaveTextContent("hello");
+  });
+
+  it("opens the clicked file diff on the first click when scrollHeight is zero", () => {
+    render(
+      <RunFileChangesCard
+        runId="run_1"
+        fileChanges={[firstChange]}
+      />
+    );
+
+    fireEvent.click(screen.getByText("1 个文件已更改"));
+    fireEvent.click(screen.getByText("app.ts"));
+
+    const diffBody = screen.getByTestId("run-file-change-diff-body");
+    expect(diffBody).toBeInTheDocument();
+    expect(diffBody.className).not.toContain("grid-rows-[0fr]");
+    expect(diffBody).not.toHaveStyle({ height: "0px" });
+    expect(screen.getByLabelText("变更对比")).toHaveTextContent("hello");
+  });
+
+  it("opens the file diff on the first click in React strict mode and logs once per toggle", () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    try {
+      render(
+        <React.StrictMode>
+          <RunFileChangesCard
+            runId="run_1"
+            fileChanges={[firstChange]}
+          />
+        </React.StrictMode>
+      );
+
+      const cardButton = screen.getByText("1 个文件已更改").closest("button");
+      expect(cardButton).toBeTruthy();
+      fireEvent.click(cardButton!);
+      expect(cardButton).toHaveAttribute("aria-expanded", "true");
+
+      const fileButton = screen.getByText("app.ts").closest("button");
+      expect(fileButton).toBeTruthy();
+      fireEvent.click(fileButton!);
+      expect(fileButton).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByTestId("run-file-change-diff-body")).toBeInTheDocument();
+      expect(screen.getByLabelText("变更对比")).toHaveTextContent("hello");
+      expect(infoSpy).toHaveBeenCalledTimes(2);
+      expect(infoSpy).toHaveBeenNthCalledWith(
+        1,
+        "[RunFileChangesCard] 切换本轮 diff 卡片",
+        expect.objectContaining({ runId: "run_1", open: true, fileCount: 1 })
+      );
+      expect(infoSpy).toHaveBeenNthCalledWith(
+        2,
+        "[RunFileChangesCard] 切换单文件 diff",
+        expect.objectContaining({
+          runId: "run_1",
+          path: "src/app.ts",
+          open: true,
+          additions: 2,
+          deletions: 0
+        })
+      );
+    } finally {
+      infoSpy.mockRestore();
+    }
   });
 
   it("renders below the final answer content and above assistant message actions", () => {

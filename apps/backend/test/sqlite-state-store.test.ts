@@ -169,6 +169,82 @@ describe("SqliteStateStore", () => {
     await second.close();
   });
 
+  it("paginates projects and sessions with total metadata", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const projects = [];
+    for (let index = 0; index < 6; index += 1) {
+      projects.push(
+        await store.createProject({
+          name: `项目${index}`,
+          path: join(dir, `page-project-${index}`)
+        })
+      );
+      await tick();
+    }
+    const targetProject = projects[0]!;
+    const projectSessions = [];
+    for (let index = 0; index < 7; index += 1) {
+      projectSessions.push(
+        await store.createSession({
+          projectId: targetProject.id,
+          title: `项目会话${index}`,
+          accessMode: "approval"
+        })
+      );
+      await tick();
+    }
+    const plainSessions = [];
+    for (let index = 0; index < 7; index += 1) {
+      plainSessions.push(
+        await store.createSession({
+          projectId: null,
+          title: `普通会话${index}`,
+          accessMode: "approval"
+        })
+      );
+      await tick();
+    }
+
+    const projectPage = await store.listProjects({
+      limit: 4,
+      offset: 0,
+      sort: "created",
+      pinned: false
+    });
+    expect(projectPage.total).toBe(6);
+    expect(projectPage.hasMore).toBe(true);
+    expect(projectPage.items.map((project) => project.id)).toEqual([
+      projects[5]!.id,
+      projects[4]!.id,
+      projects[3]!.id,
+      projects[2]!.id
+    ]);
+
+    const projectSessionPage = await store.listSessions(targetProject.id, {
+      limit: 6,
+      offset: 0,
+      pinned: false
+    });
+    expect(projectSessionPage.total).toBe(7);
+    expect(projectSessionPage.hasMore).toBe(true);
+    expect(projectSessionPage.items.map((session) => session.id)).toEqual(
+      projectSessions.slice(1).reverse().map((session) => session.id)
+    );
+
+    const plainSessionPage = await store.listSessions(null, {
+      limit: 6,
+      offset: 0,
+      pinned: false
+    });
+    expect(plainSessionPage.total).toBe(7);
+    expect(plainSessionPage.hasMore).toBe(true);
+    expect(plainSessionPage.items.map((session) => session.id)).toEqual(
+      plainSessions.slice(1).reverse().map((session) => session.id)
+    );
+    await store.close();
+  });
+
   it("searches sessions by title and user or assistant content only", async () => {
     const store = new SqliteStateStore(join(dir, "state.sqlite"));
     await store.initialize();

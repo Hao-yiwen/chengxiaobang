@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import {
   resolveProviderConfigModelOption,
+  type AccessMode,
   type ProviderConfig,
   type ProviderModelOption,
   type ReasoningMode,
@@ -77,6 +78,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useAccessModeSelection } from "@/hooks/use-access-mode-selection";
 import { resolveFileTypeIcon } from "@/lib/code-language-icons";
+import { runAfterMenuClose } from "@/lib/menu-actions";
 import { cn } from "@/lib/utils";
 import { getApiClient, selectActiveProject, useAppStore } from "@/store";
 
@@ -342,6 +344,7 @@ export function Composer() {
   const [rotationSnap, setRotationSnap] = useState(false);
   // 项目选择器：搜索词 + 新建空白项目命名弹窗。
   const [projectQuery, setProjectQuery] = useState("");
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [blankDialogOpen, setBlankDialogOpen] = useState(false);
   const [blankName, setBlankName] = useState("");
   const [creatingBlank, setCreatingBlank] = useState(false);
@@ -1176,9 +1179,35 @@ export function Composer() {
       await createBlankProject(name);
       setBlankDialogOpen(false);
       setBlankName("");
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
     } finally {
       setCreatingBlank(false);
     }
+  };
+
+  const openBlankProjectDialogFromMenu = () => {
+    setProjectMenuOpen(false);
+    runAfterMenuClose(() => {
+      setBlankName("");
+      setBlankDialogOpen(true);
+    });
+  };
+
+  const openFolderFromProjectMenu = () => {
+    setProjectMenuOpen(false);
+    runAfterMenuClose(openFolder);
+  };
+
+  const addContextFromMenu = () => {
+    runAfterMenuClose(addContext);
+  };
+
+  const openSkillsFromMenu = (openAdd: boolean) => {
+    runAfterMenuClose(() => openSkills(openAdd));
+  };
+
+  const selectAccessModeFromMenu = (mode: AccessMode) => {
+    runAfterMenuClose(() => selectAccessMode(mode));
   };
 
   return (
@@ -1459,16 +1488,16 @@ export function Composer() {
                 className="pointer-events-none data-[state=checked]:bg-hairline-strong"
               />
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void addContext()}>
+            <DropdownMenuItem onSelect={addContextFromMenu}>
               <DocumentIcon className="size-4 text-muted-foreground" />
               {t("composer.addFile")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => openSkills(true)}>
+            <DropdownMenuItem onSelect={() => openSkillsFromMenu(true)}>
               <SkillIcon className="size-4 text-muted-foreground" />
               {t("skills.addCustom")}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => openSkills(false)}>
+            <DropdownMenuItem onSelect={() => openSkillsFromMenu(false)}>
               <SkillIcon className="size-4 text-muted-foreground" />
               {t("skills.manage")}
             </DropdownMenuItem>
@@ -1477,7 +1506,10 @@ export function Composer() {
 
         {!showVoiceMeter && showProjectSelector ? (
           <DropdownMenu
+            modal={false}
+            open={projectMenuOpen}
             onOpenChange={(open) => {
+              setProjectMenuOpen(open);
               if (!open) {
                 setProjectQuery("");
               }
@@ -1545,15 +1577,12 @@ export function Composer() {
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
                 <DropdownMenuItem
-                  onSelect={() => {
-                    setBlankName("");
-                    setBlankDialogOpen(true);
-                  }}
+                  onSelect={openBlankProjectDialogFromMenu}
                 >
                   <PlusIcon className="size-4 text-muted-foreground" />
                   {t("composer.createBlankProject")}
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void openFolder()}>
+                <DropdownMenuItem onSelect={openFolderFromProjectMenu}>
                   <FolderOpenOutlineIcon className="size-4 text-muted-foreground" />
                   {t("composer.useExistingFolder")}
                 </DropdownMenuItem>
@@ -1612,7 +1641,7 @@ export function Composer() {
             <DropdownMenuContent align="start" className="w-[280px]">
               <DropdownMenuItem
                 className="items-start gap-2.5 py-2.5"
-                onSelect={() => void selectAccessMode("approval")}
+                onSelect={() => selectAccessModeFromMenu("approval")}
               >
                 <HandPointerIcon
                   className={cn(
@@ -1636,7 +1665,7 @@ export function Composer() {
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="items-start gap-2.5 py-2.5"
-                onSelect={() => void selectAccessMode("smart_approval")}
+                onSelect={() => selectAccessModeFromMenu("smart_approval")}
               >
                 <ShieldTerminalIcon
                   className={cn(
@@ -1660,7 +1689,7 @@ export function Composer() {
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="items-start gap-2.5 py-2.5"
-                onSelect={() => void selectAccessMode("full_access")}
+                onSelect={() => selectAccessModeFromMenu("full_access")}
               >
                 <ShieldAlertIcon
                   className={cn(

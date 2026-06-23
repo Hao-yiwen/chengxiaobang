@@ -29,14 +29,18 @@ const provider: ProviderConfig = {
   updatedAt: new Date().toISOString()
 };
 
+function page<T>(items: T[]) {
+  return { items, total: items.length, hasMore: false };
+}
+
 function createClient(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
-    listProjects: vi.fn(async () => []),
+    listProjects: vi.fn(async () => page([])),
     createProject: vi.fn() as never,
     renameProject: vi.fn() as never,
     setProjectPinned: vi.fn() as never,
     deleteProject: vi.fn(async () => true),
-    listSessions: vi.fn(async () => []),
+    listSessions: vi.fn(async () => page([])),
     listProjectFiles: vi.fn(async () => []),
     listProjectDirectory: vi.fn(async () => []),
     updateSession: vi.fn() as never,
@@ -235,13 +239,23 @@ describe("App", () => {
     fireEvent.click(await screen.findByText("设置"));
     fireEvent.click(await screen.findByText("供应商"));
 
-    expect(await screen.findByTestId("settings-provider-list")).toHaveClass(
+    const list = await screen.findByTestId("settings-provider-list");
+    expect(
+      screen.getByRole("button", { name: "返回应用" }).closest(".scrollbar-hidden")
+    ).toBeInTheDocument();
+    expect(list.closest(".scrollbar-hidden")).toBeInTheDocument();
+    expect(list).toHaveClass("grid", "gap-3");
+    expect(list).not.toHaveClass("divide-y");
+    expect(screen.getByTestId("settings-provider-card-deepseek")).toHaveClass(
       "rounded-sm",
       "border"
     );
-    expect(screen.getByTestId("settings-provider-form")).toHaveClass("rounded-sm", "border");
-    expect(screen.getByTestId("settings-provider-list")).not.toHaveClass("rounded-md");
-    expect(screen.getByTestId("settings-provider-form")).not.toHaveClass("rounded-md");
+    expect(screen.getByTestId("settings-provider-create-card")).toHaveClass(
+      "rounded-sm",
+      "border"
+    );
+    expect(screen.getByTestId("settings-provider-card-deepseek")).not.toHaveClass("rounded-md");
+    expect(screen.getByTestId("settings-provider-create-card")).not.toHaveClass("rounded-md");
   });
 
   it("stays on home and opens the setup dialog when no provider has an API key", async () => {
@@ -635,7 +649,7 @@ describe("App", () => {
     render(
       <App
         client={createClient({
-          listSessions: vi.fn(async () => [session])
+          listSessions: vi.fn(async () => page([session]))
         })}
       />
     );
@@ -658,7 +672,7 @@ describe("App", () => {
       return currentSession;
     });
     const client = createClient({
-      listSessions: vi.fn(async () => [currentSession]),
+      listSessions: vi.fn(async () => page([currentSession])),
       updateSession: updateSession as never
     });
 
@@ -709,7 +723,7 @@ describe("App", () => {
       configurable: true
     });
     const client = createClient({
-      listSessions: vi.fn(async () => [phoneSession]),
+      listSessions: vi.fn(async () => page([phoneSession])),
       createProject,
       updateSession: updateSession as never,
       listSlashCommands
@@ -732,6 +746,8 @@ describe("App", () => {
     });
     expect(useAppStore.getState().activeProjectId).toBe("project_mobile");
     expect(listSlashCommands).toHaveBeenCalledWith("project_mobile");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(document.body.style.pointerEvents).not.toBe("none");
   });
 
   it("only shows the side chat marker after a side chat exists", async () => {
@@ -746,7 +762,7 @@ describe("App", () => {
       sideChatParentSessionId: session.id
     };
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async () => [message]),
       listSideChats: vi.fn(async () => [
         {
@@ -804,7 +820,7 @@ describe("App", () => {
       configurable: true
     });
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async () => messages)
     });
 
@@ -843,7 +859,7 @@ describe("App", () => {
     });
     const forkSession = vi.fn(async () => forkedSession);
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async (sessionId: string) =>
         sessionId === forkedSession.id ? [userMessage] : [userMessage, assistantMessage]
       ),
@@ -899,7 +915,7 @@ describe("App", () => {
     };
     const client = createClient({
       createProject: vi.fn() as never,
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async () => [message]),
       streamRun: vi.fn() as never
     });
@@ -932,7 +948,7 @@ describe("App", () => {
     };
     const listSessionRuns = vi.fn(async () => ({ runs: [], toolCalls: [] }));
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async () => [message]),
       listSessionRuns
     });
@@ -978,8 +994,8 @@ describe("App", () => {
       diagnostics: []
     }));
     const client = createClient({
-      listProjects: vi.fn(async () => [project]),
-      listSessions: vi.fn(async () => [session]),
+      listProjects: vi.fn(async () => page([project])),
+      listSessions: vi.fn(async () => page([session])),
       listSessionRuns,
       listSlashCommands
     });
@@ -1018,7 +1034,7 @@ describe("App", () => {
       updatedAt: new Date().toISOString()
     };
     const client = createClient({
-      listProjects: vi.fn(async () => [project])
+      listProjects: vi.fn(async () => page([project]))
     });
 
     render(<App client={client} />);
@@ -1071,7 +1087,7 @@ describe("App", () => {
       toolCalls: [toolCall]
     }));
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async () => [message]),
       listSessionRuns
     });
@@ -1119,7 +1135,7 @@ describe("App", () => {
     };
     const approve = vi.fn(async () => {});
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async () => []),
       listSessionRuns: vi.fn(async () => ({ runs: [activeRun], toolCalls: [pendingTool] })),
       listActiveRuns: vi.fn(async () => [{ run: activeRun, toolCalls: [pendingTool] }]),
@@ -1174,7 +1190,7 @@ describe("App", () => {
     };
     const listActiveRuns = vi.fn(async () => []);
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async () => []),
       listSessionRuns: vi.fn(async () => ({ runs: [staleRun], toolCalls: [pendingTool] })),
       listActiveRuns
@@ -1250,7 +1266,7 @@ describe("App", () => {
     const rewindSession = vi.fn(async () => [] as Message[]);
     const streamRun = vi.fn(async (..._args: Parameters<ApiClient["streamRun"]>) => {});
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages,
       listSessionRuns,
       listActiveRuns: vi.fn(async () => []),
@@ -1339,7 +1355,7 @@ describe("App", () => {
         toolCalls: [completedTool]
       });
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async () => []),
       listSessionRuns,
       listActiveRuns,
@@ -1395,7 +1411,7 @@ describe("App", () => {
       createdAt: "2026-06-08T00:00:03.000Z"
     };
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async () => [message, retryMessage]),
       listSessionRuns: vi.fn(async () => ({
         runs: [
@@ -1476,7 +1492,7 @@ describe("App", () => {
       updatedAt: "2026-06-08T00:00:02.000Z"
     };
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async () => messages),
       listSessionRuns: vi.fn(async () => ({
         runs: [
@@ -2236,7 +2252,7 @@ describe("App", () => {
       updatedAt: "2026-06-13T00:00:00.000Z"
     };
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       subscribeAppEvents: vi.fn((listener: (event: AppEvent) => void) => {
         emit = listener;
         return vi.fn();
@@ -2423,7 +2439,7 @@ describe("App", () => {
     };
     const listProjectFiles = vi.fn(async () => ["src/index.ts", "src/main-index.ts"]);
     const client = createClient({
-      listProjects: vi.fn(async () => [project]),
+      listProjects: vi.fn(async () => page([project])),
       listProjectFiles
     });
 
@@ -2457,7 +2473,7 @@ describe("App", () => {
     };
     const listProjectFiles = vi.fn(async () => ["package.json"]);
     const client = createClient({
-      listProjects: vi.fn(async () => [project]),
+      listProjects: vi.fn(async () => page([project])),
       listProjectFiles
     });
 
@@ -2491,7 +2507,7 @@ describe("App", () => {
         })
     );
     const client = createClient({
-      listProjects: vi.fn(async () => [project]),
+      listProjects: vi.fn(async () => page([project])),
       listProjectFiles
     });
 
@@ -2521,7 +2537,7 @@ describe("App", () => {
     };
     const listProjectFiles = vi.fn(async () => []);
     const client = createClient({
-      listProjects: vi.fn(async () => [project]),
+      listProjects: vi.fn(async () => page([project])),
       listProjectFiles
     });
 
@@ -2555,8 +2571,8 @@ describe("App", () => {
     };
     const listProjectFiles = vi.fn(async () => ["src/index.ts"]);
     const client = createClient({
-      listProjects: vi.fn(async () => [project]),
-      listSessions: vi.fn(async () => [session]),
+      listProjects: vi.fn(async () => page([project])),
+      listSessions: vi.fn(async () => page([session])),
       listProjectFiles
     });
 
@@ -2624,7 +2640,7 @@ describe("App", () => {
     };
     const streamRun = vi.fn(async (..._args: Parameters<ApiClient["streamRun"]>) => {});
     const client = createClient({
-      listProjects: vi.fn(async () => [project]),
+      listProjects: vi.fn(async () => page([project])),
       streamRun: streamRun as never
     });
 
@@ -2660,8 +2676,8 @@ describe("App", () => {
     };
     const deleteProject = vi.fn(async () => true);
     const client = createClient({
-      listProjects: vi.fn(async () => [project]),
-      listSessions: vi.fn(async () => [session]),
+      listProjects: vi.fn(async () => page([project])),
+      listSessions: vi.fn(async () => page([session])),
       deleteProject
     });
 
@@ -2678,6 +2694,8 @@ describe("App", () => {
     expect(window.confirm).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
     await waitFor(() => expect(deleteProject).toHaveBeenCalledWith("project_1"));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(document.body.style.pointerEvents).not.toBe("none");
     expect(screen.queryByText("项目里的对话")).not.toBeInTheDocument();
     expect(screen.queryByText("demo")).not.toBeInTheDocument();
   });
@@ -2695,7 +2713,7 @@ describe("App", () => {
     const updateSession = vi.fn(async () => ({ ...session, title: "新标题" }));
     const deleteSession = vi.fn(async () => true);
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       updateSession,
       deleteSession
     });
@@ -2719,6 +2737,8 @@ describe("App", () => {
     expect(window.confirm).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
     await waitFor(() => expect(deleteSession).toHaveBeenCalledWith("session_1"));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(document.body.style.pointerEvents).not.toBe("none");
     expect(screen.queryByText("新标题")).not.toBeInTheDocument();
   });
 
@@ -2741,7 +2761,7 @@ describe("App", () => {
       createdAt: "2026-06-08T00:00:01.000Z"
     };
     const client = createClient({
-      listSessions: vi.fn(async () => [session]),
+      listSessions: vi.fn(async () => page([session])),
       listMessages: vi.fn(async () => [summary])
     });
 
@@ -2832,7 +2852,7 @@ describe("App", () => {
         source: "installed" as const,
         enabled: false,
         hasConfig: false,
-        contributions: { skills: 2, commands: 1, mcpServers: 0, hooks: 0 }
+        contributions: { skills: 2, commands: 2, mcpServers: 0, hooks: 0 }
       }
     ]);
     const client = createClient({
@@ -2844,7 +2864,7 @@ describe("App", () => {
           source: "installed" as const,
           enabled: true,
           hasConfig: false,
-          contributions: { skills: 2, commands: 1, mcpServers: 0, hooks: 0 }
+          contributions: { skills: 2, commands: 2, mcpServers: 0, hooks: 0 }
         }
       ]),
       getPluginDetail: vi.fn() as never,
@@ -2859,10 +2879,76 @@ describe("App", () => {
     const card = await screen.findByTestId("plugin-card-installed-feishu-suite");
     expect(within(card).getByText("feishu-suite")).toBeInTheDocument();
     expect(within(card).getByText("飞书办公套件插件")).toBeInTheDocument();
+    expect(within(card).getByText("2 技能 · 2 命令 · 0 MCP")).toBeInTheDocument();
 
     // 卡片上的启停开关命中 setPluginEnabled(name, false)。
     fireEvent.click(within(card).getByRole("switch"));
     await waitFor(() => expect(setPluginEnabled).toHaveBeenCalledWith("feishu-suite", false));
+  });
+
+  it("shows skill-backed slash entries in plugin detail commands", async () => {
+    const client = createClient({
+      listPlugins: vi.fn(async () => [
+        {
+          name: "superpowers",
+          version: "5.1.0",
+          description: "Planning workflows",
+          source: "builtin" as const,
+          enabled: true,
+          hasConfig: false,
+          contributions: { skills: 2, commands: 2, mcpServers: 0, hooks: 0 }
+        }
+      ]),
+      getPluginDetail: vi.fn(async () => ({
+        name: "superpowers",
+        version: "5.1.0",
+        description: "Planning workflows",
+        source: "builtin" as const,
+        enabled: true,
+        hasConfig: false,
+        contributions: { skills: 2, commands: 2, mcpServers: 0, hooks: 0 },
+        manifest: { name: "superpowers" },
+        installPath: "/tmp/superpowers",
+        configFields: [],
+        configValues: {},
+        skills: [
+          { name: "brainstorming", description: "头脑风暴" },
+          { name: "writing-plans", description: "写计划" }
+        ],
+        commands: [
+          {
+            name: "brainstorming",
+            kind: "skill" as const,
+            description: "头脑风暴"
+          },
+          {
+            name: "plan",
+            kind: "prompt_template" as const,
+            description: "生成计划",
+            argumentHint: "[目标]"
+          }
+        ],
+        mcpServers: []
+      }))
+    });
+
+    render(<App client={client} />);
+    fireEvent.click(await screen.findByText("设置"));
+    fireEvent.click(await screen.findByText("插件"));
+
+    const card = await screen.findByTestId("plugin-card-builtin-superpowers");
+    fireEvent.click(card);
+
+    const skillCommandName = await screen.findByText("/brainstorming");
+    const skillCommandRow = skillCommandName.closest("li");
+    expect(skillCommandRow).not.toBeNull();
+    expect(within(skillCommandRow as HTMLElement).getByText("技能")).toBeInTheDocument();
+
+    const promptCommandName = await screen.findByText("/plan");
+    const promptCommandRow = promptCommandName.closest("li");
+    expect(promptCommandRow).not.toBeNull();
+    expect(within(promptCommandRow as HTMLElement).getByText("提示词")).toBeInTheDocument();
+    expect(within(promptCommandRow as HTMLElement).getByText("[目标]")).toBeInTheDocument();
   });
 
   it("shows plugin-sourced commands and disables them on the Commands settings section", async () => {

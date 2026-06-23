@@ -26,13 +26,14 @@ import {
 } from "@/assets/file-type-icons";
 import { SettingOutlined } from "@ant-design/icons";
 import {
+  useEffect,
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode
 } from "react";
 import { useTranslation } from "react-i18next";
-import type { Project, Session } from "@chengxiaobang/shared";
+import type { GitInfo, Project, Session } from "@chengxiaobang/shared";
 import { useShallow } from "zustand/react/shallow";
 import {
   ContextMenu,
@@ -51,13 +52,21 @@ import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { runAfterMenuClose } from "@/lib/menu-actions";
 import { cn } from "@/lib/utils";
-import { useAppStore, type ProjectSortMode } from "@/store";
+import { getApiClient, useAppStore, type ProjectSortMode } from "@/store";
 
 type ProjectSessionGroup = { project: Project; sessions: Session[] };
+type ProjectGitInfoState =
+  | { status: "loading" }
+  | { status: "loaded"; info: GitInfo }
+  | { status: "error" };
+type ProjectSessionTooltipInfo = { projectPath: string; branchName?: string };
 
 const DEFAULT_SIDEBAR_WIDTH = 272;
 const MIN_SIDEBAR_WIDTH = 240;
+const DEFAULT_VISIBLE_PROJECT_COUNT = 4;
+const DEFAULT_VISIBLE_SESSION_COUNT = 6;
 
 function clampSidebarWidth(width: number): number {
   if (!Number.isFinite(width)) {
@@ -276,21 +285,58 @@ function ProjectSectionLabel(props: {
   );
 }
 
+function SidebarMoreButton(props: {
+  label: string;
+  title?: string;
+  indent?: boolean;
+  loading?: boolean;
+  onClick(): void;
+}) {
+  return (
+    <button
+      type="button"
+      title={props.title ?? props.label}
+      disabled={props.loading}
+      onClick={props.onClick}
+      className={cn(
+        "mx-1 mb-1 flex h-6 w-[calc(100%-0.5rem)] items-center rounded-sm px-2 text-left text-micro text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-50",
+        props.indent ? "pl-7" : "pl-2.5"
+      )}
+    >
+      <span className="truncate">{props.label}</span>
+    </button>
+  );
+}
+
 export function Sidebar() {
   const { t } = useTranslation();
   const confirmDialog = useConfirmDialog();
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
-  const { projects, sessions, activeSessionId, view, runningSessionsById, projectSortMode } =
-    useAppStore(
-      useShallow((state) => ({
-        projects: state.projects,
-        sessions: state.sessions,
-        activeSessionId: state.activeSessionId,
-        view: state.view,
-        runningSessionsById: state.runningSessionsById,
-        projectSortMode: state.projectSortMode
-      }))
-    );
+  const {
+    projects,
+    sessions,
+    activeSessionId,
+    view,
+    runningSessionsById,
+    clientReady,
+    projectSortMode,
+    sidebarProjectsPage,
+    sidebarUngroupedSessionsPage,
+    sidebarProjectSessionsPageByProjectId
+  } = useAppStore(
+    useShallow((state) => ({
+      projects: state.projects,
+      sessions: state.sessions,
+      activeSessionId: state.activeSessionId,
+      view: state.view,
+      runningSessionsById: state.runningSessionsById,
+      clientReady: state.clientReady,
+      projectSortMode: state.projectSortMode,
+      sidebarProjectsPage: state.sidebarProjectsPage,
+      sidebarUngroupedSessionsPage: state.sidebarUngroupedSessionsPage,
+      sidebarProjectSessionsPageByProjectId: state.sidebarProjectSessionsPageByProjectId
+    }))
+  );
   const newChat = useAppStore((state) => state.newChat);
   const newChatInProject = useAppStore((state) => state.newChatInProject);
   const openFolder = useAppStore((state) => state.openFolder);
@@ -305,6 +351,14 @@ export function Sidebar() {
   const setSessionPinned = useAppStore((state) => state.setSessionPinned);
   const setProjectPinned = useAppStore((state) => state.setProjectPinned);
   const setProjectSortMode = useAppStore((state) => state.setProjectSortMode);
+  const loadData = useAppStore((state) => state.loadData);
+  const loadMoreSidebarProjects = useAppStore((state) => state.loadMoreSidebarProjects);
+  const loadMoreSidebarProjectSessions = useAppStore(
+    (state) => state.loadMoreSidebarProjectSessions
+  );
+  const loadMoreSidebarUngroupedSessions = useAppStore(
+    (state) => state.loadMoreSidebarUngroupedSessions
+  );
 
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [resizing, setResizing] = useState(false);
@@ -313,6 +367,19 @@ export function Sidebar() {
   const [editingProjectId, setEditingProjectId] = useState<string>();
   const [projectDraft, setProjectDraft] = useState("");
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
+  const [projectsExpanded, setProjectsExpanded] = useState(false);
+  const [expandedProjectSessionIds, setExpandedProjectSessionIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [ungroupedExpanded, setUngroupedExpanded] = useState(false);
+  const [loadingMoreProjects, setLoadingMoreProjects] = useState(false);
+  const [loadingProjectSessionIds, setLoadingProjectSessionIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [loadingUngrouped, setLoadingUngrouped] = useState(false);
+  const [projectGitInfoByProjectId, setProjectGitInfoByProjectId] = useState<
+    Record<string, ProjectGitInfoState>
+  >({});
 
   // 手机绑定会话由「连接手机」页直接管理，不进入左侧项目/对话/置顶列表。
   const sidebarSessions = sessions.filter((session) => !isPhoneBoundSession(session));
@@ -349,9 +416,90 @@ export function Sidebar() {
       project,
       sessions: list.filter((session) => !session.pinnedAt)
     }));
+  const visibleUnpinnedProjects = projectsExpanded
+    ? unpinnedProjects
+    : unpinnedProjects.slice(0, DEFAULT_VISIBLE_PROJECT_COUNT);
+  const canToggleMoreProjects =
+    unpinnedProjects.length > DEFAULT_VISIBLE_PROJECT_COUNT ||
+    sidebarProjectsPage.hasMore ||
+    sidebarProjectsPage.total > DEFAULT_VISIBLE_PROJECT_COUNT;
+  const visibleUngrouped = ungroupedExpanded
+    ? ungrouped
+    : ungrouped.slice(0, DEFAULT_VISIBLE_SESSION_COUNT);
+  const canToggleMoreUngrouped =
+    ungrouped.length > DEFAULT_VISIBLE_SESSION_COUNT ||
+    sidebarUngroupedSessionsPage.hasMore ||
+    sidebarUngroupedSessionsPage.total > DEFAULT_VISIBLE_SESSION_COUNT;
 
   // 分支标记需要跨全部会话查找父会话标题。
   const titleById = new Map(sessions.map((session) => [session.id, session.title]));
+  const projectIdsWithVisibleSessions = [...pinnedProjects, ...visibleUnpinnedProjects]
+    .filter(({ sessions: list }) => list.length > 0)
+    .map(({ project }) => project.id);
+  const projectGitInfoLoadKey = projectIdsWithVisibleSessions.join("\u0000");
+
+  useEffect(() => {
+    if (!clientReady || projectIdsWithVisibleSessions.length === 0) {
+      return;
+    }
+    const client = getApiClient();
+    if (!client?.getGitInfo) {
+      console.debug("[sidebar] Git 信息接口不可用，项目会话提示仅展示路径", {
+        projectCount: projectIdsWithVisibleSessions.length
+      });
+      return;
+    }
+    const pendingProjectIds = projectIdsWithVisibleSessions.filter(
+      (projectId) => !projectGitInfoByProjectId[projectId]
+    );
+    if (pendingProjectIds.length === 0) {
+      return;
+    }
+    setProjectGitInfoByProjectId((current) => {
+      const next = { ...current };
+      for (const projectId of pendingProjectIds) {
+        next[projectId] = { status: "loading" };
+      }
+      return next;
+    });
+    for (const projectId of pendingProjectIds) {
+      const project = projects.find((item) => item.id === projectId);
+      console.debug("[sidebar] 开始读取项目会话提示 Git 信息", {
+        projectId,
+        path: project?.path
+      });
+      void client.getGitInfo(projectId).then(
+        (info) => {
+          console.debug("[sidebar] 项目会话提示 Git 信息读取完成", {
+            projectId,
+            isRepo: info.isRepo,
+            hasBranchName: Boolean(info.branchName)
+          });
+          setProjectGitInfoByProjectId((current) => ({
+            ...current,
+            [projectId]: { status: "loaded", info }
+          }));
+        },
+        (error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn("[sidebar] 项目会话提示 Git 信息读取失败", {
+            projectId,
+            error: message
+          });
+          setProjectGitInfoByProjectId((current) => ({
+            ...current,
+            [projectId]: { status: "error" }
+          }));
+        }
+      );
+    }
+  }, [
+    clientReady,
+    projectGitInfoByProjectId,
+    projectGitInfoLoadKey,
+    projectIdsWithVisibleSessions.length,
+    projects
+  ]);
 
   function startRename(session: Session): void {
     setEditingId(session.id);
@@ -452,7 +600,116 @@ export function Sidebar() {
     });
   }
 
-  function renderSession(session: Session, indent: boolean): ReactNode {
+  async function toggleProjectsExpanded(): Promise<void> {
+    if (projectsExpanded) {
+      console.debug("[sidebar] 折叠项目区显示数量", {
+        visibleLimit: DEFAULT_VISIBLE_PROJECT_COUNT
+      });
+      setProjectsExpanded(false);
+      return;
+    }
+    try {
+      if (sidebarProjectsPage.hasMore) {
+        setLoadingMoreProjects(true);
+        console.info("[sidebar] 展开项目区并加载剩余项目", {
+          loaded: sidebarProjectsPage.loaded,
+          total: sidebarProjectsPage.total
+        });
+        await loadMoreSidebarProjects();
+      }
+      setProjectsExpanded(true);
+    } catch (error) {
+      console.warn("[sidebar] 展开项目区失败", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      setLoadingMoreProjects(false);
+    }
+  }
+
+  async function toggleProjectSessionsExpanded(projectId: string): Promise<void> {
+    if (expandedProjectSessionIds.has(projectId)) {
+      console.debug("[sidebar] 折叠项目会话显示数量", {
+        projectId,
+        visibleLimit: DEFAULT_VISIBLE_SESSION_COUNT
+      });
+      setExpandedProjectSessionIds((current) => {
+        const next = new Set(current);
+        next.delete(projectId);
+        return next;
+      });
+      return;
+    }
+    try {
+      const page = sidebarProjectSessionsPageByProjectId[projectId];
+      if (page?.hasMore) {
+        setLoadingProjectSessionIds((current) => new Set(current).add(projectId));
+        console.info("[sidebar] 展开项目会话并加载剩余会话", {
+          projectId,
+          loaded: page.loaded,
+          total: page.total
+        });
+        await loadMoreSidebarProjectSessions(projectId);
+      }
+      setExpandedProjectSessionIds((current) => new Set(current).add(projectId));
+    } catch (error) {
+      console.warn("[sidebar] 展开项目会话失败", {
+        projectId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      setLoadingProjectSessionIds((current) => {
+        const next = new Set(current);
+        next.delete(projectId);
+        return next;
+      });
+    }
+  }
+
+  async function toggleUngroupedSessionsExpanded(): Promise<void> {
+    if (ungroupedExpanded) {
+      console.debug("[sidebar] 折叠普通对话显示数量", {
+        visibleLimit: DEFAULT_VISIBLE_SESSION_COUNT
+      });
+      setUngroupedExpanded(false);
+      return;
+    }
+    try {
+      if (sidebarUngroupedSessionsPage.hasMore) {
+        setLoadingUngrouped(true);
+        console.info("[sidebar] 展开普通对话并加载剩余对话", {
+          loaded: sidebarUngroupedSessionsPage.loaded,
+          total: sidebarUngroupedSessionsPage.total
+        });
+        await loadMoreSidebarUngroupedSessions();
+      }
+      setUngroupedExpanded(true);
+    } catch (error) {
+      console.warn("[sidebar] 展开普通对话失败", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      setLoadingUngrouped(false);
+    }
+  }
+
+  function changeProjectSortMode(mode: ProjectSortMode): void {
+    if (mode === projectSortMode) {
+      return;
+    }
+    console.info("[sidebar] 切换项目排序并重置侧边栏分页", { mode });
+    setProjectsExpanded(false);
+    setExpandedProjectSessionIds(new Set());
+    setUngroupedExpanded(false);
+    setProjectSortMode(mode);
+    void loadData();
+  }
+
+  function renderSession(
+    session: Session,
+    indent: boolean,
+    projectTooltipInfo?: ProjectSessionTooltipInfo
+  ): ReactNode {
     const branchHint = session.parentSessionId
       ? titleById.has(session.parentSessionId)
         ? t("sidebar.branchOf", { title: titleById.get(session.parentSessionId) })
@@ -470,6 +727,7 @@ export function Sidebar() {
         editing={editingId === session.id}
         draftTitle={draftTitle}
         branchHint={branchHint}
+        projectTooltipInfo={projectTooltipInfo}
         onSelect={() => void selectSession(session.id)}
         onStartRename={() => startRename(session)}
         onDraftChange={setDraftTitle}
@@ -482,17 +740,33 @@ export function Sidebar() {
     );
   }
 
-  // 置顶区与项目区共用：置顶区不截断（展示项目下全部会话），项目区维持 slice(0, 8)。
+  // 置顶区与项目区共用：置顶区不截断；项目区默认展示前 6 条会话。
   // 注意：同一会话/项目双份显示时，editingId/editingProjectId 共享会让两份同时进入
   // 行内编辑态——受控同值，提交一次生效，接受这个行为。
   function renderProjectGroup(
     project: Project,
     projectSessionList: Session[],
-    opts: { sliceTo?: number }
+    opts: { sessionLimit?: number }
   ): ReactNode {
-    const visible = opts.sliceTo
-      ? projectSessionList.slice(0, opts.sliceTo)
-      : projectSessionList;
+    const expanded = expandedProjectSessionIds.has(project.id);
+    const page = sidebarProjectSessionsPageByProjectId[project.id];
+    const sessionLimit = opts.sessionLimit;
+    const visible =
+      sessionLimit !== undefined && !expanded
+        ? projectSessionList.slice(0, sessionLimit)
+        : projectSessionList;
+    const canToggleMore =
+      sessionLimit !== undefined &&
+      (projectSessionList.length > sessionLimit ||
+        Boolean(page?.hasMore) ||
+        (page?.total ?? 0) > sessionLimit);
+    const gitInfoState = projectGitInfoByProjectId[project.id];
+    const branchName =
+      gitInfoState?.status === "loaded" ? gitInfoState.info.branchName?.trim() : undefined;
+    const projectTooltipInfo = {
+      projectPath: project.path,
+      ...(branchName ? { branchName } : {})
+    };
     return (
       <ProjectGroup
         key={project.id}
@@ -516,7 +790,21 @@ export function Sidebar() {
         {projectSessionList.length === 0 ? (
           <p className="py-1 pl-7 pr-2 text-micro text-foreground">{t("sidebar.noChats")}</p>
         ) : (
-          visible.map((session) => renderSession(session, true))
+          <>
+            {visible.map((session) => renderSession(session, true, projectTooltipInfo))}
+            {canToggleMore ? (
+              <SidebarMoreButton
+                indent
+                loading={loadingProjectSessionIds.has(project.id)}
+                label={
+                  expanded
+                    ? t("sidebar.collapseVisibleSessions")
+                    : t("sidebar.expandMoreSessions")
+                }
+                onClick={() => void toggleProjectSessionsExpanded(project.id)}
+              />
+            ) : null}
+          </>
         )}
       </ProjectGroup>
     );
@@ -627,15 +915,26 @@ export function Sidebar() {
             canToggleAll={allProjectIds.length > 0}
             sortMode={projectSortMode}
             onToggleAll={toggleAllProjectGroups}
-            onSortModeChange={setProjectSortMode}
+            onSortModeChange={changeProjectSortMode}
             onOpenFolder={() => {
               console.debug("[sidebar] 点击「项目」区块加号，打开文件夹选择");
               void openFolder();
             }}
           />
-          {unpinnedProjects.map(({ project, sessions: projectSessionList }) =>
-            renderProjectGroup(project, projectSessionList, { sliceTo: 8 })
+          {visibleUnpinnedProjects.map(({ project, sessions: projectSessionList }) =>
+            renderProjectGroup(project, projectSessionList, {
+              sessionLimit: DEFAULT_VISIBLE_SESSION_COUNT
+            })
           )}
+          {canToggleMoreProjects ? (
+            <SidebarMoreButton
+              loading={loadingMoreProjects}
+              label={
+                projectsExpanded ? t("sidebar.collapseVisibleProjects") : t("sidebar.expandMore")
+              }
+              onClick={() => void toggleProjectsExpanded()}
+            />
+          ) : null}
           {projects.length === 0 ? (
             <p className="px-2.5 py-1 text-micro text-foreground">{t("sidebar.noProjects")}</p>
           ) : null}
@@ -653,7 +952,20 @@ export function Sidebar() {
           {ungrouped.length === 0 ? (
             <p className="px-2.5 py-1 text-micro text-foreground">{t("sidebar.noChats")}</p>
           ) : (
-            ungrouped.map((session) => renderSession(session, false))
+            <>
+              {visibleUngrouped.map((session) => renderSession(session, false))}
+              {canToggleMoreUngrouped ? (
+                <SidebarMoreButton
+                  loading={loadingUngrouped}
+                  label={
+                    ungroupedExpanded
+                      ? t("sidebar.collapseVisibleSessions")
+                      : t("sidebar.expandMoreSessions")
+                  }
+                  onClick={() => void toggleUngroupedSessionsExpanded()}
+                />
+              ) : null}
+            </>
           )}
         </div>
         <div
@@ -805,7 +1117,7 @@ function ProjectGroup(props: {
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem
-            onSelect={props.onDelete}
+            onSelect={() => runAfterMenuClose(props.onDelete)}
             className="text-destructive focus:text-destructive"
           >
             <TrashIcon className="size-3.5" />
@@ -830,6 +1142,8 @@ interface SessionRowProps {
   draftTitle: string;
   /** 分支会话的来源提示，悬停整行可见；不再显示图标。 */
   branchHint?: string;
+  /** 项目分组内会话的项目上下文提示；普通对话不传。 */
+  projectTooltipInfo?: ProjectSessionTooltipInfo;
   onSelect(): void;
   onStartRename(): void;
   onDraftChange(value: string): void;
@@ -876,101 +1190,112 @@ function SessionRow(props: SessionRowProps) {
       </div>
     );
   }
+  const row = (
+    <div
+      className={cn(
+        "group relative mx-1 mb-0.5 flex h-7 min-w-0 items-center rounded-sm transition-colors",
+        props.indent ? "pl-7" : "pl-2.5",
+        props.active ? "bg-surface-hover" : "hover:bg-surface-hover"
+      )}
+    >
+      <button
+        type="button"
+        aria-current={props.active ? "page" : undefined}
+        onClick={props.onSelect}
+        title={props.projectTooltipInfo ? undefined : props.branchHint}
+        className={cn(
+          "flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden pr-7 text-left text-caption",
+          props.active ? "font-[500] text-foreground" : "text-foreground"
+        )}
+      >
+        {props.session.feishuChatId || props.session.wechatChatId ? (
+          <span
+            className="flex-none text-muted-slate"
+            title={t(props.session.wechatChatId ? "sidebar.wechatSession" : "sidebar.feishuSession")}
+          >
+            <CommentTextIcon className="size-3.5" />
+          </span>
+        ) : null}
+        <span className="min-w-0 flex-1 truncate">{props.session.title}</span>
+        {props.pendingAction ? (
+          <span
+            data-testid={`session-pending-action-${props.session.id}`}
+            title={t(
+              props.pendingAction.kind === "ask_user"
+                ? "sidebar.pendingAskUser"
+                : "sidebar.pendingApproval"
+            )}
+            className={cn(
+              "flex-none rounded-xs border px-1.5 py-0.5 text-micro font-medium leading-3",
+              props.pendingAction.kind === "ask_user"
+                ? "border-soft-blue-border bg-soft-blue-surface text-soft-blue-foreground"
+                : "border-warning/25 bg-warning-soft/70 text-warning-deep"
+            )}
+          >
+            {t(
+              props.pendingAction.kind === "ask_user"
+                ? "sidebar.pendingAskUser"
+                : "sidebar.pendingApproval"
+            )}
+          </span>
+        ) : null}
+        {props.notice ? (
+          <span
+            data-testid={`session-notice-${props.session.id}`}
+            aria-hidden="true"
+            className="flex size-3 flex-none items-center justify-center"
+          >
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                props.notice.status === "failed" ? "bg-error-deep" : "bg-link"
+              )}
+            />
+          </span>
+        ) : null}
+      </button>
+      {showRunningSpinner ? (
+        <span
+          title={t("sidebar.sessionRunning")}
+          className="absolute right-1 top-0 flex h-full w-6 flex-none items-center justify-center text-muted-foreground"
+        >
+          <RefreshIcon className="size-3.5 animate-spin" />
+        </span>
+      ) : null}
+      <div
+        className={cn(
+          "absolute right-1 top-0 h-full flex-none items-center",
+          showRunningSpinner ? "hidden" : "hidden group-hover:flex"
+        )}
+      >
+        <button
+          type="button"
+          title={props.session.pinnedAt ? t("sidebar.unpin") : t("sidebar.pin")}
+          onClick={props.onTogglePin}
+          className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          {props.session.pinnedAt ? (
+            <PinFilledSmallIcon className="size-3.5" />
+          ) : (
+            <PinOutlineIcon className="size-3.5" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div
-          className={cn(
-            "group relative mx-1 mb-0.5 flex h-7 min-w-0 items-center rounded-sm transition-colors",
-            props.indent ? "pl-7" : "pl-2.5",
-            props.active ? "bg-surface-hover" : "hover:bg-surface-hover"
-          )}
-        >
-          <button
-            type="button"
-            aria-current={props.active ? "page" : undefined}
-            onClick={props.onSelect}
-            title={props.branchHint}
-            className={cn(
-              "flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden pr-7 text-left text-caption",
-              props.active ? "font-[500] text-foreground" : "text-foreground"
-            )}
-          >
-            {props.session.feishuChatId || props.session.wechatChatId ? (
-              <span
-                className="flex-none text-muted-slate"
-                title={t(props.session.wechatChatId ? "sidebar.wechatSession" : "sidebar.feishuSession")}
-              >
-                <CommentTextIcon className="size-3.5" />
-              </span>
-            ) : null}
-            <span className="min-w-0 flex-1 truncate">{props.session.title}</span>
-            {props.pendingAction ? (
-              <span
-                data-testid={`session-pending-action-${props.session.id}`}
-                title={t(
-                  props.pendingAction.kind === "ask_user"
-                    ? "sidebar.pendingAskUser"
-                    : "sidebar.pendingApproval"
-                )}
-                className={cn(
-                  "flex-none rounded-xs border px-1.5 py-0.5 text-micro font-medium leading-3",
-                  props.pendingAction.kind === "ask_user"
-                    ? "border-soft-blue-border bg-soft-blue-surface text-soft-blue-foreground"
-                    : "border-warning/25 bg-warning-soft/70 text-warning-deep"
-                )}
-              >
-                {t(
-                  props.pendingAction.kind === "ask_user"
-                    ? "sidebar.pendingAskUser"
-                    : "sidebar.pendingApproval"
-                )}
-              </span>
-            ) : null}
-            {props.notice ? (
-              <span
-                data-testid={`session-notice-${props.session.id}`}
-                aria-hidden="true"
-                className="flex size-3 flex-none items-center justify-center"
-              >
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    props.notice.status === "failed" ? "bg-error-deep" : "bg-link"
-                  )}
-                />
-              </span>
-            ) : null}
-          </button>
-          {showRunningSpinner ? (
-            <span
-              title={t("sidebar.sessionRunning")}
-              className="absolute right-1 top-0 flex h-full w-6 flex-none items-center justify-center text-muted-foreground"
-            >
-              <RefreshIcon className="size-3.5 animate-spin" />
-            </span>
-          ) : null}
-          <div
-            className={cn(
-              "absolute right-1 top-0 h-full flex-none items-center",
-              showRunningSpinner ? "hidden" : "hidden group-hover:flex"
-            )}
-          >
-            <button
-              type="button"
-              title={props.session.pinnedAt ? t("sidebar.unpin") : t("sidebar.pin")}
-              onClick={props.onTogglePin}
-              className="flex size-6 flex-none items-center justify-center rounded-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              {props.session.pinnedAt ? (
-                <PinFilledSmallIcon className="size-3.5" />
-              ) : (
-                <PinOutlineIcon className="size-3.5" />
-              )}
-            </button>
-          </div>
-        </div>
-      </ContextMenuTrigger>
+      {props.projectTooltipInfo ? (
+        <Tooltip delayDuration={120}>
+          <ContextMenuTrigger asChild>
+            <TooltipTrigger asChild>{row}</TooltipTrigger>
+          </ContextMenuTrigger>
+          <ProjectSessionTooltip info={props.projectTooltipInfo} />
+        </Tooltip>
+      ) : (
+        <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+      )}
       <ContextMenuContent>
         <ContextMenuItem onSelect={props.onStartRename}>
           <PencilOutlineIcon className="size-3.5" />
@@ -984,16 +1309,52 @@ function SessionRow(props: SessionRowProps) {
           )}
           {props.session.pinnedAt ? t("sidebar.unpin") : t("sidebar.pin")}
         </ContextMenuItem>
-        <ContextMenuItem onSelect={props.onExport}>
+        <ContextMenuItem onSelect={() => runAfterMenuClose(props.onExport)}>
           <DownloadIcon className="size-3.5" />
           {t("sidebar.exportSession")}
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={props.onDelete} className="text-destructive focus:text-destructive">
+        <ContextMenuItem
+          onSelect={() => runAfterMenuClose(props.onDelete)}
+          className="text-destructive focus:text-destructive"
+        >
           <TrashIcon className="size-3.5" />
           {t("sidebar.deleteSession")}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+  );
+}
+
+function ProjectSessionTooltip(props: { info: ProjectSessionTooltipInfo }) {
+  const { t } = useTranslation();
+  return (
+    <TooltipContent
+      side="right"
+      align="start"
+      sideOffset={8}
+      className="max-w-72 px-3 py-2 text-left"
+    >
+      <div className="space-y-1.5">
+        <div>
+          <div className="text-micro text-primary-foreground/70">
+            {t("sidebar.projectSessionPath")}
+          </div>
+          <div className="break-all font-mono text-caption leading-4 text-primary-foreground">
+            {props.info.projectPath}
+          </div>
+        </div>
+        {props.info.branchName ? (
+          <div>
+            <div className="text-micro text-primary-foreground/70">
+              {t("sidebar.projectSessionBranch")}
+            </div>
+            <div className="break-all font-mono text-caption leading-4 text-primary-foreground">
+              {props.info.branchName}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </TooltipContent>
   );
 }

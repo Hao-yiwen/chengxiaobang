@@ -39,7 +39,7 @@ function session(id: string, title: string, projectId: string | null = null): Se
   };
 }
 
-// 9 个项目会话用于验证分组默认只展示前 8 个，再加两个独立对话覆盖基础侧边栏渲染。
+// 9 个项目会话用于验证分组默认只展示前 6 个，再加两个独立对话覆盖基础侧边栏渲染。
 const projectSessions = Array.from({ length: 8 }, (_, index) =>
   session(`p${index}`, `项目会话${index}`, project.id)
 ).concat([session("p-target", "唯一目标", project.id)]);
@@ -51,6 +51,69 @@ function createClient(): ApiClient {
     listProjects: vi.fn(async () => [project]),
     createProject: vi.fn() as never,
     listSessions: vi.fn(async () => sessions),
+    listProjectFiles: vi.fn(async () => []),
+    updateSession: vi.fn() as never,
+    deleteSession: vi.fn() as never,
+    getGitChanges: vi.fn(async () => ({ isRepo: false, files: [] })),
+    listMessages: vi.fn(async () => []),
+    rewindSession: vi.fn(async () => []),
+    forkSession: vi.fn() as never,
+    listSessionRuns: vi.fn(async () => ({ runs: [], toolCalls: [] })),
+    listSlashCommands: vi.fn(async () => ({ commands: [], diagnostics: [] })),
+    listProviders: vi.fn(async () => [provider]),
+    saveProvider: vi.fn() as never,
+    deleteProvider: vi.fn(async () => true),
+    testProvider: vi.fn() as never,
+    getFeishuConfig: vi.fn(async () => ({ enabled: false, appId: "", domain: "feishu" as const, fullAccess: false })),
+    saveFeishuConfig: vi.fn() as never,
+    getFeishuStatus: vi.fn(async () => ({ status: "disconnected" as const })),
+    approve: vi.fn() as never,
+    abort: vi.fn() as never,
+    terminalExec: vi.fn() as never,
+    streamRun: vi.fn(async () => {})
+  };
+}
+
+function paginate<T>(items: T[], input?: { limit: number; offset: number }) {
+  const limit = input?.limit ?? items.length;
+  const offset = input?.offset ?? 0;
+  const pageItems = items.slice(offset, offset + limit);
+  return {
+    items: pageItems,
+    total: items.length,
+    hasMore: offset + pageItems.length < items.length
+  };
+}
+
+function projectFixture(index: number): Project {
+  return {
+    id: `project_${index}`,
+    name: `项目${index}`,
+    path: `/tmp/project-${index}`,
+    createdAt: `2026-06-08T00:00:0${index}.000Z`,
+    updatedAt: `2026-06-08T00:00:0${index}.000Z`
+  };
+}
+
+function createPagedClient(): ApiClient {
+  const pagedProjects = Array.from({ length: 5 }, (_, index) => projectFixture(index));
+  const firstProjectSessions = Array.from({ length: 7 }, (_, index) =>
+    session(`project_0_session_${index}`, `项目0 会话${index}`, "project_0")
+  );
+  const plainSessions = Array.from({ length: 7 }, (_, index) =>
+    session(`plain_${index}`, `普通会话${index}`)
+  );
+  return {
+    listProjects: vi.fn(async (input) =>
+      input?.pinned ? paginate([], input) : paginate(pagedProjects, input)
+    ),
+    createProject: vi.fn() as never,
+    listSessions: vi.fn(async (input) => {
+      if (input?.pinned) return paginate([], input);
+      if (input?.projectId === "project_0") return paginate(firstProjectSessions, input);
+      if (input?.projectId === null) return paginate(plainSessions, input);
+      return paginate([], input);
+    }),
     listProjectFiles: vi.fn(async () => []),
     updateSession: vi.fn() as never,
     deleteSession: vi.fn() as never,
@@ -115,8 +178,67 @@ describe("sidebar sessions", () => {
       "pointer-events-none",
       "bg-gradient-to-b"
     );
-    // 第 9 个项目会话仍受每组最多展示 8 条的限制。
+    // 第 9 个项目会话仍受每组默认展示 6 条的限制。
     expect(sidebar.queryByText("唯一目标")).not.toBeInTheDocument();
+  });
+
+  it("shows project path and git branch only on sessions under projects", async () => {
+    const client = {
+      ...createClient(),
+      getGitInfo: vi.fn(async () => ({ isRepo: true, branchName: "feature/sidebar-tooltip" }))
+    };
+    render(<App client={client} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+
+    expect(await sidebar.findByText("项目会话0")).toBeInTheDocument();
+    await waitFor(() => expect(client.getGitInfo).toHaveBeenCalledWith(project.id));
+    const projectSessionRow = sidebar.getByText("项目会话0").closest("div");
+    expect(projectSessionRow).toBeTruthy();
+
+    fireEvent.pointerMove(projectSessionRow!, { pointerType: "mouse" });
+    fireEvent.mouseEnter(projectSessionRow!);
+
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent("项目路径");
+    expect(tooltip).toHaveTextContent(project.path);
+    expect(tooltip).toHaveTextContent("分支");
+    expect(tooltip).toHaveTextContent("feature/sidebar-tooltip");
+
+    fireEvent.pointerLeave(projectSessionRow!);
+    fireEvent.mouseLeave(projectSessionRow!);
+
+    const plainSessionRow = sidebar.getByText("旧标题A").closest("div");
+    expect(plainSessionRow).toBeTruthy();
+    fireEvent.pointerMove(plainSessionRow!, { pointerType: "mouse" });
+    fireEvent.mouseEnter(plainSessionRow!);
+    expect(plainSessionRow).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("defaults to 4 projects and 6 sessions, then expands and collapses on demand", async () => {
+    render(<App client={createPagedClient()} />);
+    const sidebar = within(await screen.findByTestId("app-sidebar"));
+
+    expect(await sidebar.findByText("项目0")).toBeInTheDocument();
+    expect(sidebar.getByText("项目3")).toBeInTheDocument();
+    expect(sidebar.queryByText("项目4")).not.toBeInTheDocument();
+    expect(sidebar.getByText("项目0 会话5")).toBeInTheDocument();
+    expect(sidebar.queryByText("项目0 会话6")).not.toBeInTheDocument();
+    expect(sidebar.getByText("普通会话5")).toBeInTheDocument();
+    expect(sidebar.queryByText("普通会话6")).not.toBeInTheDocument();
+
+    fireEvent.click(sidebar.getAllByText("... 展开")[0]!);
+    expect(await sidebar.findByText("项目0 会话6")).toBeInTheDocument();
+    fireEvent.click(sidebar.getAllByText("折叠")[0]!);
+    await waitFor(() => expect(sidebar.queryByText("项目0 会话6")).not.toBeInTheDocument());
+
+    fireEvent.click(sidebar.getAllByText("... 展开")[1]!);
+    expect(await sidebar.findByText("项目4")).toBeInTheDocument();
+
+    fireEvent.click(sidebar.getAllByText("... 展开")[1]!);
+    expect(await sidebar.findByText("普通会话6")).toBeInTheDocument();
+    const collapseButtons = sidebar.getAllByText("折叠");
+    fireEvent.click(collapseButtons[collapseButtons.length - 1]!);
+    await waitFor(() => expect(sidebar.queryByText("普通会话6")).not.toBeInTheDocument());
   });
 
   it("exports a non-active session as markdown from its context menu", async () => {
@@ -138,6 +260,8 @@ describe("sidebar sessions", () => {
     expect(client.listSessionRuns).toHaveBeenCalledWith("s2");
     await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
     expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(document.body.style.pointerEvents).not.toBe("none");
 
     click.mockRestore();
     vi.unstubAllGlobals();

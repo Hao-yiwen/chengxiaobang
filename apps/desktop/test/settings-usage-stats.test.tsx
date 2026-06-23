@@ -95,8 +95,16 @@ describe("设置页用量统计", () => {
     expect(screen.getAllByText("2.00M").length).toBeGreaterThan(0);
     expect(screen.getByText("deepseek-v4-flash")).toBeInTheDocument();
     expect(screen.getByText("3 次运行")).toBeInTheDocument();
+    expect(screen.getByText("缓存命中 900k · 75%")).toBeInTheDocument();
+    expect(screen.getByText("总 Token")).toBeInTheDocument();
+    expect(screen.getByText("缓存命中")).toBeInTheDocument();
+    expect(screen.getByTestId("settings-usage-model-cache-bar")).toHaveStyle({
+      width: "39.130434782608695%"
+    });
     expect(screen.queryByText("deepseek · deepseek-v4-flash")).not.toBeInTheDocument();
     expect(screen.queryByText("provider_89aa · deepseek-v4-flash")).not.toBeInTheDocument();
+    expect(screen.getByText("Token 趋势")).toBeInTheDocument();
+    expect(screen.getByText("每日活动")).toBeInTheDocument();
     expect(screen.getAllByTestId("settings-usage-heatmap-cell")).toHaveLength(371);
     await waitFor(() =>
       expect(screen.getByTestId("settings-usage-chart-scroll").scrollLeft).toBe(500)
@@ -107,13 +115,25 @@ describe("设置页用量统计", () => {
     expect(screen.getByText("Token")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("radio", { name: "每周" }));
-    await waitFor(() => expect(screen.getAllByTestId("settings-usage-chart-bar")).toHaveLength(52));
+    await waitFor(() => expect(screen.getAllByTestId("settings-usage-chart-bar")).toHaveLength(120));
+    expect(screen.getByTestId("settings-usage-chart-bars")).toHaveStyle({
+      gridTemplateColumns: "repeat(120, 12px)",
+      width: "1559px"
+    });
+    expect(screen.getByTestId("settings-usage-chart-bars")).toHaveClass("gap-px");
+    expect(screen.getByText("近 120 周")).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByTestId("settings-usage-chart-scroll").scrollLeft).toBe(500)
     );
 
-    fireEvent.click(screen.getByRole("radio", { name: "累计" }));
-    await waitFor(() => expect(screen.getAllByTestId("settings-usage-chart-bar")).toHaveLength(12));
+    fireEvent.click(screen.getByRole("radio", { name: "每月" }));
+    await waitFor(() => expect(screen.getAllByTestId("settings-usage-chart-bar")).toHaveLength(48));
+    expect(screen.getByTestId("settings-usage-chart-bars")).toHaveStyle({
+      gridTemplateColumns: "repeat(48, 32px)",
+      width: "1583px"
+    });
+    expect(screen.getByTestId("settings-usage-chart-bars")).toHaveClass("gap-px");
+    expect(screen.getByText("近 48 个月")).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByTestId("settings-usage-chart-scroll").scrollLeft).toBe(500)
     );
@@ -145,15 +165,16 @@ function usageStatsFixture(): UsageStats {
     week: today,
     total: today,
     dailyBuckets: dailyBuckets(371, "2026-06-13", today),
-    weeklyBuckets: weeklyBuckets(52, "2026-06-08", today),
-    monthlyBuckets: monthlyBuckets(12, "2026-06", today),
+    weeklyBuckets: weeklyBuckets(120, "2026-06-08", today),
+    monthlyBuckets: monthlyBuckets(48, "2026-06", today),
     topModels: [
       {
         providerId: "deepseek",
         providerKind: "deepseek",
         model: "deepseek-v4-flash",
         label: "deepseek · deepseek-v4-flash",
-        ...today
+        ...today,
+        cachedPromptTokens: 800_000
       },
       {
         ...emptySummary(),
@@ -163,6 +184,7 @@ function usageStatsFixture(): UsageStats {
         label: "provider_89aa · deepseek-v4-flash",
         costCny: 0.42,
         promptTokens: 200_000,
+        cachedPromptTokens: 100_000,
         completionTokens: 100_000,
         totalTokens: 300_000,
         runCount: 2,
@@ -190,8 +212,8 @@ function emptyUsageStats(): UsageStats {
     week: emptySummary(),
     total: emptySummary(),
     dailyBuckets: dailyBuckets(371, "2026-06-13"),
-    weeklyBuckets: weeklyBuckets(52, "2026-06-08"),
-    monthlyBuckets: monthlyBuckets(12, "2026-06"),
+    weeklyBuckets: weeklyBuckets(120, "2026-06-08"),
+    monthlyBuckets: monthlyBuckets(48, "2026-06"),
     topModels: [],
     dataQuality: {
       totalRunCount: 0,

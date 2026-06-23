@@ -64,6 +64,12 @@ export type ScheduledTaskFinishedEvent = Extract<ScheduledTaskEvent, { type: "sc
 export type SessionRunHistory = { runs: RunRecord[]; toolCalls: ToolCall[] };
 export type FilePreviewEntrySource = "panel" | "direct" | "project-tree";
 
+export interface SidebarPageState {
+  loaded: number;
+  total: number;
+  hasMore: boolean;
+}
+
 export interface ModelSelection {
   providerId?: string;
   model?: string;
@@ -262,6 +268,9 @@ export interface AppState {
   // 左侧边栏（持久化）
   sidebarOpen: boolean;
   projectSortMode: ProjectSortMode;
+  sidebarProjectsPage: SidebarPageState;
+  sidebarUngroupedSessionsPage: SidebarPageState;
+  sidebarProjectSessionsPageByProjectId: Record<string, SidebarPageState>;
   // 右侧工作区面板（当前会话状态 + 每会话记忆）
   rightPanelOpen: boolean;
   /** 当前活动 tab 的 kind 镜像;无 tab 时为 null。由 tab 相关 action 同步维护。 */
@@ -370,6 +379,9 @@ export interface AppState {
   loadData(): Promise<
     { projects: Project[]; sessions: Session[]; providers: ProviderConfig[] } | undefined
   >;
+  loadMoreSidebarProjects(): Promise<void>;
+  loadMoreSidebarProjectSessions(projectId: string): Promise<void>;
+  loadMoreSidebarUngroupedSessions(): Promise<void>;
   refresh(): Promise<void>;
   refreshSlashCommands(projectId?: string): Promise<void>;
   loadFileSuggestions(query: string): Promise<void>;

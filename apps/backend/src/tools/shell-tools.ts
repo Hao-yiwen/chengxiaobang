@@ -54,6 +54,8 @@ const shellCommandIdParams = Type.Object({
 
 export interface ShellToolOptions {
   backgroundAfterMs?: number;
+  shellOutputDir?: string;
+  runId?: string;
   platform?: NodeJS.Platform;
 }
 
@@ -92,6 +94,8 @@ async function runShell(
   const result = await runShellCommand(command, cwd, {
     signal,
     backgroundAfterMs: normalized.backgroundAfterMs,
+    ...(options.shellOutputDir ? { outputDir: options.shellOutputDir } : {}),
+    ...(options.runId ? { scopeId: options.runId } : {}),
     ...(requestOptions.shell ? { shell: requestOptions.shell } : {})
   });
   if (result.kind === "background") {
@@ -248,7 +252,7 @@ function renderBackgroundStarted(
     `进程 PID：${snapshot.pid ?? "未知"}`,
     "",
     "完整 stdout/stderr 会持续写入输出文件，不会直接放入本次工具结果。",
-    `- 查看输出：调用 Read，参数为 {"file_path":"${outputPath}","offset":1,"limit":200}`,
+    `- 查看输出：调用 Read，参数为 ${JSON.stringify({ file_path: outputPath, offset: 1, limit: 200 })}`,
     `- 查看状态：调用 BashStatus，参数为 {"id":"${snapshot.id}"}`,
     `- 如果命令没有进展或不再需要：调用 BashCancel，参数为 {"id":"${snapshot.id}"}`
   ].join("\n");
@@ -339,7 +343,7 @@ function renderBackgroundStatus(snapshot: BackgroundShellCommandSnapshot, worksp
     snapshot.finishedAt ? `结束时间：${snapshot.finishedAt}` : undefined,
     snapshot.error ? `错误：${snapshot.error}` : undefined,
     "",
-    `查看输出：调用 Read，参数为 {"file_path":"${outputPath}","offset":1,"limit":200}`
+    `查看输出：调用 Read，参数为 ${JSON.stringify({ file_path: outputPath, offset: 1, limit: 200 })}`
   ]
     .filter((line): line is string => Boolean(line))
     .join("\n");
@@ -366,6 +370,9 @@ function shellOutputPathForRead(
   snapshot: BackgroundShellCommandSnapshot,
   workspacePath: string
 ): string {
+  if (snapshot.readPath) {
+    return snapshot.readPath;
+  }
   return resolve(snapshot.cwd) === resolve(workspacePath)
     ? snapshot.relativeOutputPath
     : snapshot.outputPath;

@@ -1,7 +1,12 @@
 import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { GitChangeScope, GitChangesResult, GitFileChange } from "@chengxiaobang/shared";
+import type {
+  GitChangeScope,
+  GitChangesResult,
+  GitFileChange,
+  GitInfo
+} from "@chengxiaobang/shared";
 import { changeStatsFromPatch } from "./file-change";
 import { runCommand } from "./shell";
 
@@ -211,6 +216,31 @@ export async function detectGitRepository(projectPath: string): Promise<boolean>
     log.debug("[git-changes] 项目不是 Git 工作树", { projectPath, exitCode: probe.exitCode });
   }
   return isRepo;
+}
+
+/** 读取项目的轻量 Git 信息，供前端菜单与侧边栏提示使用。 */
+export async function collectGitInfo(projectPath: string): Promise<GitInfo> {
+  if (!(await detectGitRepository(projectPath))) {
+    return { isRepo: false };
+  }
+  try {
+    const branch = await runGit(["symbolic-ref", "--quiet", "--short", "HEAD"], projectPath);
+    const branchName = branch.exitCode === 0 ? branch.output.trim() : "";
+    if (!branchName) {
+      log.debug("[git-changes] 未读取到当前分支名", {
+        projectPath,
+        exitCode: branch.exitCode
+      });
+      return { isRepo: true };
+    }
+    return { isRepo: true, branchName };
+  } catch (error) {
+    log.warn("[git-changes] 读取当前分支名失败", {
+      projectPath,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return { isRepo: true };
+  }
 }
 
 function hasScopeChange(status: string, scope: GitChangeScope): boolean {

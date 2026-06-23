@@ -19,7 +19,7 @@ function memorySettings() {
 
 interface PluginSpec {
   manifest: Record<string, unknown>;
-  skills?: Array<{ name: string; description: string }>;
+  skills?: Array<{ name: string; description: string; userInvocable?: boolean }>;
   commands?: Array<{ name: string; description?: string; argumentHint?: string }>;
   mcpJson?: Record<string, unknown>;
 }
@@ -37,7 +37,14 @@ async function writePlugin(root: string, dirName: string, spec: PluginSpec): Pro
     await mkdir(join(pluginDir, "skills", skill.name), { recursive: true });
     await writeFile(
       join(pluginDir, "skills", skill.name, "SKILL.md"),
-      `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n正文`,
+      [
+        "---",
+        `name: ${skill.name}`,
+        `description: ${skill.description}`,
+        ...(skill.userInvocable === false ? ["user-invocable: false"] : []),
+        "---",
+        "正文"
+      ].join("\n"),
       "utf8"
     );
   }
@@ -101,8 +108,39 @@ describe("PluginService", () => {
       source: "builtin",
       enabled: false,
       hasConfig: false,
-      contributions: { skills: 2, commands: 1, mcpServers: 0, hooks: 0 }
+      contributions: { skills: 2, commands: 3, mcpServers: 0, hooks: 0 }
     });
+
+    const detail = await service.getDetail("superpowers");
+    expect(detail?.commands).toEqual([
+      expect.objectContaining({ name: "brainstorming", kind: "skill" }),
+      expect.objectContaining({ name: "plan", kind: "prompt_template" }),
+      expect.objectContaining({ name: "writing-plans", kind: "skill" })
+    ]);
+  });
+
+  it("counts visible slash entries once and lets explicit commands override same-name skills", async () => {
+    await writePlugin(builtinRoot, "android", {
+      manifest: { name: "android" },
+      skills: [
+        { name: "android-dev", description: "安卓技能" },
+        { name: "hidden-helper", description: "隐藏技能", userInvocable: false }
+      ],
+      commands: [{ name: "android-dev", description: "安卓命令", argumentHint: "[目标]" }]
+    });
+
+    const [summary] = await service.list();
+    expect(summary.contributions).toMatchObject({ skills: 2, commands: 1 });
+
+    const detail = await service.getDetail("android");
+    expect(detail?.commands).toEqual([
+      {
+        name: "android-dev",
+        kind: "prompt_template",
+        description: "安卓命令",
+        argumentHint: "[目标]"
+      }
+    ]);
   });
 
   it("counts mcpServers from manifest and .mcp.json deduped, surfaces config fields", async () => {

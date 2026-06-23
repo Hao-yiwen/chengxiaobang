@@ -76,8 +76,12 @@ describe("usage stats", () => {
     );
 
     expect(stats.dailyBuckets).toHaveLength(371);
-    expect(stats.weeklyBuckets).toHaveLength(52);
-    expect(stats.monthlyBuckets).toHaveLength(12);
+    expect(stats.weeklyBuckets).toHaveLength(120);
+    expect(stats.weeklyBuckets[0]?.key).toBe("2024-02-26");
+    expect(stats.weeklyBuckets.at(-1)?.key).toBe("2026-06-08");
+    expect(stats.monthlyBuckets).toHaveLength(48);
+    expect(stats.monthlyBuckets[0]?.key).toBe("2022-07");
+    expect(stats.monthlyBuckets.at(-1)?.key).toBe("2026-06");
     expect(stats.today.runCount).toBe(4);
     expect(stats.today.totalTokens).toBe(2_008_620);
     expect(stats.week.runCount).toBe(5);

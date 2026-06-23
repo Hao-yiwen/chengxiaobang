@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   deriveTodoState,
@@ -10,8 +10,10 @@ import {
 } from "@chengxiaobang/shared";
 import { AgentRunner } from "../src/agent/agent-runner";
 import { TOOL_RESULT_SPILL_DIR } from "../src/agent/tool-result-spill";
+import { defaultDataDir } from "../src/paths";
 import { SqliteStateStore } from "../src/repository/sqlite-state-store";
 import { MemorySecretStore } from "../src/secrets/secret-store";
+import { SHELL_GLOBAL_OUTPUT_DIR } from "../src/tools/shell";
 import { createShellTools } from "../src/tools/shell-tools";
 import { scriptedStreamFn, type ScriptedTurn } from "./helpers/scripted-stream";
 
@@ -460,17 +462,21 @@ describe("AgentRunner agentic loop (pi)", () => {
     );
     const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
     const runId = started?.type === "run_started" ? started.runId : "";
+    const spillPath = join(defaultDataDir(), TOOL_RESULT_SPILL_DIR, runId, "call_1-Read.txt");
 
     expect(summary).toContain("结果过长，已写入文件");
-    expect(summary).toContain(`${TOOL_RESULT_SPILL_DIR}/${runId}/call_1-Read.txt`);
+    expect(summary).toContain(spillPath);
     expect(summary).toContain("START");
     expect(summary).toContain("END");
     expect(summary).not.toContain("MIDDLE_UNIQUE");
-    const spilled = await readFile(join(dir, TOOL_RESULT_SPILL_DIR, runId, "call_1-Read.txt"), "utf8");
+    const spilled = await readFile(spillPath, "utf8");
     expect(spilled).toContain("large.txt 的第 1-5 行");
     expect(spilled).toContain("     1\tSTART");
     expect(spilled).toContain("     3\tMIDDLE_UNIQUE");
     expect(spilled).toContain("     5\tEND");
+    await expect(
+      readFile(join(dir, ".chengxiaobang", "tool-results", runId, "call_1-Read.txt"), "utf8")
+    ).rejects.toThrow();
 
     const replayToolResult = calls[1].context.messages.find(
       (message) => message.role === "toolResult" && message.toolCallId === "call_1"
@@ -502,7 +508,12 @@ describe("AgentRunner agentic loop (pi)", () => {
     ]);
     const runner = new AgentRunner(store, secrets, {
       streamFn: scripted.streamFn,
-      createTools: (workspacePath) => createShellTools(workspacePath, { backgroundAfterMs: 50 })
+      createTools: (workspacePath, runtime) =>
+        createShellTools(workspacePath, {
+          backgroundAfterMs: 50,
+          shellOutputDir: join(defaultDataDir(), SHELL_GLOBAL_OUTPUT_DIR),
+          ...(runtime?.runId ? { runId: runtime.runId } : {})
+        })
     });
     const startedAt = Date.now();
 
@@ -514,6 +525,8 @@ describe("AgentRunner agentic loop (pi)", () => {
     const completed = events.find(
       (event) => event.type === "tool_call" && event.toolCall.status === "completed"
     );
+    const started = events.find((event) => event.type === "run_started");
+    const runId = started?.type === "run_started" ? started.runId : "";
     const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
     const outputPath = parseBackgroundOutputPath(summary);
     const replayToolResult = scripted.calls[1].context.messages.find(
@@ -530,7 +543,11 @@ describe("AgentRunner agentic loop (pi)", () => {
     expect(summary).toContain("已转入后台继续运行");
     expect(replayText).toContain("后台命令 ID");
     expect(replayText).toContain(outputPath);
-    await waitForFileToContain(join(dir, outputPath), "loop-background-done");
+    expect(outputPath).toContain(join(defaultDataDir(), SHELL_GLOBAL_OUTPUT_DIR, runId));
+    await waitForFileToContain(resolveOutputPath(dir, outputPath), "loop-background-done");
+    await expect(
+      readFile(join(dir, ".chengxiaobang", "shell-outputs", basename(outputPath)), "utf8")
+    ).rejects.toThrow();
   });
 
   it("starts model-requested shell commands in the background when requested", async () => {
@@ -563,12 +580,15 @@ describe("AgentRunner agentic loop (pi)", () => {
     const completed = events.find(
       (event) => event.type === "tool_call" && event.toolCall.status === "completed"
     );
+    const started = events.find((event) => event.type === "run_started");
+    const runId = started?.type === "run_started" ? started.runId : "";
     const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
     const outputPath = parseBackgroundOutputPath(summary);
 
     expect(summary).toContain("run_in_background=true");
     expect(summary).toContain("后台命令 ID");
-    await waitForFileToContain(join(dir, outputPath), "requested-background-done");
+    expect(outputPath).toContain(join(defaultDataDir(), SHELL_GLOBAL_OUTPUT_DIR, runId));
+    await waitForFileToContain(resolveOutputPath(dir, outputPath), "requested-background-done");
   });
 
   it("waits for model-requested shell commands in blocking mode", async () => {
@@ -634,12 +654,15 @@ describe("AgentRunner agentic loop (pi)", () => {
     const completed = events.find(
       (event) => event.type === "tool_call" && event.toolCall.status === "completed"
     );
+    const started = events.find((event) => event.type === "run_started");
+    const runId = started?.type === "run_started" ? started.runId : "";
     const summary = completed?.type === "tool_call" ? completed.toolCall.result ?? "" : "";
     const outputPath = parseBackgroundOutputPath(summary);
 
     expect(summary).toContain("timeout=50ms");
     expect(summary).toContain("后台命令 ID");
-    await waitForFileToContain(join(dir, outputPath), "blocking-background-done");
+    expect(outputPath).toContain(join(defaultDataDir(), SHELL_GLOBAL_OUTPUT_DIR, runId));
+    await waitForFileToContain(resolveOutputPath(dir, outputPath), "blocking-background-done");
   });
 
   it("emits tool_activity while tool arguments stream and omits large content", async () => {
@@ -1077,6 +1100,10 @@ function parseBackgroundOutputPath(result: string): string {
     throw new Error(`未找到输出文件路径: ${result}`);
   }
   return match[1];
+}
+
+function resolveOutputPath(workspacePath: string, outputPath: string): string {
+  return isAbsolute(outputPath) ? outputPath : join(workspacePath, outputPath);
 }
 
 async function waitForFileToContain(

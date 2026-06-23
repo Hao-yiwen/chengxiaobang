@@ -20,12 +20,14 @@ import { PluginService } from "./tools/plugin-service";
 import { SkillMarketService } from "./tools/skill-market-service";
 import { TaskScheduler } from "./tasks/task-scheduler";
 import { createAgentTools } from "./tools/registry";
+import { SHELL_GLOBAL_OUTPUT_DIR } from "./tools/shell";
 import { SlashCommandService } from "./tools/slash-command-service";
 import { UsageCostLedgerService } from "./usage/usage-cost-ledger";
 import { WebSearchConfigService } from "./web-search/web-search-config-service";
 import { WechatBridgeRuntime } from "./wechat/wechat-bridge";
 import { WechatConfigService } from "./wechat/wechat-config-service";
 import { WechatService } from "./wechat/wechat-service";
+import { TOOL_RESULT_SPILL_DIR } from "./agent/tool-result-spill";
 import { defaultDataDir, defaultProviderConfigPath } from "./paths";
 
 import { getLogger } from "./logging/logger";
@@ -94,10 +96,18 @@ export async function startBackend(config: BackendConfig) {
   const webSearchConfigService = new WebSearchConfigService(store, secrets);
   // 长期记忆与 SQLite 同级落在 data-dir 下，跨所有会话共享。
   const memoryDir = join(config.dataDir, "memories");
+  const toolResultSpillDir = join(config.dataDir, TOOL_RESULT_SPILL_DIR);
+  const shellOutputDir = join(config.dataDir, SHELL_GLOBAL_OUTPUT_DIR);
   log.info(`[backend] 长期记忆目录 ${memoryDir}`);
+  log.info("[backend] 运行产物目录已配置", {
+    toolResultSpillDir,
+    shellOutputDir
+  });
   const runner = new AgentRunner(store, secrets, {
     providerRepository: providerConfigFile,
     memoryDir,
+    toolResultSpillDir,
+    shellOutputDir,
     createTools: async (workspacePath, runtime) =>
       createAgentTools(workspacePath, {
         webSearch: await webSearchConfigService.createSearcher(),
@@ -114,6 +124,8 @@ export async function startBackend(config: BackendConfig) {
             }
           : {}),
         memoryDir,
+        shellOutputDir,
+        ...(runtime?.runId ? { runId: runtime.runId } : {}),
         skillMarketService,
         mcpTools: await mcpManager.getToolsForWorkspace(workspacePath),
         ...(config.ocrServiceUrl && config.ocrServiceToken

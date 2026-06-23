@@ -77,13 +77,13 @@ describe("createApp", () => {
     await expect(rejected.json()).resolves.toEqual({ error: "未授权" });
 
     const accepted = await tokenApp(
-      new Request("http://local/api/projects", {
+      new Request("http://local/api/projects?limit=4&offset=0&sort=created&pinned=false", {
         method: "GET",
         headers: { "x-chengxiaobang-token": "secret-token" }
       })
     );
     expect(accepted.status).toBe(200);
-    await expect(accepted.json()).resolves.toEqual({ projects: [] });
+    await expect(accepted.json()).resolves.toEqual({ items: [], total: 0, hasMore: false });
   });
 
   it("rejects protected API routes by default when no token is configured", async () => {
@@ -227,9 +227,13 @@ describe("createApp", () => {
     await tick();
     await store.updateRunStatus("run_failed_notice", "failed", undefined, "模型失败");
 
-    const before = await app(new Request("http://local/api/sessions", { method: "GET" }));
-    const beforeBody = (await before.json()) as { sessions: Array<{ id: string; notice?: unknown }> };
-    expect(beforeBody.sessions.find((item) => item.id === session.id)?.notice).toMatchObject({
+    const before = await app(
+      new Request("http://local/api/sessions?limit=10&offset=0&pinned=false", { method: "GET" })
+    );
+    const beforeBody = (await before.json()) as {
+      items: Array<{ id: string; notice?: unknown }>;
+    };
+    expect(beforeBody.items.find((item) => item.id === session.id)?.notice).toMatchObject({
       status: "failed",
       runId: "run_failed_notice"
     });
@@ -273,6 +277,105 @@ describe("createApp", () => {
 
     const empty = await app(jsonRequest(`/api/projects/${project.id}`, "PATCH", {}));
     expect(empty.status).toBe(400);
+  });
+
+  it("paginates projects and sessions through HTTP API", async () => {
+    const missingProjectsPage = await app(
+      new Request("http://local/api/projects", { method: "GET" })
+    );
+    expect(missingProjectsPage.status).toBe(400);
+
+    const projects = [];
+    for (let index = 0; index < 6; index += 1) {
+      projects.push(
+        await store.createProject({
+          name: `项目${index}`,
+          path: join(dir, `project-${index}`)
+        })
+      );
+      await tick();
+    }
+    const targetProject = projects[0]!;
+    const projectSessions = [];
+    for (let index = 0; index < 7; index += 1) {
+      projectSessions.push(
+        await store.createSession({
+          projectId: targetProject.id,
+          title: `项目会话${index}`,
+          accessMode: "approval"
+        })
+      );
+      await tick();
+    }
+    const plainSessions = [];
+    for (let index = 0; index < 7; index += 1) {
+      plainSessions.push(
+        await store.createSession({
+          projectId: null,
+          title: `普通会话${index}`,
+          accessMode: "approval"
+        })
+      );
+      await tick();
+    }
+
+    const projectPage = await app(
+      new Request("http://local/api/projects?limit=4&offset=0&sort=created&pinned=false", {
+        method: "GET"
+      })
+    );
+    expect(projectPage.status).toBe(200);
+    await expect(projectPage.json()).resolves.toMatchObject({
+      total: 6,
+      hasMore: true,
+      items: expect.arrayContaining([
+        expect.objectContaining({ id: projects[5]!.id }),
+        expect.objectContaining({ id: projects[4]!.id }),
+        expect.objectContaining({ id: projects[3]!.id }),
+        expect.objectContaining({ id: projects[2]!.id })
+      ])
+    });
+
+    const projectSessionPage = await app(
+      new Request(
+        `http://local/api/sessions?projectId=${targetProject.id}&limit=6&offset=0&pinned=false`,
+        { method: "GET" }
+      )
+    );
+    expect(projectSessionPage.status).toBe(200);
+    const projectSessionBody = (await projectSessionPage.json()) as {
+      items: Array<{ id: string }>;
+      total: number;
+      hasMore: boolean;
+    };
+    expect(projectSessionBody.items).toHaveLength(6);
+    expect(projectSessionBody.total).toBe(7);
+    expect(projectSessionBody.hasMore).toBe(true);
+    expect(projectSessionBody.items[0]?.id).toBe(projectSessions[6]!.id);
+
+    const plainSessionPage = await app(
+      new Request("http://local/api/sessions?projectId=null&limit=6&offset=0&pinned=false", {
+        method: "GET"
+      })
+    );
+    expect(plainSessionPage.status).toBe(200);
+    const plainSessionBody = (await plainSessionPage.json()) as {
+      items: Array<{ id: string }>;
+      total: number;
+      hasMore: boolean;
+    };
+    expect(plainSessionBody.items).toHaveLength(6);
+    expect(plainSessionBody.total).toBe(7);
+    expect(plainSessionBody.hasMore).toBe(true);
+    expect(plainSessionBody.items[0]?.id).toBe(plainSessions[6]!.id);
+
+    const sessionById = await app(
+      new Request(`http://local/api/sessions/${projectSessions[0]!.id}`, { method: "GET" })
+    );
+    expect(sessionById.status).toBe(200);
+    await expect(sessionById.json()).resolves.toMatchObject({
+      session: { id: projectSessions[0]!.id }
+    });
   });
 
   it("rewinds a session to a message over HTTP", async () => {
@@ -391,9 +494,11 @@ describe("createApp", () => {
       ]
     });
 
-    const sessions = await app(new Request("http://local/api/sessions", { method: "GET" }));
-    const sessionsBody = (await sessions.json()) as { sessions: Array<{ id: string }> };
-    expect(sessionsBody.sessions.map((item) => item.id)).toEqual([session.id]);
+    const sessions = await app(
+      new Request("http://local/api/sessions?limit=10&offset=0&pinned=false", { method: "GET" })
+    );
+    const sessionsBody = (await sessions.json()) as { items: Array<{ id: string }> };
+    expect(sessionsBody.items.map((item) => item.id)).toEqual([session.id]);
   });
 
   it("updates assistant message feedback over HTTP", async () => {
@@ -576,7 +681,11 @@ describe("createApp", () => {
       new Request(`http://local/api/projects/${repo.id}/git/info`, { method: "GET" })
     );
     expect(repoResponse.status).toBe(200);
-    await expect(repoResponse.json()).resolves.toEqual({ info: { isRepo: true } });
+    const repoBody = await repoResponse.json();
+    expect(repoBody).toEqual({
+      info: { isRepo: true, branchName: expect.any(String) }
+    });
+    expect(repoBody.info.branchName.length).toBeGreaterThan(0);
 
     const missing = await app(
       new Request("http://local/api/projects/nope/git/info", { method: "GET" })

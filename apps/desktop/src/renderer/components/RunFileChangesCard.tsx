@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type ReactNode
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -25,6 +24,8 @@ export function RunFileChangesCard({ runId, fileChanges }: RunFileChangesCardPro
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [openPath, setOpenPath] = useState<string>();
+  const openRef = useRef(open);
+  const openPathRef = useRef(openPath);
   const stats = useMemo(
     () =>
       fileChanges.reduce(
@@ -37,9 +38,41 @@ export function RunFileChangesCard({ runId, fileChanges }: RunFileChangesCardPro
     [fileChanges]
   );
 
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+
+  useEffect(() => {
+    openPathRef.current = openPath;
+  }, [openPath]);
+
   if (fileChanges.length === 0) {
     return null;
   }
+
+  const handleToggleCard = () => {
+    const nextOpen = !openRef.current;
+    openRef.current = nextOpen;
+    setOpen(nextOpen);
+    console.info("[RunFileChangesCard] 切换本轮 diff 卡片", {
+      runId,
+      open: nextOpen,
+      fileCount: fileChanges.length
+    });
+  };
+
+  const handleToggleFile = (change: FileChange) => {
+    const nextPath = openPathRef.current === change.path ? undefined : change.path;
+    openPathRef.current = nextPath;
+    setOpenPath(nextPath);
+    console.info("[RunFileChangesCard] 切换单文件 diff", {
+      runId,
+      path: change.path,
+      open: nextPath === change.path,
+      additions: change.additions,
+      deletions: change.deletions
+    });
+  };
 
   return (
     <section
@@ -49,15 +82,7 @@ export function RunFileChangesCard({ runId, fileChanges }: RunFileChangesCardPro
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => {
-          const nextOpen = !open;
-          console.info("[RunFileChangesCard] 切换本轮 diff 卡片", {
-            runId,
-            open: nextOpen,
-            fileCount: fileChanges.length
-          });
-          setOpen(nextOpen);
-        }}
+        onClick={handleToggleCard}
         className="flex min-h-10 w-full min-w-0 items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-canvas-soft"
       >
         <ChevronIcon
@@ -83,17 +108,7 @@ export function RunFileChangesCard({ runId, fileChanges }: RunFileChangesCardPro
               runId={runId}
               change={change}
               open={openPath === change.path}
-              onToggle={() => {
-                const nextPath = openPath === change.path ? undefined : change.path;
-                console.info("[RunFileChangesCard] 切换单文件 diff", {
-                  runId,
-                  path: change.path,
-                  open: nextPath === change.path,
-                  additions: change.additions,
-                  deletions: change.deletions
-                });
-                setOpenPath(nextPath);
-              }}
+              onToggle={() => handleToggleFile(change)}
             />
           ))}
         </div>
@@ -153,13 +168,14 @@ function RunFileChangeRow({
           )}
         />
       </button>
-      <AnimatedCollapse
-        open={open}
-        className="border-t border-hairline bg-background"
-        dataTestId="run-file-change-diff-collapse"
-      >
-        <DiffView blocks={blocks} hideScrollbar compactBlockGap />
-      </AnimatedCollapse>
+      {open ? (
+        <div
+          data-testid="run-file-change-diff-body"
+          className="border-t border-hairline bg-background"
+        >
+          <DiffView blocks={blocks} hideScrollbar compactBlockGap />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -183,9 +199,7 @@ function AnimatedCollapse({
   dataTestId?: string;
   children: ReactNode;
 }) {
-  const contentRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(open);
-  const [height, setHeight] = useState<number | "auto">(open ? "auto" : 0);
   const visible = open || mounted;
 
   useEffect(() => {
@@ -195,83 +209,37 @@ function AnimatedCollapse({
   }, [open]);
 
   useEffect(() => {
-    if (!visible) {
+    if (open || !mounted) {
       return undefined;
     }
 
-    const content = contentRef.current;
-    if (!content) {
-      return undefined;
-    }
-
-    if (prefersReducedMotion()) {
-      setHeight(open ? "auto" : 0);
-      if (!open) {
-        setMounted(false);
-      }
-      return undefined;
-    }
-
-    if (open) {
-      setHeight(0);
-      const cancelFrame = scheduleFrame(() => {
-        setHeight(content.scrollHeight);
-      });
-      const done = window.setTimeout(() => {
-        setHeight("auto");
-      }, COLLAPSE_ANIMATION_MS);
-      return () => {
-        cancelFrame();
-        window.clearTimeout(done);
-      };
-    }
-
-    setHeight(content.scrollHeight);
-    const cancelFrame = scheduleFrame(() => {
-      setHeight(0);
-    });
     const done = window.setTimeout(() => {
       setMounted(false);
-    }, COLLAPSE_ANIMATION_MS);
+    }, prefersReducedMotion() ? 0 : COLLAPSE_ANIMATION_MS);
     return () => {
-      cancelFrame();
       window.clearTimeout(done);
     };
-  }, [open, visible]);
+  }, [mounted, open]);
 
   if (!visible) {
     return null;
   }
-
-  const style: CSSProperties = {
-    height: height === "auto" ? "auto" : `${height}px`
-  };
 
   return (
     <div
       aria-hidden={!open}
       data-testid={dataTestId}
       className={cn(
-        "overflow-hidden transition-[height,opacity] duration-200 ease-out motion-reduce:transition-none",
-        open ? "opacity-100" : "opacity-0",
+        "grid overflow-hidden transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
+        open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
         className
       )}
-      style={style}
     >
-      <div ref={contentRef} className="min-h-0 overflow-hidden">
+      <div className="min-h-0 overflow-hidden">
         {children}
       </div>
     </div>
   );
-}
-
-function scheduleFrame(callback: () => void): () => void {
-  if (typeof window.requestAnimationFrame === "function") {
-    const frameId = window.requestAnimationFrame(callback);
-    return () => window.cancelAnimationFrame(frameId);
-  }
-  const timeoutId = window.setTimeout(callback, 16);
-  return () => window.clearTimeout(timeoutId);
 }
 
 function prefersReducedMotion(): boolean {

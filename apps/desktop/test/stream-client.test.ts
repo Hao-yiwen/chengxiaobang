@@ -16,7 +16,7 @@ function fetchRequestHeaders(fetchMock: ReturnType<typeof vi.fn>, index = 0): He
 describe("readSseStream", () => {
   it("sends x-request-id on ordinary JSON requests", async () => {
     const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ projects: [] }), {
+      new Response(JSON.stringify({ items: [], total: 0, hasMore: false }), {
         status: 200,
         headers: { "Content-Type": "application/json" }
       })
@@ -24,7 +24,8 @@ describe("readSseStream", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const client = await createApiClient();
-    await expect(client.listProjects()).resolves.toEqual([]);
+    await expect(client.listProjects({ limit: 4, offset: 0, sort: "created", pinned: false }))
+      .resolves.toEqual({ items: [], total: 0, hasMore: false });
 
     const requestHeaders = fetchRequestHeaders(fetchMock);
     expect(requestHeaders.get("x-request-id")).toEqual(expect.stringMatching(/^req_/));

@@ -45,6 +45,7 @@ describe("内置插件", () => {
 
     const superpowers = list.find((p) => p.name === "superpowers");
     expect(superpowers?.contributions.skills).toBeGreaterThanOrEqual(10);
+    expect(superpowers?.contributions.commands).toBe(superpowers?.contributions.skills);
 
     const android = list.find((p) => p.name === "android-emulator");
     expect(android?.contributions.mcpServers).toBe(1);

@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import type {
   PluginConfigField,
   PluginConfigValues,
+  PluginCommandRef,
   PluginDetail,
   PluginSummary
 } from "@chengxiaobang/shared";
@@ -268,6 +269,18 @@ function DetailGroup(props: { title: string; children: ReactNode }) {
   );
 }
 
+function PluginCommandKindBadge(props: { kind: PluginCommandRef["kind"] }) {
+  const { t } = useTranslation();
+  return (
+    <Badge
+      variant="secondary"
+      className="h-4 flex-none px-1.5 py-0 text-[11px] leading-4 text-muted-foreground"
+    >
+      {t(`settings.commands.kind.${props.kind}`)}
+    </Badge>
+  );
+}
+
 /**
  * 插件详情弹窗：按名拉取详情；头部 name/version/author；分区列出技能/命令/MCP server；
  * configFields 非空时渲染配置表单；底部安装路径 + 卸载按钮（仅 installed 来源）。
@@ -396,11 +409,12 @@ export function PluginDetailDialog(props: { name: string | null; onClose(): void
                 ) : (
                   <ul className="space-y-1.5">
                     {detail.commands.map((command) => (
-                      <li key={command.name} className="flex flex-col">
+                      <li key={`${command.kind}:${command.name}`} className="flex flex-col">
                         <span className="flex items-center gap-2">
                           <span className="font-mono text-body-xs text-foreground">
-                            {command.name}
+                            /{command.name}
                           </span>
+                          <PluginCommandKindBadge kind={command.kind} />
                           {command.argumentHint ? (
                             <span className="font-mono text-micro text-mute">
                               {command.argumentHint}

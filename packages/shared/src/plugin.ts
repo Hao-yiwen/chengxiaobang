@@ -102,12 +102,16 @@ export const pluginSkillRefSchema = z.object({
   description: z.string()
 });
 
-/** 插件提供的命令清单项（详情页列出，带参数提示）。 */
+/** 插件提供的斜杠入口清单项（详情页列出，含提示词命令与技能入口）。 */
+export const pluginCommandRefKindSchema = z.enum(["prompt_template", "skill"]);
+export type PluginCommandRefKind = z.infer<typeof pluginCommandRefKindSchema>;
 export const pluginCommandRefSchema = z.object({
   name: z.string(),
+  kind: pluginCommandRefKindSchema,
   description: z.string(),
   argumentHint: z.string().optional()
 });
+export type PluginCommandRef = z.infer<typeof pluginCommandRefSchema>;
 
 /** 插件声明的 MCP server 清单项（详情页列出，运行状态由 /settings/mcp/servers 单独提供）。 */
 export const pluginMcpServerRefSchema = z.object({

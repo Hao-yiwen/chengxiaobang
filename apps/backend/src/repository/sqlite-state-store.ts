@@ -37,6 +37,9 @@ import type {
   CreateRunInput,
   CreateScheduledTaskInput,
   CreateSessionInput,
+  ListPage,
+  ListProjectsOptions,
+  ListSessionsOptions,
   StateStore,
   StoredMessage,
   UpdateScheduledTaskInput,
@@ -131,6 +134,26 @@ function sessionSelectColumns(alias: string): string {
   return `${alias}.*, ${sessionNoticeColumns(alias)}, ${sessionPendingActionColumns(alias)}`;
 }
 
+function sessionListWhere(
+  projectId: string | null | undefined,
+  pinned: boolean | undefined
+): { where: string; params: SqlParam[] } {
+  const parts = ["s.side_chat_anchor_message_id is null"];
+  const params: SqlParam[] = [];
+  if (projectId === null) {
+    parts.push("s.project_id is null");
+  } else if (projectId !== undefined) {
+    parts.push("s.project_id = ?");
+    params.push(projectId);
+  }
+  if (pinned === true) {
+    parts.push("s.pinned_at is not null");
+  } else if (pinned === false) {
+    parts.push("s.pinned_at is null");
+  }
+  return { where: parts.join(" and "), params };
+}
+
 function laterIso(left: string, right: string): string {
   return left.localeCompare(right) >= 0 ? left : right;
 }
@@ -167,8 +190,62 @@ export class SqliteStateStore implements StateStore {
     this.db?.close();
   }
 
-  async listProjects(): Promise<Project[]> {
-    return this.query("select * from projects order by updated_at desc").map(mapProject);
+  async listProjects(): Promise<Project[]>;
+  async listProjects(options: ListProjectsOptions): Promise<ListPage<Project>>;
+  async listProjects(options?: ListProjectsOptions): Promise<Project[] | ListPage<Project>> {
+    if (!options) {
+      return this.query("select * from projects order by updated_at desc").map(mapProject);
+    }
+    const pinnedWhere =
+      options.pinned === undefined
+        ? ""
+        : options.pinned
+          ? "where p.pinned_at is not null"
+          : "where p.pinned_at is null";
+    const total = Number(
+      this.query(`select count(*) as count from projects p ${pinnedWhere}`)[0]?.count ?? 0
+    );
+    const orderBy = options.pinned
+      ? "p.pinned_at desc, p.created_at desc, p.name asc, p.id asc"
+      : options.sort === "recent"
+        ? `case
+             when latest.latest_session_at is not null and latest.latest_session_at > p.updated_at
+               then latest.latest_session_at
+             else p.updated_at
+           end desc, p.created_at desc, p.name asc, p.id asc`
+        : "p.created_at desc, p.name asc, p.id asc";
+    const joinLatest =
+      !options.pinned && options.sort === "recent"
+        ? `left join (
+             select project_id, max(updated_at) as latest_session_at
+             from sessions
+             where side_chat_anchor_message_id is null
+             group by project_id
+           ) latest on latest.project_id = p.id`
+        : "";
+    const rows = this.query(
+      `select p.*
+       from projects p
+       ${joinLatest}
+       ${pinnedWhere}
+       order by ${orderBy}
+       limit ? offset ?`,
+      [options.limit, options.offset]
+    );
+    const items = rows.map(mapProject);
+    log.debug("[sqlite-state-store] 返回项目分页列表", {
+      pinned: options.pinned,
+      sort: options.sort,
+      limit: options.limit,
+      offset: options.offset,
+      count: items.length,
+      total
+    });
+    return {
+      items,
+      total,
+      hasMore: options.offset + items.length < total
+    };
   }
 
   async getProject(id: string): Promise<Project | undefined> {
@@ -242,36 +319,54 @@ export class SqliteStateStore implements StateStore {
     return (await this.getProject(id))!;
   }
 
-  async listSessions(projectId?: string | null): Promise<Session[]> {
-    const rows =
-      projectId === undefined
-        ? this.query(
-            `select ${sessionSelectColumns("s")}
-             from sessions s
-             where s.side_chat_anchor_message_id is null
-             order by s.updated_at desc`
-          )
-        : projectId === null
-          ? this.query(
-              `select ${sessionSelectColumns("s")}
-               from sessions s
-               where s.project_id is null
-                 and s.side_chat_anchor_message_id is null
-               order by s.updated_at desc`
-            )
-          : this.query(
-              `select ${sessionSelectColumns("s")}
-               from sessions s
-               where s.project_id = ?
-                 and s.side_chat_anchor_message_id is null
-               order by s.updated_at desc`,
-              [projectId]
-            );
+  async listSessions(projectId?: string | null): Promise<Session[]>;
+  async listSessions(
+    projectId: string | null | undefined,
+    options: ListSessionsOptions
+  ): Promise<ListPage<Session>>;
+  async listSessions(
+    projectId?: string | null,
+    options?: ListSessionsOptions
+  ): Promise<Session[] | ListPage<Session>> {
+    const { where, params } = sessionListWhere(projectId, options?.pinned);
+    const orderBy = options?.pinned
+      ? "s.pinned_at desc, s.updated_at desc, s.id desc"
+      : "s.updated_at desc, s.id desc";
+    const rows = options
+      ? this.query(
+          `select ${sessionSelectColumns("s")}
+           from sessions s
+           where ${where}
+           order by ${orderBy}
+           limit ? offset ?`,
+          [...params, options.limit, options.offset]
+        )
+      : this.query(
+          `select ${sessionSelectColumns("s")}
+           from sessions s
+           where ${where}
+           order by s.updated_at desc`,
+          params
+        );
     log.debug("[sqlite-state-store] 返回会话列表（已过滤隐藏侧边会话）", {
       projectId,
+      pinned: options?.pinned,
+      limit: options?.limit,
+      offset: options?.offset,
       count: rows.length
     });
-    return rows.map(mapSession);
+    const items = rows.map(mapSession);
+    if (!options) {
+      return items;
+    }
+    const total = Number(
+      this.query(`select count(*) as count from sessions s where ${where}`, params)[0]?.count ?? 0
+    );
+    return {
+      items,
+      total,
+      hasMore: options.offset + items.length < total
+    };
   }
 
   async searchSessions(

@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { createAgentTools, findTool, requiresApproval } from "../src/tools/registry";
@@ -9,6 +9,7 @@ import { buildToolFileChangeDetails } from "../src/tools/file-change";
 import { createPlanTools } from "../src/tools/plan-tools";
 import { createScheduleTools } from "../src/tools/schedule-tools";
 import { createShellTools } from "../src/tools/shell-tools";
+import { SHELL_GLOBAL_OUTPUT_DIR } from "../src/tools/shell";
 import { createSkillTools } from "../src/tools/skill-tools";
 import { createTodoTools } from "../src/tools/todo-tools";
 import { createToolSearchTool } from "../src/tools/tool-search-tool";
@@ -656,7 +657,12 @@ describe("builtin agent tools", () => {
   });
 
   it("moves slow shell commands to the background and writes output to a file", async () => {
-    const shellTools = createShellTools(dir, { backgroundAfterMs: 50 });
+    const shellOutputDir = join(dir, "data", SHELL_GLOBAL_OUTPUT_DIR);
+    const shellTools = createShellTools(dir, {
+      backgroundAfterMs: 50,
+      shellOutputDir,
+      runId: "run_test"
+    });
 
     const result = await run(shellTools, "Bash", {
       command: delayedEchoCommand("background-done")
@@ -665,12 +671,16 @@ describe("builtin agent tools", () => {
     const outputPath = parseOutputPath(result);
 
     expect(result).toContain("已转入后台继续运行");
-    expect(outputPath).toMatch(/^\.chengxiaobang\/shell-outputs\/shell_/);
+    expect(outputPath.startsWith(join(shellOutputDir, "run_test"))).toBe(true);
     await waitFor(async () => {
       const status = await run(shellTools, "BashStatus", { id });
       expect(status).toContain("状态：completed");
+      expect(status).toContain(outputPath);
     });
-    await expect(readFile(join(dir, outputPath), "utf8")).resolves.toContain("background-done");
+    await expect(readFile(outputPath, "utf8")).resolves.toContain("background-done");
+    await expect(
+      readFile(join(dir, ".chengxiaobang", "shell-outputs", basename(outputPath)), "utf8")
+    ).rejects.toThrow();
   });
 
   it("starts shell commands in the background when requested", async () => {

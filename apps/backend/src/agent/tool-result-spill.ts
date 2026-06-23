@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type {
   AfterToolCallContext,
   AfterToolCallResult,
@@ -11,11 +11,11 @@ import { getLogger } from "../logging/logger";
 
 const log = getLogger({ module: "agent/tool-result-spill" });
 
-export const TOOL_RESULT_SPILL_DIR = ".chengxiaobang/tool-results";
+export const TOOL_RESULT_SPILL_DIR = "tool-results";
 const TOOL_RESULT_PREVIEW_CHARS = 4 * 1024;
 
 interface ToolResultSpillContext {
-  workspacePath: string;
+  spillDir: string;
   runId: string;
   toolCallId: string;
   toolName: string;
@@ -25,10 +25,10 @@ interface ToolResultSpillContext {
 /** 在工具结果进入模型上下文前做保护：超长文本落盘，只回传路径和固定预览。 */
 export async function protectToolResultForContext(
   context: AfterToolCallContext,
-  options: { workspacePath: string; runId: string }
+  options: { toolResultSpillDir: string; runId: string }
 ): Promise<AfterToolCallResult | undefined> {
   const protectedResult = await protectAgentToolResult(context.result, {
-    workspacePath: options.workspacePath,
+    spillDir: options.toolResultSpillDir,
     runId: options.runId,
     toolCallId: context.toolCall.id,
     toolName: context.toolCall.name,
@@ -74,24 +74,23 @@ async function spillToolResultText(
   text: string,
   context: ToolResultSpillContext
 ): Promise<{ summary: string; filePath: string }> {
-  const relativePath = join(
-    TOOL_RESULT_SPILL_DIR,
-    sanitizePathPart(context.runId),
+  const spillRoot = resolve(context.spillDir);
+  const runDir = join(spillRoot, sanitizePathPart(context.runId));
+  const filePath = join(
+    runDir,
     `${sanitizePathPart(context.toolCallId)}-${sanitizePathPart(context.toolName)}.txt`
   );
-  const filePath = join(context.workspacePath, relativePath);
-  await mkdir(join(context.workspacePath, TOOL_RESULT_SPILL_DIR, sanitizePathPart(context.runId)), {
-    recursive: true
-  });
+  await mkdir(runDir, { recursive: true });
   await writeFile(filePath, text, "utf8");
-  log.warn("[tool-result-spill] 工具结果过长，已写入工作区文件", {
+  log.warn("[tool-result-spill] 工具结果过长，已写入全局运行产物文件", {
     runId: context.runId,
     toolCallId: context.toolCallId,
     toolName: context.toolName,
     chars: text.length,
+    spillRoot,
     filePath
   });
-  return { summary: buildSummary(text, relativePath, context), filePath };
+  return { summary: buildSummary(text, filePath, runDir, context), filePath };
 }
 
 function collectText(content: AgentToolResult<unknown>["content"]): string {
@@ -101,18 +100,23 @@ function collectText(content: AgentToolResult<unknown>["content"]): string {
     .join("\n");
 }
 
-function buildSummary(text: string, relativePath: string, context: ToolResultSpillContext): string {
+function buildSummary(
+  text: string,
+  filePath: string,
+  runDir: string,
+  context: ToolResultSpillContext
+): string {
   const head = text.slice(0, TOOL_RESULT_PREVIEW_CHARS);
   const tail = text.slice(-TOOL_RESULT_PREVIEW_CHARS);
   return [
     `工具 ${context.toolName} 的${context.isError ? "错误" : "结果"}过长，已写入文件，未直接放入上下文。`,
-    `完整结果路径：${relativePath}`,
+    `完整结果路径：${filePath}`,
     `完整结果字符数：${text.length}`,
     "",
     "你可以按需分段查看：",
-    `- 读取开头：调用 Read，参数为 {"file_path":"${relativePath}","offset":1,"limit":120}`,
-    `- 读取指定区间：调用 Read，参数为 {"file_path":"${relativePath}","offset":121,"limit":120}，并按需要调整 offset`,
-    `- 搜索关键词：调用 Grep，参数为 {"path":"${TOOL_RESULT_SPILL_DIR}","pattern":"关键词"}`,
+    `- 读取开头：调用 Read，参数为 ${JSON.stringify({ file_path: filePath, offset: 1, limit: 120 })}`,
+    `- 读取指定区间：调用 Read，参数为 ${JSON.stringify({ file_path: filePath, offset: 121, limit: 120 })}，并按需要调整 offset`,
+    `- 搜索关键词：调用 Grep，参数为 ${JSON.stringify({ path: runDir, pattern: "关键词" })}`,
     "",
     "结果开头预览：",
     head,

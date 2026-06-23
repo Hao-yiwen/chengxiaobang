@@ -130,7 +130,9 @@ export function UsageStatsSection() {
             <div data-testid="settings-usage-heatmap" className="min-w-0 rounded-sm border bg-background p-5">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-body-lg font-medium">{t("settings.usage.tokenActivity")}</h3>
+                  <h3 className="text-body-md font-medium">
+                    {t(`settings.usage.chartTitles.${mode}`)}
+                  </h3>
                   <p className="text-caption text-muted-foreground">
                     {summaryLine(translate, stats, mode)}
                   </p>
@@ -287,6 +289,13 @@ function UsageBarChart(props: {
   const scrollRef = useLatestBucketViewport(props.mode, props.buckets);
   const maxTokens = Math.max(0, ...props.buckets.map((bucket) => bucket.totalTokens));
   const labels = barChartLabels(props.buckets, props.mode, props.locale);
+  const columnMinWidth = props.mode === "weekly" ? 12 : 32;
+  const chartWidth =
+    props.buckets.length * columnMinWidth + Math.max(0, props.buckets.length - 1);
+  const chartStyle = {
+    gridTemplateColumns: `repeat(${props.buckets.length}, ${columnMinWidth}px)`,
+    width: `${chartWidth}px`
+  };
   return (
     <div className="relative">
       {hovered ? <BucketTooltip bucket={hovered} mode={props.mode} locale={props.locale} /> : null}
@@ -295,39 +304,44 @@ function UsageBarChart(props: {
         data-testid="settings-usage-chart-scroll"
         className="min-w-0 overflow-x-auto overflow-y-hidden pb-1"
       >
-        <div className="w-max min-w-full">
-          <div className="flex h-48 items-end gap-2 border-b border-border px-1 pt-8">
-            {props.buckets.map((bucket) => {
-              const ratio = maxTokens > 0 ? bucket.totalTokens / maxTokens : 0;
-              const height = bucket.totalTokens > 0 ? Math.max(8, ratio * 150) : 2;
-              return (
-                <button
-                  key={bucket.key}
-                  type="button"
-                  data-testid="settings-usage-chart-bar"
-                  aria-label={bucketAriaLabel(bucket, props.mode, props.locale)}
-                  onBlur={() => setHovered(undefined)}
-                  onFocus={() => setHovered(bucket)}
-                  onMouseEnter={() => setHovered(bucket)}
-                  onMouseLeave={() => setHovered(undefined)}
-                  className={cn(
-                    "flex h-full flex-none items-end justify-center rounded-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                    props.mode === "weekly" ? "w-4" : "w-10 px-1"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "block rounded-t-xs transition-all",
-                      props.mode === "weekly" ? "w-1.5" : "w-full",
-                      bucket.totalTokens > 0 ? "bg-link" : "bg-canvas-soft-2"
-                    )}
-                    style={{ height: `${height}px` }}
-                  />
-                </button>
-              );
-            })}
+        <div className="min-w-full">
+          <div className="h-48 border-b border-border px-px pt-8">
+            <div
+              data-testid="settings-usage-chart-bars"
+              className="ml-auto grid h-full gap-px"
+              style={chartStyle}
+            >
+              {props.buckets.map((bucket) => {
+                const ratio = maxTokens > 0 ? bucket.totalTokens / maxTokens : 0;
+                const height = bucket.totalTokens > 0 ? Math.max(8, ratio * 150) : 2;
+                return (
+                  <button
+                    key={bucket.key}
+                    type="button"
+                    data-testid="settings-usage-chart-bar"
+                    aria-label={bucketAriaLabel(bucket, props.mode, props.locale)}
+                    onBlur={() => setHovered(undefined)}
+                    onFocus={() => setHovered(bucket)}
+                    onMouseEnter={() => setHovered(bucket)}
+                    onMouseLeave={() => setHovered(undefined)}
+                    className="flex h-full min-w-0 items-end rounded-none outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span
+                      className={cn(
+                        "block w-full rounded-t-[2px] transition-all",
+                        bucket.totalTokens > 0 ? "bg-link" : "bg-canvas-soft-2"
+                      )}
+                      style={{ height: `${height}px` }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="mt-3 flex min-w-full justify-between gap-3 text-caption text-muted-foreground">
+          <div
+            className="ml-auto mt-3 flex justify-between gap-3 text-caption text-muted-foreground"
+            style={{ width: `${chartWidth}px` }}
+          >
             {labels.map((label) => (
               <span key={label.key} className="truncate">
                 {label.label}
@@ -409,6 +423,11 @@ function ModelRanking({ models }: { models: UsageStatsModelBreakdown[] }) {
         <div className="divide-y">
           {rankingModels.map((model) => {
             const ratio = maxTokens > 0 ? Math.max(3, (model.totalTokens / maxTokens) * 100) : 0;
+            const cachedRatio =
+              maxTokens > 0 && model.cachedPromptTokens > 0
+                ? Math.min(ratio, Math.max(2, (model.cachedPromptTokens / maxTokens) * 100))
+                : 0;
+            const cacheHitRate = cacheHitPercent(model);
             return (
               <div key={model.model} className="px-4 py-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
@@ -416,10 +435,20 @@ function ModelRanking({ models }: { models: UsageStatsModelBreakdown[] }) {
                     <div className="truncate text-caption font-medium">
                       {model.model === "unknown" ? t("settings.usage.unknownModel") : model.model}
                     </div>
-                    <div className="text-micro text-muted-foreground">
-                      {t("settings.usage.modelRuns", {
-                        count: model.runCount.toLocaleString()
-                      })}
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-muted-foreground">
+                      <span>
+                        {t("settings.usage.modelRuns", {
+                          count: model.runCount.toLocaleString()
+                        })}
+                      </span>
+                      <span>
+                        {model.cachedPromptTokens > 0
+                          ? t("settings.usage.modelCacheHit", {
+                              tokens: formatTokens(model.cachedPromptTokens),
+                              rate: formatPercent(cacheHitRate)
+                            })
+                          : t("settings.usage.modelNoCacheHit")}
+                      </span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -427,8 +456,32 @@ function ModelRanking({ models }: { models: UsageStatsModelBreakdown[] }) {
                     <div className="text-micro text-muted-foreground">{formatCny(model.costCny)}</div>
                   </div>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-canvas-soft-2">
+                <div
+                  className="relative h-2 overflow-hidden rounded-full bg-canvas-soft-2"
+                  aria-label={t("settings.usage.modelTokenBarLabel", {
+                    total: formatTokens(model.totalTokens),
+                    cached: formatTokens(model.cachedPromptTokens),
+                    rate: formatPercent(cacheHitRate)
+                  })}
+                >
                   <div className="h-full rounded-full bg-link" style={{ width: `${ratio}%` }} />
+                  {cachedRatio > 0 ? (
+                    <div
+                      data-testid="settings-usage-model-cache-bar"
+                      className="absolute inset-y-0 left-0 rounded-full bg-cyan"
+                      style={{ width: `${cachedRatio}%` }}
+                    />
+                  ) : null}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-micro text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="size-2 rounded-full bg-link" />
+                    {t("settings.usage.modelTotalLegend")}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="size-2 rounded-full bg-cyan" />
+                    {t("settings.usage.modelCacheLegend")}
+                  </span>
                 </div>
               </div>
             );
@@ -441,6 +494,8 @@ function ModelRanking({ models }: { models: UsageStatsModelBreakdown[] }) {
 
 type ModelRankingItem = {
   model: string;
+  promptTokens: number;
+  cachedPromptTokens: number;
   totalTokens: number;
   costCny: number;
   runCount: number;
@@ -452,6 +507,8 @@ function aggregateRankingModels(models: UsageStatsModelBreakdown[]): ModelRankin
   for (const model of models) {
     const existing = merged.get(model.model);
     if (existing) {
+      existing.promptTokens += model.promptTokens;
+      existing.cachedPromptTokens += model.cachedPromptTokens;
       existing.totalTokens += model.totalTokens;
       existing.costCny += model.costCny;
       existing.runCount += model.runCount;
@@ -460,6 +517,8 @@ function aggregateRankingModels(models: UsageStatsModelBreakdown[]): ModelRankin
 
     merged.set(model.model, {
       model: model.model,
+      promptTokens: model.promptTokens,
+      cachedPromptTokens: model.cachedPromptTokens,
       totalTokens: model.totalTokens,
       costCny: model.costCny,
       runCount: model.runCount
@@ -469,6 +528,13 @@ function aggregateRankingModels(models: UsageStatsModelBreakdown[]): ModelRankin
   return [...merged.values()].sort(
     (left, right) => right.totalTokens - left.totalTokens || right.costCny - left.costCny
   );
+}
+
+function cacheHitPercent(model: ModelRankingItem): number {
+  if (model.promptTokens <= 0 || model.cachedPromptTokens <= 0) {
+    return 0;
+  }
+  return Math.min(100, (model.cachedPromptTokens / model.promptTokens) * 100);
 }
 
 function DataQuality({ stats }: { stats: UsageStats }) {
@@ -565,11 +631,21 @@ function barChartLabels(
   locale: string
 ): { key: string; label: string }[] {
   if (mode === "cumulative") {
-    return buckets.map((bucket) => ({ key: bucket.key, label: formatMonth(bucket.key, locale) }));
+    return buckets
+      .filter((bucket, index) => shouldShowMonthlyTick(bucket.key, index, buckets.length))
+      .map((bucket) => ({ key: bucket.key, label: formatMonthYear(bucket.key, locale) }));
   }
   return buckets
     .filter((_, index) => index % 8 === 0 || index === buckets.length - 1)
     .map((bucket) => ({ key: bucket.key, label: formatMonth(bucket.key, locale) }));
+}
+
+function shouldShowMonthlyTick(key: string, index: number, bucketCount: number): boolean {
+  if (index === 0 || index === bucketCount - 1) {
+    return true;
+  }
+  const month = Number(key.slice(5, 7));
+  return month === 1 || month === 7;
 }
 
 function bucketAriaLabel(bucket: UsageStatsBucket, mode: HeatmapMode, locale: string): string {
@@ -625,6 +701,13 @@ function formatTokens(value: number): string {
 function formatTrend(percent: number): string {
   const sign = percent > 0 ? "+" : "";
   return `${sign}${percent.toFixed(0)}%`;
+}
+
+function formatPercent(value: number): string {
+  if (value > 0 && value < 1) {
+    return "<1%";
+  }
+  return `${Math.round(value)}%`;
 }
 
 function parseBucketDate(value: string, fallbackKey: string): Date | undefined {

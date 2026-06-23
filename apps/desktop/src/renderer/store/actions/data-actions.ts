@@ -1,6 +1,7 @@
 import { basenameOf } from "../../../common/file-preview";
-import type { MessageFeedback } from "@chengxiaobang/shared";
+import type { MessageFeedback, Project, ProviderConfig, Session } from "@chengxiaobang/shared";
 import { createApiClient } from "../../lib/api";
+import type { ApiClient, PageResult } from "../../lib/api";
 import { downloadTextFile } from "../../lib/download";
 import { buildSessionMarkdown, exportFilename } from "../../lib/session-export";
 import i18n from "../../i18n";
@@ -44,6 +45,9 @@ import {
 import { selectActiveProject } from "../selectors";
 
 let fileSuggestionsRequestSeq = 0;
+const SIDEBAR_PROJECT_LIMIT = 4;
+const SIDEBAR_SESSION_LIMIT = 6;
+const SIDEBAR_PINNED_PAGE_LIMIT = 100;
 
 function applyMessageFeedback(
   messages: AppState["messages"],
@@ -60,6 +64,154 @@ function applyMessageFeedback(
     }
     return { ...message, feedback };
   });
+}
+
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) {
+      continue;
+    }
+    seen.add(item.id);
+    result.push(item);
+  }
+  return result;
+}
+
+function asPageResult<T>(result: PageResult<T> | T[]): PageResult<T> {
+  if (Array.isArray(result)) {
+    return { items: result, total: result.length, hasMore: false };
+  }
+  return result;
+}
+
+async function collectAllPages<T>(
+  loadPage: (offset: number) => Promise<PageResult<T>>,
+  pageSize = SIDEBAR_PINNED_PAGE_LIMIT
+): Promise<PageResult<T>> {
+  const items: T[] = [];
+  let total = 0;
+  let hasMore = true;
+  while (hasMore) {
+    const page = await loadPage(items.length);
+    items.push(...page.items);
+    total = page.total;
+    hasMore = page.hasMore && page.items.length > 0;
+    if (page.items.length === 0 && page.hasMore) {
+      console.warn("[store] 分页接口返回空页但 hasMore=true，停止继续拉取", {
+        loaded: items.length,
+        total,
+        pageSize
+      });
+    }
+  }
+  return { items, total, hasMore: false };
+}
+
+async function loadInitialSidebarData(
+  client: ApiClient,
+  sort: "created" | "recent"
+): Promise<{
+  projects: Project[];
+  sessions: Session[];
+  sidebarProjectsPage: AppState["sidebarProjectsPage"];
+  sidebarUngroupedSessionsPage: AppState["sidebarUngroupedSessionsPage"];
+  sidebarProjectSessionsPageByProjectId: AppState["sidebarProjectSessionsPageByProjectId"];
+}> {
+  const [pinnedProjectsPage, pinnedSessionsPage, unpinnedProjectsPage, ungroupedSessionsPage] =
+    await Promise.all([
+      collectAllPages((offset) =>
+        client.listProjects({
+          limit: SIDEBAR_PINNED_PAGE_LIMIT,
+          offset,
+          sort,
+          pinned: true
+        }).then(asPageResult)
+      ),
+      collectAllPages((offset) =>
+        client.listSessions({
+          limit: SIDEBAR_PINNED_PAGE_LIMIT,
+          offset,
+          pinned: true
+        }).then(asPageResult)
+      ),
+      client.listProjects({
+        limit: SIDEBAR_PROJECT_LIMIT,
+        offset: 0,
+        sort,
+        pinned: false
+      }).then(asPageResult),
+      client.listSessions({
+        limit: SIDEBAR_SESSION_LIMIT,
+        offset: 0,
+        projectId: null,
+        pinned: false
+      }).then(asPageResult)
+    ]);
+
+  const pinnedProjectSessionPages = await Promise.all(
+    pinnedProjectsPage.items.map(async (project) => ({
+      projectId: project.id,
+      page: await collectAllPages((offset) =>
+        client.listSessions({
+          limit: SIDEBAR_PINNED_PAGE_LIMIT,
+          offset,
+          projectId: project.id,
+          pinned: false
+        }).then(asPageResult)
+      )
+    }))
+  );
+  const unpinnedProjectSessionPages = await Promise.all(
+    unpinnedProjectsPage.items.map(async (project) => ({
+      projectId: project.id,
+      page: asPageResult(await client.listSessions({
+        limit: SIDEBAR_SESSION_LIMIT,
+        offset: 0,
+        projectId: project.id,
+        pinned: false
+      }))
+    }))
+  );
+
+  const sidebarProjectSessionsPageByProjectId: AppState["sidebarProjectSessionsPageByProjectId"] =
+    {};
+  for (const { projectId, page } of pinnedProjectSessionPages) {
+    sidebarProjectSessionsPageByProjectId[projectId] = {
+      loaded: page.items.length,
+      total: page.total,
+      hasMore: false
+    };
+  }
+  for (const { projectId, page } of unpinnedProjectSessionPages) {
+    sidebarProjectSessionsPageByProjectId[projectId] = {
+      loaded: page.items.length,
+      total: page.total,
+      hasMore: page.hasMore
+    };
+  }
+
+  return {
+    projects: uniqueById([...pinnedProjectsPage.items, ...unpinnedProjectsPage.items]),
+    sessions: uniqueById([
+      ...pinnedSessionsPage.items,
+      ...pinnedProjectSessionPages.flatMap(({ page }) => page.items),
+      ...unpinnedProjectSessionPages.flatMap(({ page }) => page.items),
+      ...ungroupedSessionsPage.items
+    ]),
+    sidebarProjectsPage: {
+      loaded: unpinnedProjectsPage.items.length,
+      total: unpinnedProjectsPage.total,
+      hasMore: unpinnedProjectsPage.hasMore
+    },
+    sidebarUngroupedSessionsPage: {
+      loaded: ungroupedSessionsPage.items.length,
+      total: ungroupedSessionsPage.total,
+      hasMore: ungroupedSessionsPage.hasMore
+    },
+    sidebarProjectSessionsPageByProjectId
+  };
 }
 
 export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<AppState> {
@@ -101,11 +253,54 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         if (!apiClientRef.current) {
           return undefined;
         }
-        const [nextProjects, nextSessions, nextProviders] = await Promise.all([
-          apiClientRef.current.listProjects(),
-          apiClientRef.current.listSessions(),
+        const client = apiClientRef.current;
+        const currentState = get();
+        const [sidebarData, nextProviders] = await Promise.all([
+          loadInitialSidebarData(client, currentState.projectSortMode),
           apiClientRef.current.listProviders()
         ]);
+        let nextProjects = sidebarData.projects;
+        let nextSessions = sidebarData.sessions;
+        const restoredActiveSessionId =
+          currentState.view === "home" ? undefined : currentState.activeSessionId;
+        let restoredActiveSession = restoredActiveSessionId
+          ? nextSessions.find((session) => session.id === restoredActiveSessionId)
+          : undefined;
+        if (restoredActiveSessionId && !restoredActiveSession && client.getSession) {
+          try {
+            restoredActiveSession = await client.getSession(restoredActiveSessionId);
+            nextSessions = uniqueById([restoredActiveSession, ...nextSessions]);
+            console.info("[store] 已按 id 补齐分页外的活跃会话", {
+              sessionId: restoredActiveSessionId,
+              projectId: restoredActiveSession.projectId
+            });
+          } catch (error) {
+            console.warn("[store] 补齐分页外活跃会话失败", {
+              sessionId: restoredActiveSessionId,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
+        }
+        if (
+          restoredActiveSession?.projectId &&
+          !nextProjects.some((project) => project.id === restoredActiveSession?.projectId) &&
+          client.getProject
+        ) {
+          try {
+            const activeProject = await client.getProject(restoredActiveSession.projectId);
+            nextProjects = uniqueById([activeProject, ...nextProjects]);
+            console.info("[store] 已按 id 补齐分页外的活跃项目", {
+              projectId: activeProject.id,
+              sessionId: restoredActiveSession.id
+            });
+          } catch (error) {
+            console.warn("[store] 补齐分页外活跃项目失败", {
+              projectId: restoredActiveSession.projectId,
+              sessionId: restoredActiveSession.id,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
+        }
         set((state) => {
           const configuredProvider = firstConfiguredProvider(nextProviders);
           const activeSessionId = state.view === "home" ? undefined : state.activeSessionId;
@@ -127,6 +322,10 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
           return {
             projects: nextProjects,
             sessions: nextSessions,
+            sidebarProjectsPage: sidebarData.sidebarProjectsPage,
+            sidebarUngroupedSessionsPage: sidebarData.sidebarUngroupedSessionsPage,
+            sidebarProjectSessionsPageByProjectId:
+              sidebarData.sidebarProjectSessionsPageByProjectId,
             providers: nextProviders,
             ...modelPatch,
             runningSessionsById: Object.fromEntries(
@@ -163,6 +362,157 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
       async refresh() {
         await get().loadData();
         await get().refreshSlashCommands();
+      },
+
+      async loadMoreSidebarProjects() {
+        const client = apiClientRef.current;
+        if (!client) {
+          return;
+        }
+        const state = get();
+        if (!state.sidebarProjectsPage.hasMore) {
+          return;
+        }
+        const projects: Project[] = [];
+        const sessionPages: Array<{ projectId: string; page: PageResult<Session> }> = [];
+        let offset = state.sidebarProjectsPage.loaded;
+        let total = state.sidebarProjectsPage.total;
+        let hasMore: boolean = state.sidebarProjectsPage.hasMore;
+        while (hasMore) {
+          const page = asPageResult(await client.listProjects({
+            limit: SIDEBAR_PINNED_PAGE_LIMIT,
+            offset,
+            sort: state.projectSortMode,
+            pinned: false
+          }));
+          projects.push(...page.items);
+          total = page.total;
+          offset += page.items.length;
+          hasMore = page.hasMore && page.items.length > 0;
+        }
+        for (const project of projects) {
+          sessionPages.push({
+            projectId: project.id,
+            page: asPageResult(await client.listSessions({
+              limit: SIDEBAR_SESSION_LIMIT,
+              offset: 0,
+              projectId: project.id,
+              pinned: false
+            }))
+          });
+        }
+        set((current) => {
+          const sidebarProjectSessionsPageByProjectId = {
+            ...current.sidebarProjectSessionsPageByProjectId
+          };
+          for (const { projectId, page } of sessionPages) {
+            sidebarProjectSessionsPageByProjectId[projectId] = {
+              loaded: page.items.length,
+              total: page.total,
+              hasMore: page.hasMore
+            };
+          }
+          return {
+            projects: uniqueById([...current.projects, ...projects]),
+            sessions: uniqueById([
+              ...current.sessions,
+              ...sessionPages.flatMap(({ page }) => page.items)
+            ]),
+            sidebarProjectsPage: {
+              loaded: offset,
+              total,
+              hasMore: false
+            },
+            sidebarProjectSessionsPageByProjectId
+          };
+        });
+        console.info("[store] 已展开加载剩余项目", {
+          loadedProjects: projects.length,
+          total
+        });
+      },
+
+      async loadMoreSidebarProjectSessions(projectId) {
+        const client = apiClientRef.current;
+        if (!client) {
+          return;
+        }
+        const state = get();
+        const currentPage = state.sidebarProjectSessionsPageByProjectId[projectId];
+        if (!currentPage?.hasMore) {
+          return;
+        }
+        const sessions: Session[] = [];
+        let offset = currentPage.loaded;
+        let total = currentPage.total;
+        let hasMore: boolean = currentPage.hasMore;
+        while (hasMore) {
+          const page = asPageResult(await client.listSessions({
+            limit: SIDEBAR_PINNED_PAGE_LIMIT,
+            offset,
+            projectId,
+            pinned: false
+          }));
+          sessions.push(...page.items);
+          total = page.total;
+          offset += page.items.length;
+          hasMore = page.hasMore && page.items.length > 0;
+        }
+        set((current) => ({
+          sessions: uniqueById([...current.sessions, ...sessions]),
+          sidebarProjectSessionsPageByProjectId: {
+            ...current.sidebarProjectSessionsPageByProjectId,
+            [projectId]: {
+              loaded: offset,
+              total,
+              hasMore: false
+            }
+          }
+        }));
+        console.info("[store] 已展开加载项目剩余会话", {
+          projectId,
+          loadedSessions: sessions.length,
+          total
+        });
+      },
+
+      async loadMoreSidebarUngroupedSessions() {
+        const client = apiClientRef.current;
+        if (!client) {
+          return;
+        }
+        const state = get();
+        if (!state.sidebarUngroupedSessionsPage.hasMore) {
+          return;
+        }
+        const sessions: Session[] = [];
+        let offset = state.sidebarUngroupedSessionsPage.loaded;
+        let total = state.sidebarUngroupedSessionsPage.total;
+        let hasMore: boolean = state.sidebarUngroupedSessionsPage.hasMore;
+        while (hasMore) {
+          const page = asPageResult(await client.listSessions({
+            limit: SIDEBAR_PINNED_PAGE_LIMIT,
+            offset,
+            projectId: null,
+            pinned: false
+          }));
+          sessions.push(...page.items);
+          total = page.total;
+          offset += page.items.length;
+          hasMore = page.hasMore && page.items.length > 0;
+        }
+        set((current) => ({
+          sessions: uniqueById([...current.sessions, ...sessions]),
+          sidebarUngroupedSessionsPage: {
+            loaded: offset,
+            total,
+            hasMore: false
+          }
+        }));
+        console.info("[store] 已展开加载剩余普通对话", {
+          loadedSessions: sessions.length,
+          total
+        });
       },
 
       async refreshSlashCommands(projectId) {
@@ -661,6 +1011,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         set((state) => ({
           sessions: state.sessions.map((session) => (session.id === id ? updated : session))
         }));
+        await get().loadData();
       },
 
       async deleteSession(id) {
@@ -746,6 +1097,7 @@ export function createDataActions(set: AppStoreSet, get: AppStoreGet): Partial<A
         set((state) => ({
           projects: state.projects.map((project) => (project.id === id ? updated : project))
         }));
+        await get().loadData();
       },
 
       async deleteProject(id) {

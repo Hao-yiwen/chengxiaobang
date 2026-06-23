@@ -25,14 +25,57 @@ function toClientMessage({ payload: _payload, ...message }: StoredMessage): Mess
   return message;
 }
 
+function parseRequiredPage(query: (name: string) => string | undefined):
+  | { ok: true; limit: number; offset: number }
+  | { ok: false; error: string } {
+  const limitRaw = query("limit");
+  const offsetRaw = query("offset");
+  const limit = Number(limitRaw);
+  const offset = Number(offsetRaw);
+  if (!limitRaw || !offsetRaw || !Number.isInteger(limit) || !Number.isInteger(offset)) {
+    return { ok: false, error: "缺少有效的分页参数 limit/offset" };
+  }
+  if (limit < 1 || offset < 0) {
+    return { ok: false, error: "分页参数 limit/offset 超出范围" };
+  }
+  return { ok: true, limit, offset };
+}
+
+function parseProjectId(value: string | undefined): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return value === "null" ? null : value;
+}
+
+function parsePinned(value: string | undefined): boolean {
+  return value === "true";
+}
+
 export function sessionRoutes(context: AppContext): Hono {
   const app = new Hono();
 
   app.get("/", async (c) => {
-    const projectId = c.req.query("projectId");
-    return c.json({
-      sessions: await context.store.listSessions(projectId ?? undefined)
+    const page = parseRequiredPage((name) => c.req.query(name));
+    if (!page.ok) {
+      return c.json({ error: page.error }, 400);
+    }
+    const projectId = parseProjectId(c.req.query("projectId"));
+    const pinned = parsePinned(c.req.query("pinned"));
+    const result = await context.store.listSessions(projectId, {
+      limit: page.limit,
+      offset: page.offset,
+      pinned
     });
+    log.debug("[sessions-route] 返回会话分页列表", {
+      projectId,
+      pinned,
+      limit: page.limit,
+      offset: page.offset,
+      count: result.items.length,
+      total: result.total
+    });
+    return c.json(result);
   });
 
   app.get("/search", async (c) => {
@@ -71,6 +114,14 @@ export function sessionRoutes(context: AppContext): Hono {
       accessMode: input.accessMode ?? "approval"
     });
     return c.json({ session }, 201);
+  });
+
+  app.get("/:sessionId", async (c) => {
+    const session = await context.store.getSession(c.req.param("sessionId"));
+    if (!session) {
+      return c.json({ error: "会话不存在" }, 404);
+    }
+    return c.json({ session });
   });
 
   app.get("/:sessionId/side-chats", async (c) => {

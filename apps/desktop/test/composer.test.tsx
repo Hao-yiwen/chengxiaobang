@@ -158,9 +158,9 @@ async function chooseFullAccessFromAccessMenu(triggerName: RegExp): Promise<void
   const trigger = screen.getByRole("button", { name: triggerName });
   fireEvent.keyDown(trigger, { key: "Enter" });
   const menu = await screen.findByRole("menu");
-  const item = within(menu).getByText("完全访问").closest("[role='menuitem']");
+  const item = within(menu).getByText("完全访问权限").closest("[role='menuitem']");
   if (!item) {
-    throw new Error("找不到完全访问权限项");
+    throw new Error("找不到完全访问权限菜单项");
   }
   fireEvent.click(item);
 }
@@ -368,7 +368,7 @@ describe("Composer 首页占位文案轮播", () => {
 
     renderComposer();
 
-    await chooseFullAccessFromAccessMenu(/审批执行/);
+    await chooseFullAccessFromAccessMenu(/请求批准/);
 
     expect(await screen.findByRole("alertdialog")).toHaveTextContent("开启完全访问？");
     expect(useAppStore.getState().accessMode).toBe("approval");
@@ -376,11 +376,14 @@ describe("Composer 首页占位文案轮播", () => {
     fireEvent.click(screen.getByRole("button", { name: "保持审批" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(useAppStore.getState().accessMode).toBe("approval");
+    expect(document.body.style.pointerEvents).not.toBe("none");
 
-    await chooseFullAccessFromAccessMenu(/审批执行/);
+    await chooseFullAccessFromAccessMenu(/请求批准/);
     fireEvent.click(await screen.findByRole("button", { name: "仍然开启" }));
 
     await waitFor(() => expect(useAppStore.getState().accessMode).toBe("full_access"));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(document.body.style.pointerEvents).not.toBe("none");
   });
 
   it("requires confirmation before switching to full access from the chat composer", async () => {
@@ -398,7 +401,7 @@ describe("Composer 首页占位文案轮播", () => {
 
     renderComposer();
 
-    await chooseFullAccessFromAccessMenu(/智能审批/);
+    await chooseFullAccessFromAccessMenu(/替我审批/);
 
     expect(await screen.findByRole("alertdialog")).toHaveTextContent("开启完全访问？");
     expect(useAppStore.getState().accessMode).toBe("smart_approval");
@@ -406,6 +409,39 @@ describe("Composer 首页占位文案轮播", () => {
     fireEvent.click(screen.getByRole("button", { name: "仍然开启" }));
 
     await waitFor(() => expect(useAppStore.getState().accessMode).toBe("full_access"));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(document.body.style.pointerEvents).not.toBe("none");
+  });
+
+  it("opens the file picker from the add menu without leaving pointer lock", async () => {
+    const pickFiles = vi.fn(async () => []);
+    installBridge({ pickFiles });
+    useAppStore.setState({
+      view: "home",
+      input: "",
+      providers: [deepseek],
+      providerId: deepseek.id,
+      isRunning: false,
+      pendingTool: undefined,
+      slashCommands: []
+    });
+
+    renderComposer();
+
+    fireEvent.pointerDown(screen.getByTitle("添加上下文"), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: "mouse"
+    });
+    fireEvent.click(await screen.findByText("添加文件"));
+
+    await waitFor(() => expect(pickFiles).toHaveBeenCalled());
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(document.body.style.pointerEvents).not.toBe("none");
+
+    const input = screen.getByLabelText("输入消息");
+    fireEvent.change(input, { target: { value: "继续输入" } });
+    expect(input).toHaveValue("继续输入");
   });
 });
 
@@ -931,7 +967,14 @@ describe("Composer 计划模式（＋下拉 Switch + 标记）", () => {
 
     await waitFor(() => expect(useAppStore.getState().view).toBe("settings"));
     // 进入技能页后自动打开「添加技能」弹窗：GitHub 链接输入框可见。
-    expect(await screen.findByLabelText("GitHub 链接")).toBeInTheDocument();
+    const skillUrlInput = await screen.findByLabelText("GitHub 链接");
+    expect(skillUrlInput).toBeInTheDocument();
+    fireEvent.change(skillUrlInput, { target: { value: "https://github.com/acme/skills" } });
+    expect(skillUrlInput).toHaveValue("https://github.com/acme/skills");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByLabelText("GitHub 链接")).not.toBeInTheDocument());
+    expect(document.body.style.pointerEvents).not.toBe("none");
   });
 
   it("opens the skills page to manage skills from the + menu", async () => {
@@ -946,6 +989,8 @@ describe("Composer 计划模式（＋下拉 Switch + 标记）", () => {
     await waitFor(() => expect(useAppStore.getState().view).toBe("settings"));
     // 仅进入技能页，不自动弹出添加弹窗。
     expect(screen.queryByLabelText("GitHub 链接")).not.toBeInTheDocument();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(document.body.style.pointerEvents).not.toBe("none");
   });
 
   it("toggles planMode with Shift+Tab in the textarea", async () => {

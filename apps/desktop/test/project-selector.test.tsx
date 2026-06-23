@@ -121,6 +121,13 @@ async function openProjectMenu(triggerName = "对话"): Promise<HTMLElement> {
   return screen.getByRole("menu");
 }
 
+async function openAddProjectSubmenu(): Promise<void> {
+  const subTrigger = await screen.findByText("添加新项目");
+  fireEvent.pointerDown(subTrigger, { button: 0 });
+  fireEvent.click(subTrigger);
+  await screen.findByText("新建空白项目");
+}
+
 describe("项目选择器下拉", () => {
   it("按名搜索过滤项目列表", async () => {
     render(<App client={createClient()} />);
@@ -156,12 +163,83 @@ describe("项目选择器下拉", () => {
     await screen.findByTestId("composer-shell");
     await openProjectMenu();
 
-    const subTrigger = await screen.findByText("添加新项目");
-    fireEvent.pointerDown(subTrigger, { button: 0 });
-    fireEvent.click(subTrigger);
+    await openAddProjectSubmenu();
 
     expect(await screen.findByText("新建空白项目")).toBeInTheDocument();
     expect(screen.getByText("使用现有文件夹")).toBeInTheDocument();
+  });
+
+  it("从首页项目菜单新建空白项目后恢复页面点击和输入", async () => {
+    const created = makeProject("project_new", "未命名项目");
+    const createProject = vi.fn(async () => created);
+    const createProjectFolder = vi.fn(async () => ({
+      ok: true,
+      path: "/Users/me/Documents/未命名项目",
+      name: "未命名项目"
+    }));
+    (window as { chengxiaobang?: unknown }).chengxiaobang = { createProjectFolder };
+    const client = createClient({
+      createProject: createProject as never,
+      listProjects: vi.fn(async () => [alpha, beta, created])
+    });
+
+    render(<App client={client} />);
+    await screen.findByTestId("composer-shell");
+    await openProjectMenu();
+    await openAddProjectSubmenu();
+
+    fireEvent.click(screen.getByText("新建空白项目"));
+    const dialog = await screen.findByRole("dialog");
+    const nameInput = within(dialog).getByPlaceholderText("项目名称");
+    fireEvent.change(nameInput, { target: { value: "未命名项目" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建" }));
+
+    await waitFor(() => expect(useAppStore.getState().activeProjectId).toBe(created.id));
+    expect(createProjectFolder).toHaveBeenCalledWith("未命名项目");
+    expect(createProject).toHaveBeenCalledWith({
+      path: "/Users/me/Documents/未命名项目",
+      name: "未命名项目"
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(document.body.style.pointerEvents).not.toBe("none");
+
+    const composer = within(screen.getByTestId("composer-shell"));
+    const input = composer.getByLabelText("输入消息");
+    fireEvent.change(input, { target: { value: "继续输入" } });
+    expect(input).toHaveValue("继续输入");
+  });
+
+  it("从首页项目菜单使用现有文件夹后不残留菜单 pointer lock", async () => {
+    const created = makeProject("project_folder", "repo");
+    const createProject = vi.fn(async () => created);
+    const pickDirectory = vi.fn(async () => "/Users/me/Documents/repo");
+    (window as { chengxiaobang?: unknown }).chengxiaobang = { pickDirectory };
+    const client = createClient({
+      createProject: createProject as never,
+      listProjects: vi.fn(async () => [alpha, beta, created])
+    });
+
+    render(<App client={client} />);
+    await screen.findByTestId("composer-shell");
+    await openProjectMenu();
+    await openAddProjectSubmenu();
+
+    fireEvent.click(screen.getByText("使用现有文件夹"));
+
+    await waitFor(() => expect(useAppStore.getState().activeProjectId).toBe(created.id));
+    expect(pickDirectory).toHaveBeenCalled();
+    expect(createProject).toHaveBeenCalledWith({
+      path: "/Users/me/Documents/repo",
+      name: "repo"
+    });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(document.body.style.pointerEvents).not.toBe("none");
+
+    const composer = within(screen.getByTestId("composer-shell"));
+    const input = composer.getByLabelText("输入消息");
+    fireEvent.change(input, { target: { value: "继续输入" } });
+    expect(input).toHaveValue("继续输入");
   });
 
   it("进入会话页后不再展示项目选择器", async () => {

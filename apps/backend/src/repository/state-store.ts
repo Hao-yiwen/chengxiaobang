@@ -37,6 +37,26 @@ export interface CreateProjectInput {
   path: string;
 }
 
+export interface ListPage<T> {
+  items: T[];
+  total: number;
+  hasMore: boolean;
+}
+
+export interface ListPageOptions {
+  limit: number;
+  offset: number;
+}
+
+export interface ListProjectsOptions extends ListPageOptions {
+  sort?: "created" | "recent";
+  pinned?: boolean;
+}
+
+export interface ListSessionsOptions extends ListPageOptions {
+  pinned?: boolean;
+}
+
 export interface CreateSessionInput {
   projectId: string | null;
   title: string;
@@ -178,6 +198,7 @@ export interface StateStore {
   initialize(): Promise<void>;
   close(): Promise<void>;
   listProjects(): Promise<Project[]>;
+  listProjects(options: ListProjectsOptions): Promise<ListPage<Project>>;
   getProject(id: string): Promise<Project | undefined>;
   getProjectByPath(path: string): Promise<Project | undefined>;
   createProject(input: CreateProjectInput): Promise<Project>;
@@ -186,6 +207,10 @@ export interface StateStore {
   /** 置顶/取消置顶项目。只写 pinned_at，不更新 updated_at（避免扰动列表排序）。 */
   setProjectPinned(id: string, pinned: boolean): Promise<Project>;
   listSessions(projectId?: string | null): Promise<Session[]>;
+  listSessions(
+    projectId: string | null | undefined,
+    options: ListSessionsOptions
+  ): Promise<ListPage<Session>>;
   searchSessions(query: string, limit?: number): Promise<SessionSearchResult[]>;
   getSession(id: string): Promise<Session | undefined>;
   /** The session bound to a Feishu chat, if one exists (one session per chat). */

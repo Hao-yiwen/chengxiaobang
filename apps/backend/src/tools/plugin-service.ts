@@ -7,6 +7,7 @@ import {
   type PluginConfigField,
   type PluginConfigValues,
   type PluginContributions,
+  type PluginCommandRef,
   type PluginDetail,
   type PluginInstallInput,
   type PluginManifest,
@@ -460,7 +461,7 @@ async function readResponseBufferWithLimit(response: Response, maxBytes: number)
 async function countContributions(plugin: DiscoveredPlugin): Promise<PluginContributions> {
   const [skills, commands, mcpServerNames, hooks] = await Promise.all([
     readSkillDir(join(plugin.root, "skills")),
-    loadPluginCommands(plugin.root),
+    readPluginCommandRefs(plugin.root),
     readMcpServerNames(plugin.root, plugin.manifest),
     countHooks(plugin.root, plugin.manifest)
   ]);
@@ -479,13 +480,31 @@ async function readPluginSkillRefs(root: string): Promise<Array<{ name: string; 
 
 async function readPluginCommandRefs(
   root: string
-): Promise<Array<{ name: string; description: string; argumentHint?: string }>> {
-  const commands = await loadPluginCommands(root);
-  return commands.map((command) => ({
-    name: command.template.name,
-    description: command.template.description ?? "",
-    argumentHint: command.argumentHint
-  }));
+): Promise<PluginCommandRef[]> {
+  const [skills, commands] = await Promise.all([
+    readSkillDir(join(root, "skills")),
+    loadPluginCommands(root)
+  ]);
+  const byName = new Map<string, PluginCommandRef>();
+  for (const skill of skills) {
+    if (!skill.userInvocable) {
+      continue;
+    }
+    byName.set(skill.name, {
+      name: skill.name,
+      kind: "skill",
+      description: skill.description
+    });
+  }
+  for (const command of commands) {
+    byName.set(command.template.name, {
+      name: command.template.name,
+      kind: "prompt_template",
+      description: command.template.description ?? "",
+      argumentHint: command.argumentHint
+    });
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** 合并 manifest.mcpServers 与独立 .mcp.json 声明的 server 名（去重）。 */

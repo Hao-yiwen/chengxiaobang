@@ -13,6 +13,8 @@ import { getLogger } from "../logging/logger";
 const log = getLogger({ module: "usage/usage-stats" });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEKLY_BUCKET_COUNT = 120;
+const MONTHLY_BUCKET_COUNT = 48;
 const UNKNOWN_MODEL = "unknown";
 
 interface UsageStatsOptions {
@@ -259,8 +261,8 @@ function buildDailyBuckets(todayCivil: Date): BucketDraft[] {
 }
 
 function buildWeeklyBuckets(currentWeekStart: Date): BucketDraft[] {
-  const start = addDays(currentWeekStart, -51 * 7);
-  return Array.from({ length: 52 }, (_, index) => {
+  const start = addDays(currentWeekStart, -(WEEKLY_BUCKET_COUNT - 1) * 7);
+  return Array.from({ length: WEEKLY_BUCKET_COUNT }, (_, index) => {
     const week = addDays(start, index * 7);
     const next = addDays(week, 7);
     return {
@@ -274,8 +276,8 @@ function buildWeeklyBuckets(currentWeekStart: Date): BucketDraft[] {
 }
 
 function buildMonthlyBuckets(currentMonthStart: Date): BucketDraft[] {
-  const start = addMonths(currentMonthStart, -11);
-  return Array.from({ length: 12 }, (_, index) => {
+  const start = addMonths(currentMonthStart, -(MONTHLY_BUCKET_COUNT - 1));
+  return Array.from({ length: MONTHLY_BUCKET_COUNT }, (_, index) => {
     const month = addMonths(start, index);
     const next = addMonths(month, 1);
     return {

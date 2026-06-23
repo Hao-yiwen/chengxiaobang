@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import {
   ArrowLeftIcon,
   ArrowTopRightIcon,
+  ChevronIcon,
   FilterLinesIcon,
   FolderOpenOutlineIcon,
   GlobeOutlineIcon,
@@ -35,6 +36,7 @@ import {
   ProviderModelTags
 } from "@/components/ProviderCascadeSelect";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -186,7 +188,7 @@ export function SettingsView() {
   return (
     <div className="grid h-screen min-h-0 min-w-0 flex-1 grid-cols-[272px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden bg-background">
       {/* Settings nav */}
-      <aside className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto border-r border-border bg-background px-3 pb-4">
+      <aside className="scrollbar-hidden flex h-full min-h-0 flex-col gap-1 overflow-y-auto border-r border-border bg-background px-3 pb-4">
         <div className="h-10 flex-none [-webkit-app-region:drag]" />
         <Button
           variant="ghost"
@@ -240,7 +242,7 @@ export function SettingsView() {
       </aside>
 
       {/* 内容区保持 Vercel 式近白平面，主要靠导航边线建立层级。 */}
-      <div className="h-screen min-h-0 overflow-y-auto bg-background px-12 pb-16 pt-16">
+      <div className="scrollbar-hidden h-screen min-h-0 overflow-y-auto bg-background px-12 pb-16 pt-16">
         <div className="mx-auto max-w-[820px]">
           {section === "appearance" ? <AppearanceSection /> : null}
           {section === "general" ? <GeneralSection /> : null}
@@ -637,6 +639,12 @@ function normalizeDraftModels(
   return normalizeModelIds(kind, modelIds, options);
 }
 
+const CREATE_PROVIDER_CARD_ID = "create";
+
+function providerCardId(providerId: string): string {
+  return `provider:${providerId}`;
+}
+
 function ProvidersSection() {
   const { t } = useTranslation();
   const confirmDialog = useConfirmDialog();
@@ -645,21 +653,25 @@ function ProvidersSection() {
   const deleteProvider = useAppStore((state) => state.deleteProvider);
   const testProvider = useAppStore((state) => state.testProvider);
 
-  // draft 为空 = 新建的「先选类型」阶段；选好类型或点击列表项后才展开表单。
+  // draft 为空 = 新建卡片里的「先选类型」阶段；选好类型或展开供应商后才渲染完整表单。
   const [draft, setDraft] = useState<ProviderInput>();
   const [errors, setErrors] = useState<ProviderDraftErrors>({});
   const [status, setStatus] = useState("");
+  const [openCard, setOpenCard] = useState<string>();
 
   const editingProvider = draft?.id
     ? providers.find((provider) => provider.id === draft.id)
     : undefined;
   const hasStoredKey = Boolean(editingProvider?.apiKeyRef);
   const configuredProviders = providers.filter((provider) => provider.apiKeyRef);
+  const createCardOpen =
+    configuredProviders.length === 0 || openCard === CREATE_PROVIDER_CARD_ID;
 
   const resetForm = () => {
     setDraft(undefined);
     setErrors({});
     setStatus("");
+    setOpenCard(undefined);
   };
 
   async function confirmDeleteProvider(
@@ -688,6 +700,7 @@ function ProvidersSection() {
     setDraft(preset);
     setErrors({});
     setStatus("");
+    setOpenCard(CREATE_PROVIDER_CARD_ID);
   };
 
   const startEdit = (provider: ProviderConfig) => {
@@ -705,15 +718,212 @@ function ProvidersSection() {
     });
     setErrors({});
     setStatus("");
+    setOpenCard(providerCardId(provider.id));
   };
+
+  const handleCreateCardOpenChange = (open: boolean) => {
+    if (!open && configuredProviders.length === 0) {
+      return;
+    }
+    console.debug("[settings] 切换供应商卡片展开状态", {
+      providerId: "new",
+      name: t("settings.providers.addProvider"),
+      open
+    });
+    if (open) {
+      setDraft(undefined);
+      setErrors({});
+      setStatus("");
+      setOpenCard(CREATE_PROVIDER_CARD_ID);
+      return;
+    }
+    resetForm();
+  };
+
+  const handleProviderCardOpenChange = (provider: ProviderConfig, open: boolean) => {
+    console.debug("[settings] 切换供应商卡片展开状态", {
+      providerId: provider.id,
+      name: provider.name,
+      open
+    });
+    if (open) {
+      startEdit(provider);
+      return;
+    }
+    if (openCard === providerCardId(provider.id)) {
+      resetForm();
+    }
+  };
+
+  const renderProviderForm = () => (
+    <div data-testid="settings-provider-form" className="p-6">
+      {!draft ? (
+        <div className="grid gap-4">
+          <p className="text-caption text-muted-foreground">
+            {t("settings.providers.chooseTypeDesc")}
+          </p>
+          <Field label={t("settings.providers.provider")}>
+            <ProviderCascadeSelect
+              ariaLabel={t("settings.providers.provider")}
+              options={PROVIDER_KIND_OPTIONS}
+              placeholder={t("settings.providers.cascadePlaceholder")}
+              onValueChange={startCreate}
+            />
+          </Field>
+        </div>
+      ) : (
+        <form
+          noValidate
+          className="grid gap-4"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const validation = validateProviderDraft(draft, { hasStoredKey });
+            setErrors(validation);
+            if (Object.values(validation).some(Boolean)) {
+              console.warn("[settings] 供应商表单校验未通过", validation);
+              return;
+            }
+            try {
+              const providerDraft: ProviderInput = { ...draft };
+              delete providerDraft.modelOverrides;
+              // 最大工具调用轮数由 shared catalog/YAML 维护，设置页不向后端提交用户级覆盖。
+              await saveProvider({
+                ...providerDraft,
+                name: draft.name.trim(),
+                baseURL: draft.baseURL.trim()
+              });
+              setStatus(t("settings.providers.saved"));
+              if (draft.id) {
+                setDraft({ ...providerDraft, apiKey: "" });
+              } else {
+                setDraft(undefined);
+                setOpenCard(undefined);
+              }
+            } catch (cause) {
+              console.error("[settings] 保存供应商失败", cause);
+              setStatus(cause instanceof Error ? cause.message : String(cause));
+            }
+          }}
+        >
+          <Field label={t("settings.providers.type")}>
+            <ProviderCascadeSelect
+              value={draft.kind}
+              ariaLabel={t("settings.providers.type")}
+              options={PROVIDER_KIND_OPTIONS}
+              placeholder={t("settings.providers.cascadePlaceholder")}
+              selectedModelIds={draft.models}
+              onSelectedModelIdsChange={(modelIds) => {
+                setDraft(applyDraftModels(draft, modelIds));
+                setErrors({});
+              }}
+              onValueChange={(kind, modelIds) => {
+                const preset = providerDraftFromPreset(kind, {
+                  id: draft.id,
+                  apiKey: draft.apiKey,
+                  modelIds
+                });
+                setDraft(preset);
+                setErrors({});
+              }}
+            />
+          </Field>
+          <Field
+            label={t("settings.providers.selectedModels")}
+            error={errors.model ? t(errors.model) : undefined}
+          >
+            <ProviderModelTags
+              providerKind={draft.kind}
+              modelIds={draft.models}
+              emptyLabel={t("settings.providers.noModelsSelected")}
+              onRemove={(modelId) => {
+                setDraft(
+                  applyDraftModels(
+                    draft,
+                    (draft.models ?? []).filter((id) => id !== modelId)
+                  )
+                );
+                setErrors({});
+              }}
+            />
+          </Field>
+          <Field label="Base URL" error={errors.baseURL ? t(errors.baseURL) : undefined}>
+            <Input
+              aria-label="Base URL"
+              value={draft.baseURL}
+              onChange={(event) => setDraft({ ...draft, baseURL: event.target.value })}
+            />
+          </Field>
+          <Field label="API Key" error={errors.apiKey ? t(errors.apiKey) : undefined}>
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                aria-label="API Key"
+                value={draft.apiKey ?? ""}
+                placeholder={hasStoredKey ? t("settings.providers.keepKey") : undefined}
+                onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })}
+              />
+              {API_KEY_URLS[draft.kind] ? (
+                <Button variant="outline" asChild>
+                  <ExternalUrlAnchor
+                    href={API_KEY_URLS[draft.kind]!}
+                    title={t("settings.providers.getApiKey")}
+                  >
+                    <ArrowTopRightIcon className="size-4" />
+                    {t("settings.providers.getApiKey")}
+                  </ExternalUrlAnchor>
+                </Button>
+              ) : null}
+            </div>
+          </Field>
+          <div className="flex items-center gap-3 pt-1">
+            <Button type="submit">{t("settings.providers.save")}</Button>
+            {draft.id ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    await testProvider(draft.id!);
+                    setStatus(t("settings.providers.connectionOk"));
+                  } catch (cause) {
+                    console.error("[settings] 测试连接失败", cause);
+                    setStatus(cause instanceof Error ? cause.message : String(cause));
+                  }
+                }}
+              >
+                {t("settings.providers.test")}
+              </Button>
+            ) : null}
+            <Button type="button" variant="ghost" onClick={resetForm}>
+              {t("settings.providers.cancel")}
+            </Button>
+            {draft.id ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-destructive hover:text-destructive"
+                onClick={async () => {
+                  if (!(await confirmDeleteProvider({ id: draft.id!, name: draft.name }))) {
+                    return;
+                  }
+                  await deleteProvider(draft.id!);
+                  resetForm();
+                  setStatus(t("settings.providers.deleted"));
+                }}
+              >
+                <TrashIcon className="size-4" />
+                {t("settings.providers.delete")}
+              </Button>
+            ) : null}
+            <span className="text-caption text-muted-foreground">{status}</span>
+          </div>
+        </form>
+      )}
+    </div>
+  );
 
   return (
     <SectionShell title={t("settings.providers.title")}>
-      {configuredProviders.length === 0 ? (
-        <div className="rounded-sm border bg-link-bg-soft px-4 py-3 text-ink text-caption">
-          {t("settings.providers.required")}
-        </div>
-      ) : null}
       <SettingBlock
         title={t("settings.providers.configYamlTitle")}
         description={t("settings.providers.configYamlDesc")}
@@ -742,234 +952,125 @@ function ProvidersSection() {
         title={t("settings.providers.configuredTitle")}
         description={t("settings.providers.configuredDesc")}
       >
-        <div data-testid="settings-provider-list" className="divide-y rounded-sm border bg-background">
-          {configuredProviders.length === 0 ? (
-            <div className="px-4 py-4 text-caption text-muted-foreground">
-              {t("settings.providers.empty")}
-            </div>
-          ) : (
-            configuredProviders.map((provider) => {
-              const selected = draft?.id === provider.id;
-              const subtitle =
-                provider.models && provider.models.length > 1
-                  ? t("settings.providers.modelsSummary", { count: provider.models.length })
-                  : provider.model;
-              return (
+        <div data-testid="settings-provider-list" className="grid gap-3">
+          {configuredProviders.map((provider) => {
+            const open = openCard === providerCardId(provider.id);
+            const subtitle =
+              provider.models && provider.models.length > 1
+                ? t("settings.providers.modelsSummary", { count: provider.models.length })
+                : provider.model;
+            return (
+              <Collapsible
+                key={provider.id}
+                open={open}
+                onOpenChange={(nextOpen) => handleProviderCardOpenChange(provider, nextOpen)}
+              >
                 <div
-                  key={provider.id}
+                  data-testid={`settings-provider-card-${provider.id}`}
+                  className="overflow-hidden rounded-sm border bg-background"
+                >
+                  <div className={cn("flex items-center", open && "border-b")}>
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={t(
+                          open
+                            ? "settings.providers.collapseProvider"
+                            : "settings.providers.expandProvider",
+                          { name: provider.name }
+                        )}
+                        aria-pressed={open}
+                        className={cn(
+                          "flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors",
+                          open ? "bg-canvas-soft-2" : "hover:bg-canvas-soft-2/70"
+                        )}
+                      >
+                        <ChevronIcon
+                          className={cn(
+                            "size-4 flex-none text-muted-foreground transition-transform",
+                            open && "rotate-180"
+                          )}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-caption font-medium">
+                            {provider.name}
+                          </span>
+                          <span className="block truncate text-micro text-muted-foreground">
+                            {subtitle}
+                          </span>
+                        </span>
+                      </button>
+                    </CollapsibleTrigger>
+                    <div className="flex flex-none items-center pr-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("settings.providers.deleteNamed", { name: provider.name })}
+                        title={t("settings.providers.delete")}
+                        className="size-8 rounded-xs text-muted-foreground hover:text-destructive"
+                        onClick={async () => {
+                          if (!(await confirmDeleteProvider(provider))) {
+                            return;
+                          }
+                          await deleteProvider(provider.id);
+                          if (draft?.id === provider.id) {
+                            resetForm();
+                          }
+                          setStatus(t("settings.providers.deleted"));
+                        }}
+                      >
+                        <TrashIcon className="size-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <CollapsibleContent>{open ? renderProviderForm() : null}</CollapsibleContent>
+                </div>
+              </Collapsible>
+            );
+          })}
+          <Collapsible open={createCardOpen} onOpenChange={handleCreateCardOpenChange}>
+            <div
+              data-testid="settings-provider-create-card"
+              className="overflow-hidden rounded-sm border bg-background"
+            >
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t(
+                    createCardOpen
+                      ? "settings.providers.collapseAddProvider"
+                      : "settings.providers.expandAddProvider"
+                  )}
+                  aria-pressed={createCardOpen}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-3 transition-colors",
-                    selected ? "bg-canvas-soft-2" : "hover:bg-canvas-soft-2/70"
+                    "flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left transition-colors",
+                    createCardOpen ? "border-b bg-canvas-soft-2" : "hover:bg-canvas-soft-2/70"
                   )}
                 >
-                  <button
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => startEdit(provider)}
-                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        <span className="truncate text-caption font-medium">{provider.name}</span>
-                      </span>
-                      <span className="block truncate text-micro text-muted-foreground">
-                        {subtitle}
-                      </span>
-                    </span>
-                  </button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={t("settings.providers.deleteNamed", { name: provider.name })}
-                    title={t("settings.providers.delete")}
-                    className="size-8 flex-none rounded-xs text-muted-foreground hover:text-destructive"
-                    onClick={async () => {
-                      if (!(await confirmDeleteProvider(provider))) {
-                        return;
-                      }
-                      await deleteProvider(provider.id);
-                      if (draft?.id === provider.id) {
-                        resetForm();
-                      }
-                      setStatus(t("settings.providers.deleted"));
-                    }}
-                  >
-                    <TrashIcon className="size-4" />
-                  </Button>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </SettingBlock>
-
-      <SettingBlock
-        title={draft?.id ? t("settings.providers.edit") : t("settings.providers.create")}
-      >
-        <div data-testid="settings-provider-form" className="rounded-sm border bg-background p-6">
-          {!draft ? (
-            <div className="grid gap-4">
-              <p className="text-caption text-muted-foreground">
-                {t("settings.providers.chooseTypeDesc")}
-              </p>
-              <Field label={t("settings.providers.provider")}>
-                <ProviderCascadeSelect
-                  ariaLabel={t("settings.providers.provider")}
-                  options={PROVIDER_KIND_OPTIONS}
-                  placeholder={t("settings.providers.cascadePlaceholder")}
-                  onValueChange={startCreate}
-                />
-              </Field>
-            </div>
-          ) : (
-            <form
-              noValidate
-              className="grid gap-4"
-              onSubmit={async (event) => {
-                event.preventDefault();
-                const validation = validateProviderDraft(draft, { hasStoredKey });
-                setErrors(validation);
-                if (Object.values(validation).some(Boolean)) {
-                  console.warn("[settings] 供应商表单校验未通过", validation);
-                  return;
-                }
-                try {
-                  const providerDraft: ProviderInput = { ...draft };
-                  delete providerDraft.modelOverrides;
-                  // 最大工具调用轮数由 shared catalog/YAML 维护，设置页不向后端提交用户级覆盖。
-                  await saveProvider({
-                    ...providerDraft,
-                    name: draft.name.trim(),
-                    baseURL: draft.baseURL.trim()
-                  });
-                  setStatus(t("settings.providers.saved"));
-                  if (draft.id) {
-                    setDraft({ ...providerDraft, apiKey: "" });
-                  } else {
-                    // 新建成功后回到「先选类型」阶段。
-                    setDraft(undefined);
-                  }
-                } catch (cause) {
-                  console.error("[settings] 保存供应商失败", cause);
-                  setStatus(cause instanceof Error ? cause.message : String(cause));
-                }
-              }}
-            >
-              <Field label={t("settings.providers.type")}>
-                <ProviderCascadeSelect
-                  value={draft.kind}
-                  ariaLabel={t("settings.providers.type")}
-                  options={PROVIDER_KIND_OPTIONS}
-                  placeholder={t("settings.providers.cascadePlaceholder")}
-                  selectedModelIds={draft.models}
-                  onSelectedModelIdsChange={(modelIds) => {
-                    setDraft(applyDraftModels(draft, modelIds));
-                    setErrors({});
-                  }}
-                  onValueChange={(kind, modelIds) => {
-                    const preset = providerDraftFromPreset(kind, {
-                      id: draft.id,
-                      apiKey: draft.apiKey,
-                      modelIds
-                    });
-                    setDraft(preset);
-                    setErrors({});
-                  }}
-                />
-              </Field>
-              <Field
-                label={t("settings.providers.selectedModels")}
-                error={errors.model ? t(errors.model) : undefined}
-              >
-                <ProviderModelTags
-                  providerKind={draft.kind}
-                  modelIds={draft.models}
-                  emptyLabel={t("settings.providers.noModelsSelected")}
-                  onRemove={(modelId) => {
-                    setDraft(
-                      applyDraftModels(
-                        draft,
-                        (draft.models ?? []).filter((id) => id !== modelId)
-                      )
-                    );
-                    setErrors({});
-                  }}
-                />
-              </Field>
-              <Field label="Base URL" error={errors.baseURL ? t(errors.baseURL) : undefined}>
-                <Input
-                  aria-label="Base URL"
-                  value={draft.baseURL}
-                  onChange={(event) => setDraft({ ...draft, baseURL: event.target.value })}
-                />
-              </Field>
-              <Field label="API Key" error={errors.apiKey ? t(errors.apiKey) : undefined}>
-                <div className="flex gap-2">
-                  <Input
-                    type="password"
-                    aria-label="API Key"
-                    value={draft.apiKey ?? ""}
-                    placeholder={hasStoredKey ? t("settings.providers.keepKey") : undefined}
-                    onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })}
+                  <ChevronIcon
+                    className={cn(
+                      "size-4 flex-none text-muted-foreground transition-transform",
+                      createCardOpen && "rotate-180"
+                    )}
                   />
-                  {API_KEY_URLS[draft.kind] ? (
-                    <Button variant="outline" asChild>
-                      <ExternalUrlAnchor
-                        href={API_KEY_URLS[draft.kind]!}
-                        title={t("settings.providers.getApiKey")}
-                      >
-                        <ArrowTopRightIcon className="size-4" />
-                        {t("settings.providers.getApiKey")}
-                      </ExternalUrlAnchor>
-                    </Button>
-                  ) : null}
-                </div>
-              </Field>
-              <div className="flex items-center gap-3 pt-1">
-                <Button type="submit">{t("settings.providers.save")}</Button>
-                {draft.id ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={async () => {
-                      try {
-                        await testProvider(draft.id!);
-                        setStatus(t("settings.providers.connectionOk"));
-                      } catch (cause) {
-                        console.error("[settings] 测试连接失败", cause);
-                        setStatus(cause instanceof Error ? cause.message : String(cause));
-                      }
-                    }}
-                  >
-                    {t("settings.providers.test")}
-                  </Button>
-                ) : null}
-                <Button type="button" variant="ghost" onClick={resetForm}>
-                  {t("settings.providers.cancel")}
-                </Button>
-                {draft.id ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-destructive hover:text-destructive"
-                    onClick={async () => {
-                      if (!(await confirmDeleteProvider({ id: draft.id!, name: draft.name }))) {
-                        return;
-                      }
-                      await deleteProvider(draft.id!);
-                      resetForm();
-                      setStatus(t("settings.providers.deleted"));
-                    }}
-                  >
-                    <TrashIcon className="size-4" />
-                    {t("settings.providers.delete")}
-                  </Button>
-                ) : null}
-                <span className="text-caption text-muted-foreground">{status}</span>
-              </div>
-            </form>
-          )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-caption font-medium">
+                      {t("settings.providers.addProvider")}
+                    </span>
+                    <span className="block truncate text-micro text-muted-foreground">
+                      {configuredProviders.length === 0
+                        ? t("settings.providers.required")
+                        : t("settings.providers.addProviderDesc")}
+                    </span>
+                  </span>
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                {createCardOpen ? renderProviderForm() : null}
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
         </div>
       </SettingBlock>
     </SectionShell>

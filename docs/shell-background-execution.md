@@ -2,7 +2,7 @@
 
 > 最后更新：2026-06-23（补充 Windows PowerShell 工具）
 
-本文说明程小帮的 `Bash` 工具，以及 Windows 上额外暴露的 `PowerShell` 工具，如何执行命令并管理后台任务。目标是在不长期卡住 agent run 的前提下，让模型可以按任务选择等待窗口：默认短暂等待后转后台；`run_in_background=true` 立即释放工具调用；`timeout` 允许测试、构建等命令等待更久。完整输出落到工作区文件里，由模型按需读取、查询状态或主动终止。
+本文说明程小帮的 `Bash` 工具，以及 Windows 上额外暴露的 `PowerShell` 工具，如何执行命令并管理后台任务。目标是在不长期卡住 agent run 的前提下，让模型可以按任务选择等待窗口：默认短暂等待后转后台；`run_in_background=true` 立即释放工具调用；`timeout` 允许测试、构建等命令等待更久。完整输出落到后端 `dataDir` 下的全局运行产物目录，由模型按需读取、查询状态或主动终止。
 
 ---
 
@@ -60,13 +60,13 @@ runShellCommand(command, cwd)
 每次 `runShellCommand()` 都会为命令创建一个输出文件：
 
 ```text
-.chengxiaobang/shell-outputs/<shell_id>.log
+<dataDir>/shell-outputs/<runId>/<shell_id>.log
 ```
 
-其中 `<shell_id>` 当前形如 `shell_<uuid>`。输出文件位于本次工作区内，`Bash` / `PowerShell` 工具返回给模型的是相对路径，例如：
+其中 `<runId>` 是本次 agent run，`<shell_id>` 当前形如 `shell_<uuid>`。`dataDir` 默认是 `~/.chengxiaobang/data`，`Bash` / `PowerShell` 工具返回给模型的是可直接交给 `Read` 的绝对路径，例如：
 
 ```text
-.chengxiaobang/shell-outputs/shell_1d2e3f.log
+~/.chengxiaobang/data/shell-outputs/run_abc123/shell_1d2e3f.log
 ```
 
 stdout 和 stderr 会按产生顺序写入同一个文件。命令转后台后，后续输出仍会持续追加到这个文件；模型应该使用 `Read` 分段查看，例如从第 1 行读取 200 行。

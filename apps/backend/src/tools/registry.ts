@@ -79,13 +79,20 @@ export function createAgentTools(
     ocr?: OcrToolRuntime;
     /** 当前 run 模型的输入能力；用于 Read 图片时按模型能力返回 image 或文本提示。 */
     modelInputModalities?: readonly ModelInputModality[];
+    /** 后台 shell 输出的全局落盘目录；不提供时回退到工作区旧路径。 */
+    shellOutputDir?: string;
+    /** 当前 run id；提供后用于在全局 shell 输出目录下做运行级隔离。 */
+    runId?: string;
     /** 已就绪的 MCP 桥接工具；由 McpManager.getToolsForWorkspace 提供，并入工具集合。 */
     mcpTools?: AgentTool<any>[];
   } = {}
 ): AgentTool<any>[] {
   return [
     ...createFsTools(workspacePath, { modelInputModalities: options.modelInputModalities }),
-    ...createShellTools(workspacePath),
+    ...createShellTools(workspacePath, {
+      ...(options.shellOutputDir ? { shellOutputDir: options.shellOutputDir } : {}),
+      ...(options.runId ? { runId: options.runId } : {})
+    }),
     ...createWebTools(options.webSearch, options.webFetch),
     ...(options.ocr ? createOcrTools(workspacePath, options.ocr) : []),
     ...(options.memoryDir ? createMemoryTools(options.memoryDir) : []),

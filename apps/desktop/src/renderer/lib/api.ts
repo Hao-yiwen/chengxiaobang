@@ -69,14 +69,36 @@ type ReadSseStreamOptions = {
   onEventId?: (id: string) => void;
 };
 
+export interface PageResult<T> {
+  items: T[];
+  total: number;
+  hasMore: boolean;
+}
+
+export interface ProjectListInput {
+  limit: number;
+  offset: number;
+  sort?: "created" | "recent";
+  pinned?: boolean;
+}
+
+export interface SessionListInput {
+  limit: number;
+  offset: number;
+  projectId?: string | null;
+  pinned?: boolean;
+}
+
 export interface ApiClient {
-  listProjects(): Promise<Project[]>;
+  listProjects(input: ProjectListInput): Promise<PageResult<Project>>;
+  getProject?(id: string): Promise<Project>;
   createProject(input: { path: string; name?: string }): Promise<Project>;
   renameProject(id: string, name: string): Promise<Project>;
   /** 置顶/取消置顶项目（会话置顶走 updateSession 的 pinned 字段）。 */
   setProjectPinned(id: string, pinned: boolean): Promise<Project>;
   deleteProject(id: string): Promise<boolean>;
-  listSessions(projectId?: string): Promise<Session[]>;
+  listSessions(input: SessionListInput): Promise<PageResult<Session>>;
+  getSession?(id: string): Promise<Session>;
   markSessionRead?(id: string): Promise<Session>;
   listProjectFiles(projectId: string, query: string): Promise<string[]>;
   /** 当前项目文件树面板读取某个目录的直属子项。 */
@@ -332,8 +354,19 @@ export async function createApiClient(): Promise<ApiClient> {
   }
 
   return {
-    async listProjects() {
-      return (await request<{ projects: Project[] }>("/api/projects")).projects;
+    async listProjects(input) {
+      const query = new URLSearchParams({
+        limit: String(input.limit),
+        offset: String(input.offset),
+        sort: input.sort ?? "created",
+        pinned: String(input.pinned ?? false)
+      });
+      return await request<PageResult<Project>>(`/api/projects?${query.toString()}`);
+    },
+    async getProject(id) {
+      return (
+        await request<{ project: Project }>(`/api/projects/${encodeURIComponent(id)}`)
+      ).project;
     },
     async createProject(input) {
       return (
@@ -364,9 +397,21 @@ export async function createApiClient(): Promise<ApiClient> {
         await request<{ deleted: boolean }>(`/api/projects/${id}`, { method: "DELETE" })
       ).deleted;
     },
-    async listSessions(projectId) {
-      const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-      return (await request<{ sessions: Session[] }>(`/api/sessions${query}`)).sessions;
+    async listSessions(input) {
+      const query = new URLSearchParams({
+        limit: String(input.limit),
+        offset: String(input.offset),
+        pinned: String(input.pinned ?? false)
+      });
+      if (input.projectId !== undefined) {
+        query.set("projectId", input.projectId === null ? "null" : input.projectId);
+      }
+      return await request<PageResult<Session>>(`/api/sessions?${query.toString()}`);
+    },
+    async getSession(id) {
+      return (
+        await request<{ session: Session }>(`/api/sessions/${encodeURIComponent(id)}`)
+      ).session;
     },
     async markSessionRead(id) {
       return (

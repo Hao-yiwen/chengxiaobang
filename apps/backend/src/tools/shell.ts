@@ -20,6 +20,7 @@ const COMMAND_LOG_MAX_CHARS = 200;
 const SHELL_CAPTURE_MAX_BYTES = 256 * 1024;
 export const DEFAULT_SHELL_BACKGROUND_AFTER_MS = 15_000;
 export const SHELL_BACKGROUND_OUTPUT_DIR = ".chengxiaobang/shell-outputs";
+export const SHELL_GLOBAL_OUTPUT_DIR = "shell-outputs";
 const log = getLogger({ module: "shell" });
 
 export interface RunCommandOptions {
@@ -31,6 +32,8 @@ export interface RunShellCommandOptions {
   backgroundAfterMs?: number;
   signal?: AbortSignal;
   shell?: ResolvedShellCommand;
+  outputDir?: string;
+  scopeId?: string;
 }
 
 export interface BackgroundShellCommandSnapshot {
@@ -39,6 +42,7 @@ export interface BackgroundShellCommandSnapshot {
   cwd: string;
   outputPath: string;
   relativeOutputPath: string;
+  readPath?: string;
   status: "running" | "completed" | "failed" | "aborted";
   startedAt: string;
   updatedAt: string;
@@ -218,9 +222,15 @@ export async function runShellCommand(
 ): Promise<ShellCommandResult> {
   const backgroundAfterMs = options.backgroundAfterMs ?? DEFAULT_SHELL_BACKGROUND_AFTER_MS;
   const id = `shell_${randomUUID()}`;
-  const relativeOutputPath = posix.join(SHELL_BACKGROUND_OUTPUT_DIR, `${sanitizePathPart(id)}.log`);
-  const outputPath = join(cwd, relativeOutputPath);
-  await mkdir(join(cwd, SHELL_BACKGROUND_OUTPUT_DIR), { recursive: true });
+  const outputFileName = `${sanitizePathPart(id)}.log`;
+  const relativeOutputPath = posix.join(SHELL_BACKGROUND_OUTPUT_DIR, outputFileName);
+  const outputDir =
+    options.outputDir && options.scopeId
+      ? join(options.outputDir, sanitizePathPart(options.scopeId))
+      : options.outputDir;
+  const outputPath = outputDir ? join(outputDir, outputFileName) : join(cwd, relativeOutputPath);
+  const readPath = outputDir ? outputPath : relativeOutputPath;
+  await mkdir(outputDir ?? join(cwd, SHELL_BACKGROUND_OUTPUT_DIR), { recursive: true });
   await writeFile(outputPath, "", "utf8");
 
   if (options.signal?.aborted) {
@@ -252,6 +262,7 @@ export async function runShellCommand(
       cwd,
       outputPath,
       relativeOutputPath,
+      readPath,
       status: "running",
       startedAt,
       updatedAt: startedAt,

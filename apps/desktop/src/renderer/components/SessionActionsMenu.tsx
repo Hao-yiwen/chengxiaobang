@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { runAfterMenuClose } from "@/lib/menu-actions";
 import { buildSessionMarkdown } from "@/lib/session-export";
 import { useAppStore } from "@/store";
 
@@ -114,6 +115,14 @@ export function SessionActionsMenu({ session }: { session: Session }) {
     await forkSession(message.id);
   }
 
+  function bindPhoneFolderFromMenu(): void {
+    console.info("[session-actions-menu] 手机会话选择绑定文件夹", {
+      sessionId: session.id,
+      source: session.wechatChatId ? "wechat" : "feishu"
+    });
+    runAfterMenuClose(() => bindPhoneSessionToFolder(session.id));
+  }
+
   return (
     <>
       <DropdownMenu
@@ -154,7 +163,7 @@ export function SessionActionsMenu({ session }: { session: Session }) {
           <DropdownMenuItem
             onSelect={() => {
               setDraftTitle(session.title);
-              window.setTimeout(() => setRenameOpen(true), 0);
+              runAfterMenuClose(() => setRenameOpen(true));
             }}
           >
             <PencilOutlineIcon className="size-4" />
@@ -162,13 +171,7 @@ export function SessionActionsMenu({ session }: { session: Session }) {
           </DropdownMenuItem>
           {isPhoneSession ? (
             <DropdownMenuItem
-              onSelect={() => {
-                console.info("[session-actions-menu] 手机会话选择绑定文件夹", {
-                  sessionId: session.id,
-                  source: session.wechatChatId ? "wechat" : "feishu"
-                });
-                void bindPhoneSessionToFolder(session.id);
-              }}
+              onSelect={bindPhoneFolderFromMenu}
             >
               <FolderOpenSmallIcon className="size-4" />
               <span>{t("sessionMenu.bindFolder")}</span>

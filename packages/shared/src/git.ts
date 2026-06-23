@@ -29,6 +29,8 @@ export const gitChangeDiffResultSchema = z.object({
 export type GitChangeDiffResult = z.infer<typeof gitChangeDiffResultSchema>;
 
 export const gitInfoSchema = z.object({
-  isRepo: z.boolean()
+  isRepo: z.boolean(),
+  /** Git 仓库当前分支名；非仓库、detached HEAD 或读取失败时不返回。 */
+  branchName: z.string().min(1).optional()
 });
 export type GitInfo = z.infer<typeof gitInfoSchema>;
