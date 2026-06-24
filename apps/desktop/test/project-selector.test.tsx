@@ -184,8 +184,11 @@ describe("项目选择器下拉", () => {
 
     expect(shell.queryByRole("button", { name: "alpha-app" })).not.toBeInTheDocument();
     expect(shell.queryByRole("button", { name: "对话" })).not.toBeInTheDocument();
-    expect(composerShell).toHaveClass("rounded-t-[18px]", "!rounded-bl-none", "!rounded-br-none");
-    expect(environmentNode).toHaveClass("rounded-b-[18px]");
+    expect(composerShell).toHaveClass("rounded-[18px]");
+    expect(composerShell).not.toHaveClass("!rounded-bl-none", "!rounded-br-none");
+    expect(environmentNode).toHaveClass("h-9", "rounded-b-[18px]");
+    expect(environmentNode).not.toHaveClass("border", "border-t-0", "border-border");
+    expect(environmentNode.className).toContain("shadow-[0_8px_14px_-14px");
     expect(environment.getByRole("button", { name: "alpha-app" })).toBeInTheDocument();
     expect(environment.queryByRole("button", { name: "本地模式" })).not.toBeInTheDocument();
 

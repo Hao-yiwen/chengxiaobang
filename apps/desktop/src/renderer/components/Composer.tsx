@@ -1286,14 +1286,18 @@ export function Composer() {
   );
 
   return (
-    <div className="w-full">
+    <div
+      className={cn(
+        "relative w-full",
+        showHomeEnvironmentBar &&
+          "before:pointer-events-none before:absolute before:inset-x-0 before:bottom-0 before:h-[54px] before:rounded-b-[18px] before:bg-canvas-soft-2 before:content-['']"
+      )}
+    >
       <div
         data-testid="composer-shell"
         className={cn(
-          "relative w-full border border-border bg-card transition-colors focus-within:border-hairline-strong/40",
-          showHomeEnvironmentBar
-            ? "rounded-t-[18px] !rounded-bl-none !rounded-br-none border-b-0"
-            : "rounded-xl"
+          "relative z-[1] w-full border border-border bg-card transition-colors focus-within:border-hairline-strong/40",
+          showHomeEnvironmentBar ? "rounded-[18px]" : "rounded-xl"
         )}
       >
       {queuedRuns.length > 0 ? (
@@ -1912,7 +1916,7 @@ export function Composer() {
       {showHomeEnvironmentBar ? (
         <div
           data-testid="home-composer-environment"
-          className="flex min-h-11 min-w-0 items-center gap-6 rounded-b-[18px] border border-t-0 border-border bg-canvas-soft-2 px-4 py-2 text-body-sm text-muted-foreground"
+          className="relative z-[1] flex h-9 min-w-0 items-center gap-6 rounded-b-[18px] bg-canvas-soft-2 px-4 py-1 text-body-sm text-muted-foreground shadow-[0_8px_14px_-14px_rgba(0,0,0,0.35)]"
         >
           <DropdownMenu
             modal={false}

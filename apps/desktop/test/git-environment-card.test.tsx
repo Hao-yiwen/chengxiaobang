@@ -191,13 +191,19 @@ describe("GitEnvironmentCard", () => {
 
     const environment = await screen.findByTestId("home-composer-environment");
     fireEvent.click(await within(environment).findByTestId("home-git-branch-trigger"));
+    const popover = await screen.findByTestId("home-git-branch-popover");
 
-    expect(screen.getByPlaceholderText("搜索分支").closest("label")).toHaveClass("h-11");
+    expect(popover).toHaveClass("w-[320px]");
+    expect(screen.getByPlaceholderText("搜索分支").closest("label")).toHaveClass("h-9");
     expect(screen.getByText("分支")).toBeInTheDocument();
     expect(
       screen
         .getAllByRole("button", { name: "main" })
-        .some((button) => button.className.includes("bg-surface-hover"))
+        .some(
+          (button) =>
+            button.className.includes("bg-surface-hover") &&
+            button.className.includes("h-8")
+        )
     ).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: "origin/feature" }));
@@ -208,6 +214,32 @@ describe("GitEnvironmentCard", () => {
         branchType: "remote"
       })
     );
+  });
+
+  it("shows a cancel action while creating a branch from the compact home picker", async () => {
+    useAppStore.setState({
+      view: "home",
+      activeSessionId: undefined,
+      activeProjectId: project.id
+    });
+
+    render(<App client={createClient()} />);
+
+    const environment = await screen.findByTestId("home-composer-environment");
+    fireEvent.click(await within(environment).findByTestId("home-git-branch-trigger"));
+    const popover = await screen.findByTestId("home-git-branch-popover");
+    fireEvent.click(within(popover).getByRole("button", { name: "创建并检出新分支..." }));
+
+    expect(screen.getByPlaceholderText("新分支名")).toHaveClass("h-7");
+    const cancelButton = within(popover).getByRole("button", { name: "取消" });
+    expect(cancelButton).toHaveClass("h-7");
+
+    fireEvent.click(cancelButton);
+
+    await waitFor(() => expect(screen.queryByPlaceholderText("新分支名")).not.toBeInTheDocument());
+    expect(
+      within(popover).getByRole("button", { name: "创建并检出新分支..." })
+    ).toBeInTheDocument();
   });
 
   it("opens the git graph from the compact home branch picker", async () => {

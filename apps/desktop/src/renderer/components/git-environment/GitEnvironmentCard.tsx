@@ -477,10 +477,11 @@ export function HomeGitBranchControl() {
           </button>
         </PopoverTrigger>
         <PopoverContent
+          data-testid="home-git-branch-popover"
           side="top"
           align="start"
-          sideOffset={8}
-          className="w-[286px] border-border bg-canvas p-0 shadow-none"
+          sideOffset={4}
+          className="w-[320px] border-border bg-canvas p-0 shadow-none"
         >
           <CompactBranchPicker
             environment={environment}
@@ -683,21 +684,21 @@ function CompactBranchPicker(props: {
 
   return (
     <div className="overflow-hidden rounded-lg">
-      <label className="flex h-11 items-center gap-2 border-b px-3 text-muted-foreground">
-        <SearchIcon className="size-4 flex-none" />
+      <label className="flex h-9 items-center gap-2 border-b px-3 text-muted-foreground">
+        <SearchIcon className="size-3.5 flex-none" />
         <input
           value={props.query}
           onChange={(event) => props.onQueryChange(event.target.value)}
           placeholder={t("gitEnvironment.searchBranches")}
-          className="min-w-0 flex-1 bg-transparent text-body-sm text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-w-0 flex-1 bg-transparent text-caption text-foreground outline-none placeholder:text-muted-foreground"
         />
       </label>
-      <div className="max-h-[220px] overflow-y-auto px-2 py-2">
-        <p className="px-3 pb-2 pt-1 text-body-sm font-medium text-muted-foreground">
+      <div className="max-h-[210px] overflow-y-auto px-2 py-1.5">
+        <p className="px-2.5 pb-1.5 pt-0.5 text-caption font-medium text-muted-foreground">
           {t("gitEnvironment.branches")}
         </p>
         {visibleBranches.length > 0 ? (
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {visibleBranches.map((branch) => (
               <button
                 key={`${branch.type}:${branch.name}`}
@@ -705,19 +706,19 @@ function CompactBranchPicker(props: {
                 disabled={branch.current || props.action === "checkout"}
                 onClick={() => props.onPickBranch(branch)}
                 className={cn(
-                  "flex h-9 w-full items-center gap-2 rounded-md px-3 text-left transition-colors disabled:cursor-default",
+                  "flex h-8 w-full items-center gap-2 rounded-sm px-2.5 text-left transition-colors disabled:cursor-default",
                   branch.current
                     ? "bg-surface-hover text-foreground"
                     : "text-foreground hover:bg-canvas-soft-2",
                   props.action === "checkout" && !branch.current && "opacity-55"
                 )}
               >
-                <GitBranchIcon className="size-4 flex-none text-foreground" />
-                <span className="min-w-0 flex-1 truncate text-body-sm font-medium">
+                <GitBranchIcon className="size-3.5 flex-none text-foreground" />
+                <span className="min-w-0 flex-1 truncate text-caption font-medium">
                   {displayBranchName(branch)}
                 </span>
                 {branch.current ? (
-                  <CheckMediumIcon className="size-4 flex-none text-foreground" />
+                  <CheckMediumIcon className="size-3.5 flex-none text-foreground" />
                 ) : null}
               </button>
             ))}
@@ -728,7 +729,7 @@ function CompactBranchPicker(props: {
           </p>
         )}
       </div>
-      <div className="border-t px-3 py-2">
+      <div className="border-t px-2.5 py-1.5">
         {props.creatingBranch ? (
           <div className="flex items-center gap-2">
             <input
@@ -744,24 +745,31 @@ function CompactBranchPicker(props: {
               }}
               autoFocus
               placeholder={t("gitEnvironment.newBranchPlaceholder")}
-              className="h-8 min-w-0 flex-1 rounded-sm border border-border bg-canvas px-2 text-caption outline-none focus:border-hairline-strong"
+              className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-canvas px-2 text-caption outline-none focus:border-hairline-strong"
             />
             <button
               type="button"
               onClick={props.onCreateBranch}
               disabled={!props.newBranchName.trim() || props.action === "create"}
-              className="h-8 rounded-sm border border-border bg-canvas px-2.5 text-caption font-normal text-foreground transition-colors hover:bg-canvas-soft-2 disabled:cursor-default disabled:bg-canvas-soft disabled:text-muted-foreground disabled:hover:bg-canvas-soft"
+              className="h-7 rounded-sm border border-border bg-canvas px-2.5 text-caption font-normal text-foreground transition-colors hover:bg-canvas-soft-2 disabled:cursor-default disabled:bg-canvas-soft disabled:text-muted-foreground disabled:hover:bg-canvas-soft"
             >
               {t("gitEnvironment.create")}
+            </button>
+            <button
+              type="button"
+              onClick={props.onCreateCancel}
+              className="h-7 rounded-sm px-2 text-caption text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
+            >
+              {t("confirmDialog.cancel")}
             </button>
           </div>
         ) : (
           <button
             type="button"
             onClick={props.onCreateOpen}
-            className="flex h-8 w-full items-center gap-2 rounded-sm px-1 text-body-sm font-medium text-foreground transition-colors hover:bg-canvas-soft-2"
+            className="flex h-7 w-full items-center gap-2 rounded-sm px-1 text-caption font-medium text-foreground transition-colors hover:bg-canvas-soft-2"
           >
-            <PlusIcon className="size-4 text-muted-foreground" />
+            <PlusIcon className="size-3.5 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate text-left">
               {t("gitEnvironment.createAndCheckout")}
             </span>
@@ -770,9 +778,9 @@ function CompactBranchPicker(props: {
         <button
           type="button"
           onClick={props.onOpenGraph}
-          className="mt-1 flex h-8 w-full items-center gap-2 rounded-sm px-1 text-body-sm font-medium text-foreground transition-colors hover:bg-canvas-soft-2"
+          className="mt-0.5 flex h-7 w-full items-center gap-2 rounded-sm px-1 text-caption font-medium text-foreground transition-colors hover:bg-canvas-soft-2"
         >
-          <ReviewBranchPathIcon className="size-4 text-muted-foreground" />
+          <ReviewBranchPathIcon className="size-3.5 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate text-left">{t("gitEnvironment.graph")}</span>
         </button>
       </div>
