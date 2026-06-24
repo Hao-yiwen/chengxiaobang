@@ -273,9 +273,9 @@ describe("GitEnvironmentCard", () => {
     expect(stack).toContainElement(card);
     expect(stack.firstElementChild).toBe(card);
     expect(card).not.toHaveTextContent("本地");
-    expect(screen.getByTitle("打开侧边面板")).toBeInTheDocument();
     expect(screen.getByText("环境信息")).toBeInTheDocument();
     expect(screen.getByText("main")).toBeInTheDocument();
+    expect(within(card).getByTestId("git-environment-new-tab-button")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("变更"));
 

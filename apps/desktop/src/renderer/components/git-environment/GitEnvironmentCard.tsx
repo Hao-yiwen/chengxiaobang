@@ -238,10 +238,11 @@ export function GitEnvironmentSlot({ fallback }: { fallback: ReactNode }) {
           </h2>
           <button
             type="button"
+            data-testid="git-environment-new-tab-button"
             title={t("rightPanel.newTab")}
             aria-label={t("rightPanel.newTab")}
             onClick={() => openRightPanel("changes")}
-            className="flex size-7 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
+            className="ml-auto flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
           >
             <PlusIcon className="size-4" />
           </button>
