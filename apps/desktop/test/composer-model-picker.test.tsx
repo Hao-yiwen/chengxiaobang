@@ -155,10 +155,16 @@ describe("Composer 模型 + 推理联动选择器", () => {
 
     await openModelFlyout(menu, "DeepSeek V4 Flash");
 
-    expect(await screen.findByText("关闭")).toBeInTheDocument();
-    expect(screen.queryByText("默认")).not.toBeInTheDocument();
-    expect(screen.getByText("High")).toBeInTheDocument();
-    expect(screen.getByText("XHigh")).toBeInTheDocument();
+    const flyoutMenus = await screen.findAllByRole("menu");
+    const flyout = flyoutMenus[flyoutMenus.length - 1];
+    if (!flyout) {
+      throw new Error("找不到模型右侧 flyout");
+    }
+    expect(within(flyout).queryByText("选择模型")).not.toBeInTheDocument();
+    expect(within(flyout).getByText("关闭")).toBeInTheDocument();
+    expect(within(flyout).queryByText("默认")).not.toBeInTheDocument();
+    expect(within(flyout).getByText("High")).toBeInTheDocument();
+    expect(within(flyout).getByText("XHigh")).toBeInTheDocument();
   });
 
   it("picks a reasoning level from the model flyout and reflects it on the trigger", async () => {

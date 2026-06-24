@@ -4,7 +4,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "rootDir": "../..",
-    "ignoreDeprecations": "6.0",
+    "ignoreDeprecations": "5.0",
     "paths": {
       "@/*": ["src/renderer/*"],
       "@chengxiaobang/shared": ["../../packages/shared/src/index.ts"]

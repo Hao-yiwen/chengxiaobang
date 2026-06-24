@@ -73,6 +73,7 @@ import { RunEventTranslator } from "./pi-events";
 import { ProjectApprovalTrustService } from "./project-approval-trust";
 import { buildSystemPrompt } from "./system-prompt";
 import { collectEnvironmentContext } from "./environment-context";
+import { generateGitCommitMessage } from "./git-commit-message";
 import { buildProjectInstructionMessage, findInstructionFile } from "./project-instructions";
 import { buildContextReminderMessage, buildReminderMessage } from "./system-reminders";
 import {
@@ -574,6 +575,71 @@ export class AgentRunner {
       status: usage.status
     });
     return usage;
+  }
+
+  async generateCommitMessageForSession(options: {
+    sessionId: string;
+    status: string;
+    diff: string;
+  }): Promise<string | undefined> {
+    const session = await this.store.getSession(options.sessionId);
+    if (!session) {
+      log.warn("Git 提交信息生成失败：会话不存在", {
+        action: "git_commit_message.session_missing",
+        sessionId: options.sessionId
+      });
+      throw new Error("会话不存在，无法生成提交信息");
+    }
+    const providerBase = await this.resolveProviderForSession(session);
+    if (!providerBase) {
+      log.warn("Git 提交信息生成失败：缺少可用模型", {
+        action: "git_commit_message.provider_missing",
+        sessionId: options.sessionId
+      });
+      throw new Error("请先配置至少一个模型");
+    }
+    const effectiveReasoningMode = session.reasoningMode ?? providerBase.reasoningMode;
+    const provider: ProviderConfig = {
+      ...providerBase,
+      model: session.model ?? providerBase.model,
+      ...(effectiveReasoningMode ? { reasoningMode: effectiveReasoningMode } : {})
+    };
+    const apiKey = provider.apiKeyRef
+      ? await this.secrets.getSecret(provider.apiKeyRef)
+      : undefined;
+    if (!apiKey) {
+      log.warn("Git 提交信息生成失败：模型缺少 API Key", {
+        action: "git_commit_message.api_key_missing",
+        sessionId: options.sessionId,
+        providerId: provider.id
+      });
+      throw new Error("请先填写模型 API Key");
+    }
+    log.info("开始生成 Git 提交信息", {
+      action: "git_commit_message.start",
+      sessionId: options.sessionId,
+      providerId: provider.id,
+      model: provider.model,
+      statusLength: options.status.length,
+      diffLength: options.diff.length
+    });
+    const message = await generateGitCommitMessage({
+      status: options.status,
+      diff: options.diff,
+      provider,
+      apiKey,
+      streamFn: this.streamFn ?? streamSimple,
+      signal: AbortSignal.timeout(30_000)
+    });
+    log.info("Git 提交信息生成完成", {
+      action: "git_commit_message.completed",
+      sessionId: options.sessionId,
+      providerId: provider.id,
+      model: provider.model,
+      hasMessage: Boolean(message),
+      messageLength: message?.length ?? 0
+    });
+    return message;
   }
 
   async *stream(

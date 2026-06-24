@@ -16,8 +16,14 @@ import type {
   FeishuStatus,
   GitChangeDiffResult,
   GitChangeScope,
+  GitCheckoutBranchInput,
+  GitCommitInput,
+  GitCommitResult,
+  GitCreateBranchInput,
+  GitEnvironment,
   GitChangesResult,
   GitFileChange,
+  GitGraphResult,
   GitInfo,
   Message,
   MessageFeedback,
@@ -112,6 +118,24 @@ export interface ApiClient {
     projectId: string,
     input: { scope: GitChangeScope; path: string }
   ): Promise<GitFileChange>;
+  /** 当前项目 Git 环境卡片状态。 */
+  getGitEnvironment?(projectId: string): Promise<GitEnvironment>;
+  /** 当前项目 Git 提交图谱。 */
+  getGitGraph?(projectId: string): Promise<GitGraphResult>;
+  /** 切换本地分支，或从远程分支创建 tracking 本地分支。 */
+  checkoutGitBranch?(
+    projectId: string,
+    input: GitCheckoutBranchInput
+  ): Promise<{ environment: GitEnvironment }>;
+  /** 创建并检出新分支。 */
+  createGitBranch?(
+    projectId: string,
+    input: GitCreateBranchInput
+  ): Promise<{ environment: GitEnvironment }>;
+  /** 提交当前 Git 变更。 */
+  commitGitChanges?(projectId: string, input: GitCommitInput): Promise<GitCommitResult>;
+  /** 推送当前 Git 分支；无 upstream 时后端会尝试设置 origin upstream。 */
+  pushGitBranch?(projectId: string): Promise<{ environment: GitEnvironment }>;
   updateSession(id: string, input: SessionUpdate): Promise<Session>;
   deleteSession(id: string): Promise<boolean>;
   searchSessions?(query: string): Promise<SessionSearchResult[]>;
@@ -458,6 +482,53 @@ export async function createApiClient(): Promise<ApiClient> {
           `/api/projects/${encodeURIComponent(projectId)}/git/changes/diff?${query.toString()}`
         )
       ).file;
+    },
+    async getGitEnvironment(projectId) {
+      return (
+        await request<{ environment: GitEnvironment }>(
+          `/api/projects/${encodeURIComponent(projectId)}/git/environment`
+        )
+      ).environment;
+    },
+    async getGitGraph(projectId) {
+      return (
+        await request<{ graph: GitGraphResult }>(
+          `/api/projects/${encodeURIComponent(projectId)}/git/graph`
+        )
+      ).graph;
+    },
+    async checkoutGitBranch(projectId, input) {
+      return request<{ environment: GitEnvironment }>(
+        `/api/projects/${encodeURIComponent(projectId)}/git/checkout`,
+        {
+          method: "POST",
+          body: JSON.stringify(input)
+        }
+      );
+    },
+    async createGitBranch(projectId, input) {
+      return request<{ environment: GitEnvironment }>(
+        `/api/projects/${encodeURIComponent(projectId)}/git/branches`,
+        {
+          method: "POST",
+          body: JSON.stringify(input)
+        }
+      );
+    },
+    async commitGitChanges(projectId, input) {
+      return request<GitCommitResult>(
+        `/api/projects/${encodeURIComponent(projectId)}/git/commit`,
+        {
+          method: "POST",
+          body: JSON.stringify(input)
+        }
+      );
+    },
+    async pushGitBranch(projectId) {
+      return request<{ environment: GitEnvironment }>(
+        `/api/projects/${encodeURIComponent(projectId)}/git/push`,
+        { method: "POST", body: JSON.stringify({}) }
+      );
     },
     async updateSession(id, input) {
       return (

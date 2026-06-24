@@ -45,14 +45,23 @@ const SPREADSHEET_EXTENSIONS = new Set(["xlsx", "xls", "xlsm", "csv", "tsv"]);
 const DOCX_EXTENSIONS = new Set(["docx", "doc"]);
 const PRESENTATION_EXTENSIONS = new Set(["pptx", "ppt"]);
 const CODE_EXTENSIONS = new Set([
+  "astro",
+  "bash",
   "c",
   "cc",
   "cpp",
   "cs",
+  "cjs",
+  "cts",
   "css",
   "dart",
+  "gql",
   "go",
   "graphql",
+  "h",
+  "hh",
+  "hpp",
+  "hxx",
   "java",
   "js",
   "jsx",
@@ -61,6 +70,8 @@ const CODE_EXTENSIONS = new Set([
   "lua",
   "m",
   "mm",
+  "mjs",
+  "mts",
   "php",
   "py",
   "rb",
@@ -68,11 +79,16 @@ const CODE_EXTENSIONS = new Set([
   "sass",
   "scss",
   "sh",
+  "svelte",
   "swift",
+  "tf",
+  "tfvars",
   "ts",
   "tsx",
   "vue",
-  "xml"
+  "xml",
+  "zig",
+  "zsh"
 ]);
 const TEXT_EXTENSIONS = new Set([
   "conf",

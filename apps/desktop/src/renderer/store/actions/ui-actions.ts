@@ -608,6 +608,17 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
             rightPanelBySession: rememberRightPanel(state, undefined, patch)
           };
         }),
+      notifyGitChanged: (projectId) =>
+        set((state) => {
+          const nextToken = (state.gitRefreshTokenByProjectId[projectId] ?? 0) + 1;
+          console.info("[store] 通知项目 Git 状态已变化", { projectId, token: nextToken });
+          return {
+            gitRefreshTokenByProjectId: {
+              ...state.gitRefreshTokenByProjectId,
+              [projectId]: nextToken
+            }
+          };
+        }),
 
       async openSideChatForMessage(messageId) {
         const state = get();

@@ -292,6 +292,8 @@ export interface AppState {
   filePreviewEntrySource?: FilePreviewEntrySource;
   browserUrl: string;
   rightPanelBySession: Record<string, RightPanelSessionState>;
+  /** Git 动作完成后的项目级刷新信号；值只用于依赖比较，不持久化。 */
+  gitRefreshTokenByProjectId: Record<string, number>;
   /** 当前主会话里已创建的侧边会话，按锚点消息 id 索引。 */
   sideChatsByMessageId: Record<string, SideChatSummary>;
   /** 当前右侧侧边会话绑定的主聊天消息 id。 */
@@ -377,6 +379,8 @@ export interface AppState {
   toggleRightPanelMaximized(): void;
   setRightPanelWidth(width: number): void;
   setBrowserUrl(url: string): void;
+  /** 通知当前项目 Git 状态已变化，Git 卡片和变更面板会重新拉取。 */
+  notifyGitChanged(projectId: string): void;
   /** 从主聊天某条消息打开对应隐藏侧边会话。 */
   openSideChatForMessage(messageId: string): Promise<void>;
   /** 重新读取当前主会话的侧边会话标记摘要。 */

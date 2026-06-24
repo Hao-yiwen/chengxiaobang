@@ -210,7 +210,7 @@ describe("App", () => {
     expect(screen.queryByText("程小帮 · AI 工作台")).not.toBeInTheDocument();
     expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
     expect(screen.getByLabelText("输入消息")).toBeInTheDocument();
-    expect(screen.getByTestId("composer-shell")).toHaveClass("rounded-lg");
+    expect(screen.getByTestId("composer-shell")).toHaveClass("rounded-xl");
     expect(screen.getByTestId("composer-shell")).not.toHaveClass("rounded-pill");
     await selectDeepSeekForHome();
     // 首页模型入口展示友好模型名，不重复露出原始模型 id。

@@ -64,6 +64,7 @@ const LANGUAGE_ICON_BY_NAME: Record<string, FileIconComponent> = {
   c: CIcon,
   cc: CppIcon,
   cjs: JavascriptIcon,
+  cts: TypescriptIcon,
   cpp: CppIcon,
   csharp: DefaultIcon,
   css: CssIcon,
@@ -82,6 +83,7 @@ const LANGUAGE_ICON_BY_NAME: Record<string, FileIconComponent> = {
   md: MarkdownIcon,
   mdx: MarkdownIcon,
   mjs: JavascriptIcon,
+  mts: TypescriptIcon,
   py: PythonIcon,
   python: PythonIcon,
   rb: RubyIcon,
@@ -178,10 +180,12 @@ const FILE_NAME_PREFIX_ICONS: Array<[prefix: string, icon: FileIconComponent]> =
 
 const FILE_EXTENSION_ICONS: Record<string, FileIconComponent> = {
   astro: AstroIcon,
+  bash: BashIcon,
   biome: BiomeIcon,
   c: CIcon,
   cc: CppIcon,
   cjs: JavascriptIcon,
+  cts: TypescriptIcon,
   cpp: CppIcon,
   csv: ExcelDocumentIcon,
   css: CssIcon,
@@ -192,7 +196,9 @@ const FILE_EXTENSION_ICONS: Record<string, FileIconComponent> = {
   gql: GraphqlIcon,
   graphql: GraphqlIcon,
   h: CIcon,
+  hh: CppIcon,
   hpp: CppIcon,
+  hxx: CppIcon,
   html: HtmlIcon,
   ipynb: NotebookIcon,
   java: JavaIcon,
@@ -207,6 +213,7 @@ const FILE_EXTENSION_ICONS: Record<string, FileIconComponent> = {
   md: MarkdownIcon,
   mdx: MarkdownIcon,
   mjs: JavascriptIcon,
+  mts: TypescriptIcon,
   pdf: PdfIcon,
   php: PhpIcon,
   png: ImageIcon,
@@ -223,6 +230,7 @@ const FILE_EXTENSION_ICONS: Record<string, FileIconComponent> = {
   svelte: SvelteIcon,
   swift: SwiftIcon,
   tf: TerraformIcon,
+  tfvars: TerraformIcon,
   toml: TomlIcon,
   ts: TypescriptIcon,
   tsx: ReactIcon,
@@ -234,6 +242,7 @@ const FILE_EXTENSION_ICONS: Record<string, FileIconComponent> = {
   yaml: YmlIcon,
   yml: YmlIcon,
   zig: ZigIcon,
+  zsh: BashIcon,
   zip: ZipIcon
 };
 

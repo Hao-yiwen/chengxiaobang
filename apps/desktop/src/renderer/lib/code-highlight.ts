@@ -4,13 +4,24 @@ import type { CodePreviewSettings } from "@/lib/code-preview-settings";
 import { normalizeCodeLanguage } from "@/lib/code-language-icons";
 
 const SHIKI_LANGUAGE_ALIASES: Record<string, string> = {
+  bash: "bash",
   cjs: "javascript",
+  cts: "typescript",
+  gql: "graphql",
+  h: "cpp",
+  hh: "cpp",
+  hpp: "cpp",
+  hxx: "cpp",
   js: "javascript",
   jsx: "jsx",
   mjs: "javascript",
+  mts: "typescript",
+  tf: "terraform",
+  tfvars: "terraform",
   ts: "typescript",
   tsx: "tsx",
-  yml: "yaml"
+  yml: "yaml",
+  zsh: "bash"
 };
 
 export type HighlightTokenVariant = {

@@ -112,10 +112,10 @@ afterEach(() => {
   delete (window as { chengxiaobang?: unknown }).chengxiaobang;
 });
 
-/** composer 工具栏里的项目触发按钮（区别于侧边栏的同名项目项）。 */
+/** 首页项目触发按钮统一放在 composer 下方环境栏内。 */
 async function openProjectMenu(triggerName = "对话"): Promise<HTMLElement> {
-  const shell = within(screen.getByTestId("composer-shell"));
-  const trigger = await shell.findByRole("button", { name: triggerName });
+  const scope = within(await screen.findByTestId("home-composer-environment"));
+  const trigger = await scope.findByRole("button", { name: triggerName });
   fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
   await screen.findByPlaceholderText("搜索项目…");
   return screen.getByRole("menu");
@@ -132,6 +132,14 @@ describe("项目选择器下拉", () => {
   it("按名搜索过滤项目列表", async () => {
     render(<App client={createClient()} />);
     await screen.findByTestId("composer-shell");
+    expect(
+      within(screen.getByTestId("composer-shell")).queryByRole("button", { name: "对话" })
+    ).not.toBeInTheDocument();
+    expect(
+      within(await screen.findByTestId("home-composer-environment")).getByRole("button", {
+        name: "对话"
+      })
+    ).toBeInTheDocument();
     const menu = await openProjectMenu();
 
     // 两个项目都先出现在菜单里。
@@ -151,11 +159,38 @@ describe("项目选择器下拉", () => {
   it("点「不使用项目」清空当前项目选择", async () => {
     useAppStore.setState({ activeProjectId: alpha.id });
     render(<App client={createClient()} />);
-    await screen.findByTestId("composer-shell");
+    await screen.findByTestId("home-composer-environment");
 
     const menu = await openProjectMenu("alpha-app");
     fireEvent.click(within(menu).getByText("不使用项目"));
     await waitFor(() => expect(useAppStore.getState().activeProjectId).toBeUndefined());
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("home-composer-environment")).getByRole("button", {
+          name: "对话"
+        })
+      ).toBeInTheDocument()
+    );
+  });
+
+  it("选中项目后在下方环境栏展示项目，composer 工具栏不再展示项目名", async () => {
+    useAppStore.setState({ activeProjectId: alpha.id });
+    render(<App client={createClient()} />);
+
+    const composerShell = await screen.findByTestId("composer-shell");
+    const environmentNode = await screen.findByTestId("home-composer-environment");
+    const shell = within(composerShell);
+    const environment = within(environmentNode);
+
+    expect(shell.queryByRole("button", { name: "alpha-app" })).not.toBeInTheDocument();
+    expect(shell.queryByRole("button", { name: "对话" })).not.toBeInTheDocument();
+    expect(composerShell).toHaveClass("rounded-t-[18px]", "!rounded-bl-none", "!rounded-br-none");
+    expect(environmentNode).toHaveClass("rounded-b-[18px]");
+    expect(environment.getByRole("button", { name: "alpha-app" })).toBeInTheDocument();
+    expect(environment.queryByRole("button", { name: "本地模式" })).not.toBeInTheDocument();
+
+    const menu = await openProjectMenu("alpha-app");
+    expect(await within(menu).findByText("beta-tools")).toBeInTheDocument();
   });
 
   it("子菜单展开后可见「新建空白项目」「使用现有文件夹」", async () => {

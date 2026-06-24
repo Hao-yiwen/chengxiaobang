@@ -1,12 +1,25 @@
 import { basename } from "node:path";
 import { Hono } from "hono";
 import {
+  gitCheckoutBranchInputSchema,
   gitChangeScopeSchema,
+  gitCommitInputSchema,
+  gitCreateBranchInputSchema,
   projectInputSchema,
   projectUpdateSchema,
   type Project
 } from "@chengxiaobang/shared";
-import { collectGitChanges, collectGitFileDiff, collectGitInfo } from "../../tools/git-changes";
+import {
+  checkoutGitBranch,
+  collectGitChanges,
+  collectGitEnvironment,
+  collectGitFileDiff,
+  collectGitGraph,
+  collectGitInfo,
+  commitGitChanges,
+  createGitBranch,
+  pushGitBranch
+} from "../../tools/git-changes";
 import { listProjectDirectoryEntries, listProjectFiles } from "../../tools/workspace";
 import type { AppContext } from "../context";
 
@@ -156,6 +169,149 @@ export function projectRoutes(context: AppContext): Hono {
       hasBranchName: Boolean(info.branchName)
     });
     return c.json({ info });
+  });
+
+  app.get("/:projectId/git/environment", async (c) => {
+    const project = await context.store.getProject(c.req.param("projectId"));
+    if (!project) {
+      return c.json({ error: "项目不存在" }, 404);
+    }
+    const environment = await collectGitEnvironment(project.path);
+    log.debug("[projects] Git 环境读取完成", {
+      projectId: project.id,
+      isRepo: environment.isRepo,
+      branchName: environment.branchName,
+      changedFileCount: environment.changedFileCount,
+      branchCount: environment.branches.length
+    });
+    return c.json({ environment });
+  });
+
+  app.get("/:projectId/git/graph", async (c) => {
+    const project = await context.store.getProject(c.req.param("projectId"));
+    if (!project) {
+      return c.json({ error: "项目不存在" }, 404);
+    }
+    const limitRaw = c.req.query("limit");
+    const limit = limitRaw ? Number(limitRaw) : undefined;
+    try {
+      const graph = await collectGitGraph(project.path, { limit });
+      log.debug("[projects] Git 图谱读取完成", {
+        projectId: project.id,
+        isRepo: graph.isRepo,
+        commitCount: graph.commits.length
+      });
+      return c.json({ graph });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn("[projects] Git 图谱读取失败", { projectId: project.id, error: message });
+      return c.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/:projectId/git/checkout", async (c) => {
+    const project = await context.store.getProject(c.req.param("projectId"));
+    if (!project) {
+      return c.json({ error: "项目不存在" }, 404);
+    }
+    const input = gitCheckoutBranchInputSchema.parse(await c.req.json());
+    try {
+      const result = await checkoutGitBranch(project.path, input);
+      log.info("[projects] Git 分支切换完成", {
+        projectId: project.id,
+        branchName: input.branchName,
+        branchType: input.branchType
+      });
+      return c.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn("[projects] Git 分支切换失败", {
+        projectId: project.id,
+        branchName: input.branchName,
+        branchType: input.branchType,
+        error: message
+      });
+      return c.json({ error: message }, 400);
+    }
+  });
+
+  app.post("/:projectId/git/branches", async (c) => {
+    const project = await context.store.getProject(c.req.param("projectId"));
+    if (!project) {
+      return c.json({ error: "项目不存在" }, 404);
+    }
+    const input = gitCreateBranchInputSchema.parse(await c.req.json());
+    try {
+      const result = await createGitBranch(project.path, input);
+      log.info("[projects] Git 分支创建完成", {
+        projectId: project.id,
+        branchName: input.branchName
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn("[projects] Git 分支创建失败", {
+        projectId: project.id,
+        branchName: input.branchName,
+        error: message
+      });
+      return c.json({ error: message }, 400);
+    }
+  });
+
+  app.post("/:projectId/git/commit", async (c) => {
+    const project = await context.store.getProject(c.req.param("projectId"));
+    if (!project) {
+      return c.json({ error: "项目不存在" }, 404);
+    }
+    const input = gitCommitInputSchema.parse(await c.req.json());
+    try {
+      const result = await commitGitChanges(project.path, input, {
+        generateMessage: input.message?.trim()
+          ? undefined
+          : async ({ status, diff }) => {
+              if (!input.sessionId) {
+                throw new Error("缺少会话，无法生成提交信息");
+              }
+              return context.runner.generateCommitMessageForSession({
+                sessionId: input.sessionId,
+                status,
+                diff
+              });
+            }
+      });
+      log.info("[projects] Git 提交完成", {
+        projectId: project.id,
+        commitHash: result.commitHash,
+        generatedMessage: !input.message?.trim()
+      });
+      return c.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn("[projects] Git 提交失败", {
+        projectId: project.id,
+        includeUnstaged: input.includeUnstaged,
+        generatedMessage: !input.message?.trim(),
+        error: message
+      });
+      return c.json({ error: message }, 400);
+    }
+  });
+
+  app.post("/:projectId/git/push", async (c) => {
+    const project = await context.store.getProject(c.req.param("projectId"));
+    if (!project) {
+      return c.json({ error: "项目不存在" }, 404);
+    }
+    try {
+      const result = await pushGitBranch(project.path);
+      log.info("[projects] Git 推送完成", { projectId: project.id });
+      return c.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn("[projects] Git 推送失败", { projectId: project.id, error: message });
+      return c.json({ error: message }, 400);
+    }
   });
 
   app.get("/:projectId/files", async (c) => {

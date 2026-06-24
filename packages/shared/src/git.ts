@@ -34,3 +34,88 @@ export const gitInfoSchema = z.object({
   branchName: z.string().min(1).optional()
 });
 export type GitInfo = z.infer<typeof gitInfoSchema>;
+
+export const gitGraphRefTypeSchema = z.enum(["head", "local", "remote", "tag", "other"]);
+export type GitGraphRefType = z.infer<typeof gitGraphRefTypeSchema>;
+
+export const gitGraphRefSchema = z.object({
+  name: z.string().min(1),
+  type: gitGraphRefTypeSchema
+});
+export type GitGraphRef = z.infer<typeof gitGraphRefSchema>;
+
+export const gitGraphCommitSchema = z.object({
+  hash: z.string().min(1),
+  shortHash: z.string().min(1),
+  parents: z.array(z.string().min(1)),
+  subject: z.string(),
+  authorName: z.string(),
+  date: z.string().min(1),
+  refs: z.array(gitGraphRefSchema)
+});
+export type GitGraphCommit = z.infer<typeof gitGraphCommitSchema>;
+
+export const gitGraphResultSchema = z.object({
+  isRepo: z.boolean(),
+  head: z.string().min(1).optional(),
+  commits: z.array(gitGraphCommitSchema)
+});
+export type GitGraphResult = z.infer<typeof gitGraphResultSchema>;
+
+export const gitBranchTypeSchema = z.enum(["local", "remote"]);
+export type GitBranchType = z.infer<typeof gitBranchTypeSchema>;
+
+export const gitBranchRefSchema = z.object({
+  name: z.string().min(1),
+  type: gitBranchTypeSchema,
+  current: z.boolean(),
+  upstream: z.string().min(1).optional()
+});
+export type GitBranchRef = z.infer<typeof gitBranchRefSchema>;
+
+export const gitEnvironmentSchema = z.object({
+  isRepo: z.boolean(),
+  branchName: z.string().min(1).optional(),
+  upstream: z.string().min(1).optional(),
+  ahead: z.number().int().nonnegative(),
+  behind: z.number().int().nonnegative(),
+  changedFileCount: z.number().int().nonnegative(),
+  stagedFileCount: z.number().int().nonnegative(),
+  unstagedFileCount: z.number().int().nonnegative(),
+  additions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+  branches: z.array(gitBranchRefSchema)
+});
+export type GitEnvironment = z.infer<typeof gitEnvironmentSchema>;
+
+export const gitCheckoutBranchInputSchema = z.object({
+  branchName: z.string().min(1),
+  branchType: gitBranchTypeSchema
+});
+export type GitCheckoutBranchInput = z.infer<typeof gitCheckoutBranchInputSchema>;
+
+export const gitCreateBranchInputSchema = z.object({
+  branchName: z.string().min(1)
+});
+export type GitCreateBranchInput = z.infer<typeof gitCreateBranchInputSchema>;
+
+export const gitCommitInputSchema = z.object({
+  message: z.string().optional(),
+  includeUnstaged: z.boolean().default(true),
+  sessionId: z.string().min(1).optional()
+});
+export type GitCommitInput = z.infer<typeof gitCommitInputSchema>;
+
+export const gitPushInputSchema = z.object({}).optional();
+export type GitPushInput = z.infer<typeof gitPushInputSchema>;
+
+export const gitActionResultSchema = z.object({
+  environment: gitEnvironmentSchema
+});
+export type GitActionResult = z.infer<typeof gitActionResultSchema>;
+
+export const gitCommitResultSchema = gitActionResultSchema.extend({
+  commitHash: z.string().min(1),
+  message: z.string().min(1)
+});
+export type GitCommitResult = z.infer<typeof gitCommitResultSchema>;

@@ -742,14 +742,11 @@ describe("Composer 运行与选择回归（ARCH-SPEC §6.4）", () => {
     expect(within(menu).queryByText("DeepSeek")).not.toBeInTheDocument();
     expect(within(menu).getByText("DeepSeek V4 Flash")).toBeInTheDocument();
 
-    // hover 模型展开右侧 flyout，再在里面选定推理档位。
-    await openModelFlyout(menu, "deepseek-chat");
-    const flyoutMenus = await screen.findAllByRole("menu");
-    const flyout = flyoutMenus[flyoutMenus.length - 1];
-    if (!flyout) {
-      throw new Error("找不到模型右侧 flyout");
+    const chatRow = within(menu).getByText("deepseek-chat").closest("[role='menuitem']");
+    if (!chatRow) {
+      throw new Error("找不到 deepseek-chat 模型行");
     }
-    fireEvent.click(within(flyout).getByText("选择模型"));
+    fireEvent.click(chatRow);
 
     await waitFor(() => {
       expect(useAppStore.getState().providerId).toBe("deepseek");
@@ -782,6 +779,10 @@ describe("Composer 运行与选择回归（ARCH-SPEC §6.4）", () => {
     const trigger = await openModelSelect();
 
     const menu = await screen.findByRole("menu");
+    const flashRow = within(menu).getByText("DeepSeek V4 Flash").closest("[role='menuitem']");
+    if (!flashRow) {
+      throw new Error("找不到 DeepSeek V4 Flash 模型行");
+    }
     await openModelFlyout(menu, "DeepSeek V4 Flash");
     const flyoutMenus = await screen.findAllByRole("menu");
     const flyout = flyoutMenus[flyoutMenus.length - 1];
@@ -791,7 +792,8 @@ describe("Composer 运行与选择回归（ARCH-SPEC §6.4）", () => {
 
     const offItem = within(flyout).getByText("关闭").closest("[role='menuitem']");
     expect(offItem?.querySelector("svg")).toHaveClass("opacity-0");
-    fireEvent.click(within(flyout).getByText("选择模型"));
+    expect(within(flyout).queryByText("选择模型")).not.toBeInTheDocument();
+    fireEvent.click(flashRow);
 
     await waitFor(() => {
       expect(useAppStore.getState().model).toBe("deepseek-v4-flash");
@@ -874,7 +876,7 @@ describe("Composer 计划模式（＋下拉 Switch + 标记）", () => {
     fireEvent.click(await screen.findByText("计划模式"));
 
     expect(useAppStore.getState().planMode).toBe(true);
-    // 开启后，「对话」右侧出现灰色「计划模式」标记（点击可关闭）。
+    // 开启后，composer 工具栏出现灰色「计划模式」标记（点击可关闭）。
     expect(await screen.findByTitle("关闭计划模式")).toBeInTheDocument();
 
     const input = screen.getByLabelText("输入消息");

@@ -40,6 +40,7 @@ import {
   TEXTAREA_MAX_HEIGHT_PX
 } from "@/components/composer/constants";
 import { ContextUsageIndicator } from "@/components/composer/context-usage-indicator";
+import { HomeGitBranchControl } from "@/components/git-environment/GitEnvironmentCard";
 import {
   modelOptionLabel,
   withCurrentComposerModel
@@ -362,6 +363,7 @@ export function Composer() {
   const [providerModelOptions, setProviderModelOptions] = useState<
     Record<string, ProviderModelOption[]>
   >({});
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceInputState>("checking");
   const [voiceSessionId, setVoiceSessionId] = useState<string>();
   const voiceSessionIdRef = useRef<string | undefined>(undefined);
@@ -420,6 +422,7 @@ export function Composer() {
     view !== "home" && isRunning && (Boolean(activeRunId) || Boolean(activeRunClientRequestId));
   const awaitingAskUser = currentComposerRunning && pendingTool?.name === "AskUserQuestion";
   const showProjectSelector = view === "home";
+  const showHomeEnvironmentBar = showProjectSelector;
   const slashQuery = getSlashQuery(value, selectionStart);
   const filteredSlashCommands = useMemo(
     () => filterSlashCommands(slashCommands, slashQuery ?? ""),
@@ -1028,6 +1031,7 @@ export function Composer() {
       reasoningMode: mode
     });
     void selectComposerModel(nextProvider.id, nextModel, mode);
+    setModelMenuOpen(false);
   };
 
   const openProviderSetupFromComposer = () => {
@@ -1210,11 +1214,88 @@ export function Composer() {
     runAfterMenuClose(() => selectAccessMode(mode));
   };
 
-  return (
-    <div
-      data-testid="composer-shell"
-      className="relative w-full rounded-lg border border-border bg-card transition-colors focus-within:border-hairline-strong/40"
+  const projectMenuContent = (
+    <DropdownMenuContent
+      side={showHomeEnvironmentBar ? "top" : "bottom"}
+      align="start"
+      sideOffset={showHomeEnvironmentBar ? 8 : 4}
+      className="min-w-[260px]"
+      onCloseAutoFocus={(event) => event.preventDefault()}
     >
+      {/* 搜索框：阻断键盘冒泡，避免触发菜单自带的首字母定位。 */}
+      <div className="px-1 pb-1.5" onKeyDown={(event) => event.stopPropagation()}>
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            autoFocus
+            value={projectQuery}
+            onChange={(event) => setProjectQuery(event.target.value)}
+            placeholder={t("composer.searchProjects")}
+            className="h-8 pl-8"
+          />
+        </div>
+      </div>
+      <div className="max-h-[280px] overflow-y-auto">
+        {filteredProjects.length > 0 ? (
+          filteredProjects.map((project) => (
+            <DropdownMenuItem
+              key={project.id}
+              onSelect={() => setActiveProjectId(project.id)}
+            >
+              <FolderIcon className="size-4 text-muted-foreground" />
+              <span className="flex-1 truncate">{project.name}</span>
+              <CheckMediumIcon
+                className={cn(
+                  "size-4",
+                  project.id === activeProject?.id ? "opacity-100" : "opacity-0"
+                )}
+              />
+            </DropdownMenuItem>
+          ))
+        ) : (
+          <div className="px-2.5 py-2 text-body-sm text-muted-foreground">
+            {t("composer.noMatchingProjects")}
+          </div>
+        )}
+      </div>
+      <DropdownMenuSeparator />
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger>
+          <PlusIcon className="size-4 text-muted-foreground" />
+          {t("composer.addProject")}
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent>
+          <DropdownMenuItem onSelect={openBlankProjectDialogFromMenu}>
+            <PlusIcon className="size-4 text-muted-foreground" />
+            {t("composer.createBlankProject")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={openFolderFromProjectMenu}>
+            <FolderOpenOutlineIcon className="size-4 text-muted-foreground" />
+            {t("composer.useExistingFolder")}
+          </DropdownMenuItem>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+      <DropdownMenuItem onSelect={() => setActiveProjectId(undefined)}>
+        <FolderOpenOutlineIcon className="size-4 text-muted-foreground" />
+        <span className="flex-1 truncate">{t("composer.noProject")}</span>
+        <CheckMediumIcon
+          className={cn("size-4", activeProject ? "opacity-0" : "opacity-100")}
+        />
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  );
+
+  return (
+    <div className="w-full">
+      <div
+        data-testid="composer-shell"
+        className={cn(
+          "relative w-full border border-border bg-card transition-colors focus-within:border-hairline-strong/40",
+          showHomeEnvironmentBar
+            ? "rounded-t-[18px] !rounded-bl-none !rounded-br-none border-b-0"
+            : "rounded-xl"
+        )}
+      >
       {queuedRuns.length > 0 ? (
         <QueuedRunStack
           items={queuedRuns}
@@ -1504,99 +1585,6 @@ export function Composer() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {!showVoiceMeter && showProjectSelector ? (
-          <DropdownMenu
-            modal={false}
-            open={projectMenuOpen}
-            onOpenChange={(open) => {
-              setProjectMenuOpen(open);
-              if (!open) {
-                setProjectQuery("");
-              }
-            }}
-          >
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 min-w-0 max-w-[150px] shrink gap-1.5 rounded-sm px-2.5 text-micro font-normal text-foreground hover:bg-canvas-soft-2"
-            >
-              <FolderIcon className="size-4" />
-              <span className="min-w-0 flex-1 truncate">
-                {activeProject?.name ?? t("composer.conversationMode")}
-              </span>
-              <ChevronIcon className="size-3.5 flex-none" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="min-w-[260px]"
-            onCloseAutoFocus={(event) => event.preventDefault()}
-          >
-            {/* 搜索框：阻断键盘冒泡，避免触发菜单自带的首字母定位 */}
-            <div className="px-1 pb-1.5" onKeyDown={(event) => event.stopPropagation()}>
-              <div className="relative">
-                <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  autoFocus
-                  value={projectQuery}
-                  onChange={(event) => setProjectQuery(event.target.value)}
-                  placeholder={t("composer.searchProjects")}
-                  className="h-8 pl-8"
-                />
-              </div>
-            </div>
-            <div className="max-h-[280px] overflow-y-auto">
-              {filteredProjects.length > 0 ? (
-                filteredProjects.map((project) => (
-                  <DropdownMenuItem
-                    key={project.id}
-                    onSelect={() => setActiveProjectId(project.id)}
-                  >
-                    <FolderIcon className="size-4 text-muted-foreground" />
-                    <span className="flex-1 truncate">{project.name}</span>
-                    <CheckMediumIcon
-                      className={cn(
-                        "size-4",
-                        project.id === activeProject?.id ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                  </DropdownMenuItem>
-                ))
-              ) : (
-                <div className="px-2.5 py-2 text-body-sm text-muted-foreground">
-                  {t("composer.noMatchingProjects")}
-                </div>
-              )}
-            </div>
-            <DropdownMenuSeparator />
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <PlusIcon className="size-4 text-muted-foreground" />
-                {t("composer.addProject")}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                <DropdownMenuItem
-                  onSelect={openBlankProjectDialogFromMenu}
-                >
-                  <PlusIcon className="size-4 text-muted-foreground" />
-                  {t("composer.createBlankProject")}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={openFolderFromProjectMenu}>
-                  <FolderOpenOutlineIcon className="size-4 text-muted-foreground" />
-                  {t("composer.useExistingFolder")}
-                </DropdownMenuItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-            <DropdownMenuItem onSelect={() => setActiveProjectId(undefined)}>
-              <FolderOpenOutlineIcon className="size-4 text-muted-foreground" />
-              <span className="flex-1 truncate">{t("composer.noProject")}</span>
-              <CheckMediumIcon className={cn("size-4", activeProject ? "opacity-0" : "opacity-100")} />
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-
         {!showVoiceMeter && planMode ? (
           <button
             type="button"
@@ -1610,7 +1598,7 @@ export function Composer() {
         ) : null}
 
         {showVoiceMeter ? null : (
-          <DropdownMenu>
+          <DropdownMenu open={modelMenuOpen} onOpenChange={setModelMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
@@ -1771,7 +1759,7 @@ export function Composer() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[200px]">
-              {/* 左侧弹层平铺可用模型；右侧子菜单可只选模型，也可显式选择推理等级。 */}
+              {/* 左侧弹层负责选择模型；右侧子菜单只放推理等级。 */}
               {configuredProviders.flatMap((provider) => {
                 const options = withCurrentComposerModel(
                   provider,
@@ -1781,10 +1769,30 @@ export function Composer() {
                 return options.map((option) => {
                   const isSelected =
                     provider.id === selectedProvider?.id && option.id === selectedModel;
-                  const modelOnlySelected = isSelected && selectedReasoningMode === undefined;
+                  const hasReasoningChoices =
+                    option.reasoningAlwaysOn === true || option.reasoningModes.length > 0;
+                  if (!hasReasoningChoices) {
+                    return (
+                      <DropdownMenuItem
+                        key={`${provider.id}:${option.id}`}
+                        onSelect={() => pickComposerModel(provider, option.id, undefined)}
+                      >
+                        <span className="flex-1 truncate">{modelOptionLabel(option)}</span>
+                        <CheckMediumIcon
+                          className={cn(
+                            "size-4 flex-none",
+                            isSelected ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                      </DropdownMenuItem>
+                    );
+                  }
                   return (
                     <DropdownMenuSub key={`${provider.id}:${option.id}`}>
-                      <DropdownMenuSubTrigger hideChevron>
+                      <DropdownMenuSubTrigger
+                        hideChevron
+                        onClick={() => pickComposerModel(provider, option.id, undefined)}
+                      >
                         <span className="flex-1 truncate">{modelOptionLabel(option)}</span>
                         <CheckMediumIcon
                           className={cn(
@@ -1795,24 +1803,24 @@ export function Composer() {
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="min-w-[132px]">
                         <DropdownMenuLabel>{t("settings.providers.reasoning")}</DropdownMenuLabel>
-                        <DropdownMenuItem
-                          onSelect={() => pickComposerModel(provider, option.id, undefined)}
-                        >
-                          <span className="flex-1">
-                            {option.reasoningAlwaysOn
-                              ? t("settings.providers.reasoningAlwaysOn")
-                              : t("composer.selectModel")}
-                          </span>
-                          <CheckMediumIcon
-                            className={cn(
-                              "size-4 flex-none",
-                              modelOnlySelected ? "opacity-100" : "opacity-0"
-                            )}
-                          />
-                        </DropdownMenuItem>
+                        {option.reasoningAlwaysOn ? (
+                          <DropdownMenuItem
+                            onSelect={() => pickComposerModel(provider, option.id, undefined)}
+                          >
+                            <span className="flex-1">
+                              {t("settings.providers.reasoningAlwaysOn")}
+                            </span>
+                            <CheckMediumIcon
+                              className={cn(
+                                "size-4 flex-none",
+                                isSelected ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                          </DropdownMenuItem>
+                        ) : null}
                         {option.reasoningModes.length > 0 ? (
                           <>
-                            <DropdownMenuSeparator />
+                            {option.reasoningAlwaysOn ? <DropdownMenuSeparator /> : null}
                             {option.reasoningModes.map((mode) => (
                               <DropdownMenuItem
                                 key={mode}
@@ -1898,6 +1906,41 @@ export function Composer() {
           </Button>
         )}
       </div>
+
+      </div>
+
+      {showHomeEnvironmentBar ? (
+        <div
+          data-testid="home-composer-environment"
+          className="flex min-h-11 min-w-0 items-center gap-6 rounded-b-[18px] border border-t-0 border-border bg-canvas-soft-2 px-4 py-2 text-body-sm text-muted-foreground"
+        >
+          <DropdownMenu
+            modal={false}
+            open={projectMenuOpen}
+            onOpenChange={(open) => {
+              setProjectMenuOpen(open);
+              if (!open) {
+                setProjectQuery("");
+              }
+            }}
+          >
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex h-7 min-w-0 max-w-[260px] items-center gap-2 rounded-md px-1 text-left text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
+              >
+                <FolderIcon className="size-4 flex-none" />
+                <span className="min-w-0 truncate">
+                  {activeProject?.name ?? t("composer.conversationMode")}
+                </span>
+                <ChevronIcon className="size-3.5 flex-none" />
+              </button>
+            </DropdownMenuTrigger>
+            {projectMenuContent}
+          </DropdownMenu>
+          <HomeGitBranchControl />
+        </div>
+      ) : null}
 
       <Dialog
         open={blankDialogOpen}

@@ -131,6 +131,7 @@ export const initialState =  {
   filePreviewEntrySource: undefined,
   browserUrl: "",
   rightPanelBySession: {} as Record<string, RightPanelSessionState>,
+  gitRefreshTokenByProjectId: {} as Record<string, number>,
   sideChatsByMessageId: {} as Record<string, SideChatSummary>,
   activeSideChatAnchorMessageId: undefined as string | undefined,
   terminalEntries: [] as TerminalEntry[],

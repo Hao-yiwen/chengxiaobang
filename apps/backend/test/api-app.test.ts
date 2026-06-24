@@ -708,6 +708,86 @@ describe("createApp", () => {
     expect(missing.status).toBe(404);
   }, 20_000);
 
+  it("serves git environment and rejects message generation without a session", async () => {
+    const repoRoot = join(dir, "repo-environment");
+    await mkdir(repoRoot, { recursive: true });
+    const project = await store.createProject({ name: "repo", path: repoRoot });
+    expect((await runCommand("git init", repoRoot)).exitCode).toBe(0);
+    expect((await runCommand("git branch -M main", repoRoot)).exitCode).toBe(0);
+    await writeFile(join(repoRoot, "tracked.txt"), "one\n");
+    expect((await runCommand("git -c user.name=t -c user.email=t@t.com add .", repoRoot)).exitCode).toBe(0);
+    expect(
+      (await runCommand('git -c user.name=t -c user.email=t@t.com commit -m "base"', repoRoot))
+        .exitCode
+    ).toBe(0);
+    await writeFile(join(repoRoot, "tracked.txt"), "one\ntwo\n");
+
+    const environmentResponse = await app(
+      new Request(`http://local/api/projects/${project.id}/git/environment`, { method: "GET" })
+    );
+    expect(environmentResponse.status).toBe(200);
+    const environmentBody = await environmentResponse.json();
+    expect(environmentBody.environment).toMatchObject({
+      isRepo: true,
+      branchName: "main",
+      changedFileCount: 1,
+      unstagedFileCount: 1
+    });
+
+    const commitResponse = await app(
+      new Request(`http://local/api/projects/${project.id}/git/commit`, {
+        method: "POST",
+        body: JSON.stringify({ includeUnstaged: true })
+      })
+    );
+    expect(commitResponse.status).toBe(400);
+    await expect(commitResponse.json()).resolves.toEqual({
+      error: "缺少会话，无法生成提交信息"
+    });
+  }, 20_000);
+
+  it("serves git graph for project directories", async () => {
+    const plainRoot = join(dir, "plain-graph");
+    await mkdir(plainRoot, { recursive: true });
+    const plainProject = await store.createProject({ name: "plain", path: plainRoot });
+
+    const plainResponse = await app(
+      new Request(`http://local/api/projects/${plainProject.id}/git/graph`, { method: "GET" })
+    );
+    expect(plainResponse.status).toBe(200);
+    await expect(plainResponse.json()).resolves.toEqual({
+      graph: { isRepo: false, commits: [] }
+    });
+
+    const repoRoot = join(dir, "repo-graph");
+    await mkdir(repoRoot, { recursive: true });
+    const repoProject = await store.createProject({ name: "repo", path: repoRoot });
+    expect((await runCommand("git init", repoRoot)).exitCode).toBe(0);
+    expect((await runCommand("git branch -M main", repoRoot)).exitCode).toBe(0);
+    await writeFile(join(repoRoot, "tracked.txt"), "one\n");
+    expect((await runCommand("git -c user.name=t -c user.email=t@t.com add .", repoRoot)).exitCode).toBe(0);
+    expect(
+      (await runCommand('git -c user.name=t -c user.email=t@t.com commit -m "base"', repoRoot))
+        .exitCode
+    ).toBe(0);
+
+    const graphResponse = await app(
+      new Request(`http://local/api/projects/${repoProject.id}/git/graph`, { method: "GET" })
+    );
+    expect(graphResponse.status).toBe(200);
+    const body = await graphResponse.json();
+    expect(body.graph).toMatchObject({
+      isRepo: true,
+      head: "main",
+      commits: [expect.objectContaining({ subject: "base", authorName: "t" })]
+    });
+
+    const missing = await app(
+      new Request("http://local/api/projects/nope/git/graph", { method: "GET" })
+    );
+    expect(missing.status).toBe(404);
+  }, 20_000);
+
   it("reports git changes for a project directory", async () => {
     await mkdir(join(dir, "plain"), { recursive: true });
     const project = await store.createProject({ name: "plain", path: join(dir, "plain") });

@@ -214,23 +214,36 @@ describe("sidebar sessions", () => {
     const projectSessionRow = sidebar.getByText("项目会话0").closest("div");
     expect(projectSessionRow).toBeTruthy();
 
-    fireEvent.pointerMove(projectSessionRow!, { pointerType: "mouse" });
-    fireEvent.mouseEnter(projectSessionRow!);
+    vi.useFakeTimers();
+    try {
+      fireEvent.pointerMove(projectSessionRow!, { pointerType: "mouse" });
+      fireEvent.mouseEnter(projectSessionRow!);
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(1199);
+      });
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
 
-    const tooltip = await screen.findByRole("tooltip");
-    expect(tooltip).toHaveTextContent("项目路径");
-    expect(tooltip).toHaveTextContent(project.path);
-    expect(tooltip).toHaveTextContent("分支");
-    expect(tooltip).toHaveTextContent("feature/sidebar-tooltip");
+      const tooltip = screen.getByRole("tooltip");
+      expect(tooltip).toHaveTextContent("项目路径");
+      expect(tooltip).toHaveTextContent(project.path);
+      expect(tooltip).toHaveTextContent("分支");
+      expect(tooltip).toHaveTextContent("feature/sidebar-tooltip");
 
-    fireEvent.pointerLeave(projectSessionRow!);
-    fireEvent.mouseLeave(projectSessionRow!);
+      fireEvent.pointerLeave(projectSessionRow!);
+      fireEvent.mouseLeave(projectSessionRow!);
 
-    const plainSessionRow = sidebar.getByText("旧标题A").closest("div");
-    expect(plainSessionRow).toBeTruthy();
-    fireEvent.pointerMove(plainSessionRow!, { pointerType: "mouse" });
-    fireEvent.mouseEnter(plainSessionRow!);
-    expect(plainSessionRow).not.toHaveAttribute("aria-describedby");
+      const plainSessionRow = sidebar.getByText("旧标题A").closest("div");
+      expect(plainSessionRow).toBeTruthy();
+      fireEvent.pointerMove(plainSessionRow!, { pointerType: "mouse" });
+      fireEvent.mouseEnter(plainSessionRow!);
+      expect(plainSessionRow).not.toHaveAttribute("aria-describedby");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("defaults to 4 projects and 6 sessions, then expands and collapses on demand", async () => {

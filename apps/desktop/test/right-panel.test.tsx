@@ -2157,6 +2157,50 @@ describe("right panel", () => {
     });
   });
 
+  it("opens an mjs file preview from a tool call's path chip", async () => {
+    const bridge = installPreviewBridge({ text: "console.log('deck');\nexport {};" });
+    const toolCall: ToolCall = {
+      id: "tool_1",
+      runId: "run_1",
+      name: "Read",
+      args: { file_path: "scripts/make-deck.mjs" },
+      status: "completed",
+      result: "console.log('deck');\nexport {};",
+      createdAt: "2026-06-08T00:00:01.000Z",
+      updatedAt: "2026-06-08T00:00:01.000Z"
+    };
+    const client = createClient({
+      listSessionRuns: vi.fn(async () => ({
+        runs: [
+          {
+            id: "run_1",
+            sessionId: session.id,
+            status: "completed" as const,
+            createdAt: "2026-06-08T00:00:00.000Z",
+            updatedAt: "2026-06-08T00:00:02.000Z"
+          }
+        ],
+        toolCalls: [toolCall]
+      }))
+    });
+
+    render(<App client={client} />);
+    await selectSession("项目对话");
+    const previewButton = await screen.findByRole("button", { name: "预览文件 make-deck.mjs" });
+
+    fireEvent.click(previewButton);
+
+    expect(await screen.findByText("make-deck.mjs")).toBeInTheDocument();
+    expect(await screen.findByText("export {};")).toBeInTheDocument();
+    expect(bridge.getFilePreviewInfo).toHaveBeenCalledWith("scripts/make-deck.mjs", {
+      projectPath: project.path,
+      sessionId: session.id
+    });
+    expect(bridge.readFilePreviewText).toHaveBeenCalledWith("/tmp/demo/scripts/make-deck.mjs", {
+      maxBytes: 524288
+    });
+  });
+
   it("opens an HTML artifact in the right browser panel", async () => {
     const bridge = installPreviewBridge({
       kind: "html",

@@ -24,6 +24,7 @@ describe("artifactKind", () => {
     expect(artifactKind("data.tsv")).toBe("spreadsheet");
     expect(artifactKind("notes.md")).toBe("markdown");
     expect(artifactKind("src/index.ts")).toBe("code");
+    expect(artifactKind("scripts/make-deck.mjs")).toBe("code");
     expect(artifactKind("report.PDF")).toBe("pdf");
     expect(artifactKind("photo.png")).toBe("image");
     expect(artifactKind("voice.mp3")).toBe("audio");
@@ -203,6 +204,7 @@ describe("parseArtifactDeclarations", () => {
     const markdown = [
       "<artifacts>",
       "  <artifact path=\"src/App.tsx\" />",
+      "  <artifact path=\"scripts/make-deck.mjs\" />",
       "  <artifact path=\"notes.txt\" />",
       "  <artifact path=\"README\" />",
       "  <artifact path=\"archive.zip\" />",
@@ -214,6 +216,7 @@ describe("parseArtifactDeclarations", () => {
     expect(parsed.artifacts).toEqual([]);
     expect(parsed.diagnostics).toEqual([
       { type: "invalid_path", path: "src/App.tsx" },
+      { type: "invalid_path", path: "scripts/make-deck.mjs" },
       { type: "invalid_path", path: "notes.txt" },
       { type: "invalid_path", path: "README" },
       { type: "invalid_path", path: "archive.zip" }

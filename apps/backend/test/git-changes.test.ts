@@ -3,10 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  checkoutGitBranch,
   collectGitChanges,
+  collectGitEnvironment,
   collectGitFileDiff,
+  collectGitGraph,
+  commitGitChanges,
+  createGitBranch,
   detectGitRepository,
+  parseGitGraphLog,
   parsePorcelainStatus,
+  pushGitBranch,
   splitUnifiedDiff
 } from "../src/tools/git-changes";
 import { runCommand } from "../src/tools/shell";
@@ -75,6 +82,30 @@ describe("splitUnifiedDiff", () => {
       "Binary files a/img.png and b/img.png differ"
     ].join("\n");
     expect(splitUnifiedDiff(binary).size).toBe(0);
+  });
+});
+
+describe("parseGitGraphLog", () => {
+  it("normalizes decorated refs", () => {
+    const text =
+      "\x1fabc123456\x1fparent1 parent2\x1fAda\x1f2026-06-24T12:00:00+08:00\x1fHEAD -> refs/heads/main, refs/remotes/origin/main, tag: refs/tags/v1\x1ffeat: graph\x1e";
+
+    expect(parseGitGraphLog(text)).toEqual([
+      {
+        hash: "abc123456",
+        shortHash: "abc1234",
+        parents: ["parent1", "parent2"],
+        subject: "feat: graph",
+        authorName: "Ada",
+        date: "2026-06-24T12:00:00+08:00",
+        refs: [
+          { name: "HEAD", type: "head" },
+          { name: "main", type: "local" },
+          { name: "origin/main", type: "remote" },
+          { name: "v1", type: "tag" }
+        ]
+      }
+    ]);
   });
 });
 
@@ -174,6 +205,157 @@ describe("collectGitChanges", () => {
     expect(freshDiff?.additions).toBe(2);
     expect(freshDiff?.deletions).toBe(0);
   }, 20_000);
+
+  it("reports a non-repo directory for the graph", async () => {
+    await expect(collectGitGraph(dir)).resolves.toEqual({ isRepo: false, commits: [] });
+  }, 20_000);
+
+  it("collects commit graph commits, parents and refs", async () => {
+    await git("init");
+    await git("branch -M main");
+    await writeFile(join(dir, "base.txt"), "base\n");
+    await git("add .");
+    await git('commit -m "chore: base"');
+
+    await git("switch -c feature");
+    await writeFile(join(dir, "feature.txt"), "feature\n");
+    await git("add .");
+    await git('commit -m "feat: branch work"');
+
+    await git("switch main");
+    await writeFile(join(dir, "main.txt"), "main\n");
+    await git("add .");
+    await git('commit -m "fix: main work"');
+    await git('merge --no-ff feature -m "merge feature"');
+    await git("tag v1");
+    await git("update-ref refs/remotes/origin/main HEAD");
+
+    const graph = await collectGitGraph(dir, { limit: 20 });
+    expect(graph.isRepo).toBe(true);
+    expect(graph.head).toBe("main");
+    expect(graph.commits[0]).toMatchObject({
+      subject: "merge feature",
+      parents: [expect.any(String), expect.any(String)]
+    });
+    expect(graph.commits[0].refs).toEqual(
+      expect.arrayContaining([
+        { name: "main", type: "local" },
+        { name: "origin/main", type: "remote" },
+        { name: "v1", type: "tag" }
+      ])
+    );
+    expect(graph.commits.map((commit) => commit.subject)).toEqual(
+      expect.arrayContaining(["feat: branch work", "fix: main work", "chore: base"])
+    );
+  }, 20_000);
+
+  it("reports branch environment and change totals", async () => {
+    await git("init");
+    await git("branch -M main");
+    await writeFile(join(dir, "tracked.txt"), "one\n");
+    await writeFile(join(dir, "staged.txt"), "base\n");
+    await git("add .");
+    await git('commit -m "base"');
+
+    await writeFile(join(dir, "tracked.txt"), "one\ntwo\n");
+    await writeFile(join(dir, "staged.txt"), "changed\n");
+    await git("add staged.txt");
+
+    const environment = await collectGitEnvironment(dir);
+
+    expect(environment.isRepo).toBe(true);
+    expect(environment.branchName).toBe("main");
+    expect(environment.changedFileCount).toBe(2);
+    expect(environment.stagedFileCount).toBe(1);
+    expect(environment.unstagedFileCount).toBe(1);
+    expect(environment.additions).toBe(2);
+    expect(environment.deletions).toBe(1);
+    expect(environment.branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "main", type: "local", current: true })
+      ])
+    );
+  }, 20_000);
+
+  it("checks out local, remote and newly created branches", async () => {
+    await git("init");
+    await git("branch -M main");
+    await writeFile(join(dir, "tracked.txt"), "one\n");
+    await git("add .");
+    await git('commit -m "base"');
+    await git("branch local-feature");
+
+    const remote = await mkdtemp(join(tmpdir(), "cxb-git-remote-"));
+    try {
+      expect((await runCommand("git init --bare", remote)).exitCode).toBe(0);
+      await git(`remote add origin "${remote}"`);
+      await git("push -u origin main");
+      await git("switch -c remote-feature");
+      await writeFile(join(dir, "remote.txt"), "remote\n");
+      await git("add .");
+      await git('commit -m "remote"');
+      await git("push origin remote-feature");
+      await git("switch main");
+      await git("branch -D remote-feature");
+      await git("fetch origin");
+
+      await checkoutGitBranch(dir, { branchName: "local-feature", branchType: "local" });
+      expect((await collectGitEnvironment(dir)).branchName).toBe("local-feature");
+
+      await checkoutGitBranch(dir, { branchName: "origin/remote-feature", branchType: "remote" });
+      expect((await collectGitEnvironment(dir)).branchName).toBe("remote-feature");
+
+      await createGitBranch(dir, { branchName: "created-feature" });
+      expect((await collectGitEnvironment(dir)).branchName).toBe("created-feature");
+    } finally {
+      await rm(remote, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("generates a commit message through the injected model callback", async () => {
+    await git("init");
+    await git("branch -M main");
+    await writeFile(join(dir, "tracked.txt"), "one\n");
+    await git("add .");
+    await git('commit -m "base"');
+
+    await writeFile(join(dir, "tracked.txt"), "one\ntwo\n");
+    const result = await commitGitChanges(
+      dir,
+      { includeUnstaged: true },
+      {
+        generateMessage: async ({ status, diff }) => {
+          expect(status).toContain("tracked.txt");
+          expect(diff).toContain("+two");
+          return "fix: update tracked file";
+        }
+      }
+    );
+
+    expect(result.message).toBe("fix: update tracked file");
+    expect(result.commitHash).toMatch(/^[0-9a-f]+$/);
+    expect((await runCommand("git status --porcelain", dir)).output.trim()).toBe("");
+  }, 20_000);
+
+  it("pushes a branch and sets origin upstream when missing", async () => {
+    await git("init");
+    await git("branch -M main");
+    await writeFile(join(dir, "tracked.txt"), "one\n");
+    await git("add .");
+    await git('commit -m "base"');
+    const remote = await mkdtemp(join(tmpdir(), "cxb-git-remote-"));
+    try {
+      expect((await runCommand("git init --bare", remote)).exitCode).toBe(0);
+      await git(`remote add origin "${remote}"`);
+
+      const result = await pushGitBranch(dir);
+
+      expect(result.environment.upstream).toBe("origin/main");
+      expect(result.environment.ahead).toBe(0);
+    } finally {
+      await rm(remote, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("returns an empty diff for binary untracked files", async () => {
     await git("init");

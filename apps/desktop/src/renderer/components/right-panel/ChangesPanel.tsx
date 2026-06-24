@@ -43,6 +43,9 @@ export function ChangesPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const projectId = project?.id;
+  const gitRefreshToken = useAppStore((state) =>
+    projectId ? (state.gitRefreshTokenByProjectId[projectId] ?? 0) : 0
+  );
 
   const load = useCallback(async (reason: "initial" | "refresh" = "initial") => {
     const client = getApiClient();
@@ -87,8 +90,8 @@ export function ChangesPanel() {
     setLoadingDiffKeys(new Set());
     setDiffErrors(new Map());
     setError(undefined);
-    void load("initial");
-  }, [load]);
+    void load(gitRefreshToken > 0 ? "refresh" : "initial");
+  }, [gitRefreshToken, load]);
 
   const stats = useMemo(() => sumGitChangeStats(changes?.files ?? []), [changes?.files]);
 

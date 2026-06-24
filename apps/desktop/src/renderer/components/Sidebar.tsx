@@ -51,7 +51,7 @@ import {
 import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { runAfterMenuClose } from "@/lib/menu-actions";
 import { cn } from "@/lib/utils";
 import styles from "@/components/Sidebar.module.css";
@@ -68,6 +68,7 @@ const DEFAULT_SIDEBAR_WIDTH = 272;
 const MIN_SIDEBAR_WIDTH = 240;
 const DEFAULT_VISIBLE_PROJECT_COUNT = 4;
 const DEFAULT_VISIBLE_SESSION_COUNT = 6;
+const PROJECT_SESSION_TOOLTIP_DELAY_MS = 1200;
 
 function clampSidebarWidth(width: number): number {
   if (!Number.isFinite(width)) {
@@ -1314,12 +1315,14 @@ function SessionRow(props: SessionRowProps) {
   return (
     <ContextMenu>
       {props.projectTooltipInfo ? (
-        <Tooltip delayDuration={120}>
-          <ContextMenuTrigger asChild>
-            <TooltipTrigger asChild>{row}</TooltipTrigger>
-          </ContextMenuTrigger>
-          <ProjectSessionTooltip info={props.projectTooltipInfo} />
-        </Tooltip>
+        <TooltipProvider delayDuration={PROJECT_SESSION_TOOLTIP_DELAY_MS} skipDelayDuration={0}>
+          <Tooltip>
+            <ContextMenuTrigger asChild>
+              <TooltipTrigger asChild>{row}</TooltipTrigger>
+            </ContextMenuTrigger>
+            <ProjectSessionTooltip info={props.projectTooltipInfo} />
+          </Tooltip>
+        </TooltipProvider>
       ) : (
         <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
       )}

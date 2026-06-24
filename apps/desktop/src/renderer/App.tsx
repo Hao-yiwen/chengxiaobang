@@ -12,6 +12,7 @@ import { ProgressFloatingPanel } from "./components/ProgressFloatingPanel";
 import { ConnectPhoneView } from "./components/ConnectPhoneView";
 import { ConfirmDialogProvider } from "./components/ConfirmDialog";
 import { DevToolsFloatingButton } from "./components/DevToolsFloatingButton";
+import { GitEnvironmentSlot } from "./components/git-environment/GitEnvironmentCard";
 import { HomeMascot } from "./components/HomeMascot";
 import { HomeStarters } from "./components/HomeStarters";
 import homeHeroStyles from "./components/HomeHero.module.css";
@@ -425,6 +426,7 @@ export function App(props: { client?: ApiClient }) {
                           data-testid="chat-floating-stack"
                           className={cn("chat-floating-stack", chatLayoutStyles.floatingStack)}
                         >
+                          <GitEnvironmentSlot fallback={null} />
                           <ArtifactFloatingPanel />
                           <ProgressFloatingPanel />
                         </div>
