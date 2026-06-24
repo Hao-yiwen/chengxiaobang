@@ -19,28 +19,18 @@ const BUILTIN_TOOLS = [
   "Read",
   "Write",
   "Edit",
-  "LS",
-  "MakeDirectory",
   "Glob",
   "Grep",
-  "Bash",
-  "PowerShell",
-  "BashStatus",
-  "BashCancel",
-  "GitStatus",
-  "GitDiff",
+  "Shell",
   "WebFetch",
   "WebSearch",
   "ToolSearch",
-  "CreateSkill",
   "ExitPlanMode",
   "AskUserQuestion",
   "Skill",
   "TodoRead",
   "TodoWrite",
-  "ScheduleCreate",
-  "ScheduleList",
-  "ScheduleCancel",
+  "Schedule",
   "Memory",
   "OcrExtractText"
 ] as const;
@@ -62,7 +52,7 @@ function toolCall(partial: Partial<ToolCall>): ToolCall {
   return {
     id: "tool_1",
     runId: "run_1",
-    name: "Bash",
+    name: "Shell",
     args: {},
     status: "completed",
     createdAt: "2026-06-13T00:00:00.000Z",
@@ -90,18 +80,14 @@ describe("toolCategory / categoryIcon", () => {
     expect(toolCategory("Read")).toBe("read");
     expect(toolCategory("Edit")).toBe("edit");
     expect(toolCategory("Grep")).toBe("search");
-    expect(toolCategory("LS")).toBe("search");
-    expect(toolCategory("Bash")).toBe("command");
-    expect(toolCategory("PowerShell")).toBe("command");
-    expect(toolCategory("BashStatus")).toBe("command");
-    expect(toolCategory("BashCancel")).toBe("command");
+    expect(toolCategory("Glob")).toBe("search");
+    expect(toolCategory("Shell")).toBe("command");
     expect(toolCategory("WebFetch")).toBe("web");
     expect(toolCategory("WebSearch")).toBe("web");
     expect(toolCategory("ToolSearch")).toBe("search");
-    expect(toolCategory("CreateSkill")).toBe("edit");
     expect(toolCategory("ExitPlanMode")).toBe("plan");
     expect(toolCategory("TodoWrite")).toBe("plan");
-    expect(toolCategory("ScheduleCreate")).toBe("schedule");
+    expect(toolCategory("Schedule")).toBe("schedule");
     expect(toolCategory("Memory")).toBe("memory");
     expect(toolCategory("nonexistent")).toBe("other");
   });
@@ -149,8 +135,7 @@ describe("toolLineLabel", () => {
       { name: "Read", args: { file_path: "secret.ts" }, key: "chat.toolLineRunning.ReadGeneric" },
       { name: "WebFetch", args: { url: "https://example.com" }, key: "chat.toolLineRunning.WebFetchGeneric" },
       { name: "WebSearch", args: { query: "private query" }, key: "chat.toolLineRunning.WebSearchGeneric" },
-      { name: "Bash", args: { command: "pnpm test" }, key: "chat.toolLineRunning.BashGeneric" },
-      { name: "PowerShell", args: { command: "Get-ChildItem" }, key: "chat.toolLineRunning.PowerShellGeneric" },
+      { name: "Shell", args: { command: "pnpm test" }, key: "chat.toolLineRunning.ShellGeneric" },
       { name: "ToolSearch", args: { query: "mcp" }, key: "chat.toolLineRunning.ToolSearchGeneric" },
       { name: "Skill", args: { skill: "ppt" }, key: "chat.toolLineRunning.SkillGeneric" }
     ];
@@ -167,8 +152,10 @@ describe("toolLineLabel", () => {
   });
 
   it("运行中无参数工具保留专属文案", () => {
-    expect(toolLineRunningLabel(toolCall({ name: "GitStatus", status: "running" }))).toEqual({
-      key: "chat.toolLineRunning.GitStatus"
+    expect(
+      toolLineRunningLabel(toolCall({ name: "Schedule", status: "running", args: { action: "list" } }))
+    ).toEqual({
+      key: "chat.toolLineRunning.ScheduleView"
     });
   });
 
@@ -183,15 +170,16 @@ describe("toolLineLabel", () => {
       key: "chat.toolLine.WebSearch",
       params: { query: `${"z".repeat(40)}…` }
     });
-    expect(toolLineLabel(toolCall({ name: "Bash", args: { command: "pnpm   test" } }))).toEqual({
-      key: "chat.toolLine.Bash",
+    expect(toolLineLabel(toolCall({ name: "Shell", args: { command: "pnpm   test" } }))).toEqual({
+      key: "chat.toolLine.Shell",
       params: { command: "pnpm test" }
     });
-    expect(
-      toolLineLabel(toolCall({ name: "PowerShell", args: { command: "Get-ChildItem   src" } }))
-    ).toEqual({
-      key: "chat.toolLine.PowerShell",
-      params: { command: "Get-ChildItem src" }
+    expect(toolLineLabel(toolCall({ name: "Schedule", args: { action: "create", name: "AI 日报" } }))).toEqual({
+      key: "chat.toolLine.ScheduleAdd",
+      params: { name: "AI 日报" }
+    });
+    expect(toolLineLabel(toolCall({ name: "Schedule", args: { action: "cancel", id: "task_1" } }))).toEqual({
+      key: "chat.toolLine.ScheduleDelete"
     });
     expect(toolLineLabel(toolCall({ name: "ToolSearch", args: { query: "mcp demo" } }))).toEqual({
       key: "chat.toolLine.ToolSearch",
@@ -209,8 +197,8 @@ describe("toolLineLabel", () => {
 
   it("shell 命令压缩空白并截断到 60 字符", () => {
     const command = `pnpm   test\n  --filter ${"x".repeat(80)}`;
-    const label = toolLineLabel(toolCall({ name: "Bash", args: { command } }));
-    expect(label.key).toBe("chat.toolLine.Bash");
+    const label = toolLineLabel(toolCall({ name: "Shell", args: { command } }));
+    expect(label.key).toBe("chat.toolLine.Shell");
     expect(label.params?.command?.length).toBe(61);
     expect(label.params?.command?.endsWith("…")).toBe(true);
     expect(label.params?.command).not.toContain("\n");
@@ -245,7 +233,7 @@ describe("toolLineLabel", () => {
 
   it("参数缺失时不抛错", () => {
     expect(toolLineLabel(toolCall({ name: "Read", args: {} })).key).toBe("chat.toolLine.ReadGeneric");
-    expect(toolLineLabel(toolCall({ name: "Bash", args: {} })).params).toEqual({ command: "" });
+    expect(toolLineLabel(toolCall({ name: "Shell", args: {} })).params).toEqual({ command: "" });
   });
 });
 
@@ -255,7 +243,7 @@ describe("toolGroupSummary", () => {
       toolCall({ name: "Read" }),
       toolCall({ name: "Grep" }),
       toolCall({ name: "Read" }),
-      toolCall({ name: "Bash" })
+      toolCall({ name: "Shell" })
     ]);
     expect(summary).toEqual([
       { category: "read", count: 2 },

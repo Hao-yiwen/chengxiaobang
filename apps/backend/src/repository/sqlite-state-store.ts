@@ -18,6 +18,7 @@ import {
 } from "@chengxiaobang/shared";
 import {
   mapMessage,
+  mapModelDebugRecord,
   mapProject,
   mapProvider,
   mapRun,
@@ -45,6 +46,7 @@ import type {
   UpdateScheduledTaskInput,
   UpdateSessionInput,
   UpsertUsageCostEntryInput,
+  UpsertModelDebugRecordInput,
   UsageCostEntry,
   UsageCostEntryFilter,
   UsageStatsSourceRun
@@ -1225,6 +1227,87 @@ export class SqliteStateStore implements StateStore {
     return roundCurrency(Number(rows[0]?.cost_cny ?? 0));
   }
 
+  async upsertModelDebugRecord(input: UpsertModelDebugRecordInput) {
+    await this.assertSessionExists(input.sessionId);
+    const runRows = this.query("select id from runs where id = ? and session_id = ?", [
+      input.runId,
+      input.sessionId
+    ]);
+    if (runRows.length === 0) {
+      throw new Error("运行记录不存在");
+    }
+    const id = input.id ?? createId("model_debug");
+    const existing = input.id
+      ? this.query("select created_at from model_debug_records where id = ?", [input.id])[0]
+      : undefined;
+    const createdAt = existing ? String(existing.created_at) : nowIso();
+    const updatedAt = nowIso();
+    const requestJson = stringifyModelDebugJson(input.request);
+    const responseJson = stringifyModelDebugJson(input.response);
+    this.run(
+      `insert into model_debug_records
+       (id, run_id, session_id, user_message_id, source, attempt_index, request_index, provider_id,
+        provider_kind, model, api, status, request_json, response_json, request_bytes,
+        response_bytes, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       on conflict(run_id, attempt_index, request_index) do update set
+         user_message_id = coalesce(excluded.user_message_id, model_debug_records.user_message_id),
+         provider_id = excluded.provider_id,
+         provider_kind = excluded.provider_kind,
+         model = excluded.model,
+         api = excluded.api,
+         status = excluded.status,
+         request_json = coalesce(excluded.request_json, model_debug_records.request_json),
+         response_json = excluded.response_json,
+         request_bytes = coalesce(excluded.request_bytes, model_debug_records.request_bytes),
+         response_bytes = excluded.response_bytes,
+         updated_at = excluded.updated_at`,
+      [
+        id,
+        input.runId,
+        input.sessionId,
+        input.userMessageId ?? null,
+        input.source,
+        input.attemptIndex,
+        input.requestIndex,
+        input.providerId ?? null,
+        input.providerKind ?? null,
+        input.model ?? null,
+        input.api ?? null,
+        input.status,
+        requestJson,
+        responseJson,
+        requestJson === null ? null : Buffer.byteLength(requestJson, "utf8"),
+        responseJson === null ? null : Buffer.byteLength(responseJson, "utf8"),
+        createdAt,
+        updatedAt
+      ]
+    );
+    await this.flush();
+    const rows = this.query(
+      "select * from model_debug_records where run_id = ? and attempt_index = ? and request_index = ?",
+      [input.runId, input.attemptIndex, input.requestIndex]
+    );
+    if (rows.length === 0) {
+      throw new Error("模型调试记录写入失败");
+    }
+    return mapModelDebugRecord(rows[0]);
+  }
+
+  async listModelDebugRecordsForSession(sessionId: string) {
+    await this.assertSessionExists(sessionId);
+    return this.query(
+      `select model_debug_records.*
+       from model_debug_records
+       inner join runs on runs.id = model_debug_records.run_id
+       where runs.session_id = ?
+       order by model_debug_records.created_at asc,
+                model_debug_records.attempt_index asc,
+                model_debug_records.request_index asc`,
+      [sessionId]
+    ).map(mapModelDebugRecord);
+  }
+
   async listToolCallsForSession(sessionId: string): Promise<ToolCall[]> {
     await this.assertSessionExists(sessionId);
     return this.query(
@@ -1569,6 +1652,21 @@ export class SqliteStateStore implements StateStore {
       throw new Error("State store is not initialized");
     }
     return this.db;
+  }
+}
+
+function stringifyModelDebugJson(value: unknown): string | null {
+  if (value === undefined) {
+    return null;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.warn("[state-store] 模型调试 JSON 序列化失败，已记录错误摘要", {
+      error: message
+    });
+    return JSON.stringify({ serializationError: message });
   }
 }
 

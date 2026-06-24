@@ -13,12 +13,6 @@ import { textResult } from "./tool-result";
 
 const log = getLogger({ module: "fs-tools" });
 
-const lsParams = Type.Object({
-  path: Type.Optional(
-    Type.String({ description: "相对工作目录的路径，或显式绝对路径；默认当前目录 '.'" })
-  )
-});
-
 const readParams = Type.Object({
   file_path: Type.String({ description: "相对工作目录的文件路径，或显式绝对路径；用于读取已有文件内容" }),
   offset: Type.Optional(Type.Number({ description: "可选，起始行号，1 表示第一行；用于分段读取长文件" })),
@@ -43,10 +37,6 @@ const editParams = Type.Object({
   replace_all: Type.Optional(
     Type.Boolean({ description: "默认 false，要求 old_string 唯一匹配；true 时替换所有匹配" })
   )
-});
-
-const makeDirectoryParams = Type.Object({
-  path: Type.String({ description: "相对工作目录的目录路径，或显式绝对路径" })
 });
 
 const globParams = Type.Object({
@@ -139,26 +129,6 @@ export function createFsTools(workspacePath: string, options: FsToolOptions = {}
   const readFileState = new Map<string, FsReadState>();
   const supportsImageInput =
     !options.modelInputModalities || options.modelInputModalities.includes("image");
-
-  const lsTool: AgentTool<typeof lsParams> = {
-    name: "LS",
-    label: "浏览目录",
-    description: "列出工作目录或显式绝对路径中的某个目录的文件与子目录。",
-    parameters: lsParams,
-    execute: async (_id, params) => {
-      const path = params.path || ".";
-      const target = resolveFsToolPath(workspacePath, "LS", path, false);
-      const entries = await readdir(target, { withFileTypes: true });
-      if (entries.length === 0) {
-        return textResult("（空目录）");
-      }
-      return textResult(
-        entries
-          .map((entry) => `${entry.isDirectory() ? "dir " : "file"} ${entry.name}`)
-          .join("\n")
-      );
-    }
-  };
 
   const readTool: AgentTool<typeof readParams> = {
     name: "Read",
@@ -344,18 +314,6 @@ export function createFsTools(workspacePath: string, options: FsToolOptions = {}
     }
   };
 
-  const makeDirectoryTool: AgentTool<typeof makeDirectoryParams> = {
-    name: "MakeDirectory",
-    label: "创建目录",
-    description: "在工作目录或显式绝对路径中创建一个目录（含多级父目录）。",
-    parameters: makeDirectoryParams,
-    execute: async (_id, params) => {
-      const target = resolveFsToolPath(workspacePath, "MakeDirectory", params.path, true);
-      await mkdir(target, { recursive: true });
-      return textResult(`已创建目录 ${target}`);
-    }
-  };
-
   const globTool: AgentTool<typeof globParams> = {
     name: "Glob",
     label: "查找文件",
@@ -382,7 +340,7 @@ export function createFsTools(workspacePath: string, options: FsToolOptions = {}
     }
   };
 
-  return [lsTool, readTool, writeTool, editTool, makeDirectoryTool, globTool, grepTool];
+  return [readTool, writeTool, editTool, globTool, grepTool];
 }
 
 async function resolveFsWritablePath(
@@ -631,7 +589,7 @@ function resolveFsToolPath(
   return resolveFsToolPathWithMeta(workspacePath, toolName, path, mutating).target;
 }
 
-type FsToolName = "LS" | "Read" | "Write" | "Edit" | "MakeDirectory" | "Glob" | "Grep";
+type FsToolName = "Read" | "Write" | "Edit" | "Glob" | "Grep";
 
 interface GrepSearchTarget {
   cwd: string;

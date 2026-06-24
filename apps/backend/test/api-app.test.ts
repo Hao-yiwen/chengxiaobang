@@ -100,6 +100,36 @@ describe("createApp", () => {
     await expect(response.json()).resolves.toEqual({ error: "未授权" });
   });
 
+  it("defaults project list sorting to recent activity", async () => {
+    const activeProject = await store.createProject({
+      name: "最近活跃项目",
+      path: join(dir, "active-project")
+    });
+    await tick();
+    const quietProject = await store.createProject({
+      name: "创建较新的安静项目",
+      path: join(dir, "quiet-project")
+    });
+    await tick();
+    await store.createSession({
+      projectId: activeProject.id,
+      title: "活跃会话",
+      accessMode: "approval"
+    });
+
+    const response = await app(
+      new Request("http://local/api/projects?limit=4&offset=0&pinned=false", { method: "GET" })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      items: [
+        expect.objectContaining({ id: activeProject.id }),
+        expect.objectContaining({ id: quietProject.id })
+      ]
+    });
+  });
+
   it("rejects untrusted CORS origins before route handling", async () => {
     const response = await app(
       new Request("http://local/api/projects", {
@@ -1703,10 +1733,10 @@ describe("createApp", () => {
     const toolCall: ToolCall = {
       id: "tool_1",
       runId: "run_1",
-      name: "LS",
-      args: { path: "." },
+      name: "Glob",
+      args: { pattern: "*" },
       status: "completed",
-      result: "file package.json",
+      result: "package.json",
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -1736,10 +1766,10 @@ describe("createApp", () => {
         {
           id: "tool_1",
           runId: "run_1",
-          name: "LS",
-          args: { path: "." },
+          name: "Glob",
+          args: { pattern: "*" },
           status: "completed",
-          result: "file package.json"
+          result: "package.json"
         }
       ]
     });

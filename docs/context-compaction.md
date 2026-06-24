@@ -184,11 +184,6 @@ autoCompactThresholdTokens = 模型显式 autoCompactThresholdTokens
 
 - 返回给模型的内容替换为短摘要，包含：
   - 完整结果路径。
-  - 完整结果字符数。
-  - 开头预览。
-  - 末尾预览。
-  - 如何用 `Read` 分段读取。
-  - 如何用 `Grep` 搜索关键词。
 
 这个保护同时覆盖：
 
@@ -216,7 +211,7 @@ autoCompactThresholdTokens = 模型显式 autoCompactThresholdTokens
 | 默认自动压缩比例 | YAML `runtimeDefaults.autoCompactThresholdRatio = 0.8` | 未配置显式 tokens 时，达到模型窗口 80% 触发自动压缩 |
 | DeepSeek V4 窗口 | `1,000,000` tokens | YAML 显式压缩阈值 `800,000` tokens |
 | 长工具结果内联上限 | `24KB` | 超过后写入 `<dataDir>/tool-results/**` |
-| 长工具结果预览 | 头尾各 `4KB` | 返回给模型的短摘要里包含开头和末尾预览 |
+| 长工具结果降级预览 | 头尾各 `4KB` | 仅在超长结果落盘失败时返回开头和末尾预览 |
 | `Read` 分段上限 | `2000` 行 | 防止模型再次一次性读入过大文件 |
 
 需要注意：

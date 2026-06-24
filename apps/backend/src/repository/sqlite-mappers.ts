@@ -1,6 +1,7 @@
 import {
   messageAttachmentSchema,
   fileChangeSchema,
+  modelDebugRecordSchema,
   providerModelOverridesSchema,
   tokenUsageSchema,
   toolCallApprovalSchema,
@@ -8,6 +9,7 @@ import {
   type FileChange,
   type Message,
   type MessageAttachment,
+  type ModelDebugRecord,
   type Project,
   type ProviderConfig,
   type RunRecord,
@@ -299,6 +301,44 @@ export function mapUsageCostEntry(row: Row): UsageCostEntry {
   };
 }
 
+export function mapModelDebugRecord(row: Row): ModelDebugRecord {
+  const parsed = modelDebugRecordSchema.parse({
+    id: String(row.id),
+    runId: String(row.run_id),
+    sessionId: String(row.session_id),
+    ...(row.user_message_id === null || row.user_message_id === undefined
+      ? {}
+      : { userMessageId: String(row.user_message_id) }),
+    source: String(row.source),
+    attemptIndex: Number(row.attempt_index),
+    requestIndex: Number(row.request_index),
+    ...(row.provider_id === null || row.provider_id === undefined
+      ? {}
+      : { providerId: String(row.provider_id) }),
+    ...(row.provider_kind === null || row.provider_kind === undefined
+      ? {}
+      : { providerKind: String(row.provider_kind) }),
+    ...(row.model === null || row.model === undefined ? {} : { model: String(row.model) }),
+    ...(row.api === null || row.api === undefined ? {} : { api: String(row.api) }),
+    status: String(row.status),
+    ...(row.request_json === null || row.request_json === undefined
+      ? {}
+      : { request: parseModelDebugJson(row.request_json, "request", String(row.id)) }),
+    ...(row.response_json === null || row.response_json === undefined
+      ? {}
+      : { response: parseModelDebugJson(row.response_json, "response", String(row.id)) }),
+    ...(row.request_bytes === null || row.request_bytes === undefined
+      ? {}
+      : { requestBytes: Number(row.request_bytes) }),
+    ...(row.response_bytes === null || row.response_bytes === undefined
+      ? {}
+      : { responseBytes: Number(row.response_bytes) }),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
+  });
+  return parsed;
+}
+
 export function mapToolCall(row: Row): ToolCall {
   return {
     id: String(row.id),
@@ -349,6 +389,23 @@ export function mapProvider(row: Row): ProviderConfig {
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
+}
+
+function parseModelDebugJson(
+  value: unknown,
+  field: "request" | "response",
+  recordId: string
+): unknown {
+  try {
+    return JSON.parse(String(value));
+  } catch (error) {
+    log.warn("[state-store] 解析模型调试 JSON 失败", {
+      recordId,
+      field,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return undefined;
+  }
 }
 
 function parseProviderModelOverrides(

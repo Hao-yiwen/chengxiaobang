@@ -1099,8 +1099,8 @@ describe("App", () => {
     const toolCall: ToolCall = {
       id: "tool_1",
       runId: "run_1",
-      name: "LS",
-      args: { path: "." },
+      name: "Glob",
+      args: { pattern: "*" },
       status: "completed",
       result: "file package.json",
       createdAt: "2026-06-08T00:00:01.000Z",
@@ -1130,11 +1130,11 @@ describe("App", () => {
 
     // The row is a clean one-liner with a human-readable description; the raw
     // result only appears once expanded (no noisy collapsed preview).
-    expect(await screen.findByText("浏览目录 .")).toBeInTheDocument();
-    expect(screen.queryByText("LS")).not.toBeInTheDocument();
+    expect(await screen.findByText("查找文件 *")).toBeInTheDocument();
+    expect(screen.queryByText("Glob")).not.toBeInTheDocument();
     expect(screen.queryByText("completed")).not.toBeInTheDocument();
     expect(screen.queryByText("file package.json")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("浏览目录 ."));
+    fireEvent.click(screen.getByText("查找文件 *"));
     expect(await screen.findByText("file package.json")).toBeInTheDocument();
     expect(listSessionRuns).toHaveBeenCalledWith("session_1");
   });
@@ -1214,7 +1214,7 @@ describe("App", () => {
     const pendingTool: ToolCall = {
       id: "tool_stale_pending",
       runId: staleRun.id,
-      name: "Bash",
+      name: "Shell",
       args: { command: "python3 - <<'PY'\nprint('hi')\nPY" },
       status: "pending_approval",
       createdAt: "2026-06-13T00:00:01.000Z",
@@ -1570,7 +1570,7 @@ describe("App", () => {
           toolCall: {
             id: "tool_1",
             runId: "run_1",
-            name: "Bash",
+            name: "Shell",
             args: { command: "rm -rf dist" },
             status: "pending_approval",
             createdAt: "2026-06-13T00:00:00.000Z",
@@ -2028,44 +2028,74 @@ describe("App", () => {
 
     render(<App client={client} />);
     await selectDeepSeekForHome();
-
-    fireEvent.change(await screen.findByLabelText("输入消息"), {
-      target: { value: "写 document-spec" }
-    });
-    fireEvent.click(screen.getByTitle("发送"));
-
-    await waitFor(() => expect(emit).toBeDefined());
-    act(() => {
-      emit?.({
-        type: "tool_call",
-        runId: "run_1",
-        toolCall: {
-          id: "todo_1",
-          runId: "run_1",
-          name: "TodoWrite",
-          args: {
-            todos: [
-              { content: "写入规格文件", status: "in_progress", priority: "high" },
-              { content: "生成 PPT", status: "pending", priority: "medium" }
-            ]
-          },
-          status: "running",
-          createdAt: "2026-06-13T00:00:00.800Z",
-          updatedAt: "2026-06-13T00:00:00.800Z"
-        } satisfies ToolCall
+    const longTodoContent =
+      "深入分析 Agent 核心循环（system-prompt、compaction、session-title）并核对所有边界条件";
+    const scrollHeightSpy = vi
+      .spyOn(HTMLElement.prototype, "scrollHeight", "get")
+      .mockImplementation(function scrollHeightForProgressTodo(this: HTMLElement) {
+        return this.getAttribute("data-progress-todo-measure") === longTodoContent ? 64 : 32;
       });
-    });
+    const clientHeightSpy = vi
+      .spyOn(HTMLElement.prototype, "clientHeight", "get")
+      .mockImplementation(function clientHeightForProgressTodo(this: HTMLElement) {
+        return this.hasAttribute("data-progress-todo-content") ? 40 : 0;
+      });
 
-    const chatScroll = await screen.findByTestId("chat-scroll");
-    expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
-    expect(screen.getByText("运行中")).toBeInTheDocument();
-    expect(screen.getByText("写入规格文件")).toBeInTheDocument();
-    const streamRoot = within(chatScroll).getByText("先更新计划").closest(".markdown-streamdown");
-    expect(streamRoot?.getAttribute("style") ?? "").not.toContain("--streamdown-caret");
-    expect(within(chatScroll).queryByTestId("chat-stream-tail-cursor")).not.toBeInTheDocument();
-    expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
-    expect(within(chatScroll).queryByText("更新 Todo 中")).not.toBeInTheDocument();
-    resolveStream?.();
+    try {
+      fireEvent.change(await screen.findByLabelText("输入消息"), {
+        target: { value: "写 document-spec" }
+      });
+      fireEvent.click(screen.getByTitle("发送"));
+
+      await waitFor(() => expect(emit).toBeDefined());
+      act(() => {
+        emit?.({
+          type: "tool_call",
+          runId: "run_1",
+          toolCall: {
+            id: "todo_1",
+            runId: "run_1",
+            name: "TodoWrite",
+            args: {
+              todos: [
+                { content: longTodoContent, status: "in_progress", priority: "high" },
+                { content: "生成 PPT", status: "pending", priority: "medium" }
+              ]
+            },
+            status: "running",
+            createdAt: "2026-06-13T00:00:00.800Z",
+            updatedAt: "2026-06-13T00:00:00.800Z"
+          } satisfies ToolCall
+        });
+      });
+
+      const chatScroll = await screen.findByTestId("chat-scroll");
+      expect(await screen.findByTestId("progress-floating-panel")).toBeInTheDocument();
+      expect(screen.getByText("运行中")).toBeInTheDocument();
+      const shortTodo = screen.getByText("生成 PPT");
+      expect(shortTodo).toHaveAttribute("data-progress-todo-truncated", "false");
+      fireEvent.pointerMove(shortTodo, { pointerType: "mouse" });
+      fireEvent.mouseEnter(shortTodo);
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+      const longTodo = screen.getByText(longTodoContent);
+      expect(longTodo).toHaveClass("line-clamp-2");
+      expect(longTodo).toHaveAttribute("data-progress-todo-truncated", "true");
+      fireEvent.pointerMove(longTodo, { pointerType: "mouse" });
+      fireEvent.mouseEnter(longTodo);
+      const tooltip = await screen.findByRole("tooltip");
+      expect(tooltip).toHaveTextContent(longTodoContent);
+      const streamRoot = within(chatScroll).getByText("先更新计划").closest(".markdown-streamdown");
+      expect(streamRoot?.getAttribute("style") ?? "").not.toContain("--streamdown-caret");
+      expect(within(chatScroll).queryByTestId("chat-stream-tail-cursor")).not.toBeInTheDocument();
+      expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
+      expect(within(chatScroll).queryByText("更新 Todo 中")).not.toBeInTheDocument();
+      resolveStream?.();
+    } finally {
+      resolveStream?.();
+      scrollHeightSpy.mockRestore();
+      clientHeightSpy.mockRestore();
+    }
   });
 
   it("keeps the chat caret for pure text streaming without thinking", async () => {

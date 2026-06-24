@@ -77,16 +77,16 @@ export function ContextUsageIndicator(props: {
           )}
         >
           {props.loading && !props.usage ? (
-            <span className="size-5 rounded-full border border-muted-foreground/25 border-t-foreground animate-spin" />
+            <span className="size-4 rounded-full border border-muted-foreground/25 border-t-foreground animate-spin" />
           ) : (
             <span
               aria-hidden
-              className="relative size-5 rounded-full"
+              className="relative size-4 rounded-full"
               style={{
                 background: `conic-gradient(${ringColor} ${degrees}deg, rgb(var(--border)) 0deg)`
               }}
             >
-              <span className="absolute inset-[4px] rounded-full bg-card" />
+              <span className="absolute inset-[3px] rounded-full bg-card" />
             </span>
           )}
         </button>

@@ -57,7 +57,7 @@ function toolCall(partial: Partial<ToolCall>): ToolCall {
   return {
     id: "tool_1",
     runId: "run_1",
-    name: "Bash",
+    name: "Shell",
     args: {},
     status: "completed",
     createdAt: "2026-06-08T00:00:00.000Z",
@@ -206,7 +206,7 @@ describe("ToolCallRow", () => {
     expect(screen.queryByText("点击在右侧预览")).not.toBeInTheDocument();
   });
 
-  it("renders Bash command and result with the rewritten code block chrome", async () => {
+  it("renders Shell command and result with the rewritten code block chrome", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       value: { writeText },
@@ -215,7 +215,7 @@ describe("ToolCallRow", () => {
 
     const { container } = render(
       <ToolCallRow
-        toolCall={toolCall({ name: "Bash", args: { command: "ls -la" }, result: "total 0" })}
+        toolCall={toolCall({ name: "Shell", args: { command: "ls -la" }, result: "total 0" })}
       />
     );
 
@@ -256,7 +256,7 @@ describe("ToolCallRow", () => {
     const { rerender } = render(
       <ToolCallRow
         toolCall={toolCall({
-          name: "Bash",
+          name: "Shell",
           status: "running",
           args: { command: "pnpm test -- --secret" }
         })}
@@ -295,7 +295,7 @@ describe("ToolCallRow", () => {
     expect(screen.queryByRole("button", { name: /预览文件/ })).not.toBeInTheDocument();
   });
 
-  it("applies global code preview settings to expanded Bash details", async () => {
+  it("applies global code preview settings to expanded Shell details", async () => {
     useAppStore.setState({
       codePreviewSettings: {
         ...DEFAULT_CODE_PREVIEW_SETTINGS,
@@ -308,7 +308,7 @@ describe("ToolCallRow", () => {
 
     const { container } = render(
       <ToolCallRow
-        toolCall={toolCall({ name: "Bash", args: { command: "pnpm test" }, result: "ok" })}
+        toolCall={toolCall({ name: "Shell", args: { command: "pnpm test" }, result: "ok" })}
       />
     );
 
@@ -335,7 +335,7 @@ describe("ToolCallRow", () => {
     const { container } = render(
       <ToolCallRow
         toolCall={toolCall({
-          name: "Bash",
+          name: "Shell",
           args: { command },
           result: "已生成 /tmp/report.xlsx"
         })}

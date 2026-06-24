@@ -25,15 +25,15 @@ describe("ProjectApprovalTrustService", () => {
   it("命中同项目、同工具、同规范化参数", async () => {
     await service.trust({
       projectId: "project_1",
-      toolName: "Bash",
-      args: { command: "git   status   --short" }
+      toolName: "Shell",
+      args: { action: "run", command: "git   status   --short" }
     });
 
     await expect(
       service.isTrusted({
         projectId: "project_1",
-        toolName: "Bash",
-        args: { command: "git status --short" }
+        toolName: "Shell",
+        args: { action: "run", command: "git status --short" }
       })
     ).resolves.toBe(true);
   });
@@ -41,22 +41,22 @@ describe("ProjectApprovalTrustService", () => {
   it("不同项目或参数变化不会命中", async () => {
     await service.trust({
       projectId: "project_1",
-      toolName: "Bash",
-      args: { command: "npm publish" }
+      toolName: "Shell",
+      args: { action: "run", command: "npm publish" }
     });
 
     await expect(
       service.isTrusted({
         projectId: "project_2",
-        toolName: "Bash",
-        args: { command: "npm publish" }
+        toolName: "Shell",
+        args: { action: "run", command: "npm publish" }
       })
     ).resolves.toBe(false);
     await expect(
       service.isTrusted({
         projectId: "project_1",
-        toolName: "Bash",
-        args: { command: "npm publish --tag beta" }
+        toolName: "Shell",
+        args: { action: "run", command: "npm publish --tag beta" }
       })
     ).resolves.toBe(false);
   });

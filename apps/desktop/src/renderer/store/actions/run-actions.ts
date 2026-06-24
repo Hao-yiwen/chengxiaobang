@@ -53,7 +53,8 @@ import {
   runModelFromStarted,
   settleInterruptedRunHistory,
   settledSessionHistoryPatch,
-  shouldHandleRunEvent
+  shouldHandleRunEvent,
+  upsertModelDebugRecord
 } from "../helpers/run-history";
 import { latestActiveRunSnapshot, runRecordFromEndEvent, upsertRunHistory } from "../helpers/run-records";
 import { clearRunRunning, clearSessionRunning, markRunRunning, markSessionRunning } from "../helpers/running";
@@ -1282,6 +1283,21 @@ export function createRunActions(set: AppStoreSet, get: AppStoreGet): Partial<Ap
                     activeRunLastAssistant: event.message
                   }
                 : {})
+            }));
+            break;
+          case "model_debug":
+            flushBufferedDeltas();
+            console.debug("[store] 收到模型调试记录", {
+              runId: event.runId,
+              recordId: event.record.id,
+              attemptIndex: event.record.attemptIndex,
+              requestIndex: event.record.requestIndex,
+              status: event.record.status,
+              requestBytes: event.record.requestBytes,
+              responseBytes: event.record.responseBytes
+            });
+            set((current) => ({
+              modelDebugRecords: upsertModelDebugRecord(current.modelDebugRecords, event.record)
             }));
             break;
           case "tool_call": {

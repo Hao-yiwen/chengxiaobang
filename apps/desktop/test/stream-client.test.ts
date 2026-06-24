@@ -13,6 +13,11 @@ function fetchRequestHeaders(fetchMock: ReturnType<typeof vi.fn>, index = 0): He
   return new Headers(calls[index]?.[1]?.headers);
 }
 
+function fetchRequestUrl(fetchMock: ReturnType<typeof vi.fn>, index = 0): string {
+  const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>;
+  return String(calls[index]?.[0]);
+}
+
 describe("readSseStream", () => {
   it("sends x-request-id on ordinary JSON requests", async () => {
     const fetchMock = vi.fn(async () =>
@@ -24,11 +29,15 @@ describe("readSseStream", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const client = await createApiClient();
-    await expect(client.listProjects({ limit: 4, offset: 0, sort: "created", pinned: false }))
-      .resolves.toEqual({ items: [], total: 0, hasMore: false });
+    await expect(client.listProjects({ limit: 4, offset: 0, pinned: false })).resolves.toEqual({
+      items: [],
+      total: 0,
+      hasMore: false
+    });
 
     const requestHeaders = fetchRequestHeaders(fetchMock);
     expect(requestHeaders.get("x-request-id")).toEqual(expect.stringMatching(/^req_/));
+    expect(fetchRequestUrl(fetchMock)).toContain("sort=recent");
   });
 
   it("handles partial chunks", async () => {

@@ -59,7 +59,7 @@ export function projectRoutes(context: AppContext): Hono {
     if (sortParam && sortParam !== "created" && sortParam !== "recent") {
       return c.json({ error: "项目排序参数无效" }, 400);
     }
-    const sort: "created" | "recent" = sortParam === "recent" ? "recent" : "created";
+    const sort: "created" | "recent" = sortParam === "created" ? "created" : "recent";
     const pinned = parsePinned(c.req.query("pinned"));
     const result = await context.store.listProjects({
       limit: page.limit,

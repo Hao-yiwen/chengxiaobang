@@ -230,22 +230,21 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
 
 | 文件 | 工具 | 审批 |
 |---|---|---|
-| `fs-tools.ts` | LS、Read、Glob、Grep | 否 |
-| | Write、Edit、MakeDirectory | **是** |
-| `shell-tools.ts` | GitStatus、GitDiff、BashStatus、BashCancel | 否 |
-| | Bash、Windows-only PowerShell | **是** |
+| `fs-tools.ts` | Read、Glob、Grep | 否 |
+| | Write、Edit | **是** |
+| `shell-tools.ts` | Shell(action=run/status/cancel) | run 按命令风险;status/cancel 否 |
 | `web-tools.ts` | WebFetch(模型辅助网页抽取)、WebSearch(Tavily 搜索)、ToolSearch(加载 deferred/MCP 工具) | 否 |
 | `memory-tools.ts` | Memory(`/memories` 下 view/create/str_replace/insert/delete/rename) | 否(只限专用目录) |
-| `schedule-tools.ts` | ScheduleCreate、ScheduleList、ScheduleCancel | 创建/取消是 |
+| `plan-tools.ts` | ExitPlanMode、AskUserQuestion、Skill | 否 |
+| `schedule-tools.ts` | Schedule(action=create/list/cancel) | create/cancel 是;list 否 |
 | `todo-tools.ts` | TodoRead、TodoWrite | 否(运行内计划进度) |
 | `ocr-tools.ts` | OcrExtractText | 否,deferred 且仅模型/附件条件满足时可见 |
-| `skill-tools.ts` | Skill、CreateSkill | Skill 否;CreateSkill 是 |
 
 - `packages/shared/src/tool.ts` 的 `toolMetadata(name)` 是展示、审批、deferred、计划草稿可见性和分类的统一事实源;未知工具与 `mcp__...` 工具走保守兜底策略。
-- `registry.ts`:`createAgentTools(workspacePath, options)` 汇集文件、Shell、Web、Memory、OCR、技能、MCP 等工厂;`requiresApproval(name)` / `isMutatingTool(name)` 由 `toolMetadata` 与 MCP 规则共同决定。
+- `registry.ts`:`createAgentTools(workspacePath, options)` 汇集文件、Shell、Web、Memory、OCR、MCP 等基础工具;`AgentRunner` 再按 run 追加计划、技能加载、Todo、定时任务等工具。`requiresApproval(name)` / `isMutatingTool(name)` 由 `toolMetadata` 与 MCP 规则共同决定。
 - `selectAgentTools()` 会按计划阶段、飞书/headless 通道、OCR 条件、deferred 工具启用集合裁剪模型可见工具。计划草稿阶段只开放 read-only 与 `planDraftVisible` 工具;正式执行阶段隐藏 `ExitPlanMode`;飞书/headless 隐藏会阻塞的提问/计划工具。
 - `workspace.ts`:`safeResolve` 强制路径不逃逸工作目录;Glob/Grep 的路径边界与忽略规则(忽略 node_modules/.git/dist 等);`listProjectFiles` 供 @-mention 自动补全。`Grep` 依赖 ripgrep,桌面打包时随平台 `rg/rg.exe` 打入并通过 `CHENGXIAOBANG_RG_PATH` 传给后端。
-- Shell 命令通过 `Bash`/`PowerShell` 的 `timeout` / `run_in_background` 选择等待策略：默认前台等待 15 秒后转后台，`run_in_background=true` 立即转后台，`timeout` 最多等待 600000ms 后转后台；输出持续写入 `dataDir` 下的全局运行产物文件,再由 `BashStatus` 查询状态、`BashCancel` 主动终止;详见 [Shell 执行与后台命令](./shell-background-execution.md)。
+- Shell 命令通过 `Shell action=run` 的 `timeout` / `run_in_background` 选择等待策略：默认前台等待 15 秒后转后台，`run_in_background=true` 立即转后台，`timeout` 最多等待 600000ms 后转后台；输出持续写入 `dataDir` 下的全局运行产物文件,再由 `Shell action=status` 查询状态、`Shell action=cancel` 主动终止;详见 [Shell 执行与后台命令](./shell-background-execution.md)。
 - 参数校验由 pi 在执行前按 TypeBox schema 完成,非法参数直接变成错误工具结果(不经 beforeToolCall)。
 
 ### 4.5.1 插件、MCP 与技能市场
@@ -253,7 +252,7 @@ messages 表有一个 **backend-only 的 `payload` 列**,存 pi 原始消息 JSO
 - 插件由 `PluginService` 管理安装、启停和配置;已启用插件可声明 MCP server,`McpManager` 懒加载后通过 `mcp-tool-bridge.ts` 转成 `mcp__...` pi 工具。
 - MCP 工具默认按 mutating/deferred/requiresApproval 处理,避免外部服务能力自报不完整时越权执行。
 - 技能市场由 `SkillMarketService` 管理启用状态、禁用命令和技能使用记录;内置技能、市场技能、插件技能与用户自定义技能共同进入 `SlashCommandService`。
-- `CreateSkill` 允许对话内创建/导入技能;自定义技能落在用户数据目录并立即被后续命令/技能发现。
+- 技能创建、导入和安装走技能页/API;模型只通过 `Skill` 加载已存在技能。自定义技能落在用户数据目录并立即被后续命令/技能发现。
 
 ### 4.6 模型层与压缩
 

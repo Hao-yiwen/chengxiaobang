@@ -49,8 +49,8 @@ const assistantMessage = message({
 const toolCall: ToolCall = {
   id: "tool_1",
   runId: "run_1",
-  name: "LS",
-  args: { path: "." },
+  name: "Glob",
+  args: { pattern: "*" },
   status: "completed",
   result: "file package.json",
   createdAt: "2026-06-08T00:00:01.000Z",
@@ -71,7 +71,7 @@ describe("buildSessionMarkdown", () => {
     expect(markdown).toContain("> 导出时间: 2026-06-10T08:00:00.000Z");
     // Timeline order: user → tool call → assistant.
     const userIndex = markdown.indexOf("## 你");
-    const toolIndex = markdown.indexOf("**工具调用** `LS` · completed");
+    const toolIndex = markdown.indexOf("**工具调用** `Glob` · completed");
     const assistantIndex = markdown.indexOf("## 程小帮");
     expect(userIndex).toBeGreaterThan(-1);
     expect(toolIndex).toBeGreaterThan(userIndex);

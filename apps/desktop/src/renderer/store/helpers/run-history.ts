@@ -2,6 +2,7 @@ import {
   todoWriteArgsSchema,
   type ActiveRunSnapshot,
   type Message,
+  type ModelDebugRecord,
   type ReasoningMode,
   type RunRecord,
   type StreamEvent,
@@ -91,7 +92,8 @@ export function settleInterruptedRunHistory(
         result: INTERRUPTED_RUN_ERROR,
         updatedAt: timestamp
       };
-    })
+    }),
+    modelDebugRecords: history.modelDebugRecords
   };
 
   console.warn("[store] 已收敛无后端活跃快照的历史运行", {
@@ -131,6 +133,7 @@ export function settledSessionHistoryPatch(
     messages,
     toolHistory: history.toolCalls,
     runHistory: history.runs,
+    modelDebugRecords: history.modelDebugRecords ?? [],
     ...(view ? { view } : {}),
     ...(targetScope ? switchComposerDraftScope(state, targetScope, "settledSessionHistory") : {}),
     ...(shouldClearCurrentRun
@@ -191,6 +194,7 @@ export function activeRunRecoveryPatch(
       ? history.toolCalls.filter((toolCall) => toolCall.id !== pendingTool.id)
       : history.toolCalls,
     runHistory: upsertRunHistory(history.runs, snapshot.run),
+    modelDebugRecords: history.modelDebugRecords ?? [],
     pendingTool,
     runningTool: pendingTool ? undefined : runningTool,
     isRunning: true,
@@ -233,6 +237,31 @@ export function shouldHandleRunEvent(
     (state.activeRunId && event.runId === state.activeRunId) ||
       state.runHistory.some((run) => run.id === event.runId && run.status === "running")
   );
+}
+
+export function upsertModelDebugRecord(
+  records: ModelDebugRecord[],
+  record: ModelDebugRecord
+): ModelDebugRecord[] {
+  const index = records.findIndex((item) => item.id === record.id);
+  if (index === -1) {
+    return [...records, record].sort(compareModelDebugRecords);
+  }
+  const next = [...records];
+  next[index] = record;
+  return next.sort(compareModelDebugRecords);
+}
+
+function compareModelDebugRecords(left: ModelDebugRecord, right: ModelDebugRecord): number {
+  const byCreatedAt = left.createdAt.localeCompare(right.createdAt);
+  if (byCreatedAt !== 0) {
+    return byCreatedAt;
+  }
+  const byAttempt = left.attemptIndex - right.attemptIndex;
+  if (byAttempt !== 0) {
+    return byAttempt;
+  }
+  return left.requestIndex - right.requestIndex;
 }
 
 export function autoOpenProgressPanelPatch(state: AppState, toolCall: ToolCall): Partial<AppState> {

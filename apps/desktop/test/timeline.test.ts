@@ -98,7 +98,7 @@ describe("timelineItems", () => {
     const at = "2026-06-11T00:00:00.000Z";
     const m1 = msg("user", at);
     const m2 = msg("assistant", at);
-    const t1 = tool("Bash", { at });
+    const t1 = tool("Shell", { at });
     const t2 = tool("Read", { at });
     const items = timelineItems([m1, m2], [t1, t2]);
     expect(
@@ -111,7 +111,7 @@ describe("groupTimelineItems", () => {
   it("folds consecutive groupable tools into one tool-group anchored at the first call", () => {
     const t1 = tool("Read", { at: "2026-06-11T00:00:01.000Z" });
     const t2 = tool("Grep", { at: "2026-06-11T00:00:02.000Z" });
-    const t3 = tool("Bash", { at: "2026-06-11T00:00:03.000Z" });
+    const t3 = tool("Shell", { at: "2026-06-11T00:00:03.000Z" });
     const items = groupTimelineItems(timelineItems([], [t1, t2, t3]));
     expect(items).toEqual([
       { kind: "tool-group", at: t1.updatedAt, toolCalls: [t1, t2, t3] }
@@ -122,8 +122,8 @@ describe("groupTimelineItems", () => {
     const t1 = tool("Read", { at: "2026-06-11T00:00:01.000Z" });
     const t2 = tool("Read", { at: "2026-06-11T00:00:02.000Z" });
     const a1 = msg("assistant", "2026-06-11T00:00:03.000Z");
-    const t3 = tool("Bash", { at: "2026-06-11T00:00:04.000Z" });
-    const t4 = tool("Bash", { at: "2026-06-11T00:00:05.000Z" });
+    const t3 = tool("Shell", { at: "2026-06-11T00:00:04.000Z" });
+    const t4 = tool("Shell", { at: "2026-06-11T00:00:05.000Z" });
     const items = groupTimelineItems(timelineItems([a1], [t1, t2, t3, t4]));
     expect(items.map((item) => item.kind)).toEqual(["tool-group", "message", "tool-group"]);
   });
@@ -178,7 +178,7 @@ describe("groupTimelineItems", () => {
   });
 
   it("degrades a run of one back to a plain tool item", () => {
-    const t1 = tool("Bash", { at: "2026-06-11T00:00:01.000Z" });
+    const t1 = tool("Shell", { at: "2026-06-11T00:00:01.000Z" });
     const items = groupTimelineItems(timelineItems([], [t1]));
     expect(items).toEqual([{ kind: "tool", at: t1.updatedAt, toolCall: t1 }]);
   });
@@ -206,8 +206,8 @@ describe("chatTimeline", () => {
 
   it("numbers tool rows 1-based per run and keeps runs independent", () => {
     const t1 = tool("Read", { runId: "run_1", at: "2026-06-11T00:00:01.000Z" });
-    const t2 = tool("Bash", { runId: "run_1", at: "2026-06-11T00:00:02.000Z" });
-    const t3 = tool("Bash", { runId: "run_2", at: "2026-06-11T00:00:03.000Z" });
+    const t2 = tool("Shell", { runId: "run_1", at: "2026-06-11T00:00:02.000Z" });
+    const t3 = tool("Shell", { runId: "run_2", at: "2026-06-11T00:00:03.000Z" });
     const items = chatTimeline([], [t1, t2, t3]);
     const indices = items.map((item) => (item.kind === "tool" ? item.index : -1));
     expect(indices).toEqual([1, 2, 1]);
@@ -340,12 +340,12 @@ describe("chatTimeline", () => {
   });
 
   it("flags residual pending_approval rows from non-active runs", () => {
-    const stale = tool("Bash", {
+    const stale = tool("Shell", {
       status: "pending_approval",
       runId: "run_old",
       at: "2026-06-11T00:00:01.000Z"
     });
-    const fresh = tool("Bash", {
+    const fresh = tool("Shell", {
       status: "pending_approval",
       runId: "run_live",
       at: "2026-06-11T00:00:02.000Z"
@@ -363,7 +363,7 @@ describe("chatTimeline", () => {
         status: "running",
         args: { query: "发布信息" }
       }),
-      tool("Bash", {
+      tool("Shell", {
         id: "bash",
         runId: "run_live",
         status: "pending_smart_approval",
@@ -393,7 +393,7 @@ describe("chatTimeline", () => {
 
     expect(items.map((item) => (item.kind === "tool" ? item.toolCall.name : item.kind))).toEqual([
       "WebSearch",
-      "Bash",
+      "Shell",
       "Read",
       "Skill",
       "WebFetch"
@@ -425,7 +425,7 @@ describe("chatTimeline", () => {
       args: { query: "发布信息" },
       at: "2026-06-11T00:00:06.000Z"
     });
-    const bash = tool("Bash", {
+    const bash = tool("Shell", {
       runId: "run_live",
       status: "completed",
       args: { command: "pnpm test" },
@@ -437,7 +437,7 @@ describe("chatTimeline", () => {
     expect(items.map((item) => (item.kind === "tool" ? item.toolCall.name : item.kind))).toEqual([
       "WebFetch",
       "WebSearch",
-      "Bash"
+      "Shell"
     ]);
   });
 

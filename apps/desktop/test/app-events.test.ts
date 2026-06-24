@@ -577,7 +577,7 @@ describe("app event handling", () => {
     const toolCall: ToolCall = {
       id: "tool_running",
       runId: "run_active",
-      name: "Bash",
+      name: "Shell",
       args: { command: "echo ok" },
       status: "running",
       createdAt: "2026-06-13T00:00:01.000Z",

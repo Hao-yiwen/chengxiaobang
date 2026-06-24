@@ -58,11 +58,11 @@ scripts/start-server.sh --project-dir /path/to/project
 **Claude Code (Windows):**
 ```bash
 # Windows auto-detects and uses foreground mode, which blocks the tool call.
-# Use run_in_background: true on the Bash tool call so the server survives
+# Use run_in_background: true on the Shell tool call so the server survives
 # across conversation turns.
 scripts/start-server.sh --project-dir /path/to/project
 ```
-When calling this via the Bash tool, set `run_in_background: true`. Then read `$STATE_DIR/server-info` on the next turn to get the URL and port.
+When calling this via the Shell tool, set `run_in_background: true`. Then read `$STATE_DIR/server-info` on the next turn to get the URL and port.
 
 **Codex:**
 ```bash

@@ -3,27 +3,17 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { selectAgentTools } from "../src/tools/registry";
 
 const toolNames = [
-  "LS",
   "Read",
   "Glob",
   "Grep",
-  "BashStatus",
-  "BashCancel",
-  "GitStatus",
-  "GitDiff",
+  "Shell",
   "WebFetch",
   "WebSearch",
   "ToolSearch",
-  "ScheduleList",
   "OcrExtractText",
   "Write",
   "Edit",
-  "MakeDirectory",
-  "Bash",
-  "PowerShell",
-  "ScheduleCreate",
-  "ScheduleCancel",
-  "CreateSkill",
+  "Schedule",
   "ExitPlanMode",
   "ExitPlanMode",
   "AskUserQuestion",
@@ -55,8 +45,7 @@ describe("selectAgentTools", () => {
     expect(visible).not.toContain("ExitPlanMode");
     expect(visible).not.toContain("ExitPlanMode");
     expect(visible).toContain("Write");
-    expect(visible).toContain("Bash");
-    expect(visible).toContain("PowerShell");
+    expect(visible).toContain("Shell");
     expect(visible).toContain("ToolSearch");
     expect(visible).toContain("AskUserQuestion");
     expect(visible).toContain("Skill");
@@ -68,18 +57,12 @@ describe("selectAgentTools", () => {
   it("draft 阶段只保留只读工具和计划起草辅助工具", () => {
     const visible = names({ planPhase: "draft", viaFeishu: false });
     const allowed = new Set([
-      "LS",
       "Read",
       "Glob",
       "Grep",
-      "BashStatus",
-      "BashCancel",
-      "GitStatus",
-      "GitDiff",
       "WebFetch",
       "WebSearch",
       "ToolSearch",
-      "ScheduleList",
       "ExitPlanMode",
       "AskUserQuestion",
       "Skill",
@@ -94,8 +77,7 @@ describe("selectAgentTools", () => {
     expect(visible).toContain("Read");
     expect(visible).toContain("ToolSearch");
     expect(visible).not.toContain("Write");
-    expect(visible).not.toContain("Bash");
-    expect(visible).not.toContain("PowerShell");
+    expect(visible).not.toContain("Shell");
     expect(visible).not.toContain("TodoWrite");
     expect(visible).not.toContain("TodoRead");
     expect(visible).not.toContain("mcp__demo__write");
@@ -119,9 +101,8 @@ describe("selectAgentTools", () => {
     expect(visible).not.toContain("TodoWrite");
     expect(visible).not.toContain("TodoWrite");
     expect(visible).toContain("Write");
-    expect(visible).toContain("ScheduleCreate");
-    expect(visible).toContain("CreateSkill");
-    expect(visible).toContain("PowerShell");
+    expect(visible).toContain("Schedule");
+    expect(visible).toContain("Shell");
     expect(visible).not.toContain("mcp__demo__write");
   });
 
@@ -144,7 +125,7 @@ describe("selectAgentTools", () => {
     expect(visible).not.toContain("TodoWrite");
     expect(visible).not.toContain("TodoWrite");
     expect(visible).toContain("Write");
-    expect(visible).toContain("ScheduleList");
+    expect(visible).toContain("Schedule");
   });
 
   it("deferred 工具只有被选中后才进入模型工具列表", () => {
@@ -175,7 +156,7 @@ describe("selectAgentTools", () => {
     expect(byName.get("WebSearch")?.executionMode).toBeUndefined();
     expect(byName.get("Read")?.executionMode).toBeUndefined();
     expect(byName.get("Write")?.executionMode).toBe("sequential");
-    expect(byName.get("Bash")?.executionMode).toBe("sequential");
+    expect(byName.get("Shell")?.executionMode).toBe("sequential");
     expect(byName.get("AskUserQuestion")?.executionMode).toBe("sequential");
     expect(byName.get("mcp__demo__write")?.executionMode).toBe("sequential");
   });

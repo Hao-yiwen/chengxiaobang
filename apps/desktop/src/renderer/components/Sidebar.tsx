@@ -298,6 +298,7 @@ function SidebarMoreButton(props: {
     <button
       type="button"
       title={props.title ?? props.label}
+      aria-label={props.title ?? props.label}
       disabled={props.loading}
       onClick={props.onClick}
       className={cn(
@@ -811,6 +812,11 @@ export function Sidebar() {
                     ? t("sidebar.collapseVisibleSessions")
                     : t("sidebar.expandMoreSessions")
                 }
+                title={
+                  expanded
+                    ? t("sidebar.collapseVisibleSessionsTitle")
+                    : t("sidebar.expandMoreSessionsTitle")
+                }
                 onClick={() => void toggleProjectSessionsExpanded(project.id)}
               />
             ) : null}
@@ -947,6 +953,11 @@ export function Sidebar() {
                   ? t("sidebar.collapseVisibleProjects")
                   : t("sidebar.expandMore")
               }
+              title={
+                sidebarProjectsExpanded
+                  ? t("sidebar.collapseVisibleProjectsTitle")
+                  : t("sidebar.expandMoreTitle")
+              }
               onClick={() => void toggleProjectsExpanded()}
             />
           ) : null}
@@ -976,6 +987,11 @@ export function Sidebar() {
                     sidebarUngroupedExpanded
                       ? t("sidebar.collapseVisibleSessions")
                       : t("sidebar.expandMoreSessions")
+                  }
+                  title={
+                    sidebarUngroupedExpanded
+                      ? t("sidebar.collapseVisibleSessionsTitle")
+                      : t("sidebar.expandMoreSessionsTitle")
                   }
                   onClick={() => void toggleUngroupedSessionsExpanded()}
                 />

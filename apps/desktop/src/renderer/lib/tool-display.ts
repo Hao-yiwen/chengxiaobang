@@ -6,13 +6,9 @@ import {
   ClockIcon,
   DocumentIcon,
   EditPencilIcon,
-  FolderIcon,
-  FolderOpenOutlineIcon,
   FoldersIcon,
-  GitBranchIcon,
   GlobeOutlineIcon,
   LabFlaskOutlineIcon,
-  PullRequestOpenIcon,
   SearchIcon,
   SkillIcon,
   TerminalIcon,
@@ -36,16 +32,9 @@ const TOOL_ICONS: Record<string, Icon> = {
   Read: DocumentIcon,
   Write: EditPencilIcon,
   Edit: EditPencilIcon,
-  LS: FolderOpenOutlineIcon,
-  MakeDirectory: FolderIcon,
   Glob: FoldersIcon,
   Grep: SearchIcon,
-  Bash: TerminalIcon,
-  PowerShell: TerminalIcon,
-  BashStatus: TerminalIcon,
-  BashCancel: TerminalIcon,
-  GitStatus: GitBranchIcon,
-  GitDiff: PullRequestOpenIcon,
+  Shell: TerminalIcon,
   WebFetch: GlobeOutlineIcon,
   WebSearch: SearchIcon,
   ToolSearch: SearchIcon,
@@ -54,12 +43,9 @@ const TOOL_ICONS: Record<string, Icon> = {
   TodoWrite: ChecklistPlanIcon,
   AskUserQuestion: ChatBubblesIcon,
   Skill: SkillIcon,
-  ScheduleCreate: ClockIcon,
-  ScheduleList: ClockIcon,
-  ScheduleCancel: ClockIcon,
+  Schedule: ClockIcon,
   Memory: BrainIcon,
-  OcrExtractText: DocumentIcon,
-  CreateSkill: SkillIcon
+  OcrExtractText: DocumentIcon
 };
 
 export const FALLBACK_TOOL_ICON: Icon = LabFlaskOutlineIcon;
@@ -112,16 +98,9 @@ type ToolLineName =
   | "WriteGeneric"
   | "Edit"
   | "EditGeneric"
-  | "LS"
-  | "MakeDirectory"
   | "Glob"
   | "Grep"
-  | "Bash"
-  | "PowerShell"
-  | "BashStatus"
-  | "BashCancel"
-  | "GitStatus"
-  | "GitDiff"
+  | "Shell"
   | "WebFetch"
   | "WebSearch"
   | "ToolSearch"
@@ -130,28 +109,23 @@ type ToolLineName =
   | "TodoWrite"
   | "AskUserQuestion"
   | "Skill"
-  | "CreateSkill"
-  | "ScheduleCreate"
-  | "ScheduleList"
-  | "ScheduleCancel"
+  | "ScheduleAdd"
+  | "ScheduleView"
+  | "ScheduleDelete"
+  | "ScheduleUnknown"
   | "Memory"
   | "OcrExtractText"
   | "fallback";
 
 type ToolLineRunningOnlyName =
-  | "LSGeneric"
-  | "MakeDirectoryGeneric"
   | "GlobGeneric"
   | "GrepGeneric"
-  | "BashGeneric"
-  | "PowerShellGeneric"
+  | "ShellGeneric"
   | "WebFetchGeneric"
   | "WebSearchGeneric"
   | "ToolSearchGeneric"
   | "ExitPlanModeGeneric"
   | "SkillGeneric"
-  | "CreateSkillGeneric"
-  | "ScheduleCreateGeneric"
   | "MemoryGeneric"
   | "fallbackGeneric";
 
@@ -226,18 +200,12 @@ function genericRunningToolLineLabel(toolCall: ToolCall): ToolLineLabel | undefi
   switch (toolCall.name) {
     case "Read":
       return { key: labelKey("chat.toolLineRunning", "ReadGeneric") };
-    case "LS":
-      return { key: labelKey("chat.toolLineRunning", "LSGeneric") };
-    case "MakeDirectory":
-      return { key: labelKey("chat.toolLineRunning", "MakeDirectoryGeneric") };
     case "Glob":
       return { key: labelKey("chat.toolLineRunning", "GlobGeneric") };
     case "Grep":
       return { key: labelKey("chat.toolLineRunning", "GrepGeneric") };
-    case "Bash":
-      return { key: labelKey("chat.toolLineRunning", "BashGeneric") };
-    case "PowerShell":
-      return { key: labelKey("chat.toolLineRunning", "PowerShellGeneric") };
+    case "Shell":
+      return { key: labelKey("chat.toolLineRunning", "ShellGeneric") };
     case "WebFetch":
       return { key: labelKey("chat.toolLineRunning", "WebFetchGeneric") };
     case "WebSearch":
@@ -248,21 +216,13 @@ function genericRunningToolLineLabel(toolCall: ToolCall): ToolLineLabel | undefi
       return { key: labelKey("chat.toolLineRunning", "ExitPlanModeGeneric") };
     case "Skill":
       return { key: labelKey("chat.toolLineRunning", "SkillGeneric") };
-    case "CreateSkill":
-      return { key: labelKey("chat.toolLineRunning", "CreateSkillGeneric") };
-    case "ScheduleCreate":
-      return { key: labelKey("chat.toolLineRunning", "ScheduleCreateGeneric") };
+    case "Schedule":
+      return scheduleToolLineLabel(toolCall.args, "chat.toolLineRunning");
     case "Memory":
       return { key: labelKey("chat.toolLineRunning", "MemoryGeneric") };
-    case "BashStatus":
-    case "BashCancel":
-    case "GitStatus":
-    case "GitDiff":
     case "TodoRead":
     case "TodoWrite":
     case "AskUserQuestion":
-    case "ScheduleList":
-    case "ScheduleCancel":
     case "OcrExtractText":
       return undefined;
     default:
@@ -294,23 +254,15 @@ function toolLineLabelInNamespace(
         ? { key: labelKey(namespace, "Edit"), params: { path: shortenPath(path) } }
         : { key: labelKey(namespace, "EditGeneric") };
     }
-    case "LS":
-    case "MakeDirectory":
-      return { key: labelKey(namespace, name), params: { path: shortenPath(stringArg(args, "path") ?? ".") } };
     case "Glob":
       return { key: labelKey(namespace, "Glob"), params: { pattern: truncateEnd(stringArg(args, "pattern") ?? "", 40) } };
     case "Grep":
       return { key: labelKey(namespace, "Grep"), params: { query: truncateEnd(stringArg(args, "pattern") ?? "", 40) } };
     case "WebSearch":
       return { key: labelKey(namespace, "WebSearch"), params: { query: truncateEnd(stringArg(args, "query") ?? "", 40) } };
-    case "Bash":
+    case "Shell":
       return {
-        key: labelKey(namespace, "Bash"),
-        params: { command: truncateEnd((stringArg(args, "command") ?? "").replace(/\s+/g, " ").trim(), 60) }
-      };
-    case "PowerShell":
-      return {
-        key: labelKey(namespace, "PowerShell"),
+        key: labelKey(namespace, "Shell"),
         params: { command: truncateEnd((stringArg(args, "command") ?? "").replace(/\s+/g, " ").trim(), 60) }
       };
     case "WebFetch":
@@ -326,10 +278,8 @@ function toolLineLabelInNamespace(
       return { key: labelKey(namespace, "TodoWrite") };
     case "Skill":
       return { key: labelKey(namespace, "Skill"), params: { name: stringArg(args, "skill") ?? "" } };
-    case "CreateSkill":
-      return { key: labelKey(namespace, "CreateSkill"), params: { name: stringArg(args, "name") ?? stringArg(args, "url") ?? "" } };
-    case "ScheduleCreate":
-      return { key: labelKey(namespace, "ScheduleCreate"), params: { name: stringArg(args, "name") ?? "" } };
+    case "Schedule":
+      return scheduleToolLineLabel(args, namespace);
     case "Memory":
       return {
         key: labelKey(namespace, "Memory"),
@@ -337,18 +287,30 @@ function toolLineLabelInNamespace(
           path: shortenPath(stringArg(args, "path") ?? stringArg(args, "old_path") ?? "/memories")
         }
       };
-    case "GitStatus":
-    case "GitDiff":
-    case "BashStatus":
-    case "BashCancel":
     case "TodoRead":
     case "AskUserQuestion":
-    case "ScheduleList":
-    case "ScheduleCancel":
     case "OcrExtractText":
       return { key: labelKey(namespace, name) };
     default:
       return { key: labelKey(namespace, "fallback"), params: { name } };
+  }
+}
+
+function scheduleToolLineLabel(
+  args: ToolCall["args"],
+  namespace: ToolLineNamespace
+): ToolLineLabel {
+  switch (stringArg(args, "action")) {
+    case "create":
+      return namespace === "chat.toolLine"
+        ? { key: labelKey(namespace, "ScheduleAdd"), params: { name: stringArg(args, "name") ?? "" } }
+        : { key: labelKey(namespace, "ScheduleAdd") };
+    case "list":
+      return { key: labelKey(namespace, "ScheduleView") };
+    case "cancel":
+      return { key: labelKey(namespace, "ScheduleDelete") };
+    default:
+      return { key: labelKey(namespace, "ScheduleUnknown") };
   }
 }
 

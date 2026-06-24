@@ -85,6 +85,29 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       foreign key (run_id) references runs(id) on delete cascade,
       foreign key (session_id) references sessions(id) on delete cascade
     );
+    create table if not exists model_debug_records (
+      id text primary key,
+      run_id text not null,
+      session_id text not null,
+      user_message_id text,
+      source text not null,
+      attempt_index integer not null,
+      request_index integer not null,
+      provider_id text,
+      provider_kind text,
+      model text,
+      api text,
+      status text not null,
+      request_json text,
+      response_json text,
+      request_bytes integer,
+      response_bytes integer,
+      created_at text not null,
+      updated_at text not null,
+      unique(run_id, attempt_index, request_index),
+      foreign key (run_id) references runs(id) on delete cascade,
+      foreign key (session_id) references sessions(id) on delete cascade
+    );
     create table if not exists tool_calls (
       id text primary key,
       run_id text not null,
@@ -150,6 +173,10 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
       on usage_cost_entries(provider_kind, model);
     create index if not exists idx_usage_cost_billable
       on usage_cost_entries(billable);
+    create index if not exists idx_model_debug_session
+      on model_debug_records(session_id, created_at asc);
+    create index if not exists idx_model_debug_run_attempt
+      on model_debug_records(run_id, attempt_index asc, request_index asc);
     create index if not exists idx_tool_calls_run_updated
       on tool_calls(run_id, updated_at desc);
     create index if not exists idx_scheduled_tasks_enabled_next
@@ -177,6 +204,7 @@ export function initializeSqliteSchema(connection: SqliteConnection): void {
   ensureColumn(connection, "usage_cost_entries", "status_code", "integer");
   ensureColumn(connection, "usage_cost_entries", "error_code", "text");
   ensureColumn(connection, "usage_cost_entries", "error_message", "text");
+  ensureColumn(connection, "model_debug_records", "user_message_id", "text");
   ensureColumn(connection, "sessions", "compacted_up_to_message_id", "text");
   ensureColumn(connection, "sessions", "parent_session_id", "text");
   ensureColumn(connection, "sessions", "fork_message_id", "text");

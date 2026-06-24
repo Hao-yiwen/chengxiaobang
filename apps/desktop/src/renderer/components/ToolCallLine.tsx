@@ -233,7 +233,7 @@ export function ToolFileButton({
 }
 
 function shellCommandDetail(toolCall: ToolCall): string | undefined {
-  if (toolCall.name !== "Bash") {
+  if (toolCall.name !== "Shell") {
     return undefined;
   }
   const command = toolCall.args.command;

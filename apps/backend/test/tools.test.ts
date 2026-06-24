@@ -10,7 +10,6 @@ import { createPlanTools } from "../src/tools/plan-tools";
 import { createScheduleTools } from "../src/tools/schedule-tools";
 import { createShellTools } from "../src/tools/shell-tools";
 import { SHELL_GLOBAL_OUTPUT_DIR } from "../src/tools/shell";
-import { createSkillTools } from "../src/tools/skill-tools";
 import { createTodoTools } from "../src/tools/todo-tools";
 import { createToolSearchTool } from "../src/tools/tool-search-tool";
 import { resolveRgCommand } from "../src/tools/fs-tools";
@@ -79,28 +78,22 @@ describe("builtin agent tools", () => {
     const names = tools.map((tool) => tool.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names).toEqual([
-      "LS",
       "Read",
       "Write",
       "Edit",
-      "MakeDirectory",
       "Glob",
       "Grep",
-      "Bash",
-      "GitStatus",
-      "GitDiff",
-      "BashStatus",
-      "BashCancel",
+      "Shell",
       "WebFetch"
     ]);
   });
 
-  it("registers PowerShell only for Windows shell tool catalogs", () => {
+  it("registers one Shell tool for every platform", () => {
     const windowsNames = createShellTools(dir, { platform: "win32" }).map((tool) => tool.name);
     const macNames = createShellTools(dir, { platform: "darwin" }).map((tool) => tool.name);
 
-    expect(windowsNames).toContain("PowerShell");
-    expect(macNames).not.toContain("PowerShell");
+    expect(windowsNames).toEqual(["Shell"]);
+    expect(macNames).toEqual(["Shell"]);
   });
 
   it("keeps operational tool guidance in tool descriptions and parameter descriptions", () => {
@@ -118,17 +111,13 @@ describe("builtin agent tools", () => {
     ]);
     expectToolGuidance(tools, "Glob", ["不要用 shell 拼等价命令"]);
     expectToolGuidance(tools, "Grep", ["path 可传目录或单个文件", "不要用 shell 拼等价命令"]);
-    expectToolGuidance(tools, "Bash", [
+    expectToolGuidance(tools, "Shell", [
+      "action=run",
       "默认前台等待 15000ms",
       "run_in_background=true",
       "timeout 最长 600000ms",
-      "BashStatus",
-      "BashCancel"
-    ]);
-    expectToolGuidance(createShellTools(dir, { platform: "win32" }), "PowerShell", [
-      "等待、后台、timeout、输出文件",
-      "BashStatus",
-      "BashCancel"
+      "action=status",
+      "action=cancel"
     ]);
 
     const planTools = createPlanTools({
@@ -150,13 +139,8 @@ describe("builtin agent tools", () => {
     ]);
     expectToolGuidance(
       createScheduleTools({ store: {} as never, sessionId: "session_test" }),
-      "ScheduleCreate",
-      ["kind=once", "带时区 ISO 时间 run_at", "不要用 cron 表达一次性任务"]
-    );
-    expectToolGuidance(
-      createSkillTools({ skillMarketService: {} as never }),
-      "CreateSkill",
-      ["GitHub 链接", "口头描述需求", "name + description + content"]
+      "Schedule",
+      ["action=create", "action=list", "action=cancel", "kind=once", "带时区 ISO 时间 run_at"]
     );
   });
 
@@ -266,21 +250,12 @@ describe("builtin agent tools", () => {
       await expect(run(tools, "Read", { file_path: outsideFile })).resolves.toContain(
         "外部技能资源"
       );
-      await expect(run(tools, "LS", { path: outsideDir })).resolves.toContain(
-        "file resource.txt"
-      );
       const createdFile = join(outsideDir, "created.txt");
       await expect(
         run(tools, "Write", { file_path: createdFile, content: "x" })
       ).resolves.toContain("已写入");
       await run(tools, "Edit", { file_path: createdFile, old_string: "x", new_string: "y" });
       await expect(readFile(createdFile, "utf8")).resolves.toBe("y");
-      await expect(
-        run(tools, "MakeDirectory", { path: join(outsideDir, "nested") })
-      ).resolves.toContain("已创建目录");
-      await expect(run(tools, "LS", { path: outsideDir })).resolves.toContain(
-        "dir  nested"
-      );
     } finally {
       await rm(outsideDir, { recursive: true, force: true });
     }
@@ -572,13 +547,6 @@ describe("builtin agent tools", () => {
     ).rejects.toThrow("没有找到要替换的内容");
   });
 
-  it("creates directories and lists them", async () => {
-    await run(tools, "MakeDirectory", { path: "a/b/c" });
-    await expect(run(tools, "LS", { path: "a/b" })).resolves.toContain("c");
-    // LS defaults to the workspace root.
-    await expect(run(tools, "LS", {})).resolves.toContain("a");
-  });
-
   it("rejects binary text operations and oversized writes", async () => {
     await writeFile(join(dir, "archive.zip"), Buffer.from([0, 1, 2, 3]));
 
@@ -672,14 +640,14 @@ describe("builtin agent tools", () => {
   });
 
   it("runs shell commands and throws on non-zero exit", async () => {
-    await expect(run(tools, "Bash", { command: "echo hi" })).resolves.toContain("hi");
-    await expect(run(tools, "Bash", { command: failingShellCommand(3) })).rejects.toThrow(
+    await expect(run(tools, "Shell", { action: "run", command: "echo hi" })).resolves.toContain("hi");
+    await expect(run(tools, "Shell", { action: "run", command: failingShellCommand(3) })).rejects.toThrow(
       "退出码 3"
     );
   });
 
   it("runs shell commands in the workspace directory", async () => {
-    const result = await run(tools, "Bash", { command: printWorkingDirectoryCommand() });
+    const result = await run(tools, "Shell", { action: "run", command: printWorkingDirectoryCommand() });
     expect(await realpath(result.trim())).toBe(await realpath(dir));
   });
 
@@ -691,7 +659,8 @@ describe("builtin agent tools", () => {
       runId: "run_test"
     });
 
-    const result = await run(shellTools, "Bash", {
+    const result = await run(shellTools, "Shell", {
+      action: "run",
       command: delayedEchoCommand("background-done")
     });
     const id = parseBackgroundId(result);
@@ -700,7 +669,7 @@ describe("builtin agent tools", () => {
     expect(result).toContain("已转入后台继续运行");
     expect(outputPath.startsWith(join(shellOutputDir, "run_test"))).toBe(true);
     await waitFor(async () => {
-      const status = await run(shellTools, "BashStatus", { id });
+      const status = await run(shellTools, "Shell", { action: "status", id });
       expect(status).toContain("状态：completed");
       expect(status).toContain(outputPath);
     });
@@ -714,7 +683,8 @@ describe("builtin agent tools", () => {
     const shellTools = createShellTools(dir, { backgroundAfterMs: 10_000 });
     const startedAt = Date.now();
 
-    const result = await run(shellTools, "Bash", {
+    const result = await run(shellTools, "Shell", {
+      action: "run",
       command: longCommandWithTrailingEcho("should-not-print"),
       run_in_background: true
     });
@@ -724,7 +694,7 @@ describe("builtin agent tools", () => {
     expect(Date.now() - startedAt).toBeLessThan(500);
     expect(result).toContain("run_in_background=true");
     expect(outputPath).toMatch(/^\.chengxiaobang\/shell-outputs\/shell_/);
-    const cancelled = await run(shellTools, "BashCancel", { id });
+    const cancelled = await run(shellTools, "Shell", { action: "cancel", id });
     expect(cancelled).toContain("状态：aborted");
     await expect(readFile(join(dir, outputPath), "utf8")).resolves.not.toContain(
       "should-not-print"
@@ -734,7 +704,8 @@ describe("builtin agent tools", () => {
   it("waits for blocking shell commands before moving them to the background", async () => {
     const shellTools = createShellTools(dir, { backgroundAfterMs: 50 });
 
-    const result = await run(shellTools, "Bash", {
+    const result = await run(shellTools, "Shell", {
+      action: "run",
       command: shortDelayedEchoCommand("blocking-done"),
       timeout: 1_000
     });
@@ -743,20 +714,21 @@ describe("builtin agent tools", () => {
     expect(result).not.toContain("后台命令 ID");
   });
 
-  it("rejects invalid Bash timeout values with a clear message", async () => {
+  it("rejects invalid Shell timeout values with a clear message", async () => {
     const shellTools = createShellTools(dir);
 
     await expect(
-      run(shellTools, "Bash", { command: "echo hi", timeout: 600_001 })
+      run(shellTools, "Shell", { action: "run", command: "echo hi", timeout: 600_001 })
     ).rejects.toThrow("timeout 必须是 1 到 600000");
     await expect(
-      run(shellTools, "Bash", { command: "echo hi", timeout: "soon" })
+      run(shellTools, "Shell", { action: "run", command: "echo hi", timeout: "soon" })
     ).rejects.toThrow("timeout 必须是 1 到 600000");
   });
 
-  it("uses Bash.timeout as the foreground wait window before moving to the background", async () => {
+  it("uses Shell timeout as the foreground wait window before moving to the background", async () => {
     const shellTools = createShellTools(dir, { backgroundAfterMs: 10_000 });
-    const result = await run(shellTools, "Bash", {
+    const result = await run(shellTools, "Shell", {
+      action: "run",
       command: delayedEchoCommand("timeout-background"),
       timeout: 50
     });
@@ -766,7 +738,7 @@ describe("builtin agent tools", () => {
     expect(result).toContain("timeout=50ms");
     expect(outputPath).toMatch(/^\.chengxiaobang\/shell-outputs\/shell_/);
     await waitFor(async () => {
-      const status = await run(shellTools, "BashStatus", { id });
+      const status = await run(shellTools, "Shell", { action: "status", id });
       expect(status).toContain("状态：completed");
       expect(status).toContain(outputPath);
     });
@@ -778,16 +750,17 @@ describe("builtin agent tools", () => {
   it("cancels a background shell command by id", async () => {
     const shellTools = createShellTools(dir, { backgroundAfterMs: 50 });
 
-    const result = await run(shellTools, "Bash", {
+    const result = await run(shellTools, "Shell", {
+      action: "run",
       command: longCommandWithTrailingEcho("should-not-print")
     });
     const id = parseBackgroundId(result);
     const outputPath = parseOutputPath(result);
 
-    const cancelled = await run(shellTools, "BashCancel", { id });
+    const cancelled = await run(shellTools, "Shell", { action: "cancel", id });
     expect(cancelled).toContain("状态：aborted");
     await waitFor(async () => {
-      const status = await run(shellTools, "BashStatus", { id });
+      const status = await run(shellTools, "Shell", { action: "status", id });
       expect(status).toContain("状态：aborted");
     });
     await expect(readFile(join(dir, outputPath), "utf8")).resolves.not.toContain("should-not-print");
@@ -846,15 +819,11 @@ describe("builtin agent tools", () => {
 describe("tool approval policy", () => {
   it("marks side-effect-capable tools for approval-aware contexts", () => {
     expect(requiresApproval("Write")).toBe(true);
-    expect(requiresApproval("Bash")).toBe(true);
-    expect(requiresApproval("PowerShell")).toBe(true);
-    expect(requiresApproval("ScheduleCreate")).toBe(true);
+    expect(requiresApproval("Shell")).toBe(false);
+    expect(requiresApproval("Schedule")).toBe(false);
     expect(requiresApproval("ToolSearch")).toBe(false);
-    expect(requiresApproval("BashStatus")).toBe(false);
-    expect(requiresApproval("BashCancel")).toBe(false);
     expect(requiresApproval("Read")).toBe(false);
     expect(requiresApproval("WebSearch")).toBe(false);
-    expect(requiresApproval("GitStatus")).toBe(false);
   });
 
   it("classifies ordinary writes as low risk but keeps sensitive writes gated", () => {
@@ -926,26 +895,25 @@ describe("tool approval policy", () => {
   });
 
   it("classifies routine shell commands separately from dangerous shell commands", () => {
-    const workspacePath = join(tmpdir(), "cxb-risk-workspace");
-    expect(assessToolApprovalRisk("Bash", { command: "pwd" })).toMatchObject({
+    expect(assessToolApprovalRisk("Shell", { action: "run", command: "pwd" })).toMatchObject({
       risk: "low",
       requiresGate: false
     });
-    expect(assessToolApprovalRisk("PowerShell", { command: "Get-ChildItem" })).toMatchObject({
+    expect(assessToolApprovalRisk("Shell", { action: "run", command: "Get-ChildItem" })).toMatchObject({
       risk: "low",
       requiresGate: false
     });
-    expect(assessToolApprovalRisk("Bash", { command: "npm run dev" })).toMatchObject({
+    expect(assessToolApprovalRisk("Shell", { action: "run", command: "npm run dev" })).toMatchObject({
       risk: "low",
       requiresGate: false
     });
-    expect(assessToolApprovalRisk("Bash", { command: "rm -rf build" })).toMatchObject({
+    expect(assessToolApprovalRisk("Shell", { action: "run", command: "rm -rf build" })).toMatchObject({
       risk: "high",
       requiresGate: true,
       smartVerdict: "deny"
     });
     expect(
-      assessToolApprovalRisk("PowerShell", { command: "Remove-Item -Recurse build" })
+      assessToolApprovalRisk("Shell", { action: "run", command: "Remove-Item -Recurse build" })
     ).toMatchObject({
       risk: "high",
       requiresGate: true,
@@ -957,29 +925,54 @@ describe("tool approval policy", () => {
       "format C:",
       'powershell -NoProfile -Command "Remove-Item -Recurse build"'
     ]) {
-      expect(assessToolApprovalRisk("Bash", { command })).toMatchObject({
+      expect(assessToolApprovalRisk("Shell", { action: "run", command })).toMatchObject({
         risk: "high",
         requiresGate: true,
         smartVerdict: "deny"
       });
     }
     for (const command of ["taskkill /PID 1234 /T /F", "Stop-Process -Id 1234"]) {
-      expect(assessToolApprovalRisk("Bash", { command })).toMatchObject({
+      expect(assessToolApprovalRisk("Shell", { action: "run", command })).toMatchObject({
         risk: "high",
         requiresGate: true,
         smartVerdict: "ask_user"
       });
     }
     for (const command of ["dir", "type package.json", "where node"]) {
-      expect(assessToolApprovalRisk("Bash", { command })).toMatchObject({
+      expect(assessToolApprovalRisk("Shell", { action: "run", command })).toMatchObject({
         risk: "low",
         requiresGate: false
       });
     }
-    expect(assessToolApprovalRisk("Bash", { command: "echo hi; echo bye" })).toMatchObject({
+    expect(assessToolApprovalRisk("Shell", { action: "run", command: "echo hi; echo bye" })).toMatchObject({
       risk: "medium",
       requiresGate: true,
       smartVerdict: "allow"
+    });
+    expect(assessToolApprovalRisk("Shell", { action: "status", id: "shell_1" })).toMatchObject({
+      risk: "low",
+      requiresGate: false
+    });
+    expect(assessToolApprovalRisk("Shell", { action: "cancel", id: "shell_1" })).toMatchObject({
+      risk: "low",
+      requiresGate: false
+    });
+  });
+
+  it("classifies schedule actions by whether they mutate tasks", () => {
+    expect(assessToolApprovalRisk("Schedule", { action: "list" })).toMatchObject({
+      risk: "low",
+      requiresGate: false
+    });
+    expect(assessToolApprovalRisk("Schedule", { action: "create", name: "AI 日报" })).toMatchObject({
+      risk: "medium",
+      requiresGate: true,
+      smartVerdict: "ask_user"
+    });
+    expect(assessToolApprovalRisk("Schedule", { action: "cancel", id: "task_1" })).toMatchObject({
+      risk: "medium",
+      requiresGate: true,
+      smartVerdict: "ask_user"
     });
   });
 });

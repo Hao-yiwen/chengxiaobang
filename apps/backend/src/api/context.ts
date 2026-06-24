@@ -33,6 +33,7 @@ export interface AppOptions {
   usageCostLedgerService?: UsageCostLedgerService;
   taskScheduler?: TaskScheduler;
   eventHub?: EventHub<AppEvent>;
+  modelDebugEnabled?: boolean;
 }
 
 export type AppContext = Omit<AppOptions, "usageCostLedgerService" | "slashCommandService" | "eventHub"> & {

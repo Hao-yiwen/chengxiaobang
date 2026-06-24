@@ -32,7 +32,7 @@ function pendingTool(partial: Partial<ToolCall> = {}): ToolCall {
   return {
     id: "tool_1",
     runId: "run_1",
-    name: "Bash",
+    name: "Shell",
     args: { command: "rm -rf dist" },
     status: "pending_approval",
     createdAt: "2026-06-13T00:00:00.000Z",

@@ -7,7 +7,8 @@ import {
   SpinnerRingIcon,
   type FileIconSvgProps
 } from "@/assets/file-type-icons";
-import { useEffect, useMemo, useState } from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   deriveTodoState,
@@ -214,17 +215,93 @@ function TodoRow({ item, label }: { item: TodoItem; label: string }) {
                 : "text-muted-foreground"
           )}
         />
-        <p
-          className={cn(
-            "min-w-0 flex-1 text-body-xs",
-            inProgress
-              ? "font-medium [color:rgb(var(--foreground))]"
-              : "[color:rgb(var(--muted-foreground))]"
-          )}
-        >
-          {item.content}
-        </p>
+        <TodoContent content={item.content} active={inProgress} />
       </div>
     </li>
+  );
+}
+
+function TodoContent({ content, active }: { content: string; active: boolean }) {
+  const contentRef = useRef<HTMLParagraphElement>(null);
+  const [truncated, setTruncated] = useState(false);
+
+  useLayoutEffect(() => {
+    const element = contentRef.current;
+    if (!element) {
+      return;
+    }
+    const updateTruncated = () => {
+      const clampedHeight = element.clientHeight;
+      const measure = element.cloneNode(true) as HTMLElement;
+      const width = element.getBoundingClientRect().width || element.clientWidth;
+      measure.removeAttribute("data-progress-todo-content");
+      measure.setAttribute("data-progress-todo-measure", content);
+      measure.classList.remove("line-clamp-2");
+      // 用隐藏克隆测完整高度，避免 line-clamp 影响 scrollHeight。
+      Object.assign(measure.style, {
+        position: "absolute",
+        visibility: "hidden",
+        pointerEvents: "none",
+        zIndex: "-1",
+        display: "block",
+        overflow: "visible",
+        height: "auto",
+        maxHeight: "none",
+        minWidth: "0",
+        whiteSpace: "normal"
+      });
+      measure.style.setProperty("-webkit-line-clamp", "unset");
+      measure.style.setProperty("-webkit-box-orient", "initial");
+      if (width > 0) {
+        measure.style.width = `${width}px`;
+        measure.style.maxWidth = `${width}px`;
+      }
+      document.body.appendChild(measure);
+      const naturalHeight = measure.scrollHeight;
+      measure.remove();
+      const nextTruncated = naturalHeight > clampedHeight + 1;
+      setTruncated((current) => (current === nextTruncated ? current : nextTruncated));
+    };
+    updateTruncated();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateTruncated);
+      return () => window.removeEventListener("resize", updateTruncated);
+    }
+    const resizeObserver = new ResizeObserver(updateTruncated);
+    resizeObserver.observe(element);
+    return () => resizeObserver.disconnect();
+  }, [content]);
+
+  const text = (
+    <p
+      ref={contentRef}
+      data-progress-todo-content={content}
+      data-progress-todo-truncated={truncated ? "true" : "false"}
+      className={cn(
+        "line-clamp-2 min-w-0 flex-1 break-words text-body-xs",
+        active
+          ? "font-medium [color:rgb(var(--foreground))]"
+          : "[color:rgb(var(--muted-foreground))]"
+      )}
+    >
+      {content}
+    </p>
+  );
+
+  if (!truncated) {
+    return text;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{text}</TooltipTrigger>
+      <TooltipContent
+        align="start"
+        side="left"
+        className="max-w-[240px] whitespace-normal break-words text-left leading-5"
+      >
+        {content}
+      </TooltipContent>
+    </Tooltip>
   );
 }

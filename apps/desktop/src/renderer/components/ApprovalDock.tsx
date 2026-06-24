@@ -305,10 +305,10 @@ function ApprovalCard({
   );
 }
 
-/** Bash → 近黑命令块；Edit/Write → 路径 + diff；其余 → 原始 JSON 参数。 */
+/** Shell → 近黑命令块；Edit/Write → 路径 + diff；其余 → 原始 JSON 参数。 */
 function ApprovalPreview({ toolCall }: { toolCall: ToolCall }) {
   const { t } = useTranslation();
-  if (toolCall.name === "Bash" && typeof toolCall.args.command === "string") {
+  if (toolCall.name === "Shell" && typeof toolCall.args.command === "string") {
     return (
       <div className="max-h-[128px] overflow-auto rounded-md border border-border bg-canvas px-3 py-2 [scrollbar-gutter:stable]">
         <p className="whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">

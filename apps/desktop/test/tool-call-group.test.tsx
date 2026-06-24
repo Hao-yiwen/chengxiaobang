@@ -34,7 +34,7 @@ describe("ToolCallGroup", () => {
         toolCalls={[
           toolCall({ name: "Read" }),
           toolCall({ name: "Read", args: { file_path: "b.ts" } }),
-          toolCall({ name: "Bash", args: { command: "pnpm test" } })
+          toolCall({ name: "Shell", args: { command: "pnpm test" } })
         ]}
       />
     );
@@ -67,7 +67,7 @@ describe("ToolCallGroup", () => {
       <ToolCallGroup
         toolCalls={[
           toolCall({ name: "Read" }),
-          toolCall({ name: "Bash", args: { command: "pnpm dev" }, status: "running" })
+          toolCall({ name: "Shell", args: { command: "pnpm dev" }, status: "running" })
         ]}
       />
     );
@@ -148,7 +148,7 @@ describe("ToolCallGroup", () => {
       <ToolCallGroup
         toolCalls={[
           toolCall({ name: "Read" }),
-          toolCall({ name: "Bash", args: { command: "x" }, status: "failed", result: "boom" })
+          toolCall({ name: "Shell", args: { command: "x" }, status: "failed", result: "boom" })
         ]}
       />
     );
@@ -168,7 +168,7 @@ describe("ToolCallGroup", () => {
 
     rerender(
       <ToolCallGroup
-        toolCalls={[first, second, toolCall({ name: "Bash", args: { command: "pnpm test" } })]}
+        toolCalls={[first, second, toolCall({ name: "Shell", args: { command: "pnpm test" } })]}
       />
     );
     expect(screen.getAllByText("读取")).toHaveLength(2);
@@ -181,7 +181,7 @@ describe("ToolCallGroup", () => {
       <ToolCallGroup
         toolCalls={[
           toolCall({ name: "Read", args: { file_path: "src/index.ts" } }),
-          toolCall({ name: "Bash", args: { command: "ls" } })
+          toolCall({ name: "Shell", args: { command: "ls" } })
         ]}
         onOpenFile={onOpenFile}
       />

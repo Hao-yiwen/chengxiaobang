@@ -362,6 +362,7 @@ export function createUiActions(set: AppStoreSet, get: AppStoreGet): Partial<App
           messages: [],
           toolHistory: [],
           runHistory: [],
+          modelDebugRecords: [],
           streamText: "",
           thinking: "",
           thinkingStartedAt: undefined,

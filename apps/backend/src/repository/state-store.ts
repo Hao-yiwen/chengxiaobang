@@ -3,6 +3,7 @@ import type {
   FileChange,
   Message,
   MessageFeedback,
+  ModelDebugRecord,
   Project,
   ProviderConfig,
   ProviderKind,
@@ -153,6 +154,23 @@ export interface UsageCostEntryFilter {
   finalizedOnly?: boolean;
 }
 
+export interface UpsertModelDebugRecordInput {
+  id?: string;
+  runId: string;
+  sessionId: string;
+  userMessageId?: string;
+  source: ModelDebugRecord["source"];
+  attemptIndex: number;
+  requestIndex: number;
+  providerId?: string;
+  providerKind?: string;
+  model?: string;
+  api?: string;
+  status: ModelDebugRecord["status"];
+  request?: unknown;
+  response?: unknown;
+}
+
 export interface UpdateSessionInput {
   title?: string;
   /** undefined 保留当前绑定；null 解除项目文件夹绑定。 */
@@ -266,6 +284,8 @@ export interface StateStore {
   upsertUsageCostEntry(input: UpsertUsageCostEntryInput): Promise<UsageCostEntry>;
   listUsageCostEntries(filter?: UsageCostEntryFilter): Promise<UsageCostEntry[]>;
   getSessionUsageCostCny(sessionId: string): Promise<number>;
+  upsertModelDebugRecord(input: UpsertModelDebugRecordInput): Promise<ModelDebugRecord>;
+  listModelDebugRecordsForSession(sessionId: string): Promise<ModelDebugRecord[]>;
   listToolCallsForSession(sessionId: string): Promise<ToolCall[]>;
   listProviders(): Promise<ProviderConfig[]>;
   getProvider(id: string): Promise<ProviderConfig | undefined>;

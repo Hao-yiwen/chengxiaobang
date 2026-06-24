@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { messageSchema, type Message } from "./message";
+import { modelDebugRecordSchema, type ModelDebugRecord } from "./model-debug";
 import { reasoningModeSchema, type ReasoningMode } from "./model";
 import { tokenUsageSchema, type TokenUsage } from "./model";
 import { sessionSchema, type Session } from "./session";
@@ -23,6 +24,7 @@ export type ScheduledTaskTrigger = "schedule" | "manual";
  * - `delta`：按 text/thinking 通道流式输出模型增量。
  * - `plan_delta`：计划模式下 ExitPlanMode 工具参数里的 plan 文本增量。
  * - `message`：传递已持久化消息（用户回显、assistant 轮次，以及 abort 时保留的部分回答）。
+ * - `model_debug`：开发模式下传递本轮实际发给模型厂商的请求/响应调试记录。
  * - `tool_call`：每次工具调用状态迁移都会触发，status 字段承载状态机。
  * - `session_updated`：传递 run 中途更新的会话元数据，让客户端不必等 run 结束再刷新。
  * - `run_end`：一个 run 的最终事件。
@@ -50,6 +52,7 @@ export type StreamEvent =
       updatedAt: string;
     }
   | { type: "message"; runId: string; message: Message }
+  | { type: "model_debug"; runId: string; record: ModelDebugRecord }
   | { type: "tool_activity"; runId: string; activity: ToolActivity }
   | { type: "tool_call"; runId: string; toolCall: ToolCall }
   | { type: "session_updated"; runId: string; session: Session }
@@ -121,6 +124,11 @@ export const streamEventSchema = z.discriminatedUnion("type", [
     type: z.literal("message"),
     runId: z.string().min(1),
     message: messageSchema
+  }),
+  z.object({
+    type: z.literal("model_debug"),
+    runId: z.string().min(1),
+    record: modelDebugRecordSchema
   }),
   z.object({
     type: z.literal("tool_activity"),

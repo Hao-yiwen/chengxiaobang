@@ -109,7 +109,7 @@ describe("buildAgentMessages", () => {
         role: "assistant",
         content: "",
         payload: assistantPayload(
-          [{ type: "toolCall", id: "call_lost", name: "Bash", arguments: { command: "ls" } }],
+          [{ type: "toolCall", id: "call_lost", name: "Shell", arguments: { action: "run", command: "ls" } }],
           "toolUse"
         )
       })

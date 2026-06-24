@@ -7,7 +7,7 @@ Skills use Claude Code tool names. When you encounter these in a skill, use your
 | `Read` (file reading) | `view` |
 | `Write` (file creation) | `create` |
 | `Edit` (file editing) | `edit` |
-| `Bash` (run commands) | `bash` |
+| `Shell` (run commands) | `bash` |
 | `Grep` (search file content) | `grep` |
 | `Glob` (search files by name) | `glob` |
 | `Skill` tool (invoke a skill) | `skill` |

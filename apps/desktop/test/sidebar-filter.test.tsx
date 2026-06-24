@@ -257,8 +257,13 @@ describe("sidebar sessions", () => {
     expect(sidebar.queryByText("项目0 会话6")).not.toBeInTheDocument();
     expect(sidebar.getByText("普通会话5")).toBeInTheDocument();
     expect(sidebar.queryByText("普通会话6")).not.toBeInTheDocument();
+    expect(sidebar.getByRole("button", { name: "展开更多项目" })).toHaveTextContent("...");
+    expect(sidebar.getAllByRole("button", { name: "展开更多对话" })[0]).toHaveTextContent(
+      "展开"
+    );
+    expect(sidebar.queryByText("... 展开")).not.toBeInTheDocument();
 
-    fireEvent.click(sidebar.getAllByText("... 展开")[0]!);
+    fireEvent.click(sidebar.getAllByRole("button", { name: "展开更多对话" })[0]!);
     expect(await sidebar.findByText("项目0 会话6")).toBeInTheDocument();
     const projectSessionSnapshots = await collectSnapshotsDuringReload((state) =>
       state.sessions.map((item) => item.title)
@@ -267,12 +272,12 @@ describe("sidebar sessions", () => {
     expect(projectSessionSnapshots.every((titles) => titles.includes("项目0 会话6"))).toBe(true);
     await reloadSidebarData();
     expect(await sidebar.findByText("项目0 会话6")).toBeInTheDocument();
-    fireEvent.click(sidebar.getAllByText("折叠")[0]!);
+    fireEvent.click(sidebar.getByRole("button", { name: "折叠更多对话" }));
     await waitFor(() => expect(sidebar.queryByText("项目0 会话6")).not.toBeInTheDocument());
     await reloadSidebarData();
     await waitFor(() => expect(sidebar.queryByText("项目0 会话6")).not.toBeInTheDocument());
 
-    fireEvent.click(sidebar.getAllByText("... 展开")[1]!);
+    fireEvent.click(sidebar.getByRole("button", { name: "展开更多项目" }));
     expect(await sidebar.findByText("项目4")).toBeInTheDocument();
     const projectSnapshots = await collectSnapshotsDuringReload((state) =>
       state.projects.map((item) => item.name)
@@ -281,11 +286,11 @@ describe("sidebar sessions", () => {
     expect(projectSnapshots.every((names) => names.includes("项目4"))).toBe(true);
     await reloadSidebarData();
     expect(await sidebar.findByText("项目4")).toBeInTheDocument();
-    fireEvent.click(sidebar.getAllByText("折叠")[0]!);
+    fireEvent.click(sidebar.getByRole("button", { name: "折叠更多项目" }));
     await reloadSidebarData();
     await waitFor(() => expect(sidebar.queryByText("项目4")).not.toBeInTheDocument());
 
-    const ordinaryExpandButtons = sidebar.getAllByText("... 展开");
+    const ordinaryExpandButtons = sidebar.getAllByRole("button", { name: "展开更多对话" });
     fireEvent.click(ordinaryExpandButtons[ordinaryExpandButtons.length - 1]!);
     expect(await sidebar.findByText("普通会话6")).toBeInTheDocument();
     const ordinarySessionSnapshots = await collectSnapshotsDuringReload((state) =>
@@ -295,7 +300,7 @@ describe("sidebar sessions", () => {
     expect(ordinarySessionSnapshots.every((titles) => titles.includes("普通会话6"))).toBe(true);
     await reloadSidebarData();
     expect(await sidebar.findByText("普通会话6")).toBeInTheDocument();
-    const collapseButtons = sidebar.getAllByText("折叠");
+    const collapseButtons = sidebar.getAllByRole("button", { name: "折叠更多对话" });
     fireEvent.click(collapseButtons[collapseButtons.length - 1]!);
     await waitFor(() => expect(sidebar.queryByText("普通会话6")).not.toBeInTheDocument());
     await reloadSidebarData();
@@ -306,11 +311,11 @@ describe("sidebar sessions", () => {
     render(<App client={createPagedClient()} />);
     const sidebar = within(await screen.findByTestId("app-sidebar"));
 
-    fireEvent.click(sidebar.getAllByText("... 展开")[0]!);
+    fireEvent.click(sidebar.getAllByRole("button", { name: "展开更多对话" })[0]!);
     expect(await sidebar.findByText("项目0 会话6")).toBeInTheDocument();
-    fireEvent.click(sidebar.getAllByText("... 展开")[0]!);
+    fireEvent.click(sidebar.getByRole("button", { name: "展开更多项目" }));
     expect(await sidebar.findByText("项目4")).toBeInTheDocument();
-    const ordinaryExpandButtons = sidebar.getAllByText("... 展开");
+    const ordinaryExpandButtons = sidebar.getAllByRole("button", { name: "展开更多对话" });
     fireEvent.click(ordinaryExpandButtons[ordinaryExpandButtons.length - 1]!);
     expect(await sidebar.findByText("普通会话6")).toBeInTheDocument();
 
@@ -322,9 +327,9 @@ describe("sidebar sessions", () => {
       button: 0,
       ctrlKey: false
     });
-    fireEvent.click(await screen.findByText(/按最近使用|By recent use/));
+    fireEvent.click(await screen.findByText(/按创建时间|By created time/));
 
-    await waitFor(() => expect(useAppStore.getState().projectSortMode).toBe("recent"));
+    await waitFor(() => expect(useAppStore.getState().projectSortMode).toBe("created"));
     expect(useAppStore.getState().sidebarProjectsExpanded).toBe(false);
     expect(useAppStore.getState().sidebarExpandedProjectSessionIds).toEqual({});
     expect(useAppStore.getState().sidebarUngroupedExpanded).toBe(false);

@@ -6,9 +6,7 @@ import { createShellTools } from "./shell-tools";
 import { createWebTools } from "./web-tools";
 import type { WebFetchRuntime } from "./web-fetch";
 import { createMemoryTools } from "./memory-tools";
-import { createSkillTools } from "./skill-tools";
 import { createOcrTools, type OcrToolRuntime } from "./ocr-tools";
-import type { SkillMarketService } from "./skill-market-service";
 import { isMcpToolName } from "../mcp/mcp-tool-bridge";
 
 export type PlanPhase = "none" | "draft" | "execute";
@@ -73,8 +71,6 @@ export function createAgentTools(
     webFetch?: WebFetchRuntime;
     /** 长期记忆的落盘目录；提供时注册 memory 工具。 */
     memoryDir?: string;
-    /** 技能市场服务；提供时注册 CreateSkill 工具（对话内创建/安装技能）。 */
-    skillMarketService?: SkillMarketService;
     /** OCR 工具运行时；提供后注册按需 OCR 只读工具。 */
     ocr?: OcrToolRuntime;
     /** 当前 run 模型的输入能力；用于 Read 图片时按模型能力返回 image 或文本提示。 */
@@ -96,9 +92,6 @@ export function createAgentTools(
     ...createWebTools(options.webSearch, options.webFetch),
     ...(options.ocr ? createOcrTools(workspacePath, options.ocr) : []),
     ...(options.memoryDir ? createMemoryTools(options.memoryDir) : []),
-    ...(options.skillMarketService
-      ? createSkillTools({ skillMarketService: options.skillMarketService })
-      : []),
     ...(options.mcpTools ?? [])
   ];
 }

@@ -38,7 +38,7 @@ export function assessToolApprovalRisk(
     };
   }
 
-  if (toolName === "Write" || toolName === "Edit" || toolName === "MakeDirectory") {
+  if (toolName === "Write" || toolName === "Edit") {
     const path =
       typeof args.file_path === "string"
         ? args.file_path
@@ -68,7 +68,22 @@ export function assessToolApprovalRisk(
     };
   }
 
-  if (toolName === "Bash" || toolName === "PowerShell") {
+  if (toolName === "Shell") {
+    const action = typeof args.action === "string" ? args.action : "run";
+    if (action === "status") {
+      return {
+        risk: "low",
+        requiresGate: false,
+        reason: "只查询应用创建的后台命令状态，可直接执行。"
+      };
+    }
+    if (action === "cancel") {
+      return {
+        risk: "low",
+        requiresGate: false,
+        reason: "只终止应用创建的后台命令 ID，可直接执行。"
+      };
+    }
     const command = typeof args.command === "string" ? args.command : "";
     const dangerous = dangerousShellReason(command);
     if (dangerous) {
@@ -103,21 +118,23 @@ export function assessToolApprovalRisk(
     };
   }
 
-  if (toolName === "ScheduleCreate" || toolName === "ScheduleCancel") {
+  if (toolName === "Schedule") {
+    const action = typeof args.action === "string" ? args.action : "";
+    if (action === "list") {
+      return {
+        risk: "low",
+        requiresGate: false,
+        reason: "只查看后台定时任务列表，可直接执行。"
+      };
+    }
     return {
       risk: "medium",
       requiresGate: true,
       smartVerdict: "ask_user",
-      reason: "工具会改变后台定时任务，需要你确认。"
-    };
-  }
-
-  if (toolName === "CreateSkill") {
-    return {
-      risk: "medium",
-      requiresGate: true,
-      smartVerdict: "ask_user",
-      reason: "工具会安装或创建技能并改变后续可用能力，需要你确认。"
+      reason:
+        action === "create" || action === "cancel"
+          ? "工具会改变后台定时任务，需要你确认。"
+          : "定时任务操作不明确，需要你确认。"
     };
   }
 

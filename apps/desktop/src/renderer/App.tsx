@@ -26,7 +26,6 @@ import {
 import { RightPanelSwitch } from "./components/right-panel/RightPanelSwitch";
 import { SettingsView } from "./components/SettingsView";
 import { SessionActionsMenu } from "./components/SessionActionsMenu";
-import { SessionDebugButton } from "./components/SessionDebugButton";
 import { SetupDialog } from "./components/SetupDialog";
 import { Sidebar, SidebarToggle } from "./components/Sidebar";
 import { PluginsView } from "./components/PluginsView";
@@ -36,7 +35,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useThemeController } from "@/hooks/use-theme";
 import { useI18nController } from "@/hooks/use-i18n";
 import type { ApiClient } from "@/lib/api";
-import { shouldShowSessionDebugButton } from "@/lib/runtime-flags";
 import { cn } from "@/lib/utils";
 import { selectActiveSession, useAppStore } from "@/store";
 
@@ -111,7 +109,6 @@ export function App(props: { client?: ApiClient }) {
   // 避免从会话回首页时内容先按「扣掉右栏宽度」居中再跳回全宽居中。
   const showRightPanel = view === "chat" || (view === "home" && rightPanelOpen);
   const rightPanelControlsHidden = rightPanelLayoutActive || rightPanelTriggerHiding;
-  const showSessionDebugButton = import.meta.env.DEV && shouldShowSessionDebugButton();
 
   useThemeController();
   useI18nController();
@@ -341,7 +338,6 @@ export function App(props: { client?: ApiClient }) {
                       )}
                     >
                       <OpenInIdeButton />
-                      {showSessionDebugButton ? <SessionDebugButton /> : null}
                       <RightPanelSwitch onToggle={handleRightPanelToggle} />
                     </div>
                   ) : null}

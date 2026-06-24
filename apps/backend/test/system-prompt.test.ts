@@ -15,9 +15,9 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("<artifacts><artifact path=\"page.html\" />");
     expect(prompt).toContain("不要放进 Markdown 代码块");
     expect(prompt).not.toContain("TodoWrite");
-    expect(prompt).not.toContain("Bash 默认前台短等待");
-    expect(prompt).not.toContain("先用 LS / Glob / Grep / Read");
-    expect(prompt).not.toContain("ScheduleCreate");
+    expect(prompt).not.toContain("默认前台短等待");
+    expect(prompt).not.toContain("先用基础文件工具");
+    expect(prompt).not.toContain("Schedule");
     expect(prompt).not.toContain("create_pptx");
     expect(prompt).not.toContain("create_docx");
     expect(prompt).not.toContain("create_xlsx");

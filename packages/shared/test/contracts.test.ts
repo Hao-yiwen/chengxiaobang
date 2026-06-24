@@ -163,15 +163,9 @@ describe("toolNameSchema", () => {
       "Read",
       "Write",
       "Edit",
-      "LS",
-      "MakeDirectory",
       "Glob",
       "Grep",
-      "Bash",
-      "BashStatus",
-      "BashCancel",
-      "GitStatus",
-      "GitDiff",
+      "Shell",
       "WebFetch",
       "WebSearch",
       "ToolSearch",
@@ -180,13 +174,9 @@ describe("toolNameSchema", () => {
       "Skill",
       "TodoRead",
       "TodoWrite",
-      "CreateSkill",
-      "ScheduleCreate",
-      "ScheduleList",
-      "ScheduleCancel",
+      "Schedule",
       "Memory",
-      "OcrExtractText",
-      "PowerShell"
+      "OcrExtractText"
     ]) {
       expect(toolNameSchema.parse(name)).toBe(name);
     }
@@ -624,11 +614,35 @@ describe("session 契约", () => {
 });
 
 describe("streamEventSchema", () => {
-  it("解析线上事件模型的 8 种事件", () => {
+  it("解析线上事件模型的 10 种事件", () => {
     const events: StreamEvent[] = [
       { type: "setup_error", error: "请先配置至少一个模型" },
       { type: "run_started", runId: "run_1", sessionId: "session_1" },
       { type: "message", runId: "run_1", message },
+      {
+        type: "model_debug",
+        runId: "run_1",
+        record: {
+          id: "model_debug_1",
+          runId: "run_1",
+          sessionId: "session_1",
+          userMessageId: "message_user_1",
+          source: "agent",
+          attemptIndex: 0,
+          requestIndex: 0,
+          providerId: "deepseek",
+          providerKind: "deepseek",
+          model: "deepseek-chat",
+          api: "openai-completions",
+          status: "completed",
+          request: { model: "deepseek-chat", messages: [] },
+          response: { status: 200, assistantMessage: { role: "assistant", content: [] } },
+          requestBytes: 42,
+          responseBytes: 64,
+          createdAt: "2026-06-11T00:00:00.000Z",
+          updatedAt: "2026-06-11T00:00:01.000Z"
+        }
+      },
       { type: "delta", runId: "run_1", channel: "text", delta: "好" },
       {
         type: "plan_delta",
@@ -660,7 +674,7 @@ describe("streamEventSchema", () => {
         fileChanges: [fileChange]
       }
     ];
-    expect(events).toHaveLength(9);
+    expect(events).toHaveLength(10);
     for (const event of events) {
       expect(streamEventSchema.parse(event)).toEqual(event);
     }
@@ -708,7 +722,7 @@ describe("streamEventSchema", () => {
         runId: "run_1",
         activity: {
           contentIndex: 0,
-          name: "Bash",
+          name: "Shell",
           argsPreview: { command: "pnpm test" },
           updatedAt: "2026-06-11T00:00:00.000Z"
         }

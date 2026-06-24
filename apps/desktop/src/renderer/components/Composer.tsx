@@ -3,7 +3,6 @@ import {
   CheckMediumIcon,
   ChecklistPlanIcon,
   ChevronIcon,
-  CircleOutlineIcon,
   DocumentIcon,
   FolderIcon,
   FolderOpenOutlineIcon,
@@ -1887,7 +1886,7 @@ export function Composer() {
             title={t("composer.stop")}
             onClick={() => void abortRun()}
           >
-            <CircleOutlineIcon className="size-3.5 fill-current" />
+            <StopSquareFilledIcon className="size-3.5" />
           </Button>
         ) : currentComposerRunning ? (
           <Button

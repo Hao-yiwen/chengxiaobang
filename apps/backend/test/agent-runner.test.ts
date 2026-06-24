@@ -80,7 +80,7 @@ describe("AgentRunner", () => {
     const { runner } = runnerWith(store, secrets, [
       {
         toolCalls: [
-          { id: "publish_tool", name: "Bash", arguments: { command: "npm publish" } }
+          { id: "publish_tool", name: "Shell", arguments: { action: "run", command: "npm publish" } }
         ]
       },
       { text: "完成" }
@@ -265,13 +265,13 @@ describe("AgentRunner", () => {
     const { runner } = runnerWith(store, secrets, [
       {
         toolCalls: [
-          { id: "model_tool_1", name: "Bash", arguments: { command } }
+          { id: "model_tool_1", name: "Shell", arguments: { action: "run", command } }
         ]
       },
       { text: "第一次完成" },
       {
         toolCalls: [
-          { id: "model_tool_2", name: "Bash", arguments: { command } }
+          { id: "model_tool_2", name: "Shell", arguments: { action: "run", command } }
         ]
       },
       { text: "第二次完成" }
@@ -339,6 +339,129 @@ describe("AgentRunner", () => {
     });
   });
 
+  it("records dev model debug request and response for main agent calls", async () => {
+    const apiKeyRef = await secrets.setSecret("kimi", "test-key");
+    await store.upsertProvider({
+      id: "kimi",
+      kind: "kimi",
+      name: "Kimi",
+      baseURL: "https://api.moonshot.ai/v1",
+      model: "kimi-k2.6",
+      reasoningMode: "off",
+      apiKeyRef,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    });
+    const { runner } = runnerWith(
+      store,
+      secrets,
+      [{ text: "完成" }],
+      { modelDebugEnabled: true }
+    );
+    const events: StreamEvent[] = [];
+
+    for await (const event of runner.stream({
+      prompt: "看一下请求体",
+      projectId: null,
+      providerId: "kimi",
+      accessMode: "approval"
+    })) {
+      events.push(event);
+    }
+
+    const debugEvents = events.filter(
+      (event): event is Extract<StreamEvent, { type: "model_debug" }> =>
+        event.type === "model_debug"
+    );
+    const userMessage = events.find(
+      (event): event is Extract<StreamEvent, { type: "message" }> =>
+        event.type === "message" && event.message.role === "user"
+    )?.message;
+    expect(userMessage).toBeDefined();
+    expect(debugEvents).toHaveLength(2);
+    expect(debugEvents[0].record).toMatchObject({
+      status: "pending",
+      userMessageId: userMessage?.id,
+      attemptIndex: 0,
+      requestIndex: 0,
+      providerId: "kimi",
+      model: "kimi-k2.6",
+      request: { thinking: { type: "disabled" } }
+    });
+    expect(debugEvents[1].record).toMatchObject({
+      id: debugEvents[0].record.id,
+      status: "completed",
+      userMessageId: userMessage?.id,
+      response: {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+        usage: { promptTokens: 3, completionTokens: 5, totalTokens: 8 },
+        stopReason: "stop"
+      }
+    });
+
+    const records = await store.listModelDebugRecordsForSession(debugEvents[0].record.sessionId);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      id: debugEvents[0].record.id,
+      status: "completed",
+      userMessageId: userMessage?.id,
+      request: { thinking: { type: "disabled" } },
+      response: { status: 200 }
+    });
+  });
+
+  it("does not record model debug data when dev debug is disabled", async () => {
+    const { runner } = runnerWith(store, secrets, [{ text: "完成" }]);
+    const events: StreamEvent[] = [];
+
+    for await (const event of runner.stream({
+      prompt: "普通请求",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      events.push(event);
+    }
+
+    expect(events.some((event) => event.type === "model_debug")).toBe(false);
+    const sessionId = events.find((event) => event.type === "run_started")?.sessionId;
+    expect(sessionId).toBeDefined();
+    await expect(store.listModelDebugRecordsForSession(sessionId ?? "")).resolves.toEqual([]);
+  });
+
+  it("marks model debug records failed when the provider result is an error", async () => {
+    const { runner } = runnerWith(
+      store,
+      secrets,
+      [{ error: "provider exploded" }],
+      { modelDebugEnabled: true }
+    );
+    const events: StreamEvent[] = [];
+
+    for await (const event of runner.stream({
+      prompt: "触发错误",
+      projectId: null,
+      accessMode: "approval"
+    })) {
+      events.push(event);
+    }
+
+    const finalDebug = events
+      .filter((event): event is Extract<StreamEvent, { type: "model_debug" }> =>
+        event.type === "model_debug"
+      )
+      .at(-1);
+    expect(finalDebug?.record).toMatchObject({
+      status: "failed",
+      response: {
+        status: 500,
+        error: "provider exploded",
+        stopReason: "error"
+      }
+    });
+    expect(events.at(-1)).toMatchObject({ type: "run_end", status: "failed" });
+  });
+
   it("requires approval before model writes to absolute paths outside the workspace", async () => {
     const project = await store.createProject({ name: "tmp", path: dir });
     const outsideDir = await mkdtemp(join(tmpdir(), "cxb-agent-outside-"));
@@ -386,7 +509,7 @@ describe("AgentRunner", () => {
     const { runner } = runnerWith(store, secrets, [
       {
         toolCalls: [
-          { id: "pwd_tool", name: "Bash", arguments: { command: "pwd" } }
+          { id: "pwd_tool", name: "Shell", arguments: { action: "run", command: "pwd" } }
         ]
       },
       { text: "完成" }
@@ -530,8 +653,8 @@ describe("AgentRunner", () => {
         toolCalls: [
           {
             id: "long_shell_tool",
-            name: "Bash",
-            arguments: { command: longRunningShellCommand() }
+            name: "Shell",
+            arguments: { action: "run", command: longRunningShellCommand() }
           }
         ]
       },
@@ -658,7 +781,7 @@ describe("AgentRunner", () => {
     const { runner } = runnerWith(store, secrets, [
       {
         toolCalls: [
-          { id: "danger_shell_tool", name: "Bash", arguments: { command: "rm -rf build" } }
+          { id: "danger_shell_tool", name: "Shell", arguments: { action: "run", command: "rm -rf build" } }
         ]
       },
       { text: "已拒绝执行危险命令" }
@@ -692,7 +815,7 @@ describe("AgentRunner", () => {
     const { runner } = runnerWith(store, secrets, [
       {
         toolCalls: [
-          { id: "safe_shell_tool", name: "Bash", arguments: { command: "echo hi; echo bye" } }
+          { id: "safe_shell_tool", name: "Shell", arguments: { action: "run", command: "echo hi; echo bye" } }
         ]
       },
       { text: "完成" }
@@ -1048,30 +1171,6 @@ describe("AgentRunner", () => {
     });
   });
 
-  it("配置 memoryDir 后注册 memory 工具并在系统提示注入记忆快照", async () => {
-    const memoryDir = join(dir, "memories");
-    await mkdir(memoryDir, { recursive: true });
-    await writeFile(join(memoryDir, "user.md"), "用户喜欢简洁回复\n");
-    const { runner } = runnerWith(store, secrets, [{ text: "完成" }], { memoryDir });
-    const session = await store.createSession({
-      projectId: null,
-      title: "记忆测试",
-      providerId: "deepseek",
-      accessMode: "approval"
-    });
-
-    const debug = await runner.buildSessionDebugContext(session.id);
-    expect(debug?.availableTools.some((tool) => tool.name === "Memory")).toBe(true);
-    expect(debug?.systemPrompt).toContain("## 长期记忆");
-    expect(debug?.systemPrompt).toContain("/memories/user.md");
-
-    // 未配置 memoryDir 时两者都不出现。
-    const { runner: plain } = runnerWith(store, secrets, [{ text: "完成" }]);
-    const plainDebug = await plain.buildSessionDebugContext(session.id);
-    expect(plainDebug?.availableTools.some((tool) => tool.name === "Memory")).toBe(false);
-    expect(plainDebug?.systemPrompt).not.toContain("长期记忆");
-  });
-
   it("retitles sessions still on the placeholder from their first user message", async () => {
     const session = await store.createSession({
       projectId: null,
@@ -1108,7 +1207,7 @@ describe("AgentRunner", () => {
     const { runner } = runnerWith(store, secrets, [
       {
         thinking: "先想清楚要列哪个目录",
-        toolCalls: [{ id: "call_1", name: "LS", arguments: { path: "." } }]
+        toolCalls: [{ id: "call_1", name: "Glob", arguments: { pattern: "*" } }]
       },
       { text: "目录已列出" }
     ]);
@@ -1568,16 +1667,28 @@ describe("AgentRunner", () => {
 
     expect(summary).toContain("结果过长，已写入文件");
     expect(summary).toContain(join(spillRoot, runId));
-    expect(summary).toContain("DIRECT_START");
-    expect(summary).toContain("DIRECT_END");
+    expect(summary).not.toContain("DIRECT_START");
     expect(summary).not.toContain("DIRECT_MIDDLE");
+    expect(summary).not.toContain("DIRECT_END");
+    expect(summary).not.toContain("完整结果字符数");
+    expect(summary).not.toContain("结果开头预览");
+    expect(summary).not.toContain("结果末尾预览");
+    expect(summary).not.toContain("按需分段查看");
+    expect(summary).not.toContain("调用 Read");
+    expect(summary).not.toContain("调用 Grep");
 
     const messages = await store.listMessages(
       started?.type === "run_started" ? started.sessionId : ""
     );
     const toolMessage = messages.find((message) => message.role === "tool");
     expect(toolMessage?.content).toContain("结果过长，已写入文件");
+    expect(toolMessage?.content).not.toContain("DIRECT_START");
     expect(toolMessage?.content).not.toContain("DIRECT_MIDDLE");
+    expect(toolMessage?.content).not.toContain("DIRECT_END");
+    expect(toolMessage?.content).not.toContain("完整结果字符数");
+    expect(toolMessage?.content).not.toContain("结果开头预览");
+    expect(toolMessage?.content).not.toContain("结果末尾预览");
+    expect(toolMessage?.content).not.toContain("按需分段查看");
     expect(
       calls[0].context.messages
         .map((message) => ("content" in message ? JSON.stringify(message.content) : ""))
@@ -1797,7 +1908,7 @@ describe("AgentRunner", () => {
     expect(headlessTools).not.toContain("TodoWrite");
     expect(headlessTools).not.toContain("TodoWrite");
     // 定时任务工具对所有 run 可见（含 headless，模型可在执行中管理任务）。
-    expect(headlessTools).toContain("ScheduleCreate");
+    expect(headlessTools).toContain("Schedule");
 
     for await (const _event of runner.stream({
       prompt: "普通对话",
@@ -1810,7 +1921,7 @@ describe("AgentRunner", () => {
     expect(interactiveTools).toContain("AskUserQuestion");
     expect(interactiveTools).toContain("TodoWrite");
     expect(interactiveTools).toContain("TodoWrite");
-    expect(interactiveTools).toContain("ScheduleCreate");
+    expect(interactiveTools).toContain("Schedule");
   });
 
   it("auto-compacts long session context before the model loop", async () => {

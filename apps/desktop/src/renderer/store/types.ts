@@ -17,6 +17,7 @@ import type {
   Message,
   MessageAttachment,
   MessageFeedback,
+  ModelDebugRecord,
   PluginConfigValues,
   PluginDetail,
   PluginInstallInput,
@@ -61,7 +62,11 @@ export type RightPanelMode = "changes" | "terminal" | "browser" | "files" | "cha
 export type ProjectSortMode = "created" | "recent";
 export type OnboardingStep = "welcome" | "profile" | "model";
 export type ScheduledTaskFinishedEvent = Extract<ScheduledTaskEvent, { type: "scheduled_task_finished" }>;
-export type SessionRunHistory = { runs: RunRecord[]; toolCalls: ToolCall[] };
+export type SessionRunHistory = {
+  runs: RunRecord[];
+  toolCalls: ToolCall[];
+  modelDebugRecords?: ModelDebugRecord[];
+};
 export type FilePreviewEntrySource = "panel" | "direct" | "project-tree";
 
 export interface SidebarPageState {
@@ -197,6 +202,7 @@ export interface AppState {
   messages: Message[];
   toolHistory: ToolCall[];
   runHistory: RunRecord[];
+  modelDebugRecords: ModelDebugRecord[];
   providers: ProviderConfig[];
   slashCommands: SlashCommand[];
   // 选择状态（持久化）

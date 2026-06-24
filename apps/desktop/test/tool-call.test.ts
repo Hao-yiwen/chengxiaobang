@@ -11,7 +11,7 @@ function toolCall(partial: Partial<ToolCall>): ToolCall {
   return {
     id: "tool_1",
     runId: "run_1",
-    name: "Bash",
+    name: "Shell",
     args: {},
     status: "completed",
     createdAt: "2026-06-08T00:00:00.000Z",
@@ -151,7 +151,7 @@ describe("buildToolCallDiff", () => {
   });
 
   it("returns undefined for other tools or malformed args", () => {
-    expect(buildToolCallDiff(toolCall({ name: "Bash", args: { command: "ls" } }))).toBeUndefined();
+    expect(buildToolCallDiff(toolCall({ name: "Shell", args: { command: "ls" } }))).toBeUndefined();
     expect(buildToolCallDiff(toolCall({ name: "Edit", args: { file_path: "a" } }))).toBeUndefined();
     expect(buildToolCallDiff(toolCall({ name: "Write", args: {} }))).toBeUndefined();
   });

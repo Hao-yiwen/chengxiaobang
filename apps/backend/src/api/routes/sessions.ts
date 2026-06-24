@@ -217,21 +217,18 @@ export function sessionRoutes(context: AppContext): Hono {
 
   app.get("/:sessionId/runs", async (c) => {
     const sessionId = c.req.param("sessionId");
-    const [runs, toolCalls] = await Promise.all([
+    const [runs, toolCalls, modelDebugRecords] = await Promise.all([
       context.store.listRuns(sessionId),
-      context.store.listToolCallsForSession(sessionId)
+      context.store.listToolCallsForSession(sessionId),
+      context.modelDebugEnabled
+        ? context.store.listModelDebugRecordsForSession(sessionId)
+        : Promise.resolve([])
     ]);
-    return c.json({ runs, toolCalls });
-  });
-
-  app.get("/:sessionId/debug-context", async (c) => {
-    const sessionId = c.req.param("sessionId");
-    const planMode = c.req.query("planMode") === "true";
-    const debug = await context.runner.buildSessionDebugContext(sessionId, { planMode });
-    if (!debug) {
-      return c.json({ error: "会话不存在" }, 404);
-    }
-    return c.json({ debug });
+    return c.json({
+      runs,
+      toolCalls,
+      ...(context.modelDebugEnabled ? { modelDebugRecords } : {})
+    });
   });
 
   app.post("/:sessionId/rewind", async (c) => {

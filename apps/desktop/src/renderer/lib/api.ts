@@ -27,6 +27,7 @@ import type {
   GitInfo,
   Message,
   MessageFeedback,
+  ModelDebugRecord,
   PluginConfigValues,
   PluginDetail,
   PluginInstallInput,
@@ -43,7 +44,6 @@ import type {
   RunSteeringRequest,
   ScheduledTask,
   ScheduledTaskUpdate,
-  SessionDebugContext,
   SessionContextUsage,
   Session,
   SessionSearchResult,
@@ -150,14 +150,13 @@ export interface ApiClient {
   ): Promise<Message>;
   rewindSession(sessionId: string, messageId: string): Promise<Message[]>;
   forkSession(sessionId: string, messageId: string): Promise<Session>;
-  listSessionRuns(sessionId: string): Promise<{ runs: RunRecord[]; toolCalls: ToolCall[] }>;
+  listSessionRuns(sessionId: string): Promise<{
+    runs: RunRecord[];
+    toolCalls: ToolCall[];
+    modelDebugRecords?: ModelDebugRecord[];
+  }>;
   /** 当前后端进程仍在执行的 run 快照，用于页面刷新/重连后恢复审批态。 */
   listActiveRuns?(sessionId?: string): Promise<ActiveRunSnapshot[]>;
-  /** 当前会话的 agent 调试上下文，只读，不会启动模型或修改会话。 */
-  getSessionDebugContext?(
-    sessionId: string,
-    options?: { planMode?: boolean }
-  ): Promise<SessionDebugContext>;
   /** 当前会话即将发送给模型的上下文用量估算。 */
   getSessionContextUsage?(
     sessionId: string,
@@ -382,7 +381,7 @@ export async function createApiClient(): Promise<ApiClient> {
       const query = new URLSearchParams({
         limit: String(input.limit),
         offset: String(input.offset),
-        sort: input.sort ?? "created",
+        sort: input.sort ?? "recent",
         pinned: String(input.pinned ?? false)
       });
       return await request<PageResult<Project>>(`/api/projects?${query.toString()}`);
@@ -607,21 +606,17 @@ export async function createApiClient(): Promise<ApiClient> {
       ).session;
     },
     async listSessionRuns(sessionId) {
-      return request<{ runs: RunRecord[]; toolCalls: ToolCall[] }>(
+      return request<{
+        runs: RunRecord[];
+        toolCalls: ToolCall[];
+        modelDebugRecords?: ModelDebugRecord[];
+      }>(
         `/api/sessions/${sessionId}/runs`
       );
     },
     async listActiveRuns(sessionId) {
       const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
       return (await request<{ runs: ActiveRunSnapshot[] }>(`/api/runs/active${query}`)).runs;
-    },
-    async getSessionDebugContext(sessionId, options = {}) {
-      const query = options.planMode ? "?planMode=true" : "";
-      return (
-        await request<{ debug: SessionDebugContext }>(
-          `/api/sessions/${encodeURIComponent(sessionId)}/debug-context${query}`
-        )
-      ).debug;
     },
     async getSessionContextUsage(sessionId, options = {}) {
       const params = new URLSearchParams();

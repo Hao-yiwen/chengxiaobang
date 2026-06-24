@@ -53,6 +53,7 @@ function createMockBackendChild(pid = 4321): MockBackendChild {
 describe("resolveBackendCommand", () => {
   const previousBunBinary = process.env.BUN_BINARY;
   const previousRgPath = process.env.CHENGXIAOBANG_RG_PATH;
+  const previousModelDebug = process.env.CHENGXIAOBANG_MODEL_DEBUG;
   const tempDirs: string[] = [];
 
   afterEach(async () => {
@@ -66,6 +67,11 @@ describe("resolveBackendCommand", () => {
       delete process.env.CHENGXIAOBANG_RG_PATH;
     } else {
       process.env.CHENGXIAOBANG_RG_PATH = previousRgPath;
+    }
+    if (previousModelDebug === undefined) {
+      delete process.env.CHENGXIAOBANG_MODEL_DEBUG;
+    } else {
+      process.env.CHENGXIAOBANG_MODEL_DEBUG = previousModelDebug;
     }
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
@@ -90,6 +96,30 @@ describe("resolveBackendCommand", () => {
     expect(command.args).toContain("token");
     expect(command.args).toContain("--parent-pid");
     expect(command.args).toContain(String(process.pid));
+  });
+
+  it("enables model debug only for development backend launches", () => {
+    process.env.BUN_BINARY = "/tmp/bun";
+    process.env.CHENGXIAOBANG_RG_PATH = "/tmp/rg";
+    process.env.CHENGXIAOBANG_MODEL_DEBUG = "1";
+
+    const dev = resolveBackendCommand({
+      port: 3210,
+      dataDir: "/tmp/data",
+      token: "token",
+      resourcesPath: "/tmp/resources",
+      isPackaged: false
+    });
+    const packaged = resolveBackendCommand({
+      port: 3210,
+      dataDir: "/tmp/data",
+      token: "token",
+      resourcesPath: "/tmp/resources",
+      isPackaged: true
+    });
+
+    expect(dev.env.CHENGXIAOBANG_MODEL_DEBUG).toBe("1");
+    expect(packaged.env.CHENGXIAOBANG_MODEL_DEBUG).toBeUndefined();
   });
 
   it("passes OCR service connection details to the backend", () => {

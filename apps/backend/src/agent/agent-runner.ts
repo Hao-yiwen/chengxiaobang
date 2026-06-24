@@ -11,6 +11,7 @@ import { formatSkillInvocation } from "@earendil-works/pi-agent-core/node";
 import {
   streamSimple,
   type Api,
+  type AssistantMessage,
   type Message as PiMessage,
   type Model,
   type ProviderResponse
@@ -24,6 +25,7 @@ import {
   type ActiveRunSnapshot,
   type AskUserAnswer,
   type MessageAttachment,
+  type ModelDebugRecord,
   type ModelVisibleSkill,
   type ModelInputModality,
   type ProposePlanArgs,
@@ -34,7 +36,6 @@ import {
   type RunRequest,
   type RunSteeringRequest,
   type Session,
-  type SessionDebugContext,
   type SessionContextUsage,
   type StreamEvent,
   type TokenUsage,
@@ -64,7 +65,6 @@ import { ApprovalQueue } from "./approval-queue";
 import {
   buildUserPiMessage,
   displayPromptForTitle,
-  toAgentDebugTool,
   toClientMessage
 } from "./agent-runner-messages";
 import { AsyncEventQueue } from "./async-queue";
@@ -105,6 +105,13 @@ export const DEFAULT_SESSION_TITLE = "新对话";
 const TITLE_TIMEOUT_MS = 15_000;
 const log = getLogger({ module: "agent-runner" });
 
+interface ModelDebugAttemptState {
+  attemptIndex: number;
+  nextRequestIndex: number;
+  activeRecord?: ModelDebugRecord;
+  responseMeta?: { status: number; headers: Record<string, string> };
+}
+
 export interface AgentRunnerOptions {
   /** 为工作区构造工具集合，默认使用内置工具注册表。 */
   createTools?: (
@@ -130,6 +137,8 @@ export interface AgentRunnerOptions {
   smartApprovalJudge?: SmartApprovalJudge;
   /** 模型请求费用账本；默认按当前 StateStore 创建。 */
   usageCostLedgerService?: UsageCostLedgerService;
+  /** 开发模式模型请求/响应调试记录开关。 */
+  modelDebugEnabled?: boolean;
   /** 供应商配置仓库；生产环境使用 ~/.chengxiaobang/config.yaml。 */
   providerRepository?: ProviderRepository;
   /** 项目级工具审批信任服务；默认使用 StateStore settings KV。 */
@@ -172,6 +181,7 @@ export class AgentRunner {
   private readonly titleStreamFn?: StreamFn;
   private readonly smartApprovalJudge: SmartApprovalJudge;
   private readonly usageCostLedgerService: UsageCostLedgerService;
+  private readonly modelDebugEnabled: boolean;
   private readonly providerRepository: ProviderRepository;
   private readonly projectApprovalTrustService: ProjectApprovalTrustService;
   private readonly memoryDir?: string;
@@ -217,6 +227,7 @@ export class AgentRunner {
     this.smartApprovalJudge = options.smartApprovalJudge ?? createSmartApprovalJudge();
     this.usageCostLedgerService =
       options.usageCostLedgerService ?? new UsageCostLedgerService(store);
+    this.modelDebugEnabled = options.modelDebugEnabled === true;
     this.providerRepository = options.providerRepository ?? store;
     this.projectApprovalTrustService =
       options.projectApprovalTrustService ?? new ProjectApprovalTrustService(store);
@@ -356,111 +367,6 @@ export class AgentRunner {
       }
     }
     return { messages, enableOcrTool };
-  }
-
-  /** 构造调试面板使用的只读上下文快照，不启动模型、不写入会话。 */
-  async buildSessionDebugContext(
-    sessionId: string,
-    options: { planMode?: boolean } = {}
-  ): Promise<SessionDebugContext | undefined> {
-    const session = await this.store.getSession(sessionId);
-    if (!session) {
-      log.warn("Debug 上下文请求的会话不存在", {
-        action: "debug_context.session_missing",
-        sessionId
-      });
-      return undefined;
-    }
-    const { project, workspacePath } = await this.resolveSessionWorkspace(session);
-    const [rows, runs, toolCalls, skills] = await Promise.all([
-      this.store.listMessages(session.id),
-      this.store.listRuns(session.id),
-      this.store.listToolCallsForSession(session.id),
-      this.slashCommandService.listSkills(project)
-    ]);
-    const planMode = options.planMode ?? false;
-    const planSnapshot = derivePlanState(toolCalls);
-    const viaFeishu = Boolean(session.feishuChatId);
-    const planPhase: PlanPhase = planMode
-      ? planSnapshot?.confirmed && !planSnapshot.finished
-        ? "execute"
-        : "draft"
-      : "none";
-    const enabledDeferredToolNames = new Set<string>();
-    const tools = attachToolSearchTool(
-      [
-        ...(await this.createTools(workspacePath)),
-        ...createTodoTools({
-          listToolCalls: () => this.store.listToolCallsForSession(session.id)
-        }),
-        ...createPlanTools({
-          getApprovedPlanArgs: () => undefined,
-          getAskUserAnswer: () => undefined,
-          loadSkill: async (skill) => this.loadSkillContent(skill, project),
-          recordSkillUsage: async (skill) => this.slashCommandService.recordSkillUsage(skill)
-        }),
-        ...createScheduleTools({
-          store: this.store,
-          sessionId: session.id,
-          ...(session.feishuChatId ? { feishuChatId: session.feishuChatId } : {}),
-          ...(session.wechatChatId ? { wechatChatId: session.wechatChatId } : {})
-        })
-      ],
-      enabledDeferredToolNames
-    );
-    const availableTools = selectAgentTools(tools, {
-      planPhase,
-      viaFeishu,
-      headless: false,
-      enabledDeferredToolNames
-    }).map(toAgentDebugTool);
-    const environment = await collectEnvironmentContext({
-      workspacePath,
-      ...(session.model ? { model: session.model } : {})
-    });
-    const leadingMessages = await this.buildLeadingMessages({ workspacePath, skills });
-    const systemPrompt = buildSystemPrompt({
-      workspacePath,
-      accessMode: session.accessMode,
-      projectName: project?.name,
-      viaFeishu,
-      headless: false,
-      planMode,
-      ...(planMode && planSnapshot ? { planSnapshot } : {}),
-      environment,
-      ...(await this.memoryPromptInput())
-    });
-
-    log.info("已构造 Debug 上下文", {
-      action: "debug_context.built",
-      sessionId: session.id,
-      messages: rows.length,
-      tools: availableTools.length,
-      planMode
-    });
-    return {
-      session,
-      project: project ?? null,
-      workspacePath,
-      accessMode: session.accessMode,
-      planMode,
-      viaFeishu,
-      ...(session.compactedUpToMessageId
-        ? { compactedUpToMessageId: session.compactedUpToMessageId }
-        : {}),
-      systemPrompt,
-      modelMessages: [
-        ...leadingMessages,
-        ...buildAgentMessages(rows, session.compactedUpToMessageId)
-      ],
-      messages: rows.map(toClientMessage),
-      runs,
-      toolCalls,
-      ...(planSnapshot ? { planSnapshot } : {}),
-      skills,
-      availableTools,
-      generatedAt: nowIso()
-    };
   }
 
   /** 构造会话当前会发送给模型的上下文用量估算，不写入会话。 */
@@ -1010,6 +916,7 @@ export class AgentRunner {
       yield* this.runPiLoop({
         runId,
         sessionId: activeSession.id,
+        userMessageId: userMessage.id,
         projectId: activeSession.projectId,
         workspacePath,
         queue,
@@ -1374,10 +1281,154 @@ export class AgentRunner {
     };
   }
 
+  private async startModelDebugRequest(options: {
+    runId: string;
+    sessionId: string;
+    userMessageId?: string;
+    queue: AsyncEventQueue<StreamEvent>;
+    provider: ProviderConfig;
+    model: Model<Api>;
+    attemptState: ModelDebugAttemptState;
+    request: unknown;
+  }): Promise<void> {
+    if (!this.modelDebugEnabled) {
+      return;
+    }
+    if (options.attemptState.activeRecord?.status === "pending") {
+      await this.finishModelDebugRecord({
+        runId: options.runId,
+        sessionId: options.sessionId,
+        queue: options.queue,
+        record: options.attemptState.activeRecord,
+        status: "failed",
+        response: this.modelDebugErrorResponse({
+          responseMeta: options.attemptState.responseMeta,
+          error: "请求被后续模型重试替换，未收到完整聚合结果。"
+        })
+      });
+    }
+    options.attemptState.responseMeta = undefined;
+    const requestIndex = options.attemptState.nextRequestIndex++;
+    try {
+      const record = await this.store.upsertModelDebugRecord({
+        runId: options.runId,
+        sessionId: options.sessionId,
+        userMessageId: options.userMessageId,
+        source: "agent",
+        attemptIndex: options.attemptState.attemptIndex,
+        requestIndex,
+        providerId: options.provider.id,
+        providerKind: options.provider.kind,
+        model: options.model.id,
+        api: options.model.api,
+        status: "pending",
+        request: options.request
+      });
+      options.attemptState.activeRecord = record;
+      options.queue.push({ type: "model_debug", runId: options.runId, record });
+      log.debug("已记录模型调试请求", {
+        action: "model_debug.request_recorded",
+        runId: options.runId,
+        sessionId: options.sessionId,
+        attemptIndex: record.attemptIndex,
+        requestIndex: record.requestIndex,
+        requestBytes: record.requestBytes,
+        providerId: record.providerId,
+        model: record.model
+      });
+    } catch (error) {
+      log.warn("模型调试请求记录失败，继续模型调用", {
+        action: "model_debug.request_record_failed",
+        runId: options.runId,
+        sessionId: options.sessionId,
+        attemptIndex: options.attemptState.attemptIndex,
+        requestIndex,
+        ...errorToLogFields(error)
+      });
+    }
+  }
+
+  private async finishModelDebugRecord(options: {
+    runId: string;
+    sessionId: string;
+    queue: AsyncEventQueue<StreamEvent>;
+    record?: ModelDebugRecord;
+    status: "completed" | "failed";
+    response: unknown;
+  }): Promise<void> {
+    if (!this.modelDebugEnabled || !options.record) {
+      return;
+    }
+    try {
+      const record = await this.store.upsertModelDebugRecord({
+        id: options.record.id,
+        runId: options.runId,
+        sessionId: options.sessionId,
+        userMessageId: options.record.userMessageId,
+        source: options.record.source,
+        attemptIndex: options.record.attemptIndex,
+        requestIndex: options.record.requestIndex,
+        providerId: options.record.providerId,
+        providerKind: options.record.providerKind,
+        model: options.record.model,
+        api: options.record.api,
+        status: options.status,
+        response: options.response
+      });
+      options.queue.push({ type: "model_debug", runId: options.runId, record });
+      log.debug("已收口模型调试记录", {
+        action: "model_debug.response_recorded",
+        runId: options.runId,
+        sessionId: options.sessionId,
+        attemptIndex: record.attemptIndex,
+        requestIndex: record.requestIndex,
+        status: record.status,
+        responseBytes: record.responseBytes
+      });
+    } catch (error) {
+      log.warn("模型调试响应记录失败，继续运行收尾", {
+        action: "model_debug.response_record_failed",
+        runId: options.runId,
+        sessionId: options.sessionId,
+        recordId: options.record.id,
+        ...errorToLogFields(error)
+      });
+    }
+  }
+
+  private modelDebugAssistantResponse(input: {
+    responseMeta?: { status: number; headers: Record<string, string> };
+    message: AssistantMessage;
+  }): Record<string, unknown> {
+    const usage = input.message.usage ? toTokenUsage(input.message.usage) : undefined;
+    return {
+      ...(input.responseMeta
+        ? { status: input.responseMeta.status, headers: input.responseMeta.headers }
+        : {}),
+      assistantMessage: input.message,
+      ...(usage ? { usage } : {}),
+      stopReason: input.message.stopReason,
+      ...(input.message.errorMessage ? { error: input.message.errorMessage } : {})
+    };
+  }
+
+  private modelDebugErrorResponse(input: {
+    responseMeta?: { status: number; headers: Record<string, string> };
+    error: string;
+  }): Record<string, unknown> {
+    return {
+      ...(input.responseMeta
+        ? { status: input.responseMeta.status, headers: input.responseMeta.headers }
+        : {}),
+      error: input.error
+    };
+  }
+
   /** 驱动 pi agent loop，并持续产出翻译后的 StreamEvent。 */
   private async *runPiLoop(options: {
     runId: string;
     sessionId: string;
+    userMessageId?: string;
     projectId: string | null;
     workspacePath: string;
     queue: AsyncEventQueue<StreamEvent>;
@@ -1405,11 +1456,26 @@ export class AgentRunner {
     const queue = options.queue;
     let nextAttemptIndex = options.initialUsage ? 1 : 0;
     let latestAttempt: UsageCostAttempt | undefined;
+    let latestDebugAttempt: ModelDebugAttemptState | undefined;
     const finalizedAttemptIndexes = new Set<number>();
     const finishCurrentAttemptWithError = async (input: {
       stopReason: "error" | "aborted";
       errorMessage?: string;
     }): Promise<void> => {
+      if (latestDebugAttempt?.activeRecord) {
+        await this.finishModelDebugRecord({
+          runId: options.runId,
+          sessionId: options.sessionId,
+          queue,
+          record: latestDebugAttempt.activeRecord,
+          status: "failed",
+          response: this.modelDebugErrorResponse({
+            responseMeta: latestDebugAttempt.responseMeta,
+            error: input.errorMessage ?? input.stopReason
+          })
+        });
+        latestDebugAttempt.activeRecord = undefined;
+      }
       if (!latestAttempt || finalizedAttemptIndexes.has(latestAttempt.attemptIndex)) {
         return;
       }
@@ -1459,6 +1525,27 @@ export class AgentRunner {
         }),
       onAssistantMessageEnd: async (message) => {
         const attempt = latestAttempt;
+        const debugAttempt =
+          latestDebugAttempt && attempt?.attemptIndex === latestDebugAttempt.attemptIndex
+            ? latestDebugAttempt
+            : undefined;
+        if (debugAttempt?.activeRecord) {
+          await this.finishModelDebugRecord({
+            runId: options.runId,
+            sessionId: options.sessionId,
+            queue,
+            record: debugAttempt.activeRecord,
+            status:
+              message.stopReason === "error" || message.stopReason === "aborted"
+                ? "failed"
+                : "completed",
+            response: this.modelDebugAssistantResponse({
+              responseMeta: debugAttempt.responseMeta,
+              message
+            })
+          });
+          debugAttempt.activeRecord = undefined;
+        }
         if (!attempt) {
           log.warn("assistant 结束时没有可用费用 attempt，已跳过账本收口", {
             action: "usage_cost.missing_attempt",
@@ -1565,7 +1652,30 @@ export class AgentRunner {
         model: buildModel(options.provider),
         ...modelStreamOptions,
         apiKey: options.apiKey,
+        onPayload: async (payload: unknown, model: Model<Api>) => {
+          const patched = await modelStreamOptions.onPayload?.(payload, model);
+          const finalPayload = patched === undefined ? payload : patched;
+          if (latestDebugAttempt) {
+            await this.startModelDebugRequest({
+              runId: options.runId,
+              sessionId: options.sessionId,
+              userMessageId: options.userMessageId,
+              queue,
+              provider: options.provider,
+              model,
+              attemptState: latestDebugAttempt,
+              request: finalPayload
+            });
+          }
+          return patched;
+        },
         onResponse: async (response: ProviderResponse, model: Model<Api>) => {
+          if (latestDebugAttempt) {
+            latestDebugAttempt.responseMeta = {
+              status: response.status,
+              headers: response.headers
+            };
+          }
           if (latestAttempt) {
             this.usageCostLedgerService.recordResponse(latestAttempt, {
               statusCode: response.status,
@@ -1586,6 +1696,7 @@ export class AgentRunner {
         convertToLlm: async (messages) => {
           const llmMessages = messages as PiMessage[];
           const attemptIndex = nextAttemptIndex++;
+          latestDebugAttempt = { attemptIndex, nextRequestIndex: 0 };
           try {
             latestAttempt = await this.usageCostLedgerService.startAttempt({
               runId: options.runId,

@@ -27,17 +27,18 @@ describe("schedule tools", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  function tool(name: string, feishuChatId?: string) {
+  function tool(feishuChatId?: string) {
     const tools = createScheduleTools({
       store,
       sessionId: session.id,
       ...(feishuChatId ? { feishuChatId } : {})
     });
-    return tools.find((candidate) => candidate.name === name)!;
+    return tools[0];
   }
 
-  it("ScheduleCreate binds the task to the current session and previews next runs", async () => {
-    const result = await tool("ScheduleCreate").execute("tc1", {
+  it("Schedule action=create binds the task to the current session and previews next runs", async () => {
+    const result = await tool().execute("tc1", {
+      action: "create",
       kind: "recurring",
       name: "AI 日报",
       cron: "0 9 * * *",
@@ -59,8 +60,9 @@ describe("schedule tools", () => {
     expect(tasks[0].nextRunAt).toBeDefined();
   });
 
-  it("ScheduleCreate creates a one-time task with a timezone-aware run_at", async () => {
-    const result = await tool("ScheduleCreate").execute("tc_once", {
+  it("Schedule action=create creates a one-time task with a timezone-aware run_at", async () => {
+    const result = await tool().execute("tc_once", {
+      action: "create",
       kind: "once",
       name: "睡觉提醒",
       run_at: "2999-06-13T01:53:00+08:00",
@@ -83,9 +85,10 @@ describe("schedule tools", () => {
     expect(tasks[0].cron).toBeUndefined();
   });
 
-  it("ScheduleCreate rejects one-time run_at without timezone, invalid time, or past time", async () => {
+  it("Schedule action=create rejects one-time run_at without timezone, invalid time, or past time", async () => {
     await expect(
-      tool("ScheduleCreate").execute("tc_no_tz", {
+      tool().execute("tc_no_tz", {
+        action: "create",
         kind: "once",
         name: "无时区",
         run_at: "2999-06-13T01:53:00",
@@ -93,7 +96,8 @@ describe("schedule tools", () => {
       })
     ).rejects.toThrow("带时区");
     await expect(
-      tool("ScheduleCreate").execute("tc_bad_time", {
+      tool().execute("tc_bad_time", {
+        action: "create",
         kind: "once",
         name: "坏时间",
         run_at: "not-a-timeZ",
@@ -101,7 +105,8 @@ describe("schedule tools", () => {
       })
     ).rejects.toThrow("时间无效");
     await expect(
-      tool("ScheduleCreate").execute("tc_past", {
+      tool().execute("tc_past", {
+        action: "create",
         kind: "once",
         name: "过去",
         run_at: "2000-01-01T00:00:00Z",
@@ -111,9 +116,10 @@ describe("schedule tools", () => {
     expect(await store.listScheduledTasks()).toHaveLength(0);
   });
 
-  it("ScheduleCreate rejects invalid cron with a friendly error", async () => {
+  it("Schedule action=create rejects invalid cron with a friendly error", async () => {
     await expect(
-      tool("ScheduleCreate").execute("tc1", {
+      tool().execute("tc1", {
+        action: "create",
         kind: "recurring",
         name: "坏任务",
         cron: "0 0 9 * * *",
@@ -123,16 +129,18 @@ describe("schedule tools", () => {
     expect(await store.listScheduledTasks()).toHaveLength(0);
   });
 
-  it("ScheduleCreate rejects missing or mixed schedule fields", async () => {
+  it("Schedule action=create rejects missing or mixed schedule fields", async () => {
     await expect(
-      tool("ScheduleCreate").execute("tc_missing_run_at", {
+      tool().execute("tc_missing_run_at", {
+        action: "create",
         kind: "once",
         name: "少时间",
         prompt: "x"
       })
     ).rejects.toThrow("run_at");
     await expect(
-      tool("ScheduleCreate").execute("tc_once_with_cron", {
+      tool().execute("tc_once_with_cron", {
+        action: "create",
         kind: "once",
         name: "混传",
         cron: "0 9 * * *",
@@ -141,14 +149,16 @@ describe("schedule tools", () => {
       })
     ).rejects.toThrow("不要传入 cron");
     await expect(
-      tool("ScheduleCreate").execute("tc_missing_cron", {
+      tool().execute("tc_missing_cron", {
+        action: "create",
         kind: "recurring",
         name: "少 cron",
         prompt: "x"
       })
     ).rejects.toThrow("cron");
     await expect(
-      tool("ScheduleCreate").execute("tc_recurring_with_run_at", {
+      tool().execute("tc_recurring_with_run_at", {
+        action: "create",
         kind: "recurring",
         name: "混传",
         cron: "0 9 * * *",
@@ -159,9 +169,10 @@ describe("schedule tools", () => {
     expect(await store.listScheduledTasks()).toHaveLength(0);
   });
 
-  it("ScheduleCreate is refused in Feishu-bound sessions", async () => {
+  it("Schedule action=create is refused in Feishu-bound sessions", async () => {
     await expect(
-      tool("ScheduleCreate", "oc_chat_1").execute("tc1", {
+      tool("oc_chat_1").execute("tc1", {
+        action: "create",
         kind: "recurring",
         name: "任务",
         cron: "0 9 * * *",
@@ -170,28 +181,29 @@ describe("schedule tools", () => {
     ).rejects.toThrow("飞书会话暂不支持定时任务");
   });
 
-  it("ScheduleList and ScheduleCancel round-trip", async () => {
-    const empty = await tool("ScheduleList").execute("tc0", {});
+  it("Schedule action=list and action=cancel round-trip", async () => {
+    const empty = await tool().execute("tc0", { action: "list" });
     expect(empty.content[0]).toMatchObject({ text: "当前没有定时任务。" });
 
-    await tool("ScheduleCreate").execute("tc1", {
+    await tool().execute("tc1", {
+      action: "create",
       kind: "recurring",
       name: "巡检",
       cron: "*/10 * * * *",
       prompt: "检查",
       full_access: true
     });
-    const listed = await tool("ScheduleList").execute("tc2", {});
+    const listed = await tool().execute("tc2", { action: "list" });
     const text = listed.content[0].type === "text" ? listed.content[0].text : "";
     expect(text).toContain("巡检");
     expect(text).toContain("*/10 * * * *");
     expect(text).toContain("本会话");
 
     const taskId = (await store.listScheduledTasks())[0].id;
-    await tool("ScheduleCancel").execute("tc3", { id: taskId });
+    await tool().execute("tc3", { action: "cancel", id: taskId });
     expect(await store.listScheduledTasks()).toHaveLength(0);
 
-    await expect(tool("ScheduleCancel").execute("tc4", { id: taskId })).rejects.toThrow(
+    await expect(tool().execute("tc4", { action: "cancel", id: taskId })).rejects.toThrow(
       "定时任务不存在"
     );
   });

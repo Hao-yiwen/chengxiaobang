@@ -4,15 +4,9 @@ export const toolNameSchema = z.enum([
   "Read",
   "Write",
   "Edit",
-  "LS",
-  "MakeDirectory",
   "Glob",
   "Grep",
-  "Bash",
-  "BashStatus",
-  "BashCancel",
-  "GitStatus",
-  "GitDiff",
+  "Shell",
   "WebFetch",
   "WebSearch",
   "ToolSearch",
@@ -21,13 +15,9 @@ export const toolNameSchema = z.enum([
   "Skill",
   "TodoRead",
   "TodoWrite",
-  "CreateSkill",
-  "ScheduleCreate",
-  "ScheduleList",
-  "ScheduleCancel",
+  "Schedule",
   "Memory",
-  "OcrExtractText",
-  "PowerShell"
+  "OcrExtractText"
 ]);
 export type ToolName = z.infer<typeof toolNameSchema>;
 
@@ -105,17 +95,12 @@ export const builtinToolMetadata = {
     destructive: true
   }),
   Edit: mutatingTool("按精确字符串替换文本文件内容、生成 diff", "edit"),
-  LS: readTool("列出目录内容、查看文件夹结构", "search"),
-  MakeDirectory: mutatingTool("创建目录或嵌套目录", "edit"),
   Glob: readTool("按 glob 模式查找文件路径", "search"),
   Grep: readTool("按文本或正则搜索文件内容", "search"),
-  Bash: mutatingTool("运行 shell 命令、构建、测试、脚本和系统命令", "command"),
-  BashStatus: readTool("查看后台 shell 命令状态和输出文件", "command"),
-  BashCancel: readTool("终止后台 shell 命令", "command", {
+  Shell: mutatingTool("执行本机命令、查询或终止后台命令", "command", {
+    requiresApproval: false,
     concurrencySafe: false
   }),
-  GitStatus: readTool("查看 git status 摘要", "command"),
-  GitDiff: readTool("查看 git diff 和 diff --check", "command"),
   WebFetch: readTool("抓取网页 URL 并提取内容", "web"),
   WebSearch: readTool("通过 Tavily 搜索互联网结果", "web"),
   ToolSearch: readTool("查找并加载 deferred 工具、MCP 工具或重型工具", "search"),
@@ -129,18 +114,16 @@ export const builtinToolMetadata = {
     requiresApproval: false,
     concurrencySafe: true
   }),
-  CreateSkill: mutatingTool("创建、安装或导入技能", "edit"),
-  ScheduleCreate: mutatingTool("创建后台定时任务", "schedule"),
-  ScheduleList: readTool("查看后台定时任务列表", "schedule"),
-  ScheduleCancel: mutatingTool("取消后台定时任务", "schedule"),
+  Schedule: mutatingTool("创建、查看或取消后台定时任务", "schedule", {
+    requiresApproval: false
+  }),
   Memory: mutatingTool("读取、创建、更新、删除长期记忆文件", "memory", {
     requiresApproval: false,
     planDraftVisible: true
   }),
   OcrExtractText: readTool("对图片或 PDF 执行 OCR 提取文字", "read", {
     deferPolicy: "deferred"
-  }),
-  PowerShell: mutatingTool("在 Windows 原生 PowerShell 中执行命令", "command")
+  })
 } satisfies Record<ToolName, ToolMetadata>;
 
 export function isKnownToolName(name: string): name is ToolName {

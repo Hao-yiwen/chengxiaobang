@@ -152,6 +152,11 @@ export function resolveBackendCommand(options: {
   }
 
   const args = dev ? ["--no-orphans", "--watch", ...commonArgs] : commonArgs;
+  if (dev) {
+    env.CHENGXIAOBANG_MODEL_DEBUG = env.CHENGXIAOBANG_MODEL_DEBUG ?? "1";
+  } else {
+    delete env.CHENGXIAOBANG_MODEL_DEBUG;
+  }
   return { command: bunBinary, args, env };
 }
 

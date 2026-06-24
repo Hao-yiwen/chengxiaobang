@@ -102,7 +102,7 @@ export function isDeliverableToolCall(toolCall: ToolCall): boolean; // 只看 na
 │ Composer …                                    │
 ```
 
-- 预览区:`Bash` → 近黑 mono 命令块(DESIGN.md 代码卡片形态);`Edit/Write` → mono 路径 + `DiffView`(`buildToolCallDiff` 纯参数驱动,审批前即可算);其余 → JSON `<pre>`。
+- 预览区:`Shell` → 近黑 mono 命令块(DESIGN.md 代码卡片形态);`Edit/Write` → mono 路径 + `DiffView`(`buildToolCallDiff` 纯参数驱动,审批前即可算);其余 → JSON `<pre>`。
 - `pendingTool.name === "AskUserQuestion"` → 渲染 `AskUserCard`(选项单击提交、A-Z/↑↓/回车键盘直达、自定义输入),决议经同一个 `onDecide` 回调走 `approve(toolCallId, decision)`。
 - **决议即隐藏**:`decidedId` state 在提交瞬间卸载卡片,避免与时间线上随 `tool_call` 事件出现的回执短暂双显。
 - **始终允许本项目**:当当前会话属于项目时,允许按钮旁提供项目级放行入口,向后端提交 `{ approved: true, approvalScope: "project" }`。后端用 `projectId + toolName + args` 生成签名并保存信任规则,同项目内相同签名的后续工具调用自动放行。
@@ -145,7 +145,7 @@ StreamEvent(tool_call)
 
 ### 文案与截断规则
 
-- 描述模板按工具取参:path 类用 `shortenPath`(尾两段);`search.query`/`glob.pattern` 截 40;`Bash.command` 压缩空白后截 60;`WebFetch.url` 截 60;`ExitPlanMode.title` 截 30。
+- 描述模板按工具取参:path 类用 `shortenPath`(尾两段);`search.query`/`glob.pattern` 截 40;`Shell.command` 压缩空白后截 60;`WebFetch.url` 截 60;`ExitPlanMode.title` 截 30。
 - 流式参数预览仅用于 `Write` / `Edit` 的 `file_path`;聊天时间线里的真实 running 工具可以显示泛化执行态,但 URL、搜索词或命令仍只在完成历史或审批面板里展示。
 - 摘要类别:read / edit / search / command / web / artifact / plan / schedule / memory / other,组件层以 `" · "` 连接。
 - `ToolCall.name` 是普通 string(模型可能请求未知工具),未知名 → `chat.toolLine.fallback`(「调用 {{name}}」)+ 兜底图标。

@@ -59,6 +59,20 @@ export function scriptedStreamFn(turns: ScriptedTurn[]): {
     }
 
     void (async () => {
+      const providerPayload = {
+        model: model.id,
+        api: model.api,
+        provider: model.provider,
+        context
+      };
+      await options?.onPayload?.(providerPayload, model);
+      await options?.onResponse?.(
+        {
+          status: turn.error !== undefined ? 500 : 200,
+          headers: { "content-type": "text/event-stream" }
+        },
+        model
+      );
       await turn.onStart?.();
       const message = buildMessage(model, turn);
       stream.push({ type: "start", partial: message });

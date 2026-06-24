@@ -138,7 +138,7 @@ export function normalizeApprovalArgs(
 
 function normalizeValue(toolName: string, key: string, value: unknown): unknown {
   if (typeof value === "string") {
-    if (toolName === "Bash" && key === "command") {
+    if (toolName === "Shell" && key === "command") {
       return value.replace(/\s+/g, " ").trim();
     }
     if (isPathKey(key)) {

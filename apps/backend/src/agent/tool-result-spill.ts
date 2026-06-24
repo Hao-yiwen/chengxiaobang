@@ -22,7 +22,7 @@ interface ToolResultSpillContext {
   isError: boolean;
 }
 
-/** 在工具结果进入模型上下文前做保护：超长文本落盘，只回传路径和固定预览。 */
+/** 在工具结果进入模型上下文前做保护：超长文本落盘，只回传结果文件路径。 */
 export async function protectToolResultForContext(
   context: AfterToolCallContext,
   options: { toolResultSpillDir: string; runId: string }
@@ -90,7 +90,7 @@ async function spillToolResultText(
     spillRoot,
     filePath
   });
-  return { summary: buildSummary(text, filePath, runDir, context), filePath };
+  return { summary: buildSummary(filePath, context), filePath };
 }
 
 function collectText(content: AgentToolResult<unknown>["content"]): string {
@@ -101,28 +101,12 @@ function collectText(content: AgentToolResult<unknown>["content"]): string {
 }
 
 function buildSummary(
-  text: string,
   filePath: string,
-  runDir: string,
   context: ToolResultSpillContext
 ): string {
-  const head = text.slice(0, TOOL_RESULT_PREVIEW_CHARS);
-  const tail = text.slice(-TOOL_RESULT_PREVIEW_CHARS);
   return [
     `工具 ${context.toolName} 的${context.isError ? "错误" : "结果"}过长，已写入文件，未直接放入上下文。`,
-    `完整结果路径：${filePath}`,
-    `完整结果字符数：${text.length}`,
-    "",
-    "你可以按需分段查看：",
-    `- 读取开头：调用 Read，参数为 ${JSON.stringify({ file_path: filePath, offset: 1, limit: 120 })}`,
-    `- 读取指定区间：调用 Read，参数为 ${JSON.stringify({ file_path: filePath, offset: 121, limit: 120 })}，并按需要调整 offset`,
-    `- 搜索关键词：调用 Grep，参数为 ${JSON.stringify({ path: runDir, pattern: "关键词" })}`,
-    "",
-    "结果开头预览：",
-    head,
-    "",
-    "结果末尾预览：",
-    tail
+    `完整结果路径：${filePath}`
   ].join("\n");
 }
 

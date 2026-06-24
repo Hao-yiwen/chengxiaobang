@@ -167,7 +167,7 @@ describe("groupTurns", () => {
 
   it("失败轮：红色错误提示独立显示，耗时用失败时间兜底", () => {
     const u = msg("user", "2026-06-11T00:00:00.000Z", "q");
-    const t = tool("Bash", { at: "2026-06-11T00:00:02.000Z", status: "failed" });
+    const t = tool("Shell", { at: "2026-06-11T00:00:02.000Z", status: "failed" });
     const notices: FailedRunNotice[] = [
       { id: "run_1", message: "boom", at: "2026-06-11T00:00:03.000Z", persisted: true }
     ];
@@ -223,7 +223,7 @@ describe("groupTurns", () => {
   it("中断尾标排在部分答复、工具和文件 diff 之后", () => {
     const u = msg("user", "2026-06-11T00:00:00.000Z", "q");
     const partial = msg("assistant", "2026-06-11T00:00:02.000Z", "部分回答");
-    const t = tool("Bash", { at: "2026-06-11T00:00:03.000Z" });
+    const t = tool("Shell", { at: "2026-06-11T00:00:03.000Z" });
     const aborted = run({
       status: "aborted",
       updatedAt: "2026-06-11T00:00:05.000Z",
@@ -256,7 +256,7 @@ describe("groupTurns", () => {
 
   it("中止轮：保留部分答复，非活跃，settled", () => {
     const u = msg("user", "2026-06-11T00:00:00.000Z", "q");
-    const t = tool("Bash", { at: "2026-06-11T00:00:01.000Z" });
+    const t = tool("Shell", { at: "2026-06-11T00:00:01.000Z" });
     const partial = msg("assistant", "2026-06-11T00:00:02.000Z", "部分回答");
     const blocks = groupTurns(chatViewTimelineItems([u, partial], [t], []), ctx());
 

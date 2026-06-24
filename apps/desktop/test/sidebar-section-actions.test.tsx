@@ -216,21 +216,24 @@ describe("sidebar section actions", () => {
     expect(useAppStore.getState().activeProjectId).toBeUndefined();
   });
 
-  it("项目区默认按创建时间从新到旧排序", async () => {
+  it("项目区默认按最近使用从新到旧排序", async () => {
     const oldProject = projectFixture({
       id: "project_old",
       name: "旧项目",
-      createdAt: "2026-06-01T00:00:00.000Z"
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-12T00:00:00.000Z"
     });
     const newProject = projectFixture({
       id: "project_new",
       name: "新项目",
-      createdAt: "2026-06-11T00:00:00.000Z"
+      createdAt: "2026-06-11T00:00:00.000Z",
+      updatedAt: "2026-06-02T00:00:00.000Z"
     });
     const middleProject = projectFixture({
       id: "project_middle",
       name: "中间项目",
-      createdAt: "2026-06-05T00:00:00.000Z"
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-06T00:00:00.000Z"
     });
     const client = createClient({
       listProjects: vi.fn(async () => [oldProject, newProject, middleProject]),
@@ -239,19 +242,20 @@ describe("sidebar section actions", () => {
 
     render(<App client={client} />);
     const sidebar = within(await screen.findByTestId("app-sidebar"));
-    await sidebar.findByText("新项目");
+    await sidebar.findByText("旧项目");
 
+    expect(useAppStore.getState().projectSortMode).toBe("recent");
     expect(
-      sidebar.getByText("新项目").compareDocumentPosition(sidebar.getByText("中间项目")) &
+      sidebar.getByText("旧项目").compareDocumentPosition(sidebar.getByText("中间项目")) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(
-      sidebar.getByText("中间项目").compareDocumentPosition(sidebar.getByText("旧项目")) &
+      sidebar.getByText("中间项目").compareDocumentPosition(sidebar.getByText("新项目")) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
   });
 
-  it("项目区可切换为按项目内最后消息时间排序并持久化偏好", async () => {
+  it("项目区可切换为按创建时间排序并持久化偏好", async () => {
     const quietProject = projectFixture({
       id: "project_quiet",
       name: "创建较新的安静项目",
@@ -272,34 +276,34 @@ describe("sidebar section actions", () => {
 
     render(<App client={client} />);
     const sidebar = within(await screen.findByTestId("app-sidebar"));
-    await sidebar.findByText("创建较新的安静项目");
-    expect(
-      sidebar
-        .getByText("创建较新的安静项目")
-        .compareDocumentPosition(sidebar.getByText("最近活跃项目")) &
-        Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
-
-    fireEvent.pointerDown(sidebar.getByLabelText("项目排序"), { button: 0, ctrlKey: false });
-    fireEvent.click(await screen.findByText("按最近使用"));
-
-    await waitFor(() => expect(useAppStore.getState().projectSortMode).toBe("recent"));
+    await sidebar.findByText("最近活跃项目");
     expect(
       sidebar
         .getByText("最近活跃项目")
         .compareDocumentPosition(sidebar.getByText("创建较新的安静项目")) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
+
+    fireEvent.pointerDown(sidebar.getByLabelText("项目排序"), { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByText("按创建时间"));
+
+    await waitFor(() => expect(useAppStore.getState().projectSortMode).toBe("created"));
+    expect(
+      sidebar
+        .getByText("创建较新的安静项目")
+        .compareDocumentPosition(sidebar.getByText("最近活跃项目")) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
     expect(
       JSON.parse(window.localStorage.getItem("chengxiaobang.app") ?? "{}").state.projectSortMode
-    ).toBe("recent");
+    ).toBe("created");
   });
 
-  it("初始化时读取已持久化的项目排序偏好", async () => {
+  it("初始化时读取已持久化的按创建时间项目排序偏好", async () => {
     window.localStorage.setItem(
       "chengxiaobang.app",
       JSON.stringify({
-        state: { projectSortMode: "recent" },
+        state: { projectSortMode: "created" },
         version: 4
       })
     );
@@ -324,13 +328,13 @@ describe("sidebar section actions", () => {
 
     render(<App client={client} />);
     const sidebar = within(await screen.findByTestId("app-sidebar"));
-    await sidebar.findByText("最近活跃项目");
+    await sidebar.findByText("创建较新的安静项目");
 
-    expect(useAppStore.getState().projectSortMode).toBe("recent");
+    expect(useAppStore.getState().projectSortMode).toBe("created");
     expect(
       sidebar
-        .getByText("最近活跃项目")
-        .compareDocumentPosition(sidebar.getByText("创建较新的安静项目")) &
+        .getByText("创建较新的安静项目")
+        .compareDocumentPosition(sidebar.getByText("最近活跃项目")) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
   });

@@ -110,6 +110,80 @@ describe("SqliteStateStore", () => {
     await store.close();
   });
 
+  it("persists model debug records for a session run", async () => {
+    const store = new SqliteStateStore(join(dir, "state.sqlite"));
+    await store.initialize();
+    const session = await store.createSession({
+      projectId: null,
+      title: "调试会话",
+      accessMode: "approval"
+    });
+    await store.createRun({
+      id: "run_debug",
+      sessionId: session.id,
+      status: "running",
+      providerId: "deepseek",
+      providerKind: "deepseek",
+      model: "deepseek-chat"
+    });
+    const userMessage = await store.addMessage({
+      sessionId: session.id,
+      role: "user",
+      content: "hi"
+    });
+
+    const pending = await store.upsertModelDebugRecord({
+      runId: "run_debug",
+      sessionId: session.id,
+      userMessageId: userMessage.id,
+      source: "agent",
+      attemptIndex: 0,
+      requestIndex: 0,
+      providerId: "deepseek",
+      providerKind: "deepseek",
+      model: "deepseek-chat",
+      api: "openai-completions",
+      status: "pending",
+      request: { model: "deepseek-chat", messages: [{ role: "user", content: "hi" }] }
+    });
+    expect(pending).toMatchObject({
+      runId: "run_debug",
+      sessionId: session.id,
+      userMessageId: userMessage.id,
+      status: "pending",
+      request: { model: "deepseek-chat" }
+    });
+    expect(pending.requestBytes).toBeGreaterThan(0);
+
+    const completed = await store.upsertModelDebugRecord({
+      id: pending.id,
+      runId: "run_debug",
+      sessionId: session.id,
+      source: "agent",
+      attemptIndex: 0,
+      requestIndex: 0,
+      providerId: "deepseek",
+      providerKind: "deepseek",
+      model: "deepseek-chat",
+      api: "openai-completions",
+      status: "completed",
+      response: { status: 200, assistantMessage: { role: "assistant", content: [] } }
+    });
+    expect(completed).toMatchObject({
+      id: pending.id,
+      status: "completed",
+      userMessageId: userMessage.id,
+      request: pending.request,
+      response: { status: 200 }
+    });
+    expect(completed.responseBytes).toBeGreaterThan(0);
+
+    await expect(store.listModelDebugRecordsForSession(session.id)).resolves.toMatchObject([
+      { id: pending.id, status: "completed" }
+    ]);
+    await store.close();
+  });
+
   it("updates a session project binding", async () => {
     const store = new SqliteStateStore(join(dir, "state.sqlite"));
     await store.initialize();
@@ -939,7 +1013,7 @@ describe("SqliteStateStore", () => {
     const settledTool: ToolCall = {
       id: "tool_settled",
       runId: "run_settled",
-      name: "Bash",
+      name: "Shell",
       args: { command: "echo ok" },
       status: "running",
       startedAt: timestamp,
@@ -1021,7 +1095,7 @@ describe("SqliteStateStore", () => {
     await first.insertToolCall({
       id: "tool_running",
       runId: "run_interrupted",
-      name: "Bash",
+      name: "Shell",
       args: { command: "echo hi" },
       status: "running",
       startedAt: timestamp,
@@ -1332,7 +1406,7 @@ describe("SqliteStateStore", () => {
     await store.insertToolCall({
       id: "tool_late",
       runId: "run_late",
-      name: "Bash",
+      name: "Shell",
       args: { command: "pwd" },
       status: "completed",
       result: "/tmp",

@@ -22,7 +22,10 @@ const log = getLogger({ module: "shell-tools" });
 type ShellExecutionMode = "async" | "background" | "blocking";
 
 const shellParams = Type.Object({
-  command: Type.String({ description: "要执行的 shell 命令" }),
+  action: Type.Union([Type.Literal("run"), Type.Literal("status"), Type.Literal("cancel")], {
+    description: "run 执行命令；status 查询后台命令；cancel 终止后台命令"
+  }),
+  command: Type.Optional(Type.String({ description: "action=run 时要执行的本机命令" })),
   timeout: Type.Optional(
     Type.Number({
       description:
@@ -39,17 +42,8 @@ const shellParams = Type.Object({
   ),
   dangerouslyDisableSandbox: Type.Optional(
     Type.Boolean({ description: "仅为 schema 对齐保留，不会绕过审批和安全规则" })
-  )
-});
-
-const gitParams = Type.Object({
-  path: Type.Optional(
-    Type.String({ description: "可选，Git 仓库目录；可为相对当前工作目录的路径或显式绝对路径" })
-  )
-});
-
-const shellCommandIdParams = Type.Object({
-  id: Type.String({ description: "shell 工具返回的后台命令 ID" })
+  ),
+  id: Type.Optional(Type.String({ description: "action=status 或 action=cancel 时的后台命令 ID" }))
 });
 
 export interface ShellToolOptions {
@@ -65,7 +59,7 @@ interface ShellRunRequestOptions {
   // 检查类命令(如 git diff --check)非零退出属正常结果,不应抛错;开启后把退出码与输出一并返回。
   allowNonZeroExit?: boolean;
   shell?: ResolvedShellCommand;
-  toolName?: "Bash" | "PowerShell";
+  toolName?: "Shell";
 }
 
 interface NormalizedShellRunOptions {
@@ -82,7 +76,7 @@ async function runShell(
   requestOptions: ShellRunRequestOptions = {}
 ): Promise<string> {
   const normalized = normalizeShellRunOptions(command, cwd, options, requestOptions);
-  const toolName = requestOptions.toolName ?? "Bash";
+  const toolName = requestOptions.toolName ?? "Shell";
   log.info("准备执行 shell 命令", {
     action: "shell_tool.run",
     toolName,
@@ -120,122 +114,50 @@ export function createShellTools(
 ): AgentTool<any>[] {
   const platform = options.platform ?? process.platform;
   const shellTool: AgentTool<typeof shellParams> = {
-    name: "Bash",
+    name: "Shell",
     label: "执行命令",
     description:
-      "在工作目录中执行一条 shell 命令并返回输出。用于构建、安装依赖、运行脚本等。默认前台等待 15000ms，未结束会转后台且不会强杀；run_in_background=true 会立即后台；timeout 最长 600000ms。后台命令输出持续写入返回的文件路径，后续可读取输出文件、用 BashStatus 查看是否结束、用 BashCancel 终止。",
+      "执行本机命令并管理后台命令。action=run 在当前工作目录执行 command；后端会按平台自动选择本机命令运行器。默认前台等待 15000ms，未结束会转后台且不会强杀；run_in_background=true 会立即后台；timeout 最长 600000ms。action=status 用 id 查询后台命令；action=cancel 用 id 终止后台命令。",
     parameters: shellParams,
     execute: async (_id, params, signal) => {
-      if (params.dangerouslyDisableSandbox) {
-        log.warn("Bash 收到 dangerouslyDisableSandbox，但不会绕过审批或安全规则", {
-          action: "shell_tool.sandbox_flag_ignored",
-          toolName: "Bash",
-          command: commandForLog(params.command)
-        });
+      if (params.action === "status") {
+        const id = requireBackgroundCommandId(params.id, params.action);
+        const snapshot = getBackgroundShellCommand(id);
+        if (!snapshot) {
+          throw new Error(`后台命令不存在或已丢失: ${id}`);
+        }
+        return textResult(renderBackgroundStatus(snapshot, workspacePath));
       }
-      const cwd = resolveShellCwd(workspacePath, "Bash", ".");
-      return textResult(
-        await runShell(params.command, cwd, workspacePath, signal, options, {
-          runInBackground: params.run_in_background,
-          timeout: params.timeout
-        })
-      );
-    }
-  };
+      if (params.action === "cancel") {
+        const id = requireBackgroundCommandId(params.id, params.action);
+        const snapshot = cancelBackgroundShellCommand(id);
+        if (!snapshot) {
+          throw new Error(`后台命令不存在或已丢失: ${id}`);
+        }
+        return textResult(renderBackgroundStatus(snapshot, workspacePath));
+      }
 
-  const powerShellTool: AgentTool<typeof shellParams> = {
-    name: "PowerShell",
-    label: "PowerShell",
-    description:
-      "在 Windows 原生 PowerShell 中执行一条命令并返回输出。适合 Get-ChildItem、Select-String、Test-Path 等 PowerShell 语法。等待、后台、timeout、输出文件、BashStatus 和 BashCancel 语义与 Bash 相同。",
-    parameters: shellParams,
-    execute: async (_id, params, signal) => {
+      const command = requireShellCommand(params.command);
       if (params.dangerouslyDisableSandbox) {
-        log.warn("PowerShell 收到 dangerouslyDisableSandbox，但不会绕过审批或安全规则", {
+        log.warn("Shell 收到 dangerouslyDisableSandbox，但不会绕过审批或安全规则", {
           action: "shell_tool.sandbox_flag_ignored",
-          toolName: "PowerShell",
-          command: commandForLog(params.command)
+          toolName: "Shell",
+          command: commandForLog(command)
         });
       }
-      const cwd = resolveShellCwd(workspacePath, "PowerShell", ".");
+      const cwd = resolveShellCwd(workspacePath, "Shell", ".");
       return textResult(
-        await runShell(params.command, cwd, workspacePath, signal, options, {
+        await runShell(command, cwd, workspacePath, signal, options, {
           runInBackground: params.run_in_background,
           timeout: params.timeout,
-          shell: resolvePowerShellCommand(),
-          toolName: "PowerShell"
+          ...(platform === "win32" ? { shell: resolvePowerShellCommand() } : {}),
+          toolName: "Shell"
         })
       );
     }
   };
 
-  const gitStatus: AgentTool<typeof gitParams> = {
-    name: "GitStatus",
-    label: "Git 状态",
-    description: "查看工作目录或指定 path 的 git 状态摘要。",
-    parameters: gitParams,
-    execute: async (_id, params, signal) => {
-      const cwd = resolveShellCwd(workspacePath, "GitStatus", params.path || ".");
-      return textResult(
-        await runShell("git status --short --branch", cwd, workspacePath, signal, options)
-      );
-    }
-  };
-
-  const gitDiff: AgentTool<typeof gitParams> = {
-    name: "GitDiff",
-    label: "Git 变更",
-    description: "查看工作目录或指定 path 的 git 变更摘要与 diff 检查。",
-    parameters: gitParams,
-    execute: async (_id, params, signal) => {
-      const cwd = resolveShellCwd(workspacePath, "GitDiff", params.path || ".");
-      return textResult(
-        await runShell("git diff --stat && git diff --check", cwd, workspacePath, signal, options, {
-          // git diff --check 在仓库存在尾随空格/冲突标记时退出码为 1/2,这是检查结果而非失败。
-          allowNonZeroExit: true
-        })
-      );
-    }
-  };
-
-  const shellStatus: AgentTool<typeof shellCommandIdParams> = {
-    name: "BashStatus",
-    label: "命令状态",
-    description:
-      "查看一个已转入后台执行的 shell 命令状态和输出文件路径。只接受 Bash/PowerShell 返回的后台命令 ID。",
-    parameters: shellCommandIdParams,
-    execute: async (_id, params) => {
-      const snapshot = getBackgroundShellCommand(params.id);
-      if (!snapshot) {
-        throw new Error(`后台命令不存在或已丢失: ${params.id}`);
-      }
-      return textResult(renderBackgroundStatus(snapshot, workspacePath));
-    }
-  };
-
-  const shellCancel: AgentTool<typeof shellCommandIdParams> = {
-    name: "BashCancel",
-    label: "终止命令",
-    description:
-      "终止一个仍在后台执行的 shell 命令，仅能作用于 Bash/PowerShell 返回的后台命令 ID；命令没进展、卡住或不再需要时使用。",
-    parameters: shellCommandIdParams,
-    execute: async (_id, params) => {
-      const snapshot = cancelBackgroundShellCommand(params.id);
-      if (!snapshot) {
-        throw new Error(`后台命令不存在或已丢失: ${params.id}`);
-      }
-      return textResult(renderBackgroundStatus(snapshot, workspacePath));
-    }
-  };
-
-  return [
-    shellTool,
-    ...(platform === "win32" ? [powerShellTool] : []),
-    gitStatus,
-    gitDiff,
-    shellStatus,
-    shellCancel
-  ];
+  return [shellTool];
 }
 
 function renderBackgroundStarted(
@@ -253,8 +175,8 @@ function renderBackgroundStarted(
     "",
     "完整 stdout/stderr 会持续写入输出文件，不会直接放入本次工具结果。",
     `- 查看输出：调用 Read，参数为 ${JSON.stringify({ file_path: outputPath, offset: 1, limit: 200 })}`,
-    `- 查看状态：调用 BashStatus，参数为 {"id":"${snapshot.id}"}`,
-    `- 如果命令没有进展或不再需要：调用 BashCancel，参数为 {"id":"${snapshot.id}"}`
+    `- 查看状态：调用 Shell，参数为 {"action":"status","id":"${snapshot.id}"}`,
+    `- 如果命令没有进展或不再需要：调用 Shell，参数为 {"action":"cancel","id":"${snapshot.id}"}`
   ].join("\n");
 }
 
@@ -285,7 +207,7 @@ function normalizeShellRunOptions(
       requestOptions.timeout,
       command,
       cwd,
-      requestOptions.toolName ?? "Bash"
+      requestOptions.toolName ?? "Shell"
     );
     return { mode, backgroundAfterMs: timeoutMs };
   }
@@ -299,7 +221,7 @@ function normalizeBlockingWaitMs(
   timeoutMs: number | undefined,
   command: string,
   cwd: string,
-  toolName: "Bash" | "PowerShell"
+  toolName: "Shell"
 ): number {
   const value = timeoutMs ?? SHELL_BLOCKING_DEFAULT_WAIT_MS;
   if (!Number.isInteger(value) || value < 1 || value > SHELL_BLOCKING_MAX_WAIT_MS) {
@@ -351,7 +273,7 @@ function renderBackgroundStatus(snapshot: BackgroundShellCommandSnapshot, worksp
 
 function resolveShellCwd(
   workspacePath: string,
-  toolName: "Bash" | "PowerShell" | "GitStatus" | "GitDiff",
+  toolName: "Shell",
   path: string
 ): string {
   const resolved = resolveToolPath(workspacePath, path);
@@ -364,6 +286,20 @@ function resolveShellCwd(
     });
   }
   return resolved.target;
+}
+
+function requireShellCommand(command: unknown): string {
+  if (typeof command !== "string" || command.trim().length === 0) {
+    throw new Error("Shell action=run 必须提供 command");
+  }
+  return command;
+}
+
+function requireBackgroundCommandId(id: unknown, action: "status" | "cancel"): string {
+  if (typeof id !== "string" || id.trim().length === 0) {
+    throw new Error(`Shell action=${action} 必须提供后台命令 id`);
+  }
+  return id;
 }
 
 function shellOutputPathForRead(

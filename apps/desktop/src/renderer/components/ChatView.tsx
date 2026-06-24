@@ -24,6 +24,7 @@ import { isToolActivityPreviewToolName } from "@chengxiaobang/shared";
 import type {
   Message,
   MessageAttachment,
+  ModelDebugRecord,
   Session,
   ToolActivity,
   ToolCall
@@ -34,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import chatLayoutStyles from "@/components/ChatLayout.module.css";
 import { Markdown } from "@/components/Markdown";
 import { MessageActions, MessageEditor } from "@/components/MessageActions";
+import { ModelDebugDot } from "@/components/ModelDebugDot";
 import { PlanCard } from "@/components/PlanCard";
 import { ReasoningPanel } from "@/components/ReasoningPanel";
 import { RunFileChangesCard } from "@/components/RunFileChangesCard";
@@ -307,6 +309,7 @@ export function ChatView() {
     runningToolVisualHolds,
     events,
     runHistory,
+    modelDebugRecords,
     isRunning,
     activeRunId,
     activeRunStartedAt,
@@ -328,6 +331,7 @@ export function ChatView() {
       runningToolVisualHolds: state.runningToolVisualHolds,
       events: state.events,
       runHistory: state.runHistory,
+      modelDebugRecords: state.modelDebugRecords,
       isRunning: state.isRunning,
       activeRunId: state.activeRunId,
       activeRunStartedAt: state.activeRunStartedAt,
@@ -561,6 +565,30 @@ export function ChatView() {
       ),
     [messages, timelineToolCalls, failedNotices, activeRunId, runHistory, abortedNotices]
   );
+  const modelDebugRecordsByUserMessageId = useMemo(() => {
+    const byUserMessage = new Map<string, ModelDebugRecord[]>();
+    if (!import.meta.env.DEV) {
+      return byUserMessage;
+    }
+    for (const record of modelDebugRecords) {
+      if (!record.userMessageId) {
+        continue;
+      }
+      const records = byUserMessage.get(record.userMessageId) ?? [];
+      records.push(record);
+      byUserMessage.set(record.userMessageId, records);
+    }
+    for (const records of byUserMessage.values()) {
+      records.sort((left, right) => {
+        const byAttempt = left.attemptIndex - right.attemptIndex;
+        if (byAttempt !== 0) return byAttempt;
+        const byRequest = left.requestIndex - right.requestIndex;
+        if (byRequest !== 0) return byRequest;
+        return left.createdAt.localeCompare(right.createdAt);
+      });
+    }
+    return byUserMessage;
+  }, [modelDebugRecords]);
   const lastActionMessageId = useMemo(
     () => lastVisibleActionMessageId(items, activeRunAssistantIds),
     [activeRunAssistantIds, items]
@@ -1041,6 +1069,10 @@ export function ChatView() {
   ): ReactNode => {
     if (item.kind === "message") {
       const hideActions = shouldHideMessageActions(item, index, items, activeRunAssistantIds);
+      const messageDebugRecords =
+        item.message.role === "user"
+          ? (modelDebugRecordsByUserMessageId.get(item.message.id) ?? [])
+          : [];
       return (
         <MessageBubble
           key={`message-${item.message.id}`}
@@ -1051,6 +1083,7 @@ export function ChatView() {
           showActionsByDefault={item.message.id === lastActionMessageId}
           hideReasoning={options?.hideReasoning}
           afterContent={options?.afterContent}
+          modelDebugRecords={messageDebugRecords}
         />
       );
     }
@@ -1462,7 +1495,8 @@ const MessageBubble = memo(function MessageBubble({
   hideActions = false,
   showActionsByDefault = false,
   hideReasoning = false,
-  afterContent
+  afterContent,
+  modelDebugRecords = []
 }: {
   message: Message;
   isLastAssistant?: boolean;
@@ -1473,6 +1507,7 @@ const MessageBubble = memo(function MessageBubble({
   hideReasoning?: boolean;
   /** 最终答复正文之后、消息操作按钮之前的本轮尾部内容。 */
   afterContent?: ReactNode;
+  modelDebugRecords?: ModelDebugRecord[];
 }) {
   const [editing, setEditing] = useState(false);
   const editAndResend = useAppStore((state) => state.editAndResend);
@@ -1519,6 +1554,13 @@ const MessageBubble = memo(function MessageBubble({
             </div>
           ) : null}
         </div>
+        {modelDebugRecords.length > 0 ? (
+          <ModelDebugDot
+            records={modelDebugRecords}
+            messageId={message.id}
+            className="absolute right-0 top-1 translate-x-[calc(100%+0.35rem)]"
+          />
+        ) : null}
         <MessageActions
           message={message}
           onEdit={canEditUserMessage ? () => setEditing(true) : undefined}

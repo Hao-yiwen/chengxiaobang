@@ -42,6 +42,7 @@ export interface BackendConfig {
   ocrServiceToken?: string;
   token?: string;
   parentPid?: number;
+  modelDebugEnabled?: boolean;
 }
 
 export interface ParentProcessWatchdog {
@@ -126,14 +127,14 @@ export async function startBackend(config: BackendConfig) {
         memoryDir,
         shellOutputDir,
         ...(runtime?.runId ? { runId: runtime.runId } : {}),
-        skillMarketService,
         mcpTools: await mcpManager.getToolsForWorkspace(workspacePath),
         ...(config.ocrServiceUrl && config.ocrServiceToken
           ? { ocr: { serviceUrl: config.ocrServiceUrl, token: config.ocrServiceToken } }
           : {})
       }),
     slashCommandService,
-    usageCostLedgerService
+    usageCostLedgerService,
+    modelDebugEnabled: config.modelDebugEnabled
   });
   const feishuConfigService = new FeishuConfigService(store, secrets);
   const feishuInstallService = new FeishuInstallService();
@@ -174,7 +175,8 @@ export async function startBackend(config: BackendConfig) {
       webSearchConfigService,
       usageCostLedgerService,
       taskScheduler,
-      eventHub
+      eventHub,
+      modelDebugEnabled: config.modelDebugEnabled
     })
   });
   return {
@@ -214,7 +216,8 @@ export function readCliConfig(
     token: args.get("token") ?? env.CHENGXIAOBANG_TOKEN,
     parentPid: parseOptionalPositiveInteger(
       args.get("parent-pid") ?? env.CHENGXIAOBANG_PARENT_PID
-    )
+    ),
+    modelDebugEnabled: (args.get("model-debug") ?? env.CHENGXIAOBANG_MODEL_DEBUG) === "1"
   };
 }
 

@@ -22,7 +22,7 @@ export const proposePlanArgsSchema = z
     allowedPrompts: z
       .array(
         z.object({
-          tool: z.literal("Bash"),
+          tool: z.literal("Shell"),
           prompt: z.string().min(1)
         })
       )

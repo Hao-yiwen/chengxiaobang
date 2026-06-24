@@ -107,7 +107,7 @@ API / IPC 契约的唯一事实源。所有实体（Provider、Project、Session
 - agent 循环是 **pi 的 `runAgentLoopContinue`**，由 `agent/agent-runner.ts` 驱动；pi 事件经 `agent/pi-events.ts`（`RunEventTranslator`）翻译为 `StreamEvent`。桌面默认用 `POST /api/runs` 启动 run，再通过全局 `GET /api/events` 接收 `AppEvent`；旧 `POST /api/runs/stream` 仍作为测试和回退流式入口保留。
 - 状态经 **sql.js 落 SQLite**（`repository/sqlite-state-store.ts`，藏在 `StateStore` 接口后）；assistant/tool 消息行带 backend-only 的 `payload` 列以无损回放多轮工具历史。
 - 模型调用走 **pi-ai**（`streamSimple`）；`model/pi-model.ts` 把 `ProviderConfig` 映射为 pi `Model`（按 slug/baseUrl 自动探测 provider 兼容差异）。内置 provider 为 **DeepSeek** 和 **Kimi**。
-- 工具是 TypeBox schema 的 pi `AgentTool`（`tools/registry.ts` 汇集文件、Shell/PowerShell、Git、网页抓取/搜索、Memory、定时任务、Todo、技能、OCR、飞书和 MCP 插件工具）；展示、审批、deferred 与计划草稿可见性统一由 `toolMetadata` 描述。
+- 工具是 TypeBox schema 的 pi `AgentTool`（`tools/registry.ts` 汇集文件、Shell、网页抓取/搜索、Memory、定时任务、Todo、技能、OCR、飞书和 MCP 插件工具）；展示、审批、deferred 与计划草稿可见性统一由 `toolMetadata` 描述。
 - **定时任务**：模型经 `tools/schedule-tools.ts` 创建一次性或周期任务（`kind=once + run_at` / `kind=recurring + 5 字段 cron`），`tasks/task-scheduler.ts` 轮询到期任务并在原会话追加 headless run，同时向全局事件流发布任务生命周期事件。
 - **插件 / MCP / 技能市场**：插件可声明 MCP server，启用后转成 `mcp__...` 工具；内置技能、市场技能、插件技能和自定义技能共同进入斜杠命令与 Skill 工具体系。
 - **手机通道**：飞书和微信绑定会话复用同一个 runner，外部消息串行进入对应会话，结果回发到手机通道。
@@ -180,7 +180,7 @@ pnpm test -t "approval"                            # 按名过滤
 - [`docs/scheduled-tasks.md`](./docs/scheduled-tasks.md) —— 定时任务
 - [`docs/tool-call-ui.md`](./docs/tool-call-ui.md) —— 工具调用 UI
 - [`docs/memory.md`](./docs/memory.md) —— 长期记忆（Memory）工具
-- [`docs/shell-background-execution.md`](./docs/shell-background-execution.md) —— Shell / PowerShell 后台命令
+- [`docs/shell-background-execution.md`](./docs/shell-background-execution.md) —— Shell 后台命令
 - [`docs/provider-catalog-yaml.md`](./docs/provider-catalog-yaml.md) —— 供应商与模型静态配置
 - [`docs/usage-cost-ledger.md`](./docs/usage-cost-ledger.md) —— token 用量与成本账本
 - [`docs/sidebar-pinning.md`](./docs/sidebar-pinning.md) —— 侧边栏固定

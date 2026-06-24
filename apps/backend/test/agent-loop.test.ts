@@ -82,7 +82,7 @@ describe("AgentRunner agentic loop (pi)", () => {
       {
         thinking: "先看看目录",
         text: "我先列一下目录。",
-        toolCalls: [{ id: "call_1", name: "LS", arguments: {} }]
+        toolCalls: [{ id: "call_1", name: "Glob", arguments: { pattern: "*" } }]
       },
       {
         text: "目录已经看完。",
@@ -248,13 +248,13 @@ describe("AgentRunner agentic loop (pi)", () => {
     const { runner } = runnerWith([
       {
         toolCalls: [
-          { id: "ls_0", name: "LS", arguments: { path: "." } }
+          { id: "ls_0", name: "Glob", arguments: { pattern: "*" } }
         ]
       },
       { text: "第一轮完成。" },
       {
         toolCalls: [
-          { id: "ls_0", name: "LS", arguments: { path: "." } }
+          { id: "ls_0", name: "Glob", arguments: { pattern: "*" } }
         ]
       },
       { text: "第二轮完成。" }
@@ -281,7 +281,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     expect(firstEvents.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
     expect(secondEvents.at(-1)).toMatchObject({ type: "run_end", status: "completed" });
     const calls = (await store.listToolCallsForSession(sessionId!)).filter(
-      (toolCall) => toolCall.name === "LS"
+      (toolCall) => toolCall.name === "Glob"
     );
     expect(calls).toHaveLength(2);
     expect(new Set(calls.map((toolCall) => toolCall.id)).size).toBe(2);
@@ -466,9 +466,15 @@ describe("AgentRunner agentic loop (pi)", () => {
 
     expect(summary).toContain("结果过长，已写入文件");
     expect(summary).toContain(spillPath);
-    expect(summary).toContain("START");
-    expect(summary).toContain("END");
+    expect(summary).not.toContain("START");
     expect(summary).not.toContain("MIDDLE_UNIQUE");
+    expect(summary).not.toContain("END");
+    expect(summary).not.toContain("完整结果字符数");
+    expect(summary).not.toContain("结果开头预览");
+    expect(summary).not.toContain("结果末尾预览");
+    expect(summary).not.toContain("按需分段查看");
+    expect(summary).not.toContain("调用 Read");
+    expect(summary).not.toContain("调用 Grep");
     const spilled = await readFile(spillPath, "utf8");
     expect(spilled).toContain("large.txt 的第 1-5 行");
     expect(spilled).toContain("     1\tSTART");
@@ -489,7 +495,13 @@ describe("AgentRunner agentic loop (pi)", () => {
             .join("\n")
         : "";
     expect(replayText).toContain("结果过长，已写入文件");
+    expect(replayText).not.toContain("START");
     expect(replayText).not.toContain("MIDDLE_UNIQUE");
+    expect(replayText).not.toContain("END");
+    expect(replayText).not.toContain("完整结果字符数");
+    expect(replayText).not.toContain("结果开头预览");
+    expect(replayText).not.toContain("结果末尾预览");
+    expect(replayText).not.toContain("按需分段查看");
   });
 
   it("returns slow model-requested shell commands as background output files", async () => {
@@ -499,8 +511,8 @@ describe("AgentRunner agentic loop (pi)", () => {
         toolCalls: [
           {
             id: "call_shell",
-            name: "Bash",
-            arguments: { command: delayedEchoShellCommand("loop-background-done") }
+            name: "Shell",
+            arguments: { action: "run", command: delayedEchoShellCommand("loop-background-done") }
           }
         ]
       },
@@ -557,8 +569,9 @@ describe("AgentRunner agentic loop (pi)", () => {
         toolCalls: [
           {
             id: "call_shell_background",
-            name: "Bash",
+            name: "Shell",
             arguments: {
+              action: "run",
               command: delayedEchoShellCommand("requested-background-done"),
               run_in_background: true
             }
@@ -598,8 +611,9 @@ describe("AgentRunner agentic loop (pi)", () => {
         toolCalls: [
           {
             id: "call_shell_blocking",
-            name: "Bash",
+            name: "Shell",
             arguments: {
+              action: "run",
               command: shortDelayedEchoShellCommand("blocking-loop-done"),
               timeout: 1_000
             }
@@ -626,15 +640,16 @@ describe("AgentRunner agentic loop (pi)", () => {
     expect(summary).not.toContain("后台命令 ID");
   });
 
-  it("returns Bash timeout commands as background output files when timeout elapses", async () => {
+  it("returns Shell timeout commands as background output files when timeout elapses", async () => {
     const project = await store.createProject({ name: "proj", path: dir });
     const scripted = scriptedStreamFn([
       {
         toolCalls: [
           {
             id: "call_shell_blocking_background",
-            name: "Bash",
+            name: "Shell",
             arguments: {
+              action: "run",
               command: delayedEchoShellCommand("blocking-background-done"),
               timeout: 50
             }
@@ -759,8 +774,8 @@ describe("AgentRunner agentic loop (pi)", () => {
           },
           {
             id: "call_2",
-            name: "Bash",
-            arguments: { command: shortDelayedEchoShellCommand("activity-filter-ok") },
+            name: "Shell",
+            arguments: { action: "run", command: shortDelayedEchoShellCommand("activity-filter-ok") },
             argumentDeltas: ["{\"command\":\"echo activity-filter-ok\""]
           }
         ]
@@ -997,7 +1012,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const { runner, calls } = runnerWith([
       {
         toolCalls: [
-          { id: "call_1", name: "Bash", arguments: { command: longRunningShellCommand() } }
+          { id: "call_1", name: "Shell", arguments: { action: "run", command: longRunningShellCommand() } }
         ]
       },
       { text: "不应该被调用" }
@@ -1033,7 +1048,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     const project = await store.createProject({ name: "proj", path: dir });
     const turns: ScriptedTurn[] = [
       ...Array.from({ length: 30 }, (_, index) => ({
-        toolCalls: [{ id: `call_${index}`, name: "LS", arguments: {} }]
+        toolCalls: [{ id: `call_${index}`, name: "Glob", arguments: { pattern: "*" } }]
       })),
       { text: "已经列完目录。" }
     ];
@@ -1057,7 +1072,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     });
     const project = await store.createProject({ name: "proj", path: dir });
     const turns: ScriptedTurn[] = Array.from({ length: 5 }, (_, index) => ({
-      toolCalls: [{ id: `call_${index}`, name: "LS", arguments: {} }]
+      toolCalls: [{ id: `call_${index}`, name: "Glob", arguments: { pattern: "*" } }]
     }));
     const { runner, calls } = runnerWith(turns);
 

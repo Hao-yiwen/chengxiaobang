@@ -272,12 +272,15 @@ describe("GitEnvironmentCard", () => {
     const stack = screen.getByTestId("chat-floating-stack");
     expect(stack).toContainElement(card);
     expect(stack.firstElementChild).toBe(card);
+    expect(card).toHaveClass("w-[264px]", "rounded-lg", "px-3", "py-2.5");
     expect(card).not.toHaveTextContent("本地");
     expect(screen.getByText("环境信息")).toBeInTheDocument();
     expect(screen.getByText("main")).toBeInTheDocument();
-    expect(within(card).getByTestId("git-environment-new-tab-button")).toBeInTheDocument();
+    expect(within(card).queryByTestId("git-environment-new-tab-button")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("变更"));
+    const changesButton = within(card).getByText("变更").closest("button");
+    expect(changesButton).toHaveClass("h-7");
+    fireEvent.click(changesButton!);
 
     expect(await screen.findByTestId("right-panel")).toBeInTheDocument();
     await waitFor(() => expect(getGitChanges).toHaveBeenCalledWith(project.id));

@@ -1,6 +1,6 @@
 # 定时任务（Scheduled Tasks）设计与实现
 
-> 最后更新：2026-06-23（补齐一次性任务、全局事件和手机通道限制）
+> 最后更新：2026-06-24（合并为单个 Schedule 工具）
 
 用户在**桌面端普通会话**里用自然语言描述一次性或周期性需求（"明天早上 9 点提醒我"、"每天早上 9 点生成 AI 日报"），由**模型调用工具**创建定时任务；任务绑定创建它的那个会话，到点后在**原会话中追加一次无人值守（headless）执行**，结果作为普通对话内容保留在会话里。侧边栏第三个固定入口「定时任务」提供统一的管理页。
 
@@ -15,7 +15,7 @@
 ## 1. 总览（闭环链路）
 
 ```
-会话中自然语言 ──→ 模型调用 ScheduleCreate（审批卡确认 run_at/cron）──→ scheduled_tasks 落库
+会话中自然语言 ──→ 模型调用 Schedule action=create（审批卡确认 run_at/cron）──→ scheduled_tasks 落库
                                                                        │ nextRunAt
         TasksView（侧边栏「定时任务」页）                                │
         启停 / 立即运行 / 删除  ←── /api/tasks ──┐                      ▼
@@ -106,13 +106,13 @@ create table if not exists scheduled_tasks (
 
 | 工具 | 审批 | 行为 |
 |---|---|---|
-| `ScheduleCreate(kind, name, prompt, cron?, run_at?, full_access?)` | **mutating**（审批门控） | `kind=recurring` 校验 5 字段 cron → 落库（算好 nextRunAt）→ 返回任务 id + **接下来 1-2 次触发时间**；`kind=once` 校验带时区 `run_at` → 创建一次性任务 |
-| `ScheduleList()` | read-only | 列出全部任务（id、类型、cron/runAt、启停、下次/上次执行、是否本会话） |
-| `ScheduleCancel(id)` | **mutating** | 删除任务 |
+| `Schedule(action=create, kind, name, prompt, cron?, run_at?, full_access?)` | **mutating**（审批门控） | `kind=recurring` 校验 5 字段 cron → 落库（算好 nextRunAt）→ 返回任务 id + **接下来 1-2 次触发时间**；`kind=once` 校验带时区 `run_at` → 创建一次性任务 |
+| `Schedule(action=list)` | read-only | 列出全部任务（id、类型、cron/runAt、启停、下次/上次执行、是否本会话） |
+| `Schedule(action=cancel, id)` | **mutating** | 删除任务 |
 
 配套改动：
 
-- `packages/shared/src/tool.ts`：通过 `toolMetadata` 声明 `ScheduleCreate/ScheduleCancel` 为 mutating 且需要审批、`ScheduleList` 为 read-only；审批模式下用户会在审批卡上看到 `run_at` 或 `cron` 参数再确认。
+- `packages/shared/src/tool.ts`：只注册 `Schedule` 一个模型工具；`tools/approval-policy.ts` 按 `action` 细分风险，`list` 直接执行，`create/cancel` 进入审批门控。审批模式下用户会在审批卡上看到 `run_at`、`cron` 或 `id` 参数再确认。
 - `system-prompt.ts` 注入**当前本地时间 + 时区**（一行，所有 run 受益）——模型没有时间就无法把"明早 9 点"换算成 cron。
 - **飞书/微信绑定会话拒绝创建**：调度执行的产出只写进会话、不会回发手机群聊，对手机用户是静默黑洞，工具直接报错提示去桌面端创建。
 - 渲染层 `chat.toolLine` 已配好三个工具的友好文案（"创建定时任务「{{name}}」"等）。
@@ -169,8 +169,8 @@ create table if not exists scheduled_tasks (
 |---|---|
 | `test/schedule.test.ts` | cron 纯函数：合法/非法/6 字段拒绝、下次触发计算；runAt 校验与 UTC 归一化 |
 | `test/task-scheduler.test.ts` | 到期执行进原会话并推进/清空 nextRunAt；一次性任务执行后停用；无 provider 时记录 failed；只读自动拒绝 mutating 工具且 run 完成；headless 不覆写会话设置；disabled/未到期不执行；会话忙跳过且不推进；busy 防重入；runNow 未知任务报错 |
-| `test/schedule-tools.test.ts` | create 绑定会话 + 触发预览；非法 cron/run_at 友好报错；飞书/微信会话拒绝；list/cancel 往返 |
-| `test/agent-runner.test.ts`（增量） | headless 过滤 AskUserQuestion、交互 run 保留；schedule 工具对两种 run 均可见 |
+| `test/schedule-tools.test.ts` | `Schedule action=create` 绑定会话 + 触发预览；非法 cron/run_at 友好报错；飞书/微信会话拒绝；`action=list/cancel` 往返 |
+| `test/agent-runner.test.ts`（增量） | headless 过滤 AskUserQuestion、交互 run 保留；`Schedule` 工具对两种 run 均可见 |
 | `test/api-app.test.ts`（增量） | 路由 CRUD、非法 cron 400、重新启用重算 nextRunAt、run-now 202/503 |
 | `test/sqlite-state-store.test.ts`（增量) | 跨重启持久化、部分更新、null 清空 lastError、行缺失 no-op、删会话级联删任务 |
 | `apps/desktop/test/tasks-view.test.tsx` | 侧边栏入口切换视图、列表渲染、开关/立即运行/删除走 ApiClient、空态文案 |

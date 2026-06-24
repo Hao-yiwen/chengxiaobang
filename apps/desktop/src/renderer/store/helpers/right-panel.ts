@@ -397,6 +397,7 @@ export function selectNewProjectState(state: AppState, project: Project, source:
     messages: [] as AppState["messages"],
     toolHistory: [] as AppState["toolHistory"],
     runHistory: [] as AppState["runHistory"],
+    modelDebugRecords: [] as AppState["modelDebugRecords"],
     progressPanelOpen: false,
     rightPanelOpen: false,
     rightPanelMode: null,

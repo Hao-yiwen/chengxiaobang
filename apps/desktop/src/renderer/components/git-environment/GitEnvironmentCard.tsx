@@ -230,23 +230,13 @@ export function GitEnvironmentSlot({ fallback }: { fallback: ReactNode }) {
     <>
       <section
         aria-label={t("gitEnvironment.title")}
-        className="pointer-events-auto w-[264px] rounded-lg border border-border bg-canvas px-3 py-3 text-foreground"
+        className="pointer-events-auto w-[264px] rounded-lg border border-border bg-canvas px-3 py-2.5 text-foreground"
         data-testid="git-environment-card"
       >
-        <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="mb-1.5 flex h-6 items-center">
           <h2 className="truncate text-caption font-normal text-muted-foreground">
             {t("gitEnvironment.title")}
           </h2>
-          <button
-            type="button"
-            data-testid="git-environment-new-tab-button"
-            title={t("rightPanel.newTab")}
-            aria-label={t("rightPanel.newTab")}
-            onClick={() => openRightPanel("changes")}
-            className="ml-auto flex size-7 flex-none items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-canvas-soft-2 hover:text-foreground"
-          >
-            <PlusIcon className="size-4" />
-          </button>
         </div>
         <div className="space-y-1">
           <EnvironmentRow

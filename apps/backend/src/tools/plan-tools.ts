@@ -20,10 +20,10 @@ const proposePlanParams = Type.Object({
   allowedPrompts: Type.Optional(
     Type.Array(
       Type.Object({
-        tool: Type.Literal("Bash"),
-        prompt: Type.String({ description: "允许执行的 Bash 命令前缀或命令说明" })
+        tool: Type.Literal("Shell"),
+        prompt: Type.String({ description: "允许执行的 Shell 命令前缀或命令说明" })
       }),
-      { description: "可选，计划确认后允许的 Bash 提示白名单" }
+      { description: "可选，计划确认后允许的 Shell 提示白名单" }
     )
   )
 });

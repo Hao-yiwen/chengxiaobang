@@ -84,7 +84,7 @@ function toolCall(status: ToolCall["status"]): ToolCall {
   return {
     id: "tool_1",
     runId: "run_1",
-    name: "Bash",
+    name: "Shell",
     args: { command: "ls" },
     status,
     createdAt: "2026-06-08T00:00:01.000Z",
