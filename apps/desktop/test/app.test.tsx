@@ -218,6 +218,38 @@ describe("App", () => {
     expect(screen.queryByText("DeepSeek · deepseek-v4-flash")).not.toBeInTheDocument();
   });
 
+  it("changes the home hero phrase after returning from another page", async () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+
+    try {
+      render(<App client={createClient()} />);
+
+      expect(await screen.findByTestId("home-hero-phrase")).toHaveTextContent(
+        "今天我们来做些什么？"
+      );
+
+      act(() => {
+        useAppStore.getState().setView("settings");
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("home-hero-phrase")).not.toBeInTheDocument();
+      });
+
+      act(() => {
+        useAppStore.getState().setView("home");
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("home-hero-phrase")).toHaveTextContent(
+          "接下来想先推进哪件事？"
+        );
+      });
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
   it("opens DevTools from the global floating button when the desktop bridge is available", async () => {
     const openDevTools = vi.fn(async () => ({ ok: true as const }));
     window.chengxiaobang = {

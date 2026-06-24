@@ -1,5 +1,6 @@
 import {
   CheckMediumIcon,
+  BranchFilterIcon,
   ChevronIcon,
   GitBranchIcon,
   PlusIcon,
@@ -294,7 +295,7 @@ export function GitEnvironmentSlot({ fallback }: { fallback: ReactNode }) {
           <Popover open={commitOpen} onOpenChange={setCommitOpen}>
             <PopoverTrigger asChild>
               <EnvironmentRow
-                icon={<ReviewStatusHalfCircleIcon className="size-4" />}
+                icon={<BranchFilterIcon className="size-4" />}
                 label={t("gitEnvironment.commitOrPush")}
                 disabled={!canOpenCommit}
                 chevron={canOpenCommit}

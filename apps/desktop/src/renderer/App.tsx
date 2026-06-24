@@ -43,6 +43,23 @@ import { selectActiveSession, useAppStore } from "@/store";
 const HOME_HERO_PHRASE_KEYS = ["today", "next", "build", "ship"] as const;
 const RIGHT_PANEL_TRIGGER_HIDE_MS = 120;
 
+type HomeHeroPhraseKey = (typeof HOME_HERO_PHRASE_KEYS)[number];
+
+function randomHomeHeroPhraseKey(): HomeHeroPhraseKey {
+  return (
+    HOME_HERO_PHRASE_KEYS[Math.floor(Math.random() * HOME_HERO_PHRASE_KEYS.length)] ??
+    HOME_HERO_PHRASE_KEYS[0]
+  );
+}
+
+function nextHomeHeroPhraseKey(current: HomeHeroPhraseKey): HomeHeroPhraseKey {
+  const currentIndex = HOME_HERO_PHRASE_KEYS.indexOf(current);
+  return (
+    HOME_HERO_PHRASE_KEYS[(currentIndex + 1) % HOME_HERO_PHRASE_KEYS.length] ??
+    HOME_HERO_PHRASE_KEYS[0]
+  );
+}
+
 function effectiveRightPanelPhase(
   open: boolean,
   phase: RightPanelVisualPhase
@@ -58,13 +75,15 @@ function effectiveRightPanelPhase(
 
 export function App(props: { client?: ApiClient }) {
   const { t } = useTranslation();
-  const homeHeroPhrase = useMemo(() => {
-    const key =
-      HOME_HERO_PHRASE_KEYS[Math.floor(Math.random() * HOME_HERO_PHRASE_KEYS.length)] ??
-      HOME_HERO_PHRASE_KEYS[0];
-    return t(`home.heroPhrases.${key}` as const);
-  }, [t]);
   const view = useAppStore((state) => state.view);
+  const [homeHeroPhraseKey, setHomeHeroPhraseKey] = useState<HomeHeroPhraseKey>(
+    randomHomeHeroPhraseKey
+  );
+  const previousViewRef = useRef(view);
+  const homeHeroPhrase = useMemo(
+    () => t(`home.heroPhrases.${homeHeroPhraseKey}` as const),
+    [homeHeroPhraseKey, t]
+  );
   const activeSession = useAppStore(selectActiveSession);
   const rightPanelOpen = useAppStore((state) => state.rightPanelOpen);
   const rightPanelMode = useAppStore((state) => state.rightPanelMode);
@@ -96,6 +115,17 @@ export function App(props: { client?: ApiClient }) {
 
   useThemeController();
   useI18nController();
+
+  useEffect(() => {
+    const previousView = previousViewRef.current;
+    if (previousView === view) {
+      return;
+    }
+    previousViewRef.current = view;
+    if (previousView !== "home" && view === "home") {
+      setHomeHeroPhraseKey((current) => nextHomeHeroPhraseKey(current));
+    }
+  }, [view]);
 
   useEffect(() => {
     void useAppStore.getState().initClient(props.client);

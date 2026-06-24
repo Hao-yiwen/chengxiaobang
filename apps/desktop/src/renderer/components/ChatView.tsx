@@ -657,7 +657,7 @@ export function ChatView() {
       lastScrollTopRef.current = targetScrollTop;
 
       const atBottom = isNearBottom(el);
-      if (isRunning && anchorIdRef.current) {
+      if (isRunning) {
         updateStreamAutoFollowPaused(!atBottom, atBottom ? "near-bottom" : "manual-scroll");
       }
 
@@ -822,7 +822,9 @@ export function ChatView() {
     const historyLoaded = messages.length > 0 && (!prev || last?.sessionId !== prev.sessionId);
     if (historyLoaded) {
       anchorIdRef.current = undefined;
-      streamAutoFollowRef.current = { paused: false };
+      streamAutoFollowRef.current = isRunning
+        ? { runId: activeRunId, paused: false }
+        : { paused: false };
       setStreamAutoFollowPaused(false);
       if (spacerRef.current) {
         spacerRef.current.style.height = "0px";
@@ -984,7 +986,7 @@ export function ChatView() {
     const movedDown = currentScrollTop > previousScrollTop + USER_SCROLL_DIRECTION_EPSILON_PX;
     lastScrollTopRef.current = currentScrollTop;
 
-    if (isRunning && anchorIdRef.current) {
+    if (isRunning) {
       if (movedUp) {
         updateStreamAutoFollowPaused(true, "manual-scroll");
       } else if (atBottom && movedDown) {

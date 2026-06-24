@@ -12,7 +12,13 @@ import {
   tailSpacerHeight
 } from "../src/renderer/lib/scroll";
 import { resetAppStore, useAppStore } from "../src/renderer/store";
-import type { Message, ProviderConfig, Session, StreamEvent } from "@chengxiaobang/shared";
+import type {
+  ActiveRunSnapshot,
+  Message,
+  ProviderConfig,
+  Session,
+  StreamEvent
+} from "@chengxiaobang/shared";
 
 describe("isNearBottom", () => {
   it("is true within the threshold and false at or beyond it", () => {
@@ -610,6 +616,90 @@ describe("anchor-on-send scrolling", () => {
       run.afterDelta.resolve();
       await runPromise;
     });
+  });
+
+  it("pauses auto-follow after switching back to a running session and scrolling upward", async () => {
+    const runningSession = session;
+    const otherSession: Session = {
+      ...session,
+      id: "session_2",
+      title: "其他会话",
+      updatedAt: "2026-06-08T00:00:05.000Z"
+    };
+    const otherMessages: Message[] = [
+      {
+        id: "u_other",
+        sessionId: otherSession.id,
+        role: "user",
+        content: "其他问题",
+        createdAt: "2026-06-08T00:00:04.000Z"
+      },
+      {
+        id: "a_other",
+        sessionId: otherSession.id,
+        role: "assistant",
+        content: "其他回答",
+        createdAt: "2026-06-08T00:00:05.000Z"
+      }
+    ];
+    const activeRun: ActiveRunSnapshot["run"] = {
+      id: "run_active",
+      sessionId: runningSession.id,
+      status: "running",
+      createdAt: "2026-06-08T00:00:03.000Z",
+      updatedAt: "2026-06-08T00:00:04.000Z"
+    };
+    const client = createClient();
+    client.listSessions = vi.fn(async () => [runningSession, otherSession]);
+    client.listMessages = vi.fn(async (sessionId) =>
+      sessionId === otherSession.id ? otherMessages : messages
+    );
+    client.listSessionRuns = vi.fn(async (sessionId) =>
+      sessionId === runningSession.id
+        ? { runs: [activeRun], toolCalls: [] }
+        : { runs: [], toolCalls: [] }
+    );
+    client.listActiveRuns = vi.fn(async (sessionId) =>
+      sessionId === runningSession.id ? [{ run: activeRun, toolCalls: [] }] : []
+    );
+
+    render(<App client={client} />);
+    await screen.findByText("很长的回答");
+    const scroller = screen.getByTestId("chat-scroll");
+    await waitFor(() => expect(useAppStore.getState().activeRunId).toBe(activeRun.id));
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+
+    await act(async () => {
+      await useAppStore.getState().selectSession(otherSession.id);
+    });
+    await screen.findByText("其他回答");
+
+    await act(async () => {
+      await useAppStore.getState().selectSession(runningSession.id);
+    });
+    await screen.findByText("很长的回答");
+    await waitFor(() => expect(useAppStore.getState().activeRunId).toBe(activeRun.id));
+    await waitFor(() => expect(scroller.scrollTop).toBe(800));
+
+    // 切回运行中会话后没有本地发送锚点；这次轻微上滚仍然必须暂停自动跟随。
+    scroller.scrollTop = 780;
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole("button", { name: "回到底部" })).not.toBeInTheDocument();
+
+    metrics.scrollHeight = 1200;
+    await act(async () => {
+      useAppStore.getState().handleRunEvent({
+        type: "delta",
+        runId: activeRun.id,
+        channel: "text",
+        delta: "续流片段"
+      });
+      await new Promise((resolve) => window.setTimeout(resolve, 40));
+    });
+
+    await screen.findByText("续流片段");
+    expect(scroller.scrollTop).toBe(780);
+    expect(await screen.findByRole("button", { name: "回到底部" })).toBeInTheDocument();
   });
 
   it("keeps a manual reading anchor during streaming resize without resuming auto-follow", async () => {
