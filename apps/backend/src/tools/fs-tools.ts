@@ -60,8 +60,7 @@ const grepParams = Type.Object({
   pattern: Type.String({ description: "ripgrep 搜索表达式" }),
   path: Type.Optional(
     Type.String({
-      description:
-        "可选，限定搜索根目录，只能传目录；如需搜索单个文件，path 传其所在目录并用 glob 限定文件名"
+      description: "可选，限定搜索范围；可传目录或单个文件，目录会递归搜索，文件只搜索该文件"
     })
   ),
   glob: Type.Optional(Type.String({ description: "可选，rg --glob 过滤，例如 **/*.ts" })),
@@ -374,12 +373,12 @@ export function createFsTools(workspacePath: string, options: FsToolOptions = {}
     name: "Grep",
     label: "搜索内容",
     description:
-      "使用 ripgrep 在工作目录或显式绝对路径目录中搜索内容，path 只能传目录；搜索文件内容时优先用它，不要用 shell 拼等价命令。",
+      "使用 ripgrep 在工作目录、显式绝对路径目录或单个文件中搜索内容；path 可传目录或单个文件，搜索文件内容时优先用它，不要用 shell 拼等价命令。",
     parameters: grepParams,
     execute: async (_id, params, signal) => {
       const path = params.path || ".";
-      const target = await resolveFsDirectoryPath(workspacePath, "Grep", path, false);
-      return textResult(await runGrep(target, params, signal));
+      const target = await resolveGrepSearchTarget(workspacePath, path);
+      return textResult(await runGrep(target.cwd, target.targetArg, params, signal));
     }
   };
 
@@ -634,13 +633,15 @@ function resolveFsToolPath(
 
 type FsToolName = "LS" | "Read" | "Write" | "Edit" | "MakeDirectory" | "Glob" | "Grep";
 
-async function resolveFsDirectoryPath(
-  workspacePath: string,
-  toolName: "Grep",
-  path: string,
-  mutating: boolean
-): Promise<string> {
-  const resolved = resolveFsToolPathWithMeta(workspacePath, toolName, path, mutating);
+interface GrepSearchTarget {
+  cwd: string;
+  targetArg: string;
+  kind: "directory" | "file";
+}
+
+async function resolveGrepSearchTarget(workspacePath: string, path: string): Promise<GrepSearchTarget> {
+  const toolName = "Grep";
+  const resolved = resolveFsToolPathWithMeta(workspacePath, toolName, path, false);
   let info: Stats;
   try {
     info = await stat(resolved.target);
@@ -648,35 +649,48 @@ async function resolveFsDirectoryPath(
     if (!isMissingPathError(error)) {
       throw error;
     }
-    log.warn("Grep 搜索根目录不存在", {
-      action: "fs.grep_root_missing",
+    log.warn("Grep 搜索路径不存在", {
+      action: "fs.grep_path_missing",
       toolName,
       workspacePath,
       path,
       target: resolved.target
     });
-    throw new Error(`${toolName} 找不到搜索目录：${path}`);
+    throw new Error(`${toolName} 找不到搜索路径：${path}`);
   }
   if (info.isDirectory()) {
-    return resolved.target;
+    return {
+      cwd: resolved.target,
+      targetArg: ".",
+      kind: "directory"
+    };
   }
-  log.warn("Grep 搜索根路径不是目录", {
-    action: "fs.grep_root_not_directory",
+  if (info.isFile()) {
+    log.debug("Grep 在单个文件内搜索", {
+      action: "fs.grep_single_file",
+      toolName,
+      workspacePath,
+      path,
+      target: resolved.target
+    });
+    return {
+      cwd: dirname(resolved.target),
+      targetArg: basename(resolved.target),
+      kind: "file"
+    };
+  }
+  log.warn("Grep 搜索路径不是目录或普通文件", {
+    action: "fs.grep_path_not_searchable",
     toolName,
     workspacePath,
     path,
     target: resolved.target,
-    isFile: info.isFile(),
     isBlockDevice: info.isBlockDevice(),
     isCharacterDevice: info.isCharacterDevice(),
     isFIFO: info.isFIFO(),
     isSocket: info.isSocket()
   });
-  throw new Error(
-    info.isFile()
-      ? `${toolName} 只能在目录中搜索，收到文件路径：${path}`
-      : `${toolName} 只能在目录中搜索，收到非目录路径：${path}`
-  );
+  throw new Error(`${toolName} 只能在目录或普通文件中搜索，收到非目录非普通文件路径：${path}`);
 }
 
 function resolveFsToolPathWithMeta(
@@ -994,6 +1008,7 @@ function matchedLineNumbers(source: string, needle: string): number[] {
 
 async function runGrep(
   cwd: string,
+  targetArg: string,
   params: {
     pattern: string;
     path?: string;
@@ -1012,7 +1027,7 @@ async function runGrep(
   },
   signal?: AbortSignal
 ): Promise<string> {
-  const args = buildRgArgs(params);
+  const args = buildRgArgs(params, targetArg);
   const output = await spawnAndCollect(resolveRgCommand(), args, cwd, signal);
   const lines = output.split(/\r?\n/).filter((line) => line.length > 0);
   const offset = normalizeNonNegativeInteger(params.offset ?? 0, "offset");
@@ -1028,19 +1043,22 @@ async function runGrep(
   return [...selected, ...(truncated ? [`（输出已截断，共 ${lines.length} 行）`] : [])].join("\n");
 }
 
-function buildRgArgs(params: {
-  pattern: string;
-  glob?: string;
-  output_mode?: "content" | "files_with_matches" | "count";
-  "-A"?: number;
-  "-B"?: number;
-  "-C"?: number;
-  context?: number;
-  "-n"?: boolean;
-  "-i"?: boolean;
-  type?: string;
-  multiline?: boolean;
-}): string[] {
+function buildRgArgs(
+  params: {
+    pattern: string;
+    glob?: string;
+    output_mode?: "content" | "files_with_matches" | "count";
+    "-A"?: number;
+    "-B"?: number;
+    "-C"?: number;
+    context?: number;
+    "-n"?: boolean;
+    "-i"?: boolean;
+    type?: string;
+    multiline?: boolean;
+  },
+  targetArg: string
+): string[] {
   const args = ["--color=never"];
   if (params.output_mode === "files_with_matches") {
     args.push("--files-with-matches");
@@ -1074,7 +1092,7 @@ function buildRgArgs(params: {
     args.push("--multiline");
   }
   // 用 -- 终止选项解析,使以 "-" 开头的检索词(如 "-foo")被当作 pattern 而非未知 flag。
-  args.push("--", params.pattern, ".");
+  args.push("--", params.pattern, targetArg);
   return args;
 }
 

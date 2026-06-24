@@ -117,7 +117,7 @@ describe("builtin agent tools", () => {
       "优先生成 file_path"
     ]);
     expectToolGuidance(tools, "Glob", ["不要用 shell 拼等价命令"]);
-    expectToolGuidance(tools, "Grep", ["path 只能传目录", "不要用 shell 拼等价命令"]);
+    expectToolGuidance(tools, "Grep", ["path 可传目录或单个文件", "不要用 shell 拼等价命令"]);
     expectToolGuidance(tools, "Bash", [
       "默认前台等待 15000ms",
       "run_in_background=true",
@@ -612,35 +612,45 @@ describe("builtin agent tools", () => {
     expect(result).not.toContain("node_modules");
   });
 
-  it("searches file contents", async () => {
+  it("Grep searches file contents", async () => {
     await writeFile(join(dir, "a.txt"), "alpha\nNEEDLE here\nbeta", "utf8");
     await expect(run(tools, "Grep", { pattern: "needle", "-i": true })).resolves.toContain(
       "a.txt:2"
     );
   });
 
-  it("rejects file paths as Grep search roots", async () => {
+  it("Grep searches inside a single file path", async () => {
     await writeFile(join(dir, "a.txt"), "alpha\nneedle here\nbeta", "utf8");
 
-    await expect(run(tools, "Grep", { path: "a.txt", pattern: "needle" })).rejects.toThrow(
-      "Grep 只能在目录中搜索，收到文件路径：a.txt"
+    await expect(run(tools, "Grep", { path: "a.txt", pattern: "needle" })).resolves.toContain(
+      "a.txt:2"
     );
   });
 
-  it("fails clearly when the Grep search root is missing", async () => {
+  it("Grep searches inside nested single file paths", async () => {
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "src", "a.ts"), "export const needle = true;\n", "utf8");
+    await writeFile(join(dir, "src", "b.ts"), "export const other = true;\n", "utf8");
+
+    const result = await run(tools, "Grep", { path: "src/a.ts", pattern: "needle" });
+    expect(result).toContain("a.ts:1");
+    expect(result).not.toContain("b.ts");
+  });
+
+  it("Grep fails clearly when the search path is missing", async () => {
     await expect(run(tools, "Grep", { path: "missing-dir", pattern: "needle" })).rejects.toThrow(
-      "Grep 找不到搜索目录：missing-dir"
+      "Grep 找不到搜索路径：missing-dir"
     );
   });
 
-  it("uses the bundled ripgrep path when provided", () => {
+  it("Grep uses the bundled ripgrep path when provided", () => {
     expect(resolveRgCommand({ CHENGXIAOBANG_RG_PATH: "/opt/chengxiaobang/rg" })).toBe(
       "/opt/chengxiaobang/rg"
     );
     expect(resolveRgCommand({})).toBe("rg");
   });
 
-  it("searches and globs explicit absolute directories", async () => {
+  it("Grep searches and globs explicit absolute paths", async () => {
     const outsideDir = await mkdtemp(join(tmpdir(), "cxb-tools-search-"));
     try {
       await mkdir(join(outsideDir, "src"), { recursive: true });
@@ -653,6 +663,9 @@ describe("builtin agent tools", () => {
       await expect(
         run(tools, "Grep", { path: outsideDir, pattern: "needle" })
       ).resolves.toContain("src/outside.ts:1");
+      await expect(
+        run(tools, "Grep", { path: join(outsideDir, "src", "outside.ts"), pattern: "needle" })
+      ).resolves.toContain("outside.ts:1");
     } finally {
       await rm(outsideDir, { recursive: true, force: true });
     }
