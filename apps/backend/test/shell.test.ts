@@ -28,14 +28,25 @@ describe("runCommand", () => {
 
   it("caps captured output for foreground commands", async () => {
     const dir = await mkdtemp(join(tmpdir(), "cxb-shell-output-"));
-    const script = join(dir, "large-output.cjs");
+    const script = join(dir, process.platform === "win32" ? "large-output.cmd" : "large-output.cjs");
 
     try {
-      await writeFile(script, "process.stdout.write('x'.repeat(300000));", "utf8");
-      const command =
-        process.platform === "win32"
-          ? `powershell -NoProfile -NonInteractive -Command "[Console]::Out.Write(('x' * 300000))"`
-          : nodeScriptCommand(script);
+      if (process.platform === "win32") {
+        await writeFile(
+          script,
+          [
+            "@echo off",
+            "setlocal EnableDelayedExpansion",
+            "set \"s=xxxxxxxxxxxxxxxx\"",
+            "for /l %%i in (1,1,15) do set \"s=!s!!s!\"",
+            "<nul set /p \"=!s!\""
+          ].join("\r\n"),
+          "utf8"
+        );
+      } else {
+        await writeFile(script, "process.stdout.write('x'.repeat(300000));", "utf8");
+      }
+      const command = process.platform === "win32" ? `"${script}"` : nodeScriptCommand(script);
       const result = await runCommand(command, process.cwd(), 10_000);
 
       expect(result.truncated).toBe(true);

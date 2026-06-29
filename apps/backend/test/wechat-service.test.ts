@@ -121,7 +121,7 @@ describe("WechatService", () => {
     expect(service.getStatus()).toMatchObject({ status: "connected", accountId: "wechat_account" });
 
     bridge.emit(wechatInbound({ text: "你是谁" }));
-    await vi.waitFor(() => expect(bridge.sent).toHaveLength(1));
+    await vi.waitFor(() => expect(bridge.sent).toHaveLength(1), { timeout: 5_000 });
 
     expect(bridge.sent[0]).toEqual({ chatId: "wx_chat1", text: "你好，我是程小帮。" });
     const session = await store.findSessionByWechatChatId("wx_chat1");

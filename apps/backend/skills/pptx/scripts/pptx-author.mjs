@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 import { dirname, resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
-const pptxgen = require("pptxgenjs");
+import pptxgen from "pptxgenjs";
 
 export const SLIDE_WIDE = { width: 13.333, height: 7.5 };
 
