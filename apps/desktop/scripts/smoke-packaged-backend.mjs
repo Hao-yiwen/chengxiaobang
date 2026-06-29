@@ -297,6 +297,7 @@ async function verifyPackagedMainRuntimeLoads(resourcesPath) {
 (async () => {
 const appAsar = process.env.CHENGXIAOBANG_SMOKE_APP_ASAR;
 const path = require("path");
+const { pathToFileURL } = require("url");
 const Module = require("module");
 const { EventEmitter } = require("events");
 const updaterOutDir = appAsar + "/node_modules/electron-updater/out";
@@ -383,7 +384,8 @@ const onnx = require(appAsar + "/node_modules/onnxruntime-node");
 if (!onnx?.InferenceSession || !onnx?.Tensor) {
   throw new Error("onnxruntime-node 没有加载出预期的运行时导出");
 }
-const { PaddleOcrService } = await import(appAsar + "/node_modules/ppu-paddle-ocr/index.js");
+const ppuPaddleOcrEntry = pathToFileURL(path.join(appAsar, "node_modules", "ppu-paddle-ocr", "index.js")).href;
+const { PaddleOcrService } = await import(ppuPaddleOcrEntry);
 if (typeof PaddleOcrService !== "function") {
   throw new Error("ppu-paddle-ocr 没有导出 PaddleOcrService");
 }
