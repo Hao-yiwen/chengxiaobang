@@ -134,11 +134,10 @@ export function resolveBackendCommand(options: {
   const bunBinary = process.env.BUN_BINARY ?? (options.isPackaged
     ? firstExisting([bundledBun])
     : firstExisting([devBun, ...(platform === "win32" ? devBunWinShims : []), devBunShim]));
-  const rgBinary =
-    process.env.CHENGXIAOBANG_RG_PATH?.trim() ||
-    (options.isPackaged
-      ? firstExisting([bundledRg])
-      : firstExisting(workspaceRipgrepCandidates(root, platform, process.arch)));
+  const configuredRg = process.env.CHENGXIAOBANG_RG_PATH?.trim();
+  const rgBinary = options.isPackaged
+    ? firstExisting([bundledRg])
+    : configuredRg || firstExisting(workspaceRipgrepCandidates(root, platform, process.arch));
 
   // 开发模式用 Bun watch 自动重启后端，避免每次改后端都重启 Electron。
   const dev = !options.isPackaged;

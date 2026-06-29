@@ -2077,7 +2077,7 @@ describe("right panel", () => {
     expect(diff).toHaveTextContent("old line");
   });
 
-  it("returns to the menu when switching from a project-only panel to a conversation", async () => {
+  it("closes project-only panels when switching from a project to a conversation", async () => {
     installTerminalBridge();
     const client = createClient({
       listSessions: vi.fn(async () => [session, conversationSession])
@@ -2092,6 +2092,7 @@ describe("right panel", () => {
     await clickSidebarSession("纯对话");
 
     await waitFor(() => expect(screen.queryByLabelText("终端")).not.toBeInTheDocument());
+    fireEvent.click(await screen.findByTitle("打开侧边面板"));
     expect(await screen.findByRole("button", { name: "浏览器" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "侧边会话" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "产物" })).not.toBeInTheDocument();

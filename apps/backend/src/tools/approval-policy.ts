@@ -21,6 +21,14 @@ export function assessToolApprovalRisk(
   args: Record<string, unknown>,
   context: ToolApprovalContext = {}
 ): ToolApprovalAssessment {
+  if (toolName === "TodoRead" || toolName === "TodoWrite") {
+    return {
+      risk: "low",
+      requiresGate: false,
+      reason: "Todo 工具只更新当前运行的进度视图，可直接执行。"
+    };
+  }
+
   if (!isMutatingTool(toolName)) {
     return {
       risk: "low",

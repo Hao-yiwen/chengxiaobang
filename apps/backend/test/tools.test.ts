@@ -823,6 +823,7 @@ describe("tool approval policy", () => {
     expect(requiresApproval("Schedule")).toBe(false);
     expect(requiresApproval("ToolSearch")).toBe(false);
     expect(requiresApproval("Read")).toBe(false);
+    expect(requiresApproval("TodoWrite")).toBe(false);
     expect(requiresApproval("WebSearch")).toBe(false);
   });
 
@@ -973,6 +974,10 @@ describe("tool approval policy", () => {
       risk: "medium",
       requiresGate: true,
       smartVerdict: "ask_user"
+    });
+    expect(assessToolApprovalRisk("TodoWrite", { todos: [] })).toMatchObject({
+      risk: "low",
+      requiresGate: false
     });
   });
 });
