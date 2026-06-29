@@ -1,13 +1,25 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-const skillScriptRoot = resolve("apps/backend/skills/pptx/scripts");
+const skillScripts = {
+  "pptx-add-slide.mjs": "../skills/pptx/scripts/pptx-add-slide.mjs",
+  "pptx-author.mjs": "../skills/pptx/scripts/pptx-author.mjs",
+  "pptx-clean.mjs": "../skills/pptx/scripts/pptx-clean.mjs",
+  "pptx-inspect.mjs": "../skills/pptx/scripts/pptx-inspect.mjs",
+  "pptx-pack.mjs": "../skills/pptx/scripts/pptx-pack.mjs",
+  "pptx-render-images.mjs": "../skills/pptx/scripts/pptx-render-images.mjs",
+  "pptx-unpack.mjs": "../skills/pptx/scripts/pptx-unpack.mjs",
+  "pptx-validate.mjs": "../skills/pptx/scripts/pptx-validate.mjs"
+} as const satisfies Record<string, string>;
 
 async function loadScript<T>(name: string): Promise<T> {
-  return import(pathToFileURL(join(skillScriptRoot, name)).href) as Promise<T>;
+  const script = skillScripts[name as keyof typeof skillScripts];
+  if (!script) {
+    throw new Error(`未知 PPTX 脚本: ${name}`);
+  }
+  return import(script) as Promise<T>;
 }
 
 function isZip(buffer: Buffer): boolean {

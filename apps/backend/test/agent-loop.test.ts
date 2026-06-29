@@ -27,18 +27,22 @@ async function drain(stream: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]
 
 function delayedEchoShellCommand(text: string): string {
   return process.platform === "win32"
-    ? `ping 127.0.0.1 -n 2 >nul & echo ${text}`
+    ? `Start-Sleep -Milliseconds 200; Write-Output ${powershellQuote(text)}`
     : `sleep 0.2; echo ${text}`;
 }
 
 function shortDelayedEchoShellCommand(text: string): string {
   return process.platform === "win32"
-    ? `powershell -NoProfile -Command "Start-Sleep -Milliseconds 200; Write-Output ${text}"`
+    ? `Start-Sleep -Milliseconds 200; Write-Output ${powershellQuote(text)}`
     : `sleep 0.2; echo ${text}`;
 }
 
 function longRunningShellCommand(): string {
-  return process.platform === "win32" ? "ping 127.0.0.1 -n 6 >nul" : "sleep 5";
+  return process.platform === "win32" ? "Start-Sleep -Seconds 5" : "sleep 5";
+}
+
+function powershellQuote(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 describe("AgentRunner agentic loop (pi)", () => {
@@ -67,7 +71,7 @@ describe("AgentRunner agentic loop (pi)", () => {
 
   afterEach(async () => {
     await store.close();
-    await rm(dir, { recursive: true, force: true });
+    await removeTemporaryDir(dir);
   });
 
   function runnerWith(turns: ScriptedTurn[]) {
@@ -1152,4 +1156,20 @@ async function waitForFileToContain(
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error(`文件未出现预期内容 path=${path} expected=${expected} content=${lastContent}`);
+}
+
+async function removeTemporaryDir(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? String(error.code) : undefined;
+      if (process.platform !== "win32" || code !== "EBUSY" || attempt === 4) {
+        throw error;
+      }
+      // Windows runner 偶尔会在子进程退出后短暂保留文件句柄，稍等后重试清理。
+      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
 }

@@ -32,7 +32,11 @@ describe("runCommand", () => {
 
     try {
       await writeFile(script, "process.stdout.write('x'.repeat(300000));", "utf8");
-      const result = await runCommand(nodeScriptCommand(script), process.cwd(), 10_000);
+      const command =
+        process.platform === "win32"
+          ? `powershell -NoProfile -NonInteractive -Command "[Console]::Out.Write(('x' * 300000))"`
+          : nodeScriptCommand(script);
+      const result = await runCommand(command, process.cwd(), 10_000);
 
       expect(result.truncated).toBe(true);
       expect(result.output).toContain("输出已截断");
