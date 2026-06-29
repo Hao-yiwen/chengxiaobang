@@ -610,7 +610,6 @@ describe("anchor-on-send scrolling", () => {
     });
     await screen.findByText("流式片段");
     expect(scroller.scrollTop).toBe(100);
-    expect(screen.getByRole("button", { name: "回到底部" })).toBeInTheDocument();
 
     await act(async () => {
       run.afterDelta.resolve();

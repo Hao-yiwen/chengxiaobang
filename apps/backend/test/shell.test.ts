@@ -27,7 +27,7 @@ describe("runCommand", () => {
   });
 
   it("caps captured output for foreground commands", async () => {
-    const command = `${JSON.stringify(process.execPath)} -e "process.stdout.write('x'.repeat(300000))"`;
+    const command = nodeEvalCommand("process.stdout.write('x'.repeat(300000))");
 
     const result = await runCommand(command, process.cwd(), 10_000);
 
@@ -77,7 +77,13 @@ function failingCommand(exitCode: number, message: string): string {
 }
 
 function longRunningCommand(): string {
-  return `${JSON.stringify(process.execPath)} -e "setTimeout(() => {}, 5000)"`;
+  return nodeEvalCommand("setTimeout(() => {}, 5000)");
+}
+
+function nodeEvalCommand(script: string): string {
+  const node = process.platform === "win32" ? process.execPath : shellQuote(process.execPath);
+  const code = process.platform === "win32" ? `"${script.replaceAll('"', '\\"')}"` : shellQuote(script);
+  return `${node} -e ${code}`;
 }
 
 describe("resolveShellCommand", () => {

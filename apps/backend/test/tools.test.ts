@@ -628,9 +628,8 @@ describe("builtin agent tools", () => {
       await expect(
         run(tools, "Glob", { path: outsideDir, pattern: "**/*.ts" })
       ).resolves.toContain("src/outside.ts");
-      await expect(
-        run(tools, "Grep", { path: outsideDir, pattern: "needle" })
-      ).resolves.toContain("src/outside.ts:1");
+      const grepResult = await run(tools, "Grep", { path: outsideDir, pattern: "needle" });
+      expect(normalizeToolOutput(grepResult)).toContain("src/outside.ts:1");
       await expect(
         run(tools, "Grep", { path: join(outsideDir, "src", "outside.ts"), pattern: "needle" })
       ).resolves.toContain("outside.ts:1");
@@ -1010,6 +1009,10 @@ function longCommandWithTrailingEcho(text: string): string {
 
 function powershellQuote(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
+}
+
+function normalizeToolOutput(value: string): string {
+  return value.replaceAll("\\", "/").replace(/(^|\n)\.\//gu, "$1");
 }
 
 function parseBackgroundId(result: string): string {

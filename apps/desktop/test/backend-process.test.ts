@@ -105,6 +105,7 @@ describe("resolveBackendCommand", () => {
     const resourcesPath = await mkdtemp(join(tmpdir(), "cxb-resources-"));
     tempDirs.push(resourcesPath);
     await writeFile(join(resourcesPath, "rg"), "");
+    await writeFile(join(resourcesPath, "rg.exe"), "");
 
     const dev = resolveBackendCommand({
       port: 3210,
