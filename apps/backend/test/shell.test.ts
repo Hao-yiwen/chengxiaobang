@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -27,13 +27,19 @@ describe("runCommand", () => {
   });
 
   it("caps captured output for foreground commands", async () => {
-    const command = nodeEvalCommand("process.stdout.write('x'.repeat(300000))");
+    const dir = await mkdtemp(join(tmpdir(), "cxb-shell-output-"));
+    const script = join(dir, "large-output.cjs");
 
-    const result = await runCommand(command, process.cwd(), 10_000);
+    try {
+      await writeFile(script, "process.stdout.write('x'.repeat(300000));", "utf8");
+      const result = await runCommand(nodeScriptCommand(script), process.cwd(), 10_000);
 
-    expect(result.truncated).toBe(true);
-    expect(result.output).toContain("输出已截断");
-    expect(result.output.length).toBeLessThan(270_000);
+      expect(result.truncated).toBe(true);
+      expect(result.output).toContain("输出已截断");
+      expect(result.output.length).toBeLessThan(270_000);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("kills timed-out commands and reports exit code 124", async () => {
@@ -84,6 +90,12 @@ function nodeEvalCommand(script: string): string {
   const node = process.platform === "win32" ? process.execPath : shellQuote(process.execPath);
   const code = process.platform === "win32" ? `"${script.replaceAll('"', '\\"')}"` : shellQuote(script);
   return `${node} -e ${code}`;
+}
+
+function nodeScriptCommand(scriptPath: string): string {
+  const node = process.platform === "win32" ? process.execPath : shellQuote(process.execPath);
+  const script = process.platform === "win32" ? `"${scriptPath}"` : shellQuote(scriptPath);
+  return `${node} ${script}`;
 }
 
 describe("resolveShellCommand", () => {
