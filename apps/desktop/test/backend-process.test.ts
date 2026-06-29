@@ -98,23 +98,26 @@ describe("resolveBackendCommand", () => {
     expect(command.args).toContain(String(process.pid));
   });
 
-  it("enables model debug only for development backend launches", () => {
+  it("enables model debug only for development backend launches", async () => {
     process.env.BUN_BINARY = "/tmp/bun";
     process.env.CHENGXIAOBANG_RG_PATH = "/tmp/rg";
     process.env.CHENGXIAOBANG_MODEL_DEBUG = "1";
+    const resourcesPath = await mkdtemp(join(tmpdir(), "cxb-resources-"));
+    tempDirs.push(resourcesPath);
+    await writeFile(join(resourcesPath, "rg"), "");
 
     const dev = resolveBackendCommand({
       port: 3210,
       dataDir: "/tmp/data",
       token: "token",
-      resourcesPath: "/tmp/resources",
+      resourcesPath,
       isPackaged: false
     });
     const packaged = resolveBackendCommand({
       port: 3210,
       dataDir: "/tmp/data",
       token: "token",
-      resourcesPath: "/tmp/resources",
+      resourcesPath,
       isPackaged: true
     });
 
