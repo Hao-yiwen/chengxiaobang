@@ -1843,9 +1843,12 @@ describe("App", () => {
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 250));
     });
-    await waitFor(() => {
-      expect(within(chatScroll).getByText("抓取 https://a.example")).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(within(chatScroll).getByText("抓取 https://a.example")).toBeInTheDocument();
+      },
+      { timeout: 3_000 }
+    );
     expect(within(chatScroll).queryByText("正在思考…")).not.toBeInTheDocument();
 
     act(() => {

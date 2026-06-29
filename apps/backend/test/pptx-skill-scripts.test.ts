@@ -4,14 +4,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const skillScripts = {
-  "pptx-add-slide.mjs": "../skills/pptx/scripts/pptx-add-slide.mjs",
-  "pptx-author.mjs": "../skills/pptx/scripts/pptx-author.mjs",
-  "pptx-clean.mjs": "../skills/pptx/scripts/pptx-clean.mjs",
-  "pptx-inspect.mjs": "../skills/pptx/scripts/pptx-inspect.mjs",
-  "pptx-pack.mjs": "../skills/pptx/scripts/pptx-pack.mjs",
-  "pptx-render-images.mjs": "../skills/pptx/scripts/pptx-render-images.mjs",
-  "pptx-unpack.mjs": "../skills/pptx/scripts/pptx-unpack.mjs",
-  "pptx-validate.mjs": "../skills/pptx/scripts/pptx-validate.mjs"
+  "pptx-add-slide.mjs": new URL("../skills/pptx/scripts/pptx-add-slide.mjs", import.meta.url).href,
+  "pptx-author.mjs": new URL("../skills/pptx/scripts/pptx-author.mjs", import.meta.url).href,
+  "pptx-clean.mjs": new URL("../skills/pptx/scripts/pptx-clean.mjs", import.meta.url).href,
+  "pptx-inspect.mjs": new URL("../skills/pptx/scripts/pptx-inspect.mjs", import.meta.url).href,
+  "pptx-pack.mjs": new URL("../skills/pptx/scripts/pptx-pack.mjs", import.meta.url).href,
+  "pptx-render-images.mjs": new URL("../skills/pptx/scripts/pptx-render-images.mjs", import.meta.url).href,
+  "pptx-unpack.mjs": new URL("../skills/pptx/scripts/pptx-unpack.mjs", import.meta.url).href,
+  "pptx-validate.mjs": new URL("../skills/pptx/scripts/pptx-validate.mjs", import.meta.url).href
 } as const satisfies Record<string, string>;
 
 async function loadScript<T>(name: string): Promise<T> {
@@ -19,7 +19,7 @@ async function loadScript<T>(name: string): Promise<T> {
   if (!script) {
     throw new Error(`未知 PPTX 脚本: ${name}`);
   }
-  return import(script) as Promise<T>;
+  return import(/* @vite-ignore */ script) as Promise<T>;
 }
 
 function isZip(buffer: Buffer): boolean {
