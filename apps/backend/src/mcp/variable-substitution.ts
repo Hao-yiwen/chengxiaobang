@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { posix, win32 } from "node:path";
 import type { McpServerSpec, ResolvedMcpServer } from "./types";
 
 /** 变量替换上下文。userConfig 缺失的键最终会让 server 标记为待配置、不启动。 */
@@ -78,7 +78,7 @@ export function substituteServerSpec(
   }
   let cwd = spec.cwd ? collect(spec.cwd) : undefined;
   if (cwd && !looksAbsolute(cwd)) {
-    cwd = resolve(ctx.pluginRoot, cwd);
+    cwd = resolveLikeBase(ctx.pluginRoot, cwd);
   }
 
   return {
@@ -96,4 +96,14 @@ function referencesProjectDir(spec: McpServerSpec): boolean {
 /** 同时识别 POSIX（/foo）与 Windows（C:\foo、\foo）绝对路径，便于跨平台。 */
 function looksAbsolute(path: string): boolean {
   return path.startsWith("/") || path.startsWith("\\") || /^[A-Za-z]:[\\/]/.test(path);
+}
+
+function resolveLikeBase(basePath: string, targetPath: string): string {
+  if (/^[A-Za-z]:[\\/]/.test(basePath) || basePath.startsWith("\\")) {
+    return win32.resolve(basePath, targetPath);
+  }
+  if (basePath.startsWith("/")) {
+    return posix.resolve(basePath, targetPath);
+  }
+  return posix.resolve(basePath, targetPath);
 }

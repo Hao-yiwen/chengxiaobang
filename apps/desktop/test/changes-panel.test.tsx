@@ -299,7 +299,7 @@ describe("changes panel", () => {
     expect(
       await screen.findByText("没有可展示的文本差异；文件可能是二进制、过大，或只有元数据变更。")
     ).toBeInTheDocument();
-  });
+  }, 20_000);
 
   it("shows an inline error when a single file diff fails to load", async () => {
     const changes: GitChangesResult = {

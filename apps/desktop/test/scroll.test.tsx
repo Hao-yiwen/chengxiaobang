@@ -428,7 +428,7 @@ describe("anchor-on-send scrolling", () => {
     metrics.rectTops = { "chat-scroll": 0, u1: -200, a1: 48 };
     scroller.scrollTop = 240;
     fireEvent.scroll(scroller);
-    expect(screen.getByRole("button", { name: "回到底部" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "回到底部" })).toBeInTheDocument();
 
     // 右侧面板打开/改宽会让聊天列重排；同一条消息相对视口下移 80px 时，
     // ChatView 应把 scrollTop 同步加回去，视觉上仍停在原位置。
@@ -436,7 +436,7 @@ describe("anchor-on-send scrolling", () => {
     triggerScrollGeometryChange();
 
     expect(scroller.scrollTop).toBe(320);
-    expect(screen.getByRole("button", { name: "回到底部" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "回到底部" })).toBeInTheDocument();
   });
 
   it("sticks to the bottom when the chat column is resized at the bottom", async () => {

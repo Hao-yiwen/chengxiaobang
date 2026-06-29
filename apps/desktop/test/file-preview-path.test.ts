@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { posix } from "node:path";
 import { describe, expect, it } from "vitest";
 import { previewPathCandidates, safeResolveWithin } from "../src/main/file-preview-path";
 
@@ -24,9 +24,9 @@ describe("file preview path candidates", () => {
         cwd: "/repo/app"
       })
     ).toEqual([
-      join("/repo/project", "out/report.xlsx"),
-      join("/home/.chengxiaobang", "session_abc", "out/report.xlsx"),
-      join("/repo/app", "out/report.xlsx")
+      posix.join("/repo/project", "out/report.xlsx"),
+      posix.join("/home/.chengxiaobang", "session_abc", "out/report.xlsx"),
+      posix.join("/repo/app", "out/report.xlsx")
     ]);
   });
 
@@ -38,7 +38,7 @@ describe("file preview path candidates", () => {
         cwd: "/repo/app"
       })
     ).toContain(
-      join(
+      posix.join(
         "/Users/me/.chengxiaobang",
         "session_87f0e4ec-201c-4bd6-9a0a-283904c26c46",
         "个人财务收支表_2026年6月.xlsx"

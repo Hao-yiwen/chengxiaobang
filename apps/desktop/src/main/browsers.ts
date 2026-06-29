@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { posix, win32 } from "node:path";
 
 export const DEFAULT_EXTERNAL_BROWSER_ID = "default";
 
@@ -58,7 +58,7 @@ export function externalBrowserSearchDirs(home: string, platform: NodeJS.Platfor
   if (platform === "win32") {
     return [];
   }
-  return ["/Applications", join(home, "Applications")];
+  return ["/Applications", posix.join(home, "Applications")];
 }
 
 export function externalBrowserCandidatePaths(
@@ -67,7 +67,9 @@ export function externalBrowserCandidatePaths(
 ): string[] {
   return [
     ...(browser.absoluteAppPaths ?? []),
-    ...(browser.appNames ?? []).flatMap((appName) => searchDirs.map((dir) => join(dir, appName)))
+    ...(browser.appNames ?? []).flatMap((appName) =>
+      searchDirs.map((dir) => joinLikeBase(dir, appName))
+    )
   ];
 }
 
@@ -157,10 +159,10 @@ function windowsExternalBrowserDefinitions(env: NodeJS.ProcessEnv): ExternalBrow
       id: "chrome",
       name: "Google Chrome",
       absoluteAppPaths: uniquePaths([
-        localAppData ? join(localAppData, "Google", "Chrome", "Application", "chrome.exe") : undefined,
-        programFiles ? join(programFiles, "Google", "Chrome", "Application", "chrome.exe") : undefined,
+        localAppData ? win32.join(localAppData, "Google", "Chrome", "Application", "chrome.exe") : undefined,
+        programFiles ? win32.join(programFiles, "Google", "Chrome", "Application", "chrome.exe") : undefined,
         programFilesX86
-          ? join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe")
+          ? win32.join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe")
           : undefined
       ])
     },
@@ -169,11 +171,11 @@ function windowsExternalBrowserDefinitions(env: NodeJS.ProcessEnv): ExternalBrow
       name: "Microsoft Edge",
       absoluteAppPaths: uniquePaths([
         localAppData
-          ? join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe")
+          ? win32.join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe")
           : undefined,
-        programFiles ? join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe") : undefined,
+        programFiles ? win32.join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe") : undefined,
         programFilesX86
-          ? join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe")
+          ? win32.join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe")
           : undefined
       ])
     },
@@ -181,8 +183,8 @@ function windowsExternalBrowserDefinitions(env: NodeJS.ProcessEnv): ExternalBrow
       id: "firefox",
       name: "Firefox",
       absoluteAppPaths: uniquePaths([
-        programFiles ? join(programFiles, "Mozilla Firefox", "firefox.exe") : undefined,
-        programFilesX86 ? join(programFilesX86, "Mozilla Firefox", "firefox.exe") : undefined
+        programFiles ? win32.join(programFiles, "Mozilla Firefox", "firefox.exe") : undefined,
+        programFilesX86 ? win32.join(programFilesX86, "Mozilla Firefox", "firefox.exe") : undefined
       ])
     },
     {
@@ -190,10 +192,10 @@ function windowsExternalBrowserDefinitions(env: NodeJS.ProcessEnv): ExternalBrow
       name: "Brave",
       absoluteAppPaths: uniquePaths([
         localAppData
-          ? join(localAppData, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
+          ? win32.join(localAppData, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
           : undefined,
         programFiles
-          ? join(programFiles, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
+          ? win32.join(programFiles, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
           : undefined
       ])
     },
@@ -201,8 +203,8 @@ function windowsExternalBrowserDefinitions(env: NodeJS.ProcessEnv): ExternalBrow
       id: "ie",
       name: "Internet Explorer",
       absoluteAppPaths: uniquePaths([
-        programFiles ? join(programFiles, "Internet Explorer", "iexplore.exe") : undefined,
-        programFilesX86 ? join(programFilesX86, "Internet Explorer", "iexplore.exe") : undefined
+        programFiles ? win32.join(programFiles, "Internet Explorer", "iexplore.exe") : undefined,
+        programFilesX86 ? win32.join(programFilesX86, "Internet Explorer", "iexplore.exe") : undefined
       ])
     }
   ];
@@ -210,4 +212,10 @@ function windowsExternalBrowserDefinitions(env: NodeJS.ProcessEnv): ExternalBrow
 
 function uniquePaths(paths: Array<string | undefined>): string[] {
   return [...new Set(paths.filter((path): path is string => Boolean(path)))];
+}
+
+function joinLikeBase(basePath: string, childPath: string): string {
+  return /^[A-Za-z]:[\\/]/.test(basePath) || basePath.startsWith("\\")
+    ? win32.join(basePath, childPath)
+    : posix.join(basePath, childPath);
 }

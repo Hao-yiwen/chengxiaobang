@@ -1,7 +1,10 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { basename, dirname, join, posix, relative, resolve, sep } from "node:path";
-import AdmZip from "adm-zip";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
+
+const require = createRequire(import.meta.url);
+const AdmZip = require("adm-zip");
 
 export const XML_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
 export const REL_SLIDE =

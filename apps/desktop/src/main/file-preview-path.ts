@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve, sep } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { isAbsolutePathLike } from "../common/file-preview";
 
 export interface FilePreviewResolveContext {
@@ -17,9 +17,10 @@ export function defaultPreviewHome(): string {
 }
 
 export function safeResolveWithin(basePath: string, targetPath: string): string | undefined {
-  const base = resolve(basePath);
-  const target = resolve(base, targetPath);
-  if (target !== base && !target.startsWith(`${base}${sep}`)) {
+  const tools = pathToolsForBase(basePath);
+  const base = tools.resolve(basePath);
+  const target = tools.resolve(base, targetPath);
+  if (target !== base && !target.startsWith(`${base}${tools.sep}`)) {
     return undefined;
   }
   return target;
@@ -32,7 +33,7 @@ export function sessionWorkspacePath(
   if (!sessionId || !SESSION_ID_PATTERN.test(sessionId)) {
     return undefined;
   }
-  return join(chengxiaobangHome, sessionId);
+  return joinLikeBase(chengxiaobangHome, sessionId);
 }
 
 export function previewPathCandidates(
@@ -43,7 +44,7 @@ export function previewPathCandidates(
   if (!trimmed) {
     return [];
   }
-  if (isAbsolute(trimmed) || isAbsolutePathLike(trimmed)) {
+  if (isAbsolutePathLike(trimmed)) {
     return [trimmed];
   }
 
@@ -71,4 +72,17 @@ export function previewPathCandidates(
   }
 
   return [...new Set(candidates)];
+}
+
+function pathToolsForBase(basePath: string): Pick<typeof posix, "resolve" | "sep"> {
+  if (/^[A-Za-z]:[\\/]/.test(basePath) || basePath.startsWith("\\")) {
+    return win32;
+  }
+  return posix;
+}
+
+function joinLikeBase(basePath: string, childPath: string): string {
+  return /^[A-Za-z]:[\\/]/.test(basePath) || basePath.startsWith("\\")
+    ? win32.join(basePath, childPath)
+    : posix.join(basePath, childPath);
 }

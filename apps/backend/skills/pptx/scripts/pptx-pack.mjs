@@ -1,7 +1,10 @@
 #!/usr/bin/env node
-import AdmZip from "adm-zip";
+import { createRequire } from "node:module";
 import { addFolderToZip, ensurePptxExtension } from "./lib/pptx-ooxml.mjs";
 import { validatePptxDirectory, validatePptxFile } from "./pptx-validate.mjs";
+
+const require = createRequire(import.meta.url);
+const AdmZip = require("adm-zip");
 
 export async function packPptx(inputDir, outputPath, options = {}) {
   const target = ensurePptxExtension(outputPath);

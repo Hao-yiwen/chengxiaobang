@@ -11,7 +11,12 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import {
+  execFileSync,
+  spawn,
+  type ChildProcess,
+  type ChildProcessWithoutNullStreams
+} from "node:child_process";
 import { once } from "node:events";
 import {
   type LogLevelName,
@@ -511,10 +516,16 @@ export async function checkBackendRuntime(
     let settled = false;
     let stdout = "";
     let stderr = "";
-    const child = spawn(command.command, ["--version"], {
-      env: command.env,
-      stdio: ["ignore", "pipe", "pipe"]
-    });
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(command.command, ["--version"], {
+        env: command.env,
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+    } catch (error) {
+      rejectCheck(new Error(`Bun 运行时自检启动失败: ${messageFromError(error)}`));
+      return;
+    }
 
     const finish = (callback: () => void) => {
       if (settled) return;

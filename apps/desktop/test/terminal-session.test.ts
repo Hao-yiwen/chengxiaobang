@@ -179,7 +179,9 @@ describe("TerminalSessionManager", () => {
   it("writes input, resizes, and closes the pty session", async () => {
     const cwd = await tempDir();
     const { owner } = createOwner();
-    const { manager, ptys } = managerWithFakePty();
+    const { manager, ptys } = managerWithFakePty("/bin/test-shell", {
+      managerOptions: { platform: "darwin", forceKillAfterMs: 0 }
+    });
     await manager.start(owner, { id: "pty_1", cwd, cols: 80, rows: 24 });
 
     expect(manager.write("pty_1", "ls\r")).toEqual({ ok: true });

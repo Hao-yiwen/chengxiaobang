@@ -1,5 +1,5 @@
 import { lstat, mkdir, readFile, readdir, realpath, stat } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, win32 } from "node:path";
 import type { ProjectFileEntry } from "@chengxiaobang/shared";
 
 import { getLogger } from "../logging/logger";
@@ -27,10 +27,8 @@ interface PathTools {
   sep: string;
 }
 
-const nativePathTools: PathTools = { resolve, isAbsolute, sep };
-
 function pathToolsFor(platform: NodeJS.Platform = process.platform): PathTools {
-  return platform === "win32" ? win32 : nativePathTools;
+  return platform === "win32" ? win32 : posix;
 }
 
 function normalizeForContainment(path: string, platform: NodeJS.Platform): string {

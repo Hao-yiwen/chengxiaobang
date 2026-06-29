@@ -239,16 +239,27 @@ describe("sidebar pinning", () => {
   });
 
   it("从右键菜单置顶会话", async () => {
-    const pinned = session("s2", "另一个B", null, "2026-06-12T00:00:00.000Z");
-    const updateSession = vi.fn(async () => pinned);
-    const client = createClient({ updateSession });
+    let pinned = false;
+    const updateSession = vi.fn(async () => {
+      pinned = true;
+      return session("s2", "另一个B", null, "2026-06-12T00:00:00.000Z");
+    });
+    const client = createClient({
+      updateSession,
+      listSessions: vi.fn(async () => [
+        session("s1", "旧标题A"),
+        session("s2", "另一个B", null, pinned ? "2026-06-12T00:00:00.000Z" : undefined),
+        ...projectSessions()
+      ])
+    });
 
     render(<App client={client} />);
     const sidebar = within(await screen.findByTestId("app-sidebar"));
-    fireEvent.contextMenu(await sidebar.findByText("另一个B"));
+    const row = (await sidebar.findByText("另一个B")).closest("div") as HTMLElement;
+    fireEvent.contextMenu(row);
 
     // 初始无置顶区，「置顶」此时只存在于菜单项中。
-    fireEvent.click(await screen.findByText("置顶"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "置顶" }));
 
     await waitFor(() => expect(updateSession).toHaveBeenCalledWith("s2", { pinned: true }));
     // 置顶区出现，该会话移入置顶区（原对话区不再展示，保持单份）。
@@ -311,9 +322,15 @@ describe("sidebar pinning", () => {
   });
 
   it("从右键菜单取消置顶项目", async () => {
-    const setProjectPinned = vi.fn(async () => project());
+    let pinned = true;
+    const setProjectPinned = vi.fn(async () => {
+      pinned = false;
+      return project();
+    });
     const client = createClient({
-      listProjects: vi.fn(async () => [project("2026-06-10T00:00:00.000Z")]),
+      listProjects: vi.fn(async () => [
+        project(pinned ? "2026-06-10T00:00:00.000Z" : undefined)
+      ]),
       setProjectPinned
     });
 
@@ -321,8 +338,9 @@ describe("sidebar pinning", () => {
     const sidebar = within(await screen.findByTestId("app-sidebar"));
     await sidebar.findByText("置顶");
 
-    fireEvent.contextMenu(sidebar.getAllByText("demo")[0]);
-    fireEvent.click(await screen.findByText("取消置顶"));
+    const row = sidebar.getAllByText("demo")[0].closest("div") as HTMLElement;
+    fireEvent.contextMenu(row);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "取消置顶" }));
 
     await waitFor(() => expect(setProjectPinned).toHaveBeenCalledWith("project_1", false));
     // 置顶区消失，项目名只剩项目区一份。

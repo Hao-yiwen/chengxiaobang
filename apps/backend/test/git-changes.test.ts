@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   checkoutGitBranch,
@@ -140,7 +141,7 @@ describe("collectGitChanges", () => {
     await writeFile(join(dir, "staged.txt"), "base\n");
     await writeFile(join(dir, "both.txt"), "base\n");
     await git("add .");
-    await git('commit -m "base"');
+    await git("commit -m base");
 
     await writeFile(join(dir, "tracked.txt"), "one\ntwo\n");
     await writeFile(join(dir, "staged.txt"), "changed\n");
@@ -215,18 +216,18 @@ describe("collectGitChanges", () => {
     await git("branch -M main");
     await writeFile(join(dir, "base.txt"), "base\n");
     await git("add .");
-    await git('commit -m "chore: base"');
+    await git("commit -m chore-base");
 
     await git("switch -c feature");
     await writeFile(join(dir, "feature.txt"), "feature\n");
     await git("add .");
-    await git('commit -m "feat: branch work"');
+    await git("commit -m feat-branch-work");
 
     await git("switch main");
     await writeFile(join(dir, "main.txt"), "main\n");
     await git("add .");
-    await git('commit -m "fix: main work"');
-    await git('merge --no-ff feature -m "merge feature"');
+    await git("commit -m fix-main-work");
+    await git("merge --no-ff feature -m merge-feature");
     await git("tag v1");
     await git("update-ref refs/remotes/origin/main HEAD");
 
@@ -234,7 +235,7 @@ describe("collectGitChanges", () => {
     expect(graph.isRepo).toBe(true);
     expect(graph.head).toBe("main");
     expect(graph.commits[0]).toMatchObject({
-      subject: "merge feature",
+      subject: "merge-feature",
       parents: [expect.any(String), expect.any(String)]
     });
     expect(graph.commits[0].refs).toEqual(
@@ -245,7 +246,7 @@ describe("collectGitChanges", () => {
       ])
     );
     expect(graph.commits.map((commit) => commit.subject)).toEqual(
-      expect.arrayContaining(["feat: branch work", "fix: main work", "chore: base"])
+      expect.arrayContaining(["feat-branch-work", "fix-main-work", "chore-base"])
     );
   }, 20_000);
 
@@ -255,7 +256,7 @@ describe("collectGitChanges", () => {
     await writeFile(join(dir, "tracked.txt"), "one\n");
     await writeFile(join(dir, "staged.txt"), "base\n");
     await git("add .");
-    await git('commit -m "base"');
+    await git("commit -m base");
 
     await writeFile(join(dir, "tracked.txt"), "one\ntwo\n");
     await writeFile(join(dir, "staged.txt"), "changed\n");
@@ -282,18 +283,18 @@ describe("collectGitChanges", () => {
     await git("branch -M main");
     await writeFile(join(dir, "tracked.txt"), "one\n");
     await git("add .");
-    await git('commit -m "base"');
+    await git("commit -m base");
     await git("branch local-feature");
 
     const remote = await mkdtemp(join(tmpdir(), "cxb-git-remote-"));
     try {
       expect((await runCommand("git init --bare", remote)).exitCode).toBe(0);
-      await git(`remote add origin "${remote}"`);
+      await git(`remote add origin ${gitRemoteUrl(remote)}`);
       await git("push -u origin main");
       await git("switch -c remote-feature");
       await writeFile(join(dir, "remote.txt"), "remote\n");
       await git("add .");
-      await git('commit -m "remote"');
+      await git("commit -m remote");
       await git("push origin remote-feature");
       await git("switch main");
       await git("branch -D remote-feature");
@@ -317,7 +318,9 @@ describe("collectGitChanges", () => {
     await git("branch -M main");
     await writeFile(join(dir, "tracked.txt"), "one\n");
     await git("add .");
-    await git('commit -m "base"');
+    await git("commit -m base");
+    await git("config user.name t");
+    await git("config user.email t@t.com");
 
     await writeFile(join(dir, "tracked.txt"), "one\ntwo\n");
     const result = await commitGitChanges(
@@ -342,11 +345,11 @@ describe("collectGitChanges", () => {
     await git("branch -M main");
     await writeFile(join(dir, "tracked.txt"), "one\n");
     await git("add .");
-    await git('commit -m "base"');
+    await git("commit -m base");
     const remote = await mkdtemp(join(tmpdir(), "cxb-git-remote-"));
     try {
       expect((await runCommand("git init --bare", remote)).exitCode).toBe(0);
-      await git(`remote add origin "${remote}"`);
+      await git(`remote add origin ${gitRemoteUrl(remote)}`);
 
       const result = await pushGitBranch(dir);
 
@@ -384,7 +387,7 @@ describe("collectGitChanges", () => {
     await git("init");
     await writeFile(join(dir, "space name.txt"), "old\n");
     await git("add .");
-    await git('commit -m "base"');
+    await git("commit -m base");
     await writeFile(join(dir, "space name.txt"), "new\n");
 
     const file = await collectGitFileDiff(dir, { scope: "unstaged", path: "space name.txt" });
@@ -399,7 +402,7 @@ describe("collectGitChanges", () => {
     await writeFile(join(dir, "big.txt"), "base\n");
     await writeFile(join(dir, "small.txt"), "old\n");
     await git("add .");
-    await git('commit -m "base"');
+    await git("commit -m base");
     await writeFile(
       join(dir, "big.txt"),
       Array.from({ length: 40_000 }, (_, index) => `line ${index}`).join("\n")
@@ -416,3 +419,7 @@ describe("collectGitChanges", () => {
     expect(smallDiff?.diff).toContain("+new");
   }, 20_000);
 });
+
+function gitRemoteUrl(path: string): string {
+  return pathToFileURL(path).href;
+}

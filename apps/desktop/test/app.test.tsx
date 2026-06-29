@@ -210,7 +210,7 @@ describe("App", () => {
     expect(screen.queryByText("程小帮 · AI 工作台")).not.toBeInTheDocument();
     expect(await screen.findByText("做一份 PPT")).toBeInTheDocument();
     expect(screen.getByLabelText("输入消息")).toBeInTheDocument();
-    expect(screen.getByTestId("composer-shell")).toHaveClass("rounded-xl");
+    expect(screen.getByTestId("composer-shell")).toHaveClass("rounded-[18px]");
     expect(screen.getByTestId("composer-shell")).not.toHaveClass("rounded-pill");
     await selectDeepSeekForHome();
     // 首页模型入口展示友好模型名，不重复露出原始模型 id。
@@ -1695,11 +1695,12 @@ describe("App", () => {
     });
 
     await waitFor(() => {
-      expect(within(chatScroll).getByText("写入 out.txt 中")).toBeInTheDocument();
+      expect(within(chatScroll).getByText("写入文件中")).toBeInTheDocument();
+      expect(within(chatScroll).getByRole("button", { name: "预览文件 out.txt" })).toBeInTheDocument();
       expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
     });
-    expect(within(chatScroll).queryByText("写入文件中")).not.toBeInTheDocument();
-    expect(within(composerColumn).queryByText(/写入 out.txt 中/)).not.toBeInTheDocument();
+    expect(within(composerColumn).queryByText(/写入文件中/)).not.toBeInTheDocument();
+    expect(within(composerColumn).queryByRole("button", { name: "预览文件 out.txt" })).not.toBeInTheDocument();
     expect(screen.queryByText(/思考中/)).not.toBeInTheDocument();
     expect(screen.queryByText("正在思考…")).not.toBeInTheDocument();
 
@@ -1708,10 +1709,12 @@ describe("App", () => {
     });
 
     await waitFor(() => {
-      expect(within(chatScroll).getByText("写入 out.txt 中")).toBeInTheDocument();
+      expect(within(chatScroll).getByText("写入文件中")).toBeInTheDocument();
+      expect(within(chatScroll).getByRole("button", { name: "预览文件 out.txt" })).toBeInTheDocument();
       expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
     });
-    expect(within(composerColumn).queryByText(/写入 out.txt/)).not.toBeInTheDocument();
+    expect(within(composerColumn).queryByText(/写入文件/)).not.toBeInTheDocument();
+    expect(within(composerColumn).queryByRole("button", { name: "预览文件 out.txt" })).not.toBeInTheDocument();
     expect(screen.queryByText(/完整内容/)).not.toBeInTheDocument();
 
     act(() => {
@@ -1719,10 +1722,12 @@ describe("App", () => {
       emit?.({ type: "tool_call", runId: "run_1", toolCall: completedTool });
     });
 
-    expect(within(chatScroll).getByText("写入 out.txt 中")).toBeInTheDocument();
+    expect(within(chatScroll).getByText("写入文件中")).toBeInTheDocument();
+    expect(within(chatScroll).getByRole("button", { name: "预览文件 out.txt" })).toBeInTheDocument();
     await waitFor(() => {
-      expect(within(chatScroll).queryByText("写入 out.txt 中")).not.toBeInTheDocument();
-      expect(within(chatScroll).getByText("写入 out.txt")).toBeInTheDocument();
+      expect(within(chatScroll).queryByText("写入文件中")).not.toBeInTheDocument();
+      expect(within(chatScroll).getByText("写入")).toBeInTheDocument();
+      expect(within(chatScroll).getByRole("button", { name: "预览文件 out.txt" })).toBeInTheDocument();
       expect(within(chatScroll).getByText(/深度思考/)).toBeInTheDocument();
     });
     act(() => {
@@ -2203,7 +2208,10 @@ describe("App", () => {
 
     const chatScroll = await screen.findByTestId("chat-scroll");
     await waitFor(() => {
-      expect(within(chatScroll).getByText("写入 document-spec.json 中")).toBeInTheDocument();
+      expect(within(chatScroll).getByText("写入文件中")).toBeInTheDocument();
+      expect(
+        within(chatScroll).getByRole("button", { name: "预览文件 document-spec.json" })
+      ).toBeInTheDocument();
     });
     const streamRoot = within(chatScroll).getByText("准备写入：").closest(".markdown-streamdown");
     expect(streamRoot?.getAttribute("style") ?? "").not.toContain("--streamdown-caret");

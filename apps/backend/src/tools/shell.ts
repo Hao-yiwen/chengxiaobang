@@ -524,7 +524,8 @@ function sendSignalToProcessGroup(
   }
   try {
     if (process.platform === "win32") {
-      killWindowsProcessTree(child.pid, signal === "SIGKILL");
+      // Windows 没有可靠的 SIGTERM 进程组语义，超时或中止时直接强制清理整棵进程树。
+      killWindowsProcessTree(child.pid, true);
       return;
     }
     process.kill(-child.pid, signal);

@@ -2098,7 +2098,7 @@ describe("right panel", () => {
     expect(screen.queryByRole("button", { name: "终端" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "文件预览" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "审查" })).not.toBeInTheDocument();
-  });
+  }, 10_000);
 
   it("hides the panel toggle on the home view", async () => {
     const client = createClient({

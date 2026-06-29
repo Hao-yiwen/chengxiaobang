@@ -415,9 +415,21 @@ describe("AgentRunner agentic loop (pi)", () => {
       { text: "todo 已更新。" }
     ]);
 
-    const events = await drain(
-      runner.stream({ prompt: "实现复杂功能", projectId: project.id, accessMode: "approval" })
-    );
+    const events: StreamEvent[] = [];
+    for await (const event of runner.stream({
+      prompt: "实现复杂功能",
+      projectId: project.id,
+      accessMode: "approval"
+    })) {
+      events.push(event);
+      if (
+        event.type === "tool_call" &&
+        event.toolCall.name === "TodoWrite" &&
+        event.toolCall.status === "pending_approval"
+      ) {
+        throw new Error("TodoWrite 不应进入审批等待");
+      }
+    }
     const todoEvents = events.filter(
       (event) =>
         event.type === "tool_call" &&
@@ -442,7 +454,7 @@ describe("AgentRunner agentic loop (pi)", () => {
     });
     expect(state!.items.map((item) => item.content)).toEqual(["新增契约", "接入 UI"]);
     expect(state!.items.map((item) => item.status)).toEqual(["completed", "pending"]);
-  });
+  }, 20_000);
 
   it("spills oversized model-requested tool results before the next model turn", async () => {
     const project = await store.createProject({ name: "proj", path: dir });

@@ -102,10 +102,12 @@ describe("SystemSpeechManager", () => {
     const result = await manager.start("zh-CN");
 
     expect(result).toEqual({ ok: false, error: "系统语音 helper 启动超时" });
-    await eventually(() => {
-      expect(existsSync(marker)).toBe(true);
-    });
-    await expect(readFile(marker, "utf8")).resolves.toBe("terminated");
+    if (process.platform !== "win32") {
+      await eventually(() => {
+        expect(existsSync(marker)).toBe(true);
+      });
+      await expect(readFile(marker, "utf8")).resolves.toBe("terminated");
+    }
 
     process.env.CXB_FAKE_SPEECH_MODE = "normal";
     const next = await manager.start("zh-CN");

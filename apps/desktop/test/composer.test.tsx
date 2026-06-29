@@ -293,26 +293,26 @@ describe("Composer 首页占位文案轮播", () => {
     act(() => {
       vi.advanceTimersByTime(2800);
     });
-    expect(rail.style.transform).toBe("translateY(-24px)");
+    expect(rail.style.transform).toBe("translateY(-20px)");
 
     act(() => {
       setDocumentVisibility("hidden");
       document.dispatchEvent(new Event("visibilitychange"));
       vi.advanceTimersByTime(2800 * 3);
     });
-    expect(rail.style.transform).toBe("translateY(-24px)");
+    expect(rail.style.transform).toBe("translateY(-20px)");
 
     act(() => {
       setDocumentVisibility("visible");
       document.dispatchEvent(new Event("visibilitychange"));
       vi.advanceTimersByTime(2799);
     });
-    expect(rail.style.transform).toBe("translateY(-24px)");
+    expect(rail.style.transform).toBe("translateY(-20px)");
 
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(rail.style.transform).toBe("translateY(-48px)");
+    expect(rail.style.transform).toBe("translateY(-40px)");
   });
 
   it("pauses while the window is blurred and resumes after focus", () => {
@@ -334,24 +334,24 @@ describe("Composer 首页占位文案轮播", () => {
     act(() => {
       vi.advanceTimersByTime(2800);
     });
-    expect(rail.style.transform).toBe("translateY(-24px)");
+    expect(rail.style.transform).toBe("translateY(-20px)");
 
     act(() => {
       window.dispatchEvent(new Event("blur"));
       vi.advanceTimersByTime(2800 * 3);
     });
-    expect(rail.style.transform).toBe("translateY(-24px)");
+    expect(rail.style.transform).toBe("translateY(-20px)");
 
     act(() => {
       window.dispatchEvent(new Event("focus"));
       vi.advanceTimersByTime(2799);
     });
-    expect(rail.style.transform).toBe("translateY(-24px)");
+    expect(rail.style.transform).toBe("translateY(-20px)");
 
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(rail.style.transform).toBe("translateY(-48px)");
+    expect(rail.style.transform).toBe("translateY(-40px)");
   });
 
   it("requires confirmation before switching to full access from the home composer", async () => {

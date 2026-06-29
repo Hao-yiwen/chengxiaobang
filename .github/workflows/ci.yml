@@ -25,6 +25,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Resolve ripgrep runtime
+        shell: bash
+        run: |
+          rg_path="$(node -e "import('@vscode/ripgrep').then(({ rgPath }) => process.stdout.write(rgPath))")"
+          echo "CHENGXIAOBANG_RG_PATH=$rg_path" >> "$GITHUB_ENV"
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -51,6 +57,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Resolve ripgrep runtime
+        shell: bash
+        run: |
+          rg_path="$(node -e "import('@vscode/ripgrep').then(({ rgPath }) => process.stdout.write(rgPath))")"
+          echo "CHENGXIAOBANG_RG_PATH=$rg_path" >> "$GITHUB_ENV"
 
       - name: Typecheck
         run: pnpm typecheck

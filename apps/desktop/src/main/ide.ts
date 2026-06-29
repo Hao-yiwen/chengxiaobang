@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { posix, win32 } from "node:path";
 
 export interface ProjectOpenerDefinition {
   id: string;
@@ -58,12 +58,12 @@ export function projectOpenerSearchDirs(
 ): string[] {
   if (platform === "win32") {
     return uniquePaths([
-      env.LOCALAPPDATA ? join(env.LOCALAPPDATA, "Programs") : undefined,
+      env.LOCALAPPDATA ? win32.join(env.LOCALAPPDATA, "Programs") : undefined,
       env.ProgramFiles,
       env["ProgramFiles(x86)"]
     ]);
   }
-  return ["/Applications", join(home, "Applications")];
+  return ["/Applications", posix.join(home, "Applications")];
 }
 
 export function projectOpenerCandidatePaths(
@@ -72,7 +72,9 @@ export function projectOpenerCandidatePaths(
 ): string[] {
   return [
     ...(opener.absoluteAppPaths ?? []),
-    ...(opener.appNames ?? []).flatMap((appName) => searchDirs.map((dir) => join(dir, appName)))
+    ...(opener.appNames ?? []).flatMap((appName) =>
+      searchDirs.map((dir) => joinLikeBase(dir, appName))
+    )
   ];
 }
 
@@ -120,7 +122,7 @@ export async function detectInstalledProjectOpeners(
 }
 
 function windowsProjectOpenerDefinitions(env: NodeJS.ProcessEnv): ProjectOpenerDefinition[] {
-  const localPrograms = env.LOCALAPPDATA ? join(env.LOCALAPPDATA, "Programs") : undefined;
+  const localPrograms = env.LOCALAPPDATA ? win32.join(env.LOCALAPPDATA, "Programs") : undefined;
   const programFiles = env.ProgramFiles;
   const programFilesX86 = env["ProgramFiles(x86)"];
   const systemRoot = env.SystemRoot ?? "C:\\Windows";
@@ -129,31 +131,31 @@ function windowsProjectOpenerDefinitions(env: NodeJS.ProcessEnv): ProjectOpenerD
       id: "vscode",
       name: "VS Code",
       absoluteAppPaths: uniquePaths([
-        localPrograms ? join(localPrograms, "Microsoft VS Code", "Code.exe") : undefined,
-        programFiles ? join(programFiles, "Microsoft VS Code", "Code.exe") : undefined,
-        programFilesX86 ? join(programFilesX86, "Microsoft VS Code", "Code.exe") : undefined
+        localPrograms ? win32.join(localPrograms, "Microsoft VS Code", "Code.exe") : undefined,
+        programFiles ? win32.join(programFiles, "Microsoft VS Code", "Code.exe") : undefined,
+        programFilesX86 ? win32.join(programFilesX86, "Microsoft VS Code", "Code.exe") : undefined
       ])
     },
     {
       id: "cursor",
       name: "Cursor",
       absoluteAppPaths: uniquePaths([
-        localPrograms ? join(localPrograms, "Cursor", "Cursor.exe") : undefined,
-        programFiles ? join(programFiles, "Cursor", "Cursor.exe") : undefined
+        localPrograms ? win32.join(localPrograms, "Cursor", "Cursor.exe") : undefined,
+        programFiles ? win32.join(programFiles, "Cursor", "Cursor.exe") : undefined
       ])
     },
     {
       id: "windsurf",
       name: "Windsurf",
       absoluteAppPaths: uniquePaths([
-        localPrograms ? join(localPrograms, "Windsurf", "Windsurf.exe") : undefined,
-        programFiles ? join(programFiles, "Windsurf", "Windsurf.exe") : undefined
+        localPrograms ? win32.join(localPrograms, "Windsurf", "Windsurf.exe") : undefined,
+        programFiles ? win32.join(programFiles, "Windsurf", "Windsurf.exe") : undefined
       ])
     },
     {
       id: "explorer",
       name: "Explorer",
-      absoluteAppPaths: uniquePaths([join(systemRoot, "explorer.exe"), "explorer.exe"]),
+      absoluteAppPaths: uniquePaths([win32.join(systemRoot, "explorer.exe"), "explorer.exe"]),
       alwaysAvailable: true
     }
   ];
@@ -161,4 +163,10 @@ function windowsProjectOpenerDefinitions(env: NodeJS.ProcessEnv): ProjectOpenerD
 
 function uniquePaths(paths: Array<string | undefined>): string[] {
   return [...new Set(paths.filter((path): path is string => Boolean(path)))];
+}
+
+function joinLikeBase(basePath: string, childPath: string): string {
+  return /^[A-Za-z]:[\\/]/.test(basePath) || basePath.startsWith("\\")
+    ? win32.join(basePath, childPath)
+    : posix.join(basePath, childPath);
 }

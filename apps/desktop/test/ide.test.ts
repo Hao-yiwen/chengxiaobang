@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { posix, win32 } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   detectInstalledProjectOpeners,
@@ -12,7 +12,7 @@ describe("projectOpenerSearchDirs", () => {
   it("searches the system and user Applications folders", () => {
     expect(projectOpenerSearchDirs("/Users/me", "darwin")).toEqual([
       "/Applications",
-      join("/Users/me", "Applications")
+      posix.join("/Users/me", "Applications")
     ]);
   });
 
@@ -24,7 +24,7 @@ describe("projectOpenerSearchDirs", () => {
         "ProgramFiles(x86)": "C:\\Program Files (x86)"
       })
     ).toEqual([
-      join("C:\\Users\\me\\AppData\\Local", "Programs"),
+      win32.join("C:\\Users\\me\\AppData\\Local", "Programs"),
       "C:\\Program Files",
       "C:\\Program Files (x86)"
     ]);
@@ -173,7 +173,12 @@ describe("detectInstalledProjectOpeners", () => {
       SystemRoot: "C:\\Windows"
     };
     const definitions = projectOpenerDefinitions("win32", env);
-    const codePath = join(env.LOCALAPPDATA, "Programs", "Microsoft VS Code", "Code.exe");
+    const codePath = win32.join(
+      env.LOCALAPPDATA,
+      "Programs",
+      "Microsoft VS Code",
+      "Code.exe"
+    );
     const exists = (path: string) => path === codePath;
 
     await expect(
@@ -183,7 +188,7 @@ describe("detectInstalledProjectOpeners", () => {
       {
         id: "explorer",
         name: "Explorer",
-        appPath: join(env.SystemRoot, "explorer.exe"),
+        appPath: win32.join(env.SystemRoot, "explorer.exe"),
         iconDataUrl: undefined
       }
     ]);

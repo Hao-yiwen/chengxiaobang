@@ -27,10 +27,7 @@ describe("runCommand", () => {
   });
 
   it("caps captured output for foreground commands", async () => {
-    const command =
-      process.platform === "win32"
-        ? "powershell -NoProfile -Command \"$text = 'x' * 300000; Write-Output $text\""
-        : "printf '%*s' 300000 '' | tr ' ' x";
+    const command = `${JSON.stringify(process.execPath)} -e "process.stdout.write('x'.repeat(300000))"`;
 
     const result = await runCommand(command, process.cwd(), 10_000);
 
@@ -80,7 +77,7 @@ function failingCommand(exitCode: number, message: string): string {
 }
 
 function longRunningCommand(): string {
-  return process.platform === "win32" ? "ping 127.0.0.1 -n 6 >nul" : "sleep 5";
+  return `${JSON.stringify(process.execPath)} -e "setTimeout(() => {}, 5000)"`;
 }
 
 describe("resolveShellCommand", () => {

@@ -747,7 +747,7 @@ describe("createApp", () => {
     await writeFile(join(repoRoot, "tracked.txt"), "one\n");
     expect((await runCommand("git -c user.name=t -c user.email=t@t.com add .", repoRoot)).exitCode).toBe(0);
     expect(
-      (await runCommand('git -c user.name=t -c user.email=t@t.com commit -m "base"', repoRoot))
+      (await runCommand("git -c user.name=t -c user.email=t@t.com commit -m base", repoRoot))
         .exitCode
     ).toBe(0);
     await writeFile(join(repoRoot, "tracked.txt"), "one\ntwo\n");
@@ -797,7 +797,7 @@ describe("createApp", () => {
     await writeFile(join(repoRoot, "tracked.txt"), "one\n");
     expect((await runCommand("git -c user.name=t -c user.email=t@t.com add .", repoRoot)).exitCode).toBe(0);
     expect(
-      (await runCommand('git -c user.name=t -c user.email=t@t.com commit -m "base"', repoRoot))
+      (await runCommand("git -c user.name=t -c user.email=t@t.com commit -m base", repoRoot))
         .exitCode
     ).toBe(0);
 
@@ -844,7 +844,7 @@ describe("createApp", () => {
     await writeFile(join(repoRoot, "space name.txt"), "old\n");
     expect((await runCommand("git -c user.name=t -c user.email=t@t.com add .", repoRoot)).exitCode).toBe(0);
     expect(
-      (await runCommand('git -c user.name=t -c user.email=t@t.com commit -m "base"', repoRoot))
+      (await runCommand("git -c user.name=t -c user.email=t@t.com commit -m base", repoRoot))
         .exitCode
     ).toBe(0);
     await writeFile(join(repoRoot, "space name.txt"), "new\n");

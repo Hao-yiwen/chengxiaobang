@@ -978,29 +978,33 @@ describe("tool approval policy", () => {
 });
 
 function failingShellCommand(exitCode: number): string {
-  return process.platform === "win32" ? `exit /b ${exitCode}` : `exit ${exitCode}`;
+  return process.platform === "win32" ? `exit ${exitCode}` : `exit ${exitCode}`;
 }
 
 function printWorkingDirectoryCommand(): string {
-  return process.platform === "win32" ? "cd" : "pwd";
+  return process.platform === "win32" ? "(Get-Location).Path" : "pwd";
 }
 
 function delayedEchoCommand(text: string): string {
   return process.platform === "win32"
-    ? `ping 127.0.0.1 -n 2 >nul & echo ${text}`
+    ? `Start-Sleep -Milliseconds 200; Write-Output ${powershellQuote(text)}`
     : `sleep 0.2; echo ${text}`;
 }
 
 function shortDelayedEchoCommand(text: string): string {
   return process.platform === "win32"
-    ? `powershell -NoProfile -Command "Start-Sleep -Milliseconds 200; Write-Output ${text}"`
+    ? `Start-Sleep -Milliseconds 200; Write-Output ${powershellQuote(text)}`
     : `sleep 0.2; echo ${text}`;
 }
 
 function longCommandWithTrailingEcho(text: string): string {
   return process.platform === "win32"
-    ? `ping 127.0.0.1 -n 6 >nul & echo ${text}`
+    ? `Start-Sleep -Seconds 5; Write-Output ${powershellQuote(text)}`
     : `sleep 5; echo ${text}`;
+}
+
+function powershellQuote(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function parseBackgroundId(result: string): string {
