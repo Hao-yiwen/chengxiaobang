@@ -21,7 +21,7 @@ async function main() {
   await verifyPackagedMainRuntimeLoads(resourcesPath);
 
   const dataDir = await mkdtemp(join(tmpdir(), "cxb-packaged-backend-"));
-  const port = Number(process.env.CHENGXIAOBANG_SMOKE_PORT ?? randomInt(30_000, 50_000));
+  const port = Number(process.env.CHENGXIAOBANG_SMOKE_PORT ?? randomInt(20_000, 30_000));
   const token = `smoke-${Date.now()}`;
   console.info("[smoke] 准备启动打包后端", {
     platform: process.platform,
