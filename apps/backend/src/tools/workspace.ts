@@ -1,5 +1,5 @@
 import { lstat, mkdir, readFile, readdir, realpath, stat } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, posix, relative, resolve, win32 } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from "node:path";
 import type { ProjectFileEntry } from "@chengxiaobang/shared";
 
 import { getLogger } from "../logging/logger";
