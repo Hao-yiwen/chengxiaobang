@@ -36,7 +36,7 @@ describe("runCommand", () => {
       }
       const command =
         process.platform === "win32"
-          ? `powershell -NoProfile -NonInteractive -Command "[Console]::Out.Write([string]::new([char]120, 300000))"`
+          ? `node -e "process.stdout.write(Buffer.alloc(300000, 120).toString())"`
           : nodeScriptCommand(script);
       const result = await runCommand(command, process.cwd(), 10_000);
 

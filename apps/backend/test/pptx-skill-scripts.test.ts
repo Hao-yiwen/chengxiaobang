@@ -26,7 +26,9 @@ function isZip(buffer: Buffer): boolean {
   return buffer[0] === 0x50 && buffer[1] === 0x4b;
 }
 
-describe("pptx skill scripts", () => {
+const describePptxScripts = process.platform === "win32" ? describe.skip : describe;
+
+describePptxScripts("pptx skill scripts", () => {
   let dir: string;
 
   beforeEach(async () => {

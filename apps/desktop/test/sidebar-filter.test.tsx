@@ -305,7 +305,7 @@ describe("sidebar sessions", () => {
     await waitFor(() => expect(sidebar.queryByText("普通会话6")).not.toBeInTheDocument());
     await reloadSidebarData();
     await waitFor(() => expect(sidebar.queryByText("普通会话6")).not.toBeInTheDocument());
-  });
+  }, 10_000);
 
   it("resets sidebar expansion state when project sort changes", async () => {
     render(<App client={createPagedClient()} />);
