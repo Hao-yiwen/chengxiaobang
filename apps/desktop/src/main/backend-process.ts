@@ -15,9 +15,10 @@ import {
   execFileSync,
   spawn,
   type ChildProcess,
-  type ChildProcessWithoutNullStreams
+  type ChildProcessByStdio
 } from "node:child_process";
 import { once } from "node:events";
+import type { Readable } from "node:stream";
 import {
   type LogLevelName,
   type LogWriter,
@@ -516,7 +517,7 @@ export async function checkBackendRuntime(
     let settled = false;
     let stdout = "";
     let stderr = "";
-    let child: ChildProcessWithoutNullStreams;
+    let child: ChildProcessByStdio<null, Readable, Readable>;
     try {
       child = spawn(command.command, ["--version"], {
         env: command.env,
