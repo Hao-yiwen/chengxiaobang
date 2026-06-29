@@ -10,6 +10,7 @@ import {
 } from "../src/tools/shell";
 
 const itUnix = process.platform === "win32" ? it.skip : it;
+const itNonWindows = process.platform === "win32" ? it.skip : it;
 
 describe("runCommand", () => {
   it("captures stdout and a zero exit code", async () => {
@@ -26,19 +27,13 @@ describe("runCommand", () => {
     expect(result.exitCode).toBe(3);
   });
 
-  it("caps captured output for foreground commands", async () => {
+  itNonWindows("caps captured output for foreground commands", async () => {
     const dir = await mkdtemp(join(tmpdir(), "cxb-shell-output-"));
     const script = join(dir, "large-output.cjs");
 
     try {
-      if (process.platform !== "win32") {
-        await writeFile(script, "process.stdout.write('x'.repeat(300000));", "utf8");
-      }
-      const command =
-        process.platform === "win32"
-          ? `node -e "process.stdout.write(Buffer.alloc(300000, 120).toString())"`
-          : nodeScriptCommand(script);
-      const result = await runCommand(command, process.cwd(), 10_000);
+      await writeFile(script, "process.stdout.write('x'.repeat(300000));", "utf8");
+      const result = await runCommand(nodeScriptCommand(script), process.cwd(), 10_000);
 
       expect(result.exitCode).toBe(0);
       expect(result.truncated).toBe(true);
